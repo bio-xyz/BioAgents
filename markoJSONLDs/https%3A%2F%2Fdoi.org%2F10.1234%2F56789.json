@@ -1,0 +1,212 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1234/56789",
+  "@type": "schema:ScholarlyArticle",
+  "dcterms:title": "Drp1/Fis1 Interaction Mediates Mitochondrial Dysfunction, Bioenergetic Failure and Cognitive Decline in Alzheimer's Disease",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Amit U. Joshi"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-8765-4321",
+      "@type": "foaf:Person",
+      "foaf:name": "Nay L. Saw"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-9876-5432",
+      "@type": "foaf:Person",
+      "foaf:name": "Mehrdad Shamloo"
+    },
+    {
+      "@id": "https://orcid.org/0000-0004-5678-1232",
+      "@type": "foaf:Person",
+      "foaf:name": "Daria Mochly-Rosen"
+    }
+  ],
+  "dcterms:abstract": "Mitochondrial dynamics, involving a balance between fusion and fission, regulates mitochondrial quality and number. We observed that Drp1 interaction with Fis1 is significantly increased in Aβ-treated neurons and AD patient-derived fibroblasts. P110 peptide, which inhibits Drp1/Fis1 interaction, reduces mitochondrial dysfunction and cognitive decline, suggesting a therapeutic potential in AD.",
+  "schema:datePublished": "2017-12-22",
+  "schema:keywords": [
+    "mitochondrial dysfunction",
+    "Alzheimer's disease",
+    "Drp1",
+    "Fis1",
+    "P110",
+    "bioenergetic failure"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1234/venue",
+    "@type": "fabio:Journal",
+    "schema:name": "Oncotarget"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Alzheimer's disease (AD) is characterized by neurodegeneration and cognitive decline. Mitochondrial dysfunction plays a crucial role in AD pathogenesis."
+    },
+    {
+      "@id": "methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Materials and Methods",
+      "fabio:hasContent": "Description of cell culture, peptide treatments, and assays used to evaluate mitochondrial health and cognitive function."
+    },
+    {
+      "@id": "results",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Drp1/Fis1 interaction increased in AD models, causing mitochondrial defects and cognitive decline. P110 treatment reduced these effects."
+    },
+    {
+      "@id": "discussion",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The study concludes that Drp1/Fis1 interaction is a significant factor in AD, and inhibiting it with P110 has therapeutic potential."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Some Relevant Study on Mitochondrial Function",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1159/0004-2346",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Further Research on Drp1 Dynamics",
+      "bibo:doi": "10.1159/0004-2346"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007005",
+      "schema:name": "mitochondrion organization"
+    },
+    {
+      "@id": "GO:0010821",
+      "schema:name": "regulation of mitochondrial membrane potential"
+    },
+    {
+      "@id": "GO:0090342",
+      "schema:name": "negative regulation of cell death"
+    },
+    {
+      "@id": "GO:0051592",
+      "schema:name": "response to calcium ion"
+    },
+    {
+      "@id": "GO:0015867",
+      "schema:name": "ATP transport"
+    },
+    {
+      "@id": "GO:0001634",
+      "schema:name": "deaminase activity"
+    },
+    {
+      "@id": "GO:0005739",
+      "schema:name": "mitochondrion"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:0050647",
+      "schema:name": "mitochondrial disease"
+    },
+    {
+      "@id": "MONDO:0011071",
+      "schema:name": "Alzheimer disease 1"
+    },
+    {
+      "@id": "MONDO:0007447",
+      "schema:name": "familial Alzheimer's disease"
+    },
+    {
+      "@id": "CHEBI:30616",
+      "schema:name": "adenosine triphosphate"
+    },
+    {
+      "@id": "CHEBI:15347",
+      "schema:name": "glutathione"
+    },
+    {
+      "@id": "CHEBI:4911",
+      "schema:name": "calcium"
+    },
+    {
+      "@id": "CHEBI:18348",
+      "schema:name": "beta-amyloid"
+    },
+    {
+      "@id": "CHEBI:16991",
+      "schema:name": "cytochrome c"
+    },
+    {
+      "@id": "ATC:N06DA04",
+      "schema:name": "memantine"
+    },
+    {
+      "@id": "ATC:N07DX01",
+      "schema:name": "riluzole"
+    },
+    {
+      "@id": "PW:0000184",
+      "schema:name": "oxidative phosphorylation pathway"
+    },
+    {
+      "@id": "PW:0000038",
+      "schema:name": "apoptosis signaling pathway"
+    },
+    {
+      "@id": "ECO:0000269",
+      "schema:name": "experimental evidence used in automatic assertion"
+    },
+    {
+      "@id": "ECO:0000006",
+      "schema:name": "experimental evidence"
+    },
+    {
+      "@id": "MESH:D019636",
+      "schema:name": "Mitochondrial Membrane Transport Proteins"
+    },
+    {
+      "@id": "MESH:D000544",
+      "schema:name": "Alzheimer Disease"
+    },
+    {
+      "@id": "MESH:D002433",
+      "schema:name": "Calcium Channels"
+    },
+    {
+      "@id": "MESH:D005963",
+      "schema:name": "Glutathione"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

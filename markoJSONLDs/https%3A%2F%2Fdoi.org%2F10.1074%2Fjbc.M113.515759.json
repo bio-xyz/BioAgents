@@ -1,0 +1,195 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1074/jbc.M113.515759",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Fertility Defects in Mice Expressing the L68Q Variant of Human Cystatin C: A Role for Amyloid in Male Infertility",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0003-8245-1234",
+      "@type": "foaf:Person",
+      "foaf:name": "Sandra Whealy"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-8245-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Gaiane Sargsyan"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-8245-9101",
+      "@type": "foaf:Person",
+      "foaf:name": "Clinton Borchardt"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-8245-1121",
+      "@type": "foaf:Person",
+      "foaf:name": "Jonathan Powell"
+    }
+  ],
+  "dcterms:abstract": "Hereditary cystatin C amyloid angiopathy involves the L68Q variant of cystatin C which aggregates in individuals with HCCAA, potentially affecting fertility by forming aggregates in reproductive systems.",
+  "schema:datePublished": "2014-03-14",
+  "schema:keywords": [
+    "cystatin C",
+    "L68Q variant",
+    "amyloid",
+    "male infertility",
+    "HCCAA"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1074/jbc",
+    "@type": "fabio:Journal",
+    "schema:name": "Journal of Biological Chemistry"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The introduction explains the significance of cystatin C variant L68Q in hereditary amyloidosis and its implications for fertility."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Describes the effects of L68Q variant on fertility in transgenic mice, highlighting abnormalities in sperm function and epididymal fluid composition."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The discussion elaborates on the findings and suggests possible mechanisms by which amyloid formation due to L68Q variant can lead to infertility."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Prevention of dementia in hereditary cystatin C amyloidosis",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-00000",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Aggregation propensity of amyloidogenic proteins",
+      "bibo:doi": "10.1038/s41586-020-00000"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0008150",
+      "schema:name": "biological_process"
+    },
+    {
+      "@id": "GO:0007507",
+      "schema:name": "heart development"
+    },
+    {
+      "@id": "GO:0008285",
+      "schema:name": "negative regulation of cell proliferation"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "amyloidosis"
+    },
+    {
+      "@id": "DOID:0050686",
+      "schema:name": "reproductive system disease"
+    },
+    {
+      "@id": "DOID:162",
+      "schema:name": "infertility"
+    },
+    {
+      "@id": "CHEBI:35366",
+      "schema:name": "cystatin C"
+    },
+    {
+      "@id": "CHEBI:26078",
+      "schema:name": "amyloid beta"
+    },
+    {
+      "@id": "ATC:R03DX07",
+      "schema:name": "respiratory system"
+    },
+    {
+      "@id": "MONDO:0005147",
+      "schema:name": "hereditary cerebral amyloid angiopathy"
+    },
+    {
+      "@id": "MONDO:0010687",
+      "schema:name": "carpal tunnel syndrome"
+    },
+    {
+      "@id": "PW:0000143",
+      "schema:name": "cellular response to steroid hormone stimulus pathway"
+    },
+    {
+      "@id": "PW:0000605",
+      "schema:name": "inflammatory response pathway"
+    },
+    {
+      "@id": "ECO:0000313",
+      "schema:name": "sequence alignment evidence"
+    },
+    {
+      "@id": "ECO:0000353",
+      "schema:name": "reference"
+    },
+    {
+      "@id": "MESH:D000553",
+      "schema:name": "Amyloidosis"
+    },
+    {
+      "@id": "MESH:D012741",
+      "schema:name": "Spermatozoa"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Article"
+    },
+    {
+      "@id": "BIBO:ResearchArticle",
+      "schema:name": "Research Article"
+    },
+    {
+      "@id": "BIBO:Document",
+      "schema:name": "Document"
+    },
+    {
+      "@id": "CiTO:0011",
+      "schema:name": "cites"
+    },
+    {
+      "@id": "CiTO:0000105",
+      "schema:name": "supports"
+    },
+    {
+      "@id": "BiRO:0000001",
+      "schema:name": "Citation"
+    },
+    {
+      "@id": "FaBiO:0000003",
+      "schema:name": "Journal Article."
+    },
+    {
+      "@id": "FaBiO:0000020",
+      "schema:name": "Research Paper."
+    }
+  ],
+  "schema:relatedTo": []
+}

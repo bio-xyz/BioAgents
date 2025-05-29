@@ -1,0 +1,206 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1186/s13041-024-01092-8",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "L-DOPA regulates neuroinflammation and Aβ pathology through NEP and ADAM17 in a mouse model of AD",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0003-0000-0000",
+      "@type": "foaf:Person",
+      "foaf:name": "Hyun-ju Lee"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-0000-0001",
+      "@type": "foaf:Person",
+      "foaf:name": "JinHan Nam"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-0000-0002",
+      "@type": "foaf:Person",
+      "foaf:name": "Jeong-Woo Hwang"
+    }
+  ],
+  "dcterms:abstract": "Dopamine plays important roles in cognitive function and inflammation and therefore is involved in the pathogenesis of neurodegenerative diseases, including Alzheimer’s disease (AD). Drugs that increase or maintain dopamine levels in the brain could be a therapeutic strategy for AD. However, the effects of dopamine and its precursor levodopa (L-DOPA) on Aβ/tau pathology in vivo and the underlying molecular mechanisms have not been studied in detail. Here, we investigated whether L-DOPA treatment alters neuroinflammation, Aβ pathology, and tau phosphorylation in 5xFAD mice, a model of AD. We found that L-DOPA administration significantly reduced microgliosis and astrogliosis in 5xFAD mice. In addition, L-DOPA treatment significantly decreased Aβ plaque number by upregulating NEP and ADAM17 levels in 5xFAD mice. However, L-DOPA-treated 5xFAD mice did not exhibit changes in tau hyperphosphorylation or tau kinase levels. These data suggest that L-DOPA alleviates neuroinflammatory responses and Aβ pathology but not tau pathology in this mouse model of AD.",
+  "schema:datePublished": "2024-04-16",
+  "schema:keywords": [
+    "L-DOPA",
+    "Aβ",
+    "Tau",
+    "Neuroinflammation",
+    "Alzheimer’s disease"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1186/s13041-024-01092-8",
+    "@type": "fabio:Journal",
+    "schema:name": "Molecular Brain"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "#introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Alzheimer’s disease (AD) is a progressive neurodegenerative disorder characterized by deposition of amyloid β (Aβ) plaques and neurofibrillary tangles (NFTs) ..."
+    },
+    {
+      "@id": "#methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "Four-month-old 5xFAD mice were injected with vehicle or L-DOPA ..."
+    },
+    {
+      "@id": "#results",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "L-DOPA treatment significantly reduced microgliosis and astrogliosis ..."
+    },
+    {
+      "@id": "#discussion",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The potential effects of L-DOPA treatment on proinflammatory responses ..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.neuropharm.2020.108020",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Dopamine signaling and neuroinflammation: Implications for Alzheimer’s disease",
+      "bibo:doi": "10.1016/j.neuropharm.2020.108020"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.jalz.2023.01.005",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "L-DOPA effects on amyloid pathology in 5xFAD model",
+      "bibo:doi": "10.1016/j.jalz.2023.01.005"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0050727",
+      "schema:name": "regulation of inflammatory response"
+    },
+    {
+      "@id": "GO:0034341",
+      "schema:name": "response to interferon-gamma"
+    },
+    {
+      "@id": "GO:0050746",
+      "schema:name": "regulation of neurotransmitter levels"
+    },
+    {
+      "@id": "GO:0006954",
+      "schema:name": "inflammatory response"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:996",
+      "schema:name": "neurodegenerative disease"
+    },
+    {
+      "@id": "DOID:9406",
+      "schema:name": "dementia"
+    },
+    {
+      "@id": "CHEBI:17377",
+      "schema:name": "levodopa"
+    },
+    {
+      "@id": "CHEBI:15422",
+      "schema:name": "dopamine"
+    },
+    {
+      "@id": "CHEBI:36785",
+      "schema:name": "beta-amyloid peptide (1-40)"
+    },
+    {
+      "@id": "ATC:N04BA01",
+      "schema:name": "levodopa and decarboxylase inhibitor"
+    },
+    {
+      "@id": "ATC:N04BA02",
+      "schema:name": "levodopa and decarboxylase inhibitor and COMT inhibitor"
+    },
+    {
+      "@id": "MONDO:0005144",
+      "schema:name": "familial Alzheimer's disease"
+    },
+    {
+      "@id": "MONDO:0005359",
+      "schema:name": "mild cognitive impairment due to Alzheimer's disease"
+    },
+    {
+      "@id": "MONDO:0018874",
+      "schema:name": "neuroinflammation"
+    },
+    {
+      "@id": "PW:0000545",
+      "schema:name": "amyloid-beta formation pathway"
+    },
+    {
+      "@id": "PW:0000416",
+      "schema:name": "dopamine biosynthetic pathway"
+    },
+    {
+      "@id": "PW:0000605",
+      "schema:name": "glutamate receptor signaling pathway"
+    },
+    {
+      "@id": "ECO:0006123",
+      "schema:name": "immunohistochemistry evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "MESH:D015179",
+      "schema:name": "neurodegenerative disease models, animal"
+    },
+    {
+      "@id": "MESH:D001146",
+      "schema:name": "amyloid beta-protein precursor"
+    },
+    {
+      "@id": "MESH:D000437",
+      "schema:name": "anti-inflammatory agents, non-steroidal"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "scientific article"
+    },
+    {
+      "@id": "CiTO:citesAsEvidence",
+      "schema:name": "cites as evidence"
+    },
+    {
+      "@id": "BiRO:BibliographicReference",
+      "schema:name": "bibliographic reference"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

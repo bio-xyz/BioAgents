@@ -1,0 +1,205 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1002/emmm.201608366",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Inhibition of Drp1/Fis1 interaction slows progression of amyotrophic lateral sclerosis",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Amit U Joshi"
+    },
+    {
+      "@id": "https://orcid.org/1111-2222-3333-4444",
+      "@type": "foaf:Person",
+      "foaf:name": "Nay L Saw"
+    },
+    {
+      "@id": "https://orcid.org/5555-6666-7777-8888",
+      "@type": "foaf:Person",
+      "foaf:name": "Hannes Vogel"
+    },
+    {
+      "@id": "https://orcid.org/9999-1010-1111-1212",
+      "@type": "foaf:Person",
+      "foaf:name": "Anna D Cunningham"
+    },
+    {
+      "@id": "https://orcid.org/1313-1414-1515-1616",
+      "@type": "foaf:Person",
+      "foaf:name": "Mehrdad Shamloo"
+    },
+    {
+      "@id": "https://orcid.org/1717-1818-1919-2020",
+      "@type": "foaf:Person",
+      "foaf:name": "Daria Mochly-Rosen"
+    }
+  ],
+  "dcterms:abstract": "Bioenergetic failure and oxidative stress are common pathological hallmarks of amyotrophic lateral sclerosis (ALS), but whether these could be targeted effectively for novel therapeutic interventions needs to be determined. We present evidence that inhibition of Drp1/Fis1 interaction can be an attractive target in the treatment of ALS patients.",
+  "schema:datePublished": "2018-01-15",
+  "schema:keywords": [
+    "ALS",
+    "Drp1",
+    "Fis1",
+    "Mitochondrial dysfunction",
+    "Therapeutic intervention"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1002/embo.emmm",
+    "@type": "fabio:Journal",
+    "schema:name": "EMBO Molecular Medicine"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec_1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Amyotrophic lateral sclerosis (ALS), which clinically manifests by progressive muscle atrophy and paralysis, is a fatal neurodegenerative disease characterized by the death of upper and lower motor neurons."
+    },
+    {
+      "@id": "sec_2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "We first determined whether mitochondrial dysfunction is evident in fibroblasts of ALS patients carrying pathogenic mutations..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Mitochondrial dynamics and neurodegeneration",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "The role of mitochondrial fission in ALS",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007005",
+      "schema:name": "mitochondrion organization"
+    },
+    {
+      "@id": "GO:0001666",
+      "schema:name": "response to hypoxia"
+    },
+    {
+      "@id": "GO:0007517",
+      "schema:name": "muscle organ development"
+    },
+    {
+      "@id": "GO:0001508",
+      "schema:name": "regulation of action potential"
+    },
+    {
+      "@id": "DOID:9406",
+      "schema:name": "Amyotrophic Lateral Sclerosis"
+    },
+    {
+      "@id": "DOID:0050700",
+      "schema:name": "neurodegenerative disease"
+    },
+    {
+      "@id": "CHEBI:29121",
+      "schema:name": "P110 inhibitor"
+    },
+    {
+      "@id": "CHEBI:36080",
+      "schema:name": "adenosine triphosphate"
+    },
+    {
+      "@id": "CHEBI:15355",
+      "schema:name": "oxygen"
+    },
+    {
+      "@id": "ATC:N07XX02",
+      "schema:name": "edaravone"
+    },
+    {
+      "@id": "MONDO:0018874",
+      "schema:name": "mitochondrial disease"
+    },
+    {
+      "@id": "MONDO:0007915",
+      "schema:name": "spinal muscular atrophy"
+    },
+    {
+      "@id": "PW:0000004",
+      "schema:name": "apoptosis signaling pathway"
+    },
+    {
+      "@id": "PW:0001237",
+      "schema:name": "reactive oxygen species pathway"
+    },
+    {
+      "@id": "ECO:0001539",
+      "schema:name": "in vitro assay evidence"
+    },
+    {
+      "@id": "ECO:0007651",
+      "schema:name": "mammalian post mortem analysis evidence"
+    },
+    {
+      "@id": "MESH:D018780",
+      "schema:name": "Neuroprotective Agents"
+    },
+    {
+      "@id": "MESH:D000077330",
+      "schema:name": "Disease Models, Animal"
+    },
+    {
+      "@id": "BIBO:Document",
+      "schema:name": "scientific article"
+    },
+    {
+      "@id": "BIBO:ResearchArticle",
+      "schema:name": "research article"
+    },
+    {
+      "@id": "cito:citesAsSourceDocument",
+      "schema:name": "cites as source document"
+    },
+    {
+      "@id": "cito:isCitedBy",
+      "schema:name": "is cited by"
+    },
+    {
+      "@id": "biro:Reference",
+      "schema:name": "bibliographic references"
+    },
+    {
+      "@id": "fabio:JournalArticle",
+      "schema:name": "journal article"
+    },
+    {
+      "@id": "fabio:PeerReviewed",
+      "schema:name": "peer-reviewed"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

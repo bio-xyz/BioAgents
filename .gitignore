@@ -3,3 +3,9 @@ node_modules
 dist
 oxigraph
 .envrc
+
+papers
+papers_backlog
+
+sampleJsonLdsNew
+sampleJsonLds

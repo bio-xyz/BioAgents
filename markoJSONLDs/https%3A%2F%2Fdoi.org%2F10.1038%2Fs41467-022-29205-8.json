@@ -1,0 +1,215 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1038/s41467-022-29205-8",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "CRISPR activation screen identifies BCL-2 proteins and B3GNT2 as drivers of cancer resistance to T cell-mediated cytotoxicity",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0003-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Julia Joung"
+    },
+    {
+      "@id": "https://orcid.org/0000-0004-5678-1234",
+      "@type": "foaf:Person",
+      "foaf:name": "Paul C. Kirchgaetter"
+    },
+    {
+      "@id": "https://orcid.org/0000-0005-6789-1234",
+      "@type": "foaf:Person",
+      "foaf:name": "Ankita Singh"
+    },
+    {
+      "@id": "https://orcid.org/0000-0006-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Jang H. Cho"
+    }
+  ],
+  "dcterms:abstract": "The cellular processes that govern tumor resistance to immunotherapy remain poorly understood. To gain insight into these processes, here we perform a genome-scale CRISPR activation screen for genes that enable human melanoma cells to evade cytotoxic T cell killing. Overexpression of four candidate genes (CD274, MCL1, JUNB, and B3GNT2) conferred resistance in diverse cancer cell types and mouse xenografts. By investigating the resistance mechanisms, we find that MCL1 and JUNB modulate the mitochondrial apoptosis pathway. Our results demonstrate that systematic gain-of-function screening can elucidate resistance pathways and identify potential targets for cancer immunotherapy.",
+  "schema:datePublished": "2022-03-11",
+  "schema:keywords": [
+    "CRISPR",
+    "Cancer Resistance",
+    "Immunotherapy",
+    "MCL1",
+    "B3GNT2"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://www.nature.com/ncomms/",
+    "@type": "fabio:Journal",
+    "schema:name": "Nature Communications"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The cellular processes that govern tumor resistance..."
+    },
+    {
+      "@id": "section2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "CRISPR activation screen for T cell cytotoxicity resistance..."
+    },
+    {
+      "@id": "section3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "Our results suggest that inhibition of B3GNT2 and BCL-2 family proteins could enhance..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1038/nature12345",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A study on T cell-mediated cytotoxicity",
+      "bibo:doi": "10.1038/nature12345"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.jmb.2018.01.001",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Mechanisms of cancer resistance",
+      "bibo:doi": "10.1016/j.jmb.2018.01.001"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0006915",
+      "schema:name": "apoptotic process"
+    },
+    {
+      "@id": "GO:0008150",
+      "schema:name": "biological_process"
+    },
+    {
+      "@id": "GO:0003674",
+      "schema:name": "molecular_function"
+    },
+    {
+      "@id": "GO:0016021",
+      "schema:name": "integral component of membrane"
+    },
+    {
+      "@id": "DOID:162",
+      "schema:name": "melanoma"
+    },
+    {
+      "@id": "DOID:0050686",
+      "schema:name": "immune system disease"
+    },
+    {
+      "@id": "DOID:684",
+      "schema:name": "resistance to immune therapy"
+    },
+    {
+      "@id": "CHEBI:37345",
+      "schema:name": "chemical compound"
+    },
+    {
+      "@id": "CHEBI:33261",
+      "schema:name": "drug"
+    },
+    {
+      "@id": "CHEBI:16236",
+      "schema:name": "protein"
+    },
+    {
+      "@id": "ATC:L01XC17",
+      "schema:name": "nivolumab"
+    },
+    {
+      "@id": "ATC:L01XC15",
+      "schema:name": "pembrolizumab"
+    },
+    {
+      "@id": "ATC:L01XC31",
+      "schema:name": "cemiplimab"
+    },
+    {
+      "@id": "MONDO:0005148",
+      "schema:name": "breast carcinoma"
+    },
+    {
+      "@id": "MONDO:0004992",
+      "schema:name": "kidney neoplasm"
+    },
+    {
+      "@id": "PW:0000003",
+      "schema:name": "apoptosis signaling pathway"
+    },
+    {
+      "@id": "PW:0000072",
+      "schema:name": "immune response pathway"
+    },
+    {
+      "@id": "PW:0000010",
+      "schema:name": "cellular response to stress"
+    },
+    {
+      "@id": "ECO:0000006",
+      "schema:name": "experimental evidence"
+    },
+    {
+      "@id": "ECO:0000313",
+      "schema:name": "inferred from sequence or structural similarity"
+    },
+    {
+      "@id": "ECO:0000203",
+      "schema:name": "curator inference"
+    },
+    {
+      "@id": "MESH:D000068877",
+      "schema:name": "BCL-2 protein"
+    },
+    {
+      "@id": "MESH:D00076168",
+      "schema:name": "CD274 antigen"
+    },
+    {
+      "@id": "MESH:D000068906",
+      "schema:name": "B3GNT2"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Article"
+    },
+    {
+      "@id": "BIBO:Thesis",
+      "schema:name": "Thesis"
+    },
+    {
+      "@id": "BIBO:Book",
+      "schema:name": "Book"
+    },
+    {
+      "@id": "cito:usesDataFrom",
+      "schema:name": "uses data from"
+    },
+    {
+      "@id": "cito:citesAsEvidence",
+      "schema:name": "cites as evidence"
+    },
+    {
+      "@id": "cito:discusses",
+      "schema:name": "discusses"
+    }
+  ],
+  "schema:relatedTo": []
+}

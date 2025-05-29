@@ -1,0 +1,234 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/",
+    "doco": "http://purl.org/spar/doco/",
+    "pro": "http://purl.org/spar/pro/",
+    "obi": "http://purl.obolibrary.org/obo/"
+  },
+  "@id": "https://doi.org/10.1038/s41598-020-79725-1",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "In vitro comparison of major memory-support dietary supplements for their effectiveness in reduction/inhibition of beta-amyloid protein fibrils and tau protein tangles: key primary targets for memory loss",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-1825-0097",
+      "@type": "foaf:Person",
+      "foaf:name": "Alan D. Snow"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-1825-0100",
+      "@type": "foaf:Person",
+      "foaf:name": "Joel A. Cummings"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-1825-0101",
+      "@type": "foaf:Person",
+      "foaf:name": "Rudolph E. Tanzi"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-1825-0102",
+      "@type": "foaf:Person",
+      "foaf:name": "Thomas Lake"
+    }
+  ],
+  "dcterms:abstract": "This study examines the effects of 21 memory-support dietary supplements for their ability to reduce or inhibit beta-amyloid protein fibrils and tau protein tangles, primary targets for memory loss. The results indicate that Percepta was the most effective in disrupting these protein aggregations, suggesting its potential role in memory support.",
+  "schema:datePublished": "2021-02-15",
+  "schema:keywords": [
+    "memory-support",
+    "beta-amyloid",
+    "tau protein",
+    "dietary supplements",
+    "neuroinflammation"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://www.nature.com/srep/",
+    "@type": "fabio:Journal",
+    "schema:name": "Scientific Reports"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The introduction provides the background on how beta-amyloid and tau protein contribute to memory loss and sets the stage for evaluating dietary supplements in combating these processes."
+    },
+    {
+      "@id": "section2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "This section details the in vitro methods used to measure the effectiveness of memory-support dietary supplements in inhibiting or disrupting beta-amyloid and tau aggregations."
+    },
+    {
+      "@id": "section3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "The results reveal that Percepta, which contains PTI-00703 cat's claw, was the most potent disruptor of beta-amyloid and tau fibrils among the supplements tested."
+    },
+    {
+      "@id": "section4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The discussion interprets the findings, emphasizing the potential of specific polyphenols in Percepta for enhancing memory support by targeting key protein aggregations."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1371/journal.pone.0173240",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Analysis of polyphenols in Alzheimer's related protein disaggregation",
+      "bibo:doi": "10.1371/journal.pone.0173240"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.celrep.2016.12.063",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Neuroprotective effects of cat's claw in a cellular model of Alzheimer's",
+      "bibo:doi": "10.1016/j.celrep.2016.12.063"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0001540",
+      "schema:name": "beta-amyloid clearance"
+    },
+    {
+      "@id": "GO:0050776",
+      "schema:name": "regulation of immune response"
+    },
+    {
+      "@id": "GO:0014042",
+      "schema:name": "glial cell proliferation"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:9256",
+      "schema:name": "dementia"
+    },
+    {
+      "@id": "DOID:14324",
+      "schema:name": "neurodegenerative disease"
+    },
+    {
+      "@id": "CHEBI:63480",
+      "schema:name": "epigallocatechin gallate"
+    },
+    {
+      "@id": "CHEBI:28939",
+      "schema:name": "curcumin"
+    },
+    {
+      "@id": "CHEBI:45862",
+      "schema:name": "resveratrol"
+    },
+    {
+      "@id": "PW:0000113",
+      "schema:name": "neuroinflammatory pathway"
+    },
+    {
+      "@id": "PW:0000011",
+      "schema:name": "beta-amyloid formation"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "in vitro study evidence"
+    },
+    {
+      "@id": "ECO:0000006",
+      "schema:name": "experimental evidence"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "direct assay evidence"
+    },
+    {
+      "@id": "MESH:D000544",
+      "schema:name": "Alzheimer Disease"
+    },
+    {
+      "@id": "MESH:D015331",
+      "schema:name": "Brain Plaque"
+    },
+    {
+      "@id": "MESH:D002136",
+      "schema:name": "Catechins"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Research Article"
+    },
+    {
+      "@id": "BIBO:Document",
+      "schema:name": "Scientific Report"
+    },
+    {
+      "@id": "SPAR:CiTO_0000100",
+      "schema:name": "cites as evidence"
+    },
+    {
+      "@id": "SPAR:BiRO_0000103",
+      "schema:name": "reference list"
+    },
+    {
+      "@id": "MONDO:0004975",
+      "schema:name": "mild cognitive impairment"
+    },
+    {
+      "@id": "MONDO:0019065",
+      "schema:name": "amyloid beta protein precursor activity"
+    },
+    {
+      "@id": "CHEBI:5050",
+      "schema:name": "tannic acid"
+    },
+    {
+      "@id": "ATC:N06DX01",
+      "schema:name": "Ginkgo biloba"
+    },
+    {
+      "@id": "ATC:N06BX02",
+      "schema:name": "Piracetam"
+    },
+    {
+      "@id": "GO:0006954",
+      "schema:name": "inflammatory response"
+    },
+    {
+      "@id": "GO:0051591",
+      "schema:name": "response to amyloid-beta"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "MESH:D000544",
+      "schema:name": "Alzheimer Disease"
+    },
+    {
+      "@id": "CHEBI:2761",
+      "schema:name": "thioflavin T"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1038/s41598-018-36067-0",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Through synapses to spatial memory maps via a topological model",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0003-0000-0000",
+      "@type": "foaf:Person",
+      "foaf:name": "Yuri Dabaghian"
+    }
+  ],
+  "dcterms:abstract": "Various neurophysiological and cognitive functions are based on transferring information between spiking neurons via a complex system of synaptic connections. This study explores the effects of synaptic transmission probability on the ability of the hippocampal place cell ensembles to produce a cognitive map of the environment using methods from algebraic topology.",
+  "schema:datePublished": "2019-01-24",
+  "schema:keywords": [
+    "Neurophysiology",
+    "Cognitive maps",
+    "Synaptic connections",
+    "Algebraic topology",
+    "Hippocampal place cells"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://www.nature.com/scientificreports/",
+    "@type": "fabio:Journal",
+    "schema:name": "Scientific Reports"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section-1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The introduction discusses various neurophysiological functions and the role of synaptic connections in cognitive mapping."
+    },
+    {
+      "@id": "section-2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "This section details the computational algorithms and experimental setups used to simulate the hippocampal place cell networks."
+    },
+    {
+      "@id": "section-3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Key findings regarding synaptic probability and spatial learning are presented, including statistical models and simulation outcomes."
+    },
+    {
+      "@id": "section-4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The discussion focuses on the implications of the results and the potential for further research into hippocampal cognition."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1038/nature12373",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A comprehensive model of hippocampal place cells",
+      "bibo:doi": "10.1038/nature12373"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2018.11.002",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Synaptic Plasticity and Memory Formation",
+      "bibo:doi": "10.1016/j.cell.2018.11.002"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007616",
+      "schema:name": "long-term memory"
+    },
+    {
+      "@id": "GO:0048169",
+      "schema:name": "regulation of long-term neuronal synaptic plasticity"
+    },
+    {
+      "@id": "GO:0043209",
+      "schema:name": "myelin sheath"
+    },
+    {
+      "@id": "DOID:0060465",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:936",
+      "schema:name": "spatial learning impairment"
+    },
+    {
+      "@id": "CHEBI:16842",
+      "schema:name": "acetylcholine"
+    },
+    {
+      "@id": "CHEBI:16761",
+      "schema:name": "glutamate"
+    },
+    {
+      "@id": "ATC:N06DA52",
+      "schema:name": "donepezil"
+    },
+    {
+      "@id": "ATC:N06DA02",
+      "schema:name": "rivastigmine"
+    },
+    {
+      "@id": "MONDO:0018874",
+      "schema:name": "hippocampus sclerosis"
+    },
+    {
+      "@id": "MONDO:0019086",
+      "schema:name": "Posterior cortical atrophy"
+    },
+    {
+      "@id": "PW:0000819",
+      "schema:name": "neurotransmitter secretion pathway"
+    },
+    {
+      "@id": "PW:0000009",
+      "schema:name": "N-methyl-D-aspartate receptor pathway"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "computational analysis evidence"
+    },
+    {
+      "@id": "ECO:0000208",
+      "schema:name": "experimental phenotypic evidence"
+    },
+    {
+      "@id": "MESH:D051977",
+      "schema:name": "Hippocampus"
+    },
+    {
+      "@id": "MESH:D002490",
+      "schema:name": "Cognition Disorders"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "Academic Article"
+    },
+    {
+      "@id": "CIITO:0000185",
+      "schema:name": "supporting"
+    },
+    {
+      "@id": "CIITO:0000001",
+      "schema:name": "cites"
+    },
+    {
+      "@id": "BIRO:0000001",
+      "schema:name": "Reference"
+    },
+    {
+      "@id": "FABIO:0000001",
+      "schema:name": "Journal Article"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1172/JCI70911",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Inhibition of mitochondrial fragmentation diminishes Huntington’s disease–associated neurodegeneration",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Xing Guo"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6790",
+      "@type": "foaf:Person",
+      "foaf:name": "Marie-Helene Disatnik"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6791",
+      "@type": "foaf:Person",
+      "foaf:name": "Marie Monbureau"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6792",
+      "@type": "foaf:Person",
+      "foaf:name": "Mehrdad Shamloo"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6793",
+      "@type": "foaf:Person",
+      "foaf:name": "Daria Mochly-Rosen"
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6794",
+      "@type": "foaf:Person",
+      "foaf:name": "Xin Qi"
+    }
+  ],
+  "dcterms:abstract": "Huntington's disease (HD) is the result of expression of a mutated Huntingtin protein (mHtt), which is associated with a variety of cellular dysfunctions, including excessive mitochondrial fission. Here, we tested whether inhibition of excessive mitochondrial fission prevents mHtt-induced pathology. We developed a selective inhibitor (P110-TAT) of the mitochondrial fission protein dynamin-related protein 1 (Drp1). P110-TAT treatment inhibited mHtt-induced excessive mitochondrial fragmentation, improved mitochondrial function, and increased cell viability in HD cell culture models.",
+  "schema:datePublished": "2013-12-01",
+  "schema:keywords": [
+    "Huntington's disease",
+    "Mitochondrial fragmentation",
+    "Neurodegeneration",
+    "Drp1 inhibition",
+    "Cell viability"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1172/JCI",
+    "@type": "fabio:Journal",
+    "schema:name": "The Journal of Clinical Investigation"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Huntington's disease (HD) is a neurodegenerative disorder characterized by a variety of cellular dysfunctions, including excessive mitochondrial fission."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "We developed a selective peptide inhibitor, P110-TAT, to target the Drp1 protein to test its effects on mitochondrial fission in HD models."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "P110-TAT inhibited excessive mitochondrial fragmentation in HD models, leading to improved mitochondrial function and increased cell viability."
+    },
+    {
+      "@id": "sec4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The inhibition of Drp1-dependent mitochondrial fission with P110-TAT-like inhibitors may prevent or slow the progression of HD."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Bax and Bak promote apoptosis by regulating endoplasmic reticular and mitochondrial Ca2+ signaling.",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/nature02171",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "P53 mediates mitochondrial dysfunction in neurons.",
+      "bibo:doi": "10.1038/nature02171"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007165",
+      "schema:name": "signal transduction"
+    },
+    {
+      "@id": "GO:0007015",
+      "schema:name": "actin filament organization"
+    },
+    {
+      "@id": "GO:0042981",
+      "schema:name": "regulation of apoptotic process"
+    },
+    {
+      "@id": "GO:0005739",
+      "schema:name": "mitochondrion"
+    },
+    {
+      "@id": "GO:0005634",
+      "schema:name": "nucleus"
+    },
+    {
+      "@id": "DOID:12858",
+      "schema:name": "Huntington's disease"
+    },
+    {
+      "@id": "DOID:0050433",
+      "schema:name": "neurodegeneration"
+    },
+    {
+      "@id": "DOID:3312",
+      "schema:name": "mitochondrial disease"
+    },
+    {
+      "@id": "CHEBI:16761",
+      "schema:name": "ATP"
+    },
+    {
+      "@id": "CHEBI:16189",
+      "schema:name": "oxygen"
+    },
+    {
+      "@id": "CHEBI:16467",
+      "schema:name": "reactive oxygen species"
+    },
+    {
+      "@id": "PW:0000013",
+      "schema:name": "apoptotic pathway"
+    },
+    {
+      "@id": "PW:0001301",
+      "schema:name": "mitochondrial respiratory chain"
+    },
+    {
+      "@id": "ECO:0000314",
+      "schema:name": "direct assay evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0005545",
+      "schema:name": "mutant phenotype evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0005313",
+      "schema:name": "expression pattern evidence"
+    },
+    {
+      "@id": "MONDO:0013795",
+      "schema:name": "neurodegenerative disease"
+    },
+    {
+      "@id": "MONDO:0006662",
+      "schema:name": "mitochondrial complex I deficiency"
+    },
+    {
+      "@id": "ATC:N07XX",
+      "schema:name": "other nervous system drugs"
+    },
+    {
+      "@id": "ATC:N06AX",
+      "schema:name": "antidepressants"
+    },
+    {
+      "@id": "ATC:N03AG",
+      "schema:name": "antiepileptics"
+    },
+    {
+      "@id": "MESH:D020738",
+      "schema:name": "Neuroprotective Agents"
+    },
+    {
+      "@id": "MESH:D018377",
+      "schema:name": "Mitochondrial Diseases"
+    },
+    {
+      "@id": "MESH:D002477",
+      "schema:name": "Cell Death"
+    },
+    {
+      "@id": "BIBO:Document",
+      "schema:name": "document"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "academic article"
+    },
+    {
+      "@id": "cito:cites",
+      "schema:name": "cites"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

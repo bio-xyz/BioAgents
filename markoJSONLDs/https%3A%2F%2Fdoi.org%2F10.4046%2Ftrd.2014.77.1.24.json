@@ -1,0 +1,182 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.4046/trd.2014.77.1.24",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Takotsubo Cardiomyopathy Caused by Pulmonary Tuberculosis: A Case Report",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Jick Hwan Ha"
+    },
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Hyewon Lee"
+    },
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Young Jae Park"
+    },
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Hyeon Hui Kang"
+    },
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Sang Haak Lee"
+    },
+    {
+      "@id": "https://orcid.org/6ea20789-66a5-4f16-8fa1-b4b8d138a8c1",
+      "@type": "foaf:Person",
+      "foaf:name": "Hwa Sik Moon"
+    }
+  ],
+  "dcterms:abstract": "Takotsubo cardiomyopathy (TTC) is defined as a reversible, acute ventricular dysfunction without any evidence of coronary artery obstruction. This case report examines the first instance of TTC caused by pulmonary tuberculosis, discussing diagnostic criteria, patient symptoms, and treatment approach, illustrating the relationship between stressors and TTC symptoms.",
+  "schema:datePublished": "2014-03-01",
+  "schema:keywords": [
+    "Takotsubo Cardiomyopathy",
+    "Tuberculosis",
+    "Pulmonary",
+    "Catecholamines"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.4046/trd",
+    "@type": "fabio:Journal",
+    "schema:name": "Tuberculosis and Respiratory Diseases"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec-introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Takotsubo cardiomyopathy (TTC) is an acute syndrome characterized by reversible ventricular dysfunction in the absence of significant coronary artery disease."
+    },
+    {
+      "@id": "sec-case-report",
+      "@type": "fabio:Section",
+      "dcterms:title": "Case Report",
+      "fabio:hasContent": "A 54-year-old Korean man presented with a month-long history of cough and yellowish sputum, an 8kg weight loss over the course of three months, and Modified Medical Research Council Dyspnea Scale grade 1 dyspnea."
+    },
+    {
+      "@id": "sec-discussion",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The Mayo Clinic Criteria are the most widely applied criteria for TTC diagnosis, including several etiological perspectives."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/S0735-1097(98)00473-2",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Apical ballooning syndrome (Tako-Tsubo cardiomyopathy): A mimic of acute myocardial infarction.",
+      "bibo:doi": "10.1016/S0735-1097(98)00473-2"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.ahj.2008.05.016",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Exertional dyspnea-related adicardia and sympathetic responses in patients with sequelae of pulmonary tuberculosis.",
+      "bibo:doi": "10.1016/j.ahj.2008.05.016"
+    },
+    {
+      "@id": "https://doi.org/10.1161/CIRCULATIONAHA.107.740498",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Sympathoadrenal system in chronic hypoxic states from pulmonary tuberculosis.",
+      "bibo:doi": "10.1161/CIRCULATIONAHA.107.740498"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "DOID:0060031",
+      "schema:name": "Takotsubo cardiomyopathy"
+    },
+    {
+      "@id": "DOID:399",
+      "schema:name": "Pulmonary tuberculosis"
+    },
+    {
+      "@id": "GO:0006954",
+      "schema:name": "inflammatory response"
+    },
+    {
+      "@id": "GO:0019722",
+      "schema:name": "calcium-mediated signaling"
+    },
+    {
+      "@id": "GO:0035556",
+      "schema:name": "intracellular signal transduction"
+    },
+    {
+      "@id": "CHEBI:167638",
+      "schema:name": "catecholamine"
+    },
+    {
+      "@id": "CHEBI:35341",
+      "schema:name": "rifampicin"
+    },
+    {
+      "@id": "CHEBI:15997",
+      "schema:name": "isoniazid"
+    },
+    {
+      "@id": "MONDO:0018913",
+      "schema:name": "chronic disease"
+    },
+    {
+      "@id": "PW:0000004",
+      "schema:name": "calcium signaling pathway"
+    },
+    {
+      "@id": "PW:0000293",
+      "schema:name": "stress-activated signaling pathway"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0000305",
+      "schema:name": "experimental evidence used in manual assertion"
+    },
+    {
+      "@id": "MESH:D014069",
+      "schema:name": "Tuberculosis"
+    },
+    {
+      "@id": "MESH:D006333",
+      "schema:name": "Heart Ventricles"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Scientific article"
+    },
+    {
+      "@id": "cito:cites",
+      "schema:name": "cites"
+    },
+    {
+      "@id": "CiTO:usesMethodIn",
+      "schema:name": "uses method in"
+    }
+  ],
+  "schema:relatedTo": []
+}

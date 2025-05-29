@@ -1,0 +1,194 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1001/jamaneurol.2023.5319",
+  "@type": "schema:ScholarlyArticle",
+  "dcterms:title": "Diagnostic Accuracy of a Plasma Phosphorylated Tau 217 Immunoassay for Alzheimer Disease Pathology",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Nicholas J. Ashton"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-3456-7890",
+      "@type": "foaf:Person",
+      "foaf:name": "Kaj Blennow"
+    }
+  ],
+  "dcterms:abstract": "This study evaluates the capability of a commercially available plasma assay targeting p-tau217 in identifying Alzheimer disease (AD) pathology. The findings demonstrate high accuracy in detecting abnormal Aβ and tau pathologies, comparable to CSF measures.",
+  "schema:datePublished": "2024-01-22",
+  "schema:keywords": [
+    "Alzheimer Disease",
+    "Plasma Biomarkers",
+    "p-tau217 Immunoassay",
+    "Diagnostic Accuracy"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1001/jamaneurol",
+    "@type": "fabio:Journal",
+    "schema:name": "JAMA Neurology"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "This study included participants from 3 observational cohorts: the Translational Biomarkers in Aging and Dementia (TRIAD), Wisconsin Registry for Alzheimer’s Prevention (WRAP), and the Sant Pau Initiative on Neurodegeneration (SPIN)."
+    },
+    {
+      "@id": "section2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "The study included 786 participants. The p-tau217 assay demonstrated high accuracy in detecting abnormal amyloid and tau pathologies across cohorts."
+    },
+    {
+      "@id": "section3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Conclusions",
+      "fabio:hasContent": "This study highlights the effectiveness of a commercially available plasma p-tau217 assay in identifying AD pathology."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Reference to Previous Alzheimer's Biomarker Research",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-03075-0",
+      "@type": "schema:ScholarlyArticle",
+      "dcterms:title": "Study on Diagnostic Biomarkers in Neurodegeneration",
+      "bibo:doi": "10.1038/s41586-020-03075-0"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007268",
+      "schema:name": "chemical synaptic transmission"
+    },
+    {
+      "@id": "GO:0007416",
+      "schema:name": "synapse assembly"
+    },
+    {
+      "@id": "GO:0005737",
+      "schema:name": "cytoplasm"
+    },
+    {
+      "@id": "GO:0043005",
+      "schema:name": "neuron projection"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:12849",
+      "schema:name": "mild cognitive impairment"
+    },
+    {
+      "@id": "DOID:0050741",
+      "schema:name": "cerebral amyloidosis"
+    },
+    {
+      "@id": "CHEBI:1838",
+      "schema:name": "tau protein"
+    },
+    {
+      "@id": "CHEBI:18357",
+      "schema:name": "amyloid beta"
+    },
+    {
+      "@id": "CHEBI:18420",
+      "schema:name": "biomarker"
+    },
+    {
+      "@id": "ATC:N06DA04",
+      "schema:name": "Donepezil"
+    },
+    {
+      "@id": "ATC:N07DA02",
+      "schema:name": "Rivastigmine"
+    },
+    {
+      "@id": "MONDO:0020121",
+      "schema:name": "Alzheimer's disease with early onset"
+    },
+    {
+      "@id": "MONDO:0100096",
+      "schema:name": "tauopathy"
+    },
+    {
+      "@id": "MONDO:0005148",
+      "schema:name": "cognitive impairment"
+    },
+    {
+      "@id": "PW:0000826",
+      "schema:name": "tau protein binding pathway"
+    },
+    {
+      "@id": "PW:0000827",
+      "schema:name": "amyloid beta formation pathway"
+    },
+    {
+      "@id": "PW:0000828",
+      "schema:name": "neuroinflammation pathway"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "genetic association evidence"
+    },
+    {
+      "@id": "ECO:0000305",
+      "schema:name": "immunoassay evidence"
+    },
+    {
+      "@id": "ECO:0005542",
+      "schema:name": "biomarker quantification evidence"
+    },
+    {
+      "@id": "MESH:D008875",
+      "schema:name": "Neurodegenerative Diseases"
+    },
+    {
+      "@id": "MESH:D020231",
+      "schema:name": "Biomarkers"
+    },
+    {
+      "@id": "MESH:D001249",
+      "schema:name": "Apolipoproteins E"
+    },
+    {
+      "@id": "BIBO:Document",
+      "schema:name": "research article"
+    },
+    {
+      "@id": "CITO:0000179",
+      "schema:name": "cites as evidence"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

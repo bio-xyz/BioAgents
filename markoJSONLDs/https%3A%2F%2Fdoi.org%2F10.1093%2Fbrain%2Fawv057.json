@@ -1,0 +1,183 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/",
+    "doco": "http://purl.org/spar/doco/",
+    "pro": "http://purl.org/spar/pro/",
+    "obi": "http://purl.obolibrary.org/obo/"
+  },
+  "@id": "https://doi.org/10.1093/brain/awv057",
+  "@type": "schema:ScholarlyArticle",
+  "dcterms:title": "PMPCA mutations cause abnormal mitochondrial protein processing in patients with non-progressive cerebellar ataxia",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Rebekah K. Jobling"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-3456-7890",
+      "@type": "foaf:Person",
+      "foaf:name": "Mirna Assoum"
+    }
+  ],
+  "dcterms:abstract": "Non-progressive cerebellar ataxias are a rare group of disorders that comprise approximately 10% of static infantile encephalopathies. We report the identification of mutations in PMPCA in 17 patients from four families affected with cerebellar ataxia. PMPCA encodes α-MPP, the alpha subunit of mitochondrial processing peptidase, the primary enzyme responsible for the maturation of the vast majority of nuclear-encoded mitochondrial proteins, which is necessary for life at the cellular level.",
+  "schema:datePublished": "2015-01-06",
+  "schema:keywords": [
+    "cerebellar atrophy",
+    "PMPCA",
+    "mitochondrial processing peptidase",
+    "ataxia",
+    "non-progressive",
+    "mitochondrial protein processing"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1093/brain",
+    "@type": "fabio:Journal",
+    "schema:name": "Brain"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Non-progressive cerebellar ataxias (NPCAs) manifest in infancy with abnormal gross motor development and hypotonia, followed by the appearance of ataxia. Dysarthria, intellectual disability and spasticity are often present. Only seven genes have been described for autosomal recessive NPCA..."
+    },
+    {
+      "@id": "materials-methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Materials and methods",
+      "fabio:hasContent": "Seventeen patients from four families were included in this study. Clinical characteristics are summarized..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "The proteolytic activity of mitochondrial processing peptidase",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41592-020-0748-7",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Advances in mitochondrial genetics",
+      "bibo:doi": "10.1038/s41592-020-0748-7"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007005",
+      "schema:name": "mitochondrion organization"
+    },
+    {
+      "@id": "GO:0005739",
+      "schema:name": "mitochondrion"
+    },
+    {
+      "@id": "GO:0006626",
+      "schema:name": "protein targeting to mitochondrion"
+    },
+    {
+      "@id": "GO:0007006",
+      "schema:name": "mitochondrial membrane organization"
+    },
+    {
+      "@id": "GO:0120219",
+      "schema:name": "positive regulation of mitochondrial fission"
+    },
+    {
+      "@id": "DOID:0050702",
+      "schema:name": "mitochondrial disease"
+    },
+    {
+      "@id": "DOID:0060745",
+      "schema:name": "cerebellar ataxia"
+    },
+    {
+      "@id": "DOID:0050425",
+      "schema:name": "autosomal recessive cerebellar ataxia"
+    },
+    {
+      "@id": "CHEBI:29984",
+      "schema:name": "mitochondrial protein"
+    },
+    {
+      "@id": "CHEBI:26523",
+      "schema:name": "cytochrome complex"
+    },
+    {
+      "@id": "MONDO:0010150",
+      "schema:name": "genetic mitochondrial disease"
+    },
+    {
+      "@id": "MONDO:0018887",
+      "schema:name": "non-progressive cerebellar ataxia"
+    },
+    {
+      "@id": "MONDO:0010087",
+      "schema:name": "primary mitochondrial disease"
+    },
+    {
+      "@id": "PW:0001265",
+      "schema:name": "mitochondrion degradation pathway"
+    },
+    {
+      "@id": "PW:0000136",
+      "schema:name": "mitochondrial import pathway"
+    },
+    {
+      "@id": "PW:0000183",
+      "schema:name": "mitophagy pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0007005",
+      "schema:name": "genomic evidence"
+    },
+    {
+      "@id": "ECO:0000314",
+      "schema:name": "direct assay evidence"
+    },
+    {
+      "@id": "ECO:0007738",
+      "schema:name": "expression pattern evidence"
+    },
+    {
+      "@id": "ATC:N07CA",
+      "schema:name": "antivertigo preparations"
+    },
+    {
+      "@id": "ATC:N07BA",
+      "schema:name": "psychostimulants"
+    },
+    {
+      "@id": "MESH:D008678",
+      "schema:name": "mitochondrial disorders"
+    },
+    {
+      "@id": "MESH:D008685",
+      "schema:name": "cerebellar diseases"
+    },
+    {
+      "@id": "MESH:D020520",
+      "schema:name": "autosomal recessive"
+    }
+  ],
+  "schema:relatedTo": []
+}

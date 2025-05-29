@@ -1,0 +1,204 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1073/pnas.2213157119",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "SOBA: Development and testing of a soluble oligomer binding assay for detection of amyloidogenic toxic oligomers",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Dinan Shao"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Elizabeth Coulson"
+    },
+    {
+      "@id": "https://orcid.org/0000-0004-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Alec Smith"
+    }
+  ],
+  "dcterms:abstract": "The formation of toxic Amyloid β-peptide (Aβ) oligomers is one of the earliest events in the molecular pathology of Alzheimer’s Disease (AD). These oligomers lead to a variety of downstream effects, including impaired neuronal signaling, neuroinflammation, tau phosphorylation, and neurodegeneration. Here we show that a designed α-sheet peptide neutralizes the toxic effect of Aβ oligomers and serves as a capture agent in our soluble oligomer binding assay (SOBA).",
+  "schema:datePublished": "2022-12-09",
+  "schema:keywords": [
+    "Alzheimer’s disease",
+    "Amyloid β-peptide",
+    "Oligomers",
+    "Neurodegeneration",
+    "SOBA"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://pnas.org",
+    "@type": "fabio:Journal",
+    "schema:name": "Proceedings of the National Academy of Sciences"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The primary hope of pre-mortem AD diagnosis is through clinical evaluation of symptomatic individuals..."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "The capture peptide, AP193, for the SOBA assay and electrophysiology experiments..."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "SOBA detected Aβ oligomers in all MCI and AD patients’ samples..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A seminal study on amyloid-beta and Alzheimer's disease",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Recent advances in peptide-based Alzheimer’s assays",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007611",
+      "schema:name": "learning or memory"
+    },
+    {
+      "@id": "GO:0001536",
+      "schema:name": "amyloid fibril formation"
+    },
+    {
+      "@id": "GO:0006954",
+      "schema:name": "inflammatory response"
+    },
+    {
+      "@id": "GO:0032991",
+      "schema:name": "protein aggregation"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:14330",
+      "schema:name": "dementia"
+    },
+    {
+      "@id": "DOID:1686",
+      "schema:name": "amyloidosis"
+    },
+    {
+      "@id": "CHEBI:59589",
+      "schema:name": "amyloid-beta"
+    },
+    {
+      "@id": "CHEBI:16414",
+      "schema:name": "protein"
+    },
+    {
+      "@id": "CHEBI:2679",
+      "schema:name": "antibody"
+    },
+    {
+      "@id": "ATC:N06D",
+      "schema:name": "Anti-dementia drugs"
+    },
+    {
+      "@id": "ATC:N01AX",
+      "schema:name": "Other general anesthetics"
+    },
+    {
+      "@id": "MONDO:0004976",
+      "schema:name": "Lewy body dementia"
+    },
+    {
+      "@id": "MONDO:0018874",
+      "schema:name": "cognitive impairment"
+    },
+    {
+      "@id": "PW:0000182",
+      "schema:name": "neuroinflammatory pathway"
+    },
+    {
+      "@id": "PW:0000013",
+      "schema:name": "apoptosis signaling pathway"
+    },
+    {
+      "@id": "ECO:0000203",
+      "schema:name": "experimental evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "assay"
+    },
+    {
+      "@id": "ECO:0000353",
+      "schema:name": "author statement"
+    },
+    {
+      "@id": "MESH:D018611",
+      "schema:name": "Alzheimer Disease"
+    },
+    {
+      "@id": "MESH:D020354",
+      "schema:name": "Neurofibrillary Tangles"
+    },
+    {
+      "@id": "MESH:D000928",
+      "schema:name": "Biomarkers"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Journal Article"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "Peer-reviewed Article"
+    },
+    {
+      "@id": "cito:cites",
+      "schema:name": "Cites as Evidences"
+    },
+    {
+      "@id": "cito:discusses",
+      "schema:name": "Discusses"
+    },
+    {
+      "@id": "fabio:ResearchArticle",
+      "schema:name": "Research Article"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

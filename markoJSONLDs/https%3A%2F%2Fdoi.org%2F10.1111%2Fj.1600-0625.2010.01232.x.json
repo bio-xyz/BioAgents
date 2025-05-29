@@ -1,0 +1,198 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1111/j.1600-0625.2010.01232.x",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Heme oxygenase-1 expression protects melanocytes from stress-induced cell death: implications for vitiligo",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/99a05bc0-0a21-4aee-a8db-34fd976c19fc",
+      "@type": "foaf:Person",
+      "foaf:name": "Yasser E. Elassiuty"
+    },
+    {
+      "@id": "https://orcid.org/99a05bc0-0a21-4aee-a8db-34fd976c19fd",
+      "@type": "foaf:Person",
+      "foaf:name": "Jared Klarquist"
+    },
+    {
+      "@id": "https://orcid.org/99a05bc0-0a21-4aee-a8db-34fd976c19fe",
+      "@type": "foaf:Person",
+      "foaf:name": "Jodi Speiser"
+    }
+  ],
+  "dcterms:abstract": "To study protection of melanocytes from stress-induced cell death by heme oxygenases during depigmentation and repigmentation in vitiligo, expression of isoforms 1 and 2 was studied in cultured control and patient melanocytes and normal skin explants exposed to UV or bleaching agent 4-TBP. Similarly, expression of heme oxygenase was followed in skin from vitiligo patients before and after PUVA treatment.",
+  "schema:datePublished": "2011-06-01",
+  "schema:keywords": ["heme oxygenase", "melanocyte", "stress", "ultraviolet"],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1111/journal.pone.0173240",
+    "@type": "fabio:Journal",
+    "schema:name": "Experimental Dermatology"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "#introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Vitiligo patients present with white skin patches because of progressive loss of melanocytes."
+    },
+    {
+      "@id": "#methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Materials and Methods",
+      "fabio:hasContent": "Biopsies were obtained from nine patients > 12 years of age with vitiligo both before and after PUVA treatment."
+    },
+    {
+      "@id": "#results",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "HO-1 expression is upregulated in skin from vitiligo patients following PUVA treatment."
+    },
+    {
+      "@id": "#discussion",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "A cytoprotective role is well established for HO-1, yet studies often describe its function without assessing HO-2."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Molecular mechanisms of vitiligo",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Role of oxidative stress in skin diseases",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0034599",
+      "schema:name": "cellular response to oxidative stress"
+    },
+    {
+      "@id": "GO:0019430",
+      "schema:name": "removal of superoxide radicals"
+    },
+    {
+      "@id": "GO:0006979",
+      "schema:name": "response to oxidative stress"
+    },
+    {
+      "@id": "DOID:2071",
+      "schema:name": "vitiligo"
+    },
+    {
+      "@id": "DOID:0060728",
+      "schema:name": "skin photodamage"
+    },
+    {
+      "@id": "CHEBI:30611",
+      "schema:name": "heme"
+    },
+    {
+      "@id": "CHEBI:17634",
+      "schema:name": "carbon monoxide"
+    },
+    {
+      "@id": "ATC:D11AX10",
+      "schema:name": "psoralen and UV-A therapy"
+    },
+    {
+      "@id": "MONDO:0021119",
+      "schema:name": "autosomal recessive vitiligo"
+    },
+    {
+      "@id": "PW:0001384",
+      "schema:name": "heme degradation pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0000001",
+      "schema:name": "inference from background scientific knowledge"
+    },
+    {
+      "@id": "MESH:D020595",
+      "schema:name": "Oxidative Stress"
+    },
+    {
+      "@id": "MESH:C565588",
+      "schema:name": "Heme Oxygenase (Decyclizing)"
+    },
+    {
+      "@id": "GO:0006804",
+      "schema:name": "oxidative-reduction process"
+    },
+    {
+      "@id": "GO:0098869",
+      "schema:name": "cellular oxidant detoxification"
+    },
+    {
+      "@id": "DOID:409",
+      "schema:name": "melanoma"
+    },
+    {
+      "@id": "CHEBI:15834",
+      "schema:name": "bilirubin"
+    },
+    {
+      "@id": "ATC:L04AA01",
+      "schema:name": "immunosuppressant"
+    },
+    {
+      "@id": "PW:0000013",
+      "schema:name": "apoptosis pathway"
+    },
+    {
+      "@id": "ECO:0000318",
+      "schema:name": "genetic interaction evidence"
+    },
+    {
+      "@id": "MESH:D060912",
+      "schema:name": "Reactive Oxygen Species"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "journal article"
+    },
+    {
+      "@id": "BIBO:Theses",
+      "schema:name": "thesis"
+    },
+    {
+      "@id": "BIBO:Conference",
+      "schema:name": "conference paper"
+    },
+    {
+      "@id": "SPAR:CiTO:usesMethodIn",
+      "schema:name": "uses method"
+    },
+    {
+      "@id": "SPAR:BiRO:references",
+      "schema:name": "cites"
+    }
+  ],
+  "schema:relatedTo": []
+}

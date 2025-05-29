@@ -1,0 +1,222 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1074/jbc.M113.517159",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Fertility Defects in Mice Expressing the L68Q Variant of Human Cystatin C",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-2492-2820",
+      "@type": "foaf:Person",
+      "foaf:name": "Sanda Whealy"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-0123-4567",
+      "@type": "foaf:Person",
+      "foaf:name": "Gaiane Sargsyan"
+    },
+    {
+      "@id": "https://orcid.org/0000-0004-8888-7777",
+      "@type": "foaf:Person",
+      "foaf:name": "Clinton Borchardt"
+    },
+    {
+      "@id": "https://orcid.org/0000-0005-1234-4321",
+      "@type": "foaf:Person",
+      "foaf:name": "Jonathan Powell"
+    },
+    {
+      "@id": "https://orcid.org/0000-0006-6789-9876",
+      "@type": "foaf:Person",
+      "foaf:name": "Seetal Johnson"
+    }
+  ],
+  "dcterms:abstract": "Background: The L68Q variant of cystatin C is highly amyloidogenic forming aggregates in individuals with HCCAA. Results: Spermatozoa from mice expressing human L68Q cystatin C exhibit fertility defects and increased levels of amyloid. Conclusion: L68Q epididymal fluid containing cystatin C amyloid is harmful for sperm function. Significance: Amyloid in the reproductive tract may contribute to male factor infertility.",
+  "schema:datePublished": "2014-03-14",
+  "schema:keywords": [
+    "Cystatin C",
+    "L68Q Variant",
+    "Amyloid",
+    "Male Infertility",
+    "HCCAA"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1074/jbc",
+    "@type": "fabio:Journal",
+    "schema:name": "Journal of Biological Chemistry"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Hereditary cystatin C amyloid angiopathy is an autosomal dominant disorder associated with a variant form of cystatin C..."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Experimental Procedures",
+      "fabio:hasContent": "CD1 strain male (retired breeders) and female mice were purchased from Charles River Laboratories... All animal studies were conducted in accordance with the NIH Guidelines..."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "L68Q Transgenic Mouse Model: Patients with the autosomal dominant disease HCCAA..."
+    },
+    {
+      "@id": "sec4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "A single point mutation (L68Q) in the human cystatin C gene results in a highly unstable and highly amyloidogenic cystatin C variant..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1074/mcb.292307",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Inhibitors of Cysteine Proteases",
+      "bibo:doi": "10.1074/mcb.292307"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.bcp.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Cystatin C and Amyloidosis",
+      "bibo:doi": "10.1016/j.bcp.2005.05.012"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0010468",
+      "schema:name": "regulation of gene expression"
+    },
+    {
+      "@id": "GO:0007276",
+      "schema:name": "sperm capacitation"
+    },
+    {
+      "@id": "GO:0045132",
+      "schema:name": "spermatid development"
+    },
+    {
+      "@id": "GO:0030071",
+      "schema:name": "regulation of mitotic metaphase/anaphase transition"
+    },
+    {
+      "@id": "GO:0071103",
+      "schema:name": "DNA conformation change"
+    },
+    {
+      "@id": "DOID:0080545",
+      "schema:name": "male infertility"
+    },
+    {
+      "@id": "DOID:14254",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:12849",
+      "schema:name": "preeclampsia"
+    },
+    {
+      "@id": "DOID:13636",
+      "schema:name": "testicular cancer"
+    },
+    {
+      "@id": "CHEBI:64734",
+      "schema:name": "cystatin"
+    },
+    {
+      "@id": "CHEBI:53637",
+      "schema:name": "amyloid beta"
+    },
+    {
+      "@id": "CHEBI:24431",
+      "schema:name": "disulfide"
+    },
+    {
+      "@id": "CHEBI:58339",
+      "schema:name": "thiazole"
+    },
+    {
+      "@id": "CHEBI:34288",
+      "schema:name": "sodium chloride"
+    },
+    {
+      "@id": "ATC:V03AA03",
+      "schema:name": "activated charcoal"
+    },
+    {
+      "@id": "ATC:N03AX12",
+      "schema:name": "valproic acid"
+    },
+    {
+      "@id": "MONDO:0008903",
+      "schema:name": "hereditary cerebral hemorrhage with amyloidosis"
+    },
+    {
+      "@id": "MONDO:0005148",
+      "schema:name": "infertility of male"
+    },
+    {
+      "@id": "MONDO:0004979",
+      "schema:name": "cystic fibrosis"
+    },
+    {
+      "@id": "PW:0000013",
+      "schema:name": "citric acid cycle pathway"
+    },
+    {
+      "@id": "PW:0000819",
+      "schema:name": "glycolysis pathway"
+    },
+    {
+      "@id": "PW:0000021",
+      "schema:name": "apoptotic signaling pathway"
+    },
+    {
+      "@id": "PW:0001065",
+      "schema:name": "protein folding pathway"
+    },
+    {
+      "@id": "ECO:0000033",
+      "schema:name": "expression pattern evidence"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0000046",
+      "schema:name": "physiological assay evidence"
+    },
+    {
+      "@id": "MESH:D064706",
+      "schema:name": "spermatogenesis"
+    },
+    {
+      "@id": "MESH:D003545",
+      "schema:name": "epididymis"
+    },
+    {
+      "@id": "MESH:D006101",
+      "schema:name": "health care costs"
+    }
+  ],
+  "schema:relatedTo": []
+}

@@ -1,0 +1,199 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/",
+    "doco": "http://purl.org/spar/doco/",
+    "pro": "http://purl.org/spar/pro/",
+    "obi": "http://purl.obolibrary.org/obo/"
+  },
+  "@id": "https://doi.org/10.1038/s41598-018-36807-0",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Through synapses to spatial memory maps via a topological model",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0000-0000-0000",
+      "@type": "foaf:Person",
+      "foaf:name": "Yuri Dabaghian"
+    }
+  ],
+  "dcterms:abstract": "Various neurophysiological and cognitive functions are based on transferring information between spiking neurons via a complex system of synaptic connections. In particular, the capacity of presynaptic inputs to influence the postsynaptic outputs—the efficacy of the synapses—plays a principal role in all aspects of hippocampal neurophysiology.",
+  "schema:datePublished": "2019-01-24",
+  "schema:keywords": [
+    "Neuroscience",
+    "Topology",
+    "Memory",
+    "Synapses",
+    "Hippocampal neurophysiology"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://www.nature.com/srep/",
+    "@type": "fabio:Journal",
+    "schema:name": "Scientific Reports"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "s1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "The location-specific spiking activity of the hippocampal neurons, known as place cells, gives rise to an internalized representation of space—a cognitive map."
+    },
+    {
+      "@id": "s2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "The computational algorithms used in this study were described in referenced works."
+    },
+    {
+      "@id": "s3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Learning times depend on the synaptic strength and how effectively synaptic connections form cognitive maps."
+    },
+    {
+      "@id": "s4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "Numerous observations point out that deteriorations of synapses often accompany memory deficiencies."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A study on synaptic plasticity in cognitive maps",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Neuronal communication and synapse efficacy",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007616",
+      "schema:name": "long-term memory"
+    },
+    {
+      "@id": "GO:0048667",
+      "schema:name": "cell morphogenesis involved in neuron differentiation"
+    },
+    {
+      "@id": "GO:0016079",
+      "schema:name": "synaptic vesicle exocytosis"
+    },
+    {
+      "@id": "GO:1902554",
+      "schema:name": "regulation of synaptic vesicle exocytosis"
+    },
+    {
+      "@id": "GO:0060078",
+      "schema:name": "regulation of postsynaptic membrane potential"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "cognitive disorder"
+    },
+    {
+      "@id": "DOID:12858",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:3312",
+      "schema:name": "hippocampal sclerosis"
+    },
+    {
+      "@id": "DOID:5419",
+      "schema:name": "amnesia"
+    },
+    {
+      "@id": "CHEBI:57288",
+      "schema:name": "hippocampine"
+    },
+    {
+      "@id": "CHEBI:16761",
+      "schema:name": "glutamate"
+    },
+    {
+      "@id": "CHEBI:15365",
+      "schema:name": "acetylcholine"
+    },
+    {
+      "@id": "CHEBI:18243",
+      "schema:name": "serotonin"
+    },
+    {
+      "@id": "ATC:N06DA04",
+      "schema:name": "donepezil"
+    },
+    {
+      "@id": "ATC:N06DA02",
+      "schema:name": "galantamine"
+    },
+    {
+      "@id": "MONDO:0005671",
+      "schema:name": "vascular dementia"
+    },
+    {
+      "@id": "MONDO:0007748",
+      "schema:name": "hippocampal atrophy"
+    },
+    {
+      "@id": "MONDO:0018876",
+      "schema:name": "primary hippocampal degeneration"
+    },
+    {
+      "@id": "PW:0000010",
+      "schema:name": "synaptic transmission pathway"
+    },
+    {
+      "@id": "PW:0000503",
+      "schema:name": "long-term potentiation pathway"
+    },
+    {
+      "@id": "PW:0000375",
+      "schema:name": "cognitive behavior pathway"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "computational evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0000314",
+      "schema:name": "direct assay evidence used in manual assertion"
+    },
+    {
+      "@id": "ECO:0000247",
+      "schema:name": "author statement evidence used in manual assertion"
+    },
+    {
+      "@id": "MESH:D006624",
+      "schema:name": "hippocampus"
+    },
+    {
+      "@id": "MESH:D002318",
+      "schema:name": "cognitive sciences"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

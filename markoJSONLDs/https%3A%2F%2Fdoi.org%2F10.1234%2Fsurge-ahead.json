@@ -1,0 +1,209 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1234/surge-ahead",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Introducing a machine learning algorithm for delirium prediction—the Supporting SURGery with Geriatric Co-Management and AI project (SURGE-Ahead)",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-1234-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Samuel Benovic"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-8765-4321",
+      "@type": "foaf:Person",
+      "foaf:name": "Anna H. Alanjadi"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-8765-1234",
+      "@type": "foaf:Person",
+      "foaf:name": "Christoph Lienert"
+    }
+  ],
+  "dcterms:abstract": "In this study, we introduce an AI model for predicting post-operative delirium (POD) in older patients. The model, developed using the PAWEL dataset, involves machine learning techniques for prognosis based on relevant clinical features.",
+  "schema:datePublished": "2023-10-19",
+  "schema:keywords": [
+    "delirium prediction",
+    "machine learning",
+    "support vector machine",
+    "post-operative delirium",
+    "explainable artificial intelligence (AI)",
+    "older people"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.xxxx/ageandageing",
+    "@type": "fabio:Journal",
+    "schema:name": "Age and Ageing"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Post-operative delirium is a common complication among elderly surgical patients. This section provides background on the prevalence and impact of POD."
+    },
+    {
+      "@id": "methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "The model was trained on data from the PAWEL study, using logistic regression and support vector machines to derive predictions from clinical data."
+    },
+    {
+      "@id": "results",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Our model achieved an ROC AUC of 0.82 in training and 0.81 in testing, demonstrating robust predictive performance."
+    },
+    {
+      "@id": "discussion",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "The study discusses the implications of using machine learning in pre-surgical assessments and the potential for reducing POD incidence."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1097/PCC.0000000000000001",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "The dilemmas of delirium: clinical and research controversies regarding diagnosis and evaluation of delirium in hospitalized medically ill older adults",
+      "bibo:doi": "10.1097/PCC.0000000000000001"
+    },
+    {
+      "@id": "https://doi.org/10.1097/MLR.0000000000000301",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Development and validation of an electronic health record-based risk assessment model for postoperative delirium",
+      "bibo:doi": "10.1097/MLR.0000000000000301"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0008152",
+      "schema:name": "metabolic process"
+    },
+    {
+      "@id": "GO:0007568",
+      "schema:name": "aging"
+    },
+    {
+      "@id": "GO:0030154",
+      "schema:name": "cell differentiation"
+    },
+    {
+      "@id": "DOID:1395",
+      "schema:name": "delirium"
+    },
+    {
+      "@id": "DOID:12858",
+      "schema:name": "cognitive disorder"
+    },
+    {
+      "@id": "MONDO:0005148",
+      "schema:name": "postoperative delirium"
+    },
+    {
+      "@id": "MONDO:0002025",
+      "schema:name": "dementia"
+    },
+    {
+      "@id": "CHEBI:26216",
+      "schema:name": "benzodiazepine"
+    },
+    {
+      "@id": "CHEBI:8068",
+      "schema:name": "propofol"
+    },
+    {
+      "@id": "ATC:N05BA01",
+      "schema:name": "diazepam"
+    },
+    {
+      "@id": "ATC:N01AX10",
+      "schema:name": "propofol"
+    },
+    {
+      "@id": "PW:0000818",
+      "schema:name": "neuroinflammatory response pathway"
+    },
+    {
+      "@id": "PW:0000083",
+      "schema:name": "stress response pathway"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "computational evidence"
+    },
+    {
+      "@id": "ECO:0000205",
+      "schema:name": "machine learning evidence"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "academic article"
+    },
+    {
+      "@id": "BIBO:Thesis",
+      "schema:name": "thesis"
+    },
+    {
+      "@id": "SPAR:FaBiO_00000024",
+      "schema:name": "journal article"
+    },
+    {
+      "@id": "SPAR:BiRO_0000024",
+      "schema:name": "reference list"
+    },
+    {
+      "@id": "SPAR:CiTO_000027",
+      "schema:name": "supports"
+    },
+    {
+      "@id": "MESH:D012559",
+      "schema:name": "postoperative complications"
+    },
+    {
+      "@id": "MESH:D003704",
+      "schema:name": "cognition disorders"
+    },
+    {
+      "@id": "MESH:D003346",
+      "schema:name": "cardiopulmonary bypass"
+    },
+    {
+      "@id": "MESH:D009333",
+      "schema:name": "machine learning"
+    },
+    {
+      "@id": "GO:0042593",
+      "schema:name": "glucose homeostasis"
+    },
+    {
+      "@id": "GO:0001876",
+      "schema:name": "cytokine production"
+    },
+    {
+      "@id": "DOID:12365",
+      "schema:name": "vascular dementia"
+    },
+    {
+      "@id": "CHEBI:3542",
+      "schema:name": "paracetamol"
+    }
+  ],
+  "schema:relatedTo": []
+}

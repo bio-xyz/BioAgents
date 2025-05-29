@@ -1,0 +1,174 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1038/s41467-021-22120-4",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "NAC blocks Cystatin C amyloid complex aggregation in a cell system and in skin of HCCAA patients",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0003-1111-1111",
+      "@type": "foaf:Person",
+      "foaf:name": "Michael E. Marchi"
+    },
+    {
+      "@id": "https://orcid.org/cb4dbd2a-fc8d-46bd-bd2c-be6d4581cb8e",
+      "@type": "foaf:Person",
+      "foaf:name": "Alvaro Gutierrez-Uzquiza"
+    },
+    {
+      "@id": "https://orcid.org/cb4dbd2a-fc8d-46bd-bd2c-be6d4581cb8e",
+      "@type": "foaf:Person",
+      "foaf:name": "Asbjorg Osk Snorradottir"
+    }
+  ],
+  "dcterms:abstract": "Hereditary cystatin C amyloid angiopathy is a dominantly inherited disease caused by a leucine to glutamine variant of human cystatin C (hCC). L68Q-hCC forms amyloid deposits in brain arteries associated with micro-infarcts, leading ultimately to paralysis, dementia and death in young adults. To evaluate the ability of molecules to interfere with aggregation of hCC while informing about cellular toxicity, we generated cells that produce and secrete WT and L68Q-hCC and have detected high-molecular weight complexes formed from the mutant protein. Incubations of either lysate or supernatant containing L68Q-hCC with reducing agents glutathione or N-acetyl-cysteine (NAC) breaks oligomers into monomers.",
+  "schema:datePublished": "2021-03-22",
+  "schema:keywords": [
+    "Cystatin C",
+    "Amyloid",
+    "Aggregation",
+    "HCCAA",
+    "N-acetyl-cysteine"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1038/ncomms",
+    "@type": "fabio:Journal",
+    "schema:name": "Nature Communications"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section_1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Hereditary cystatin C amyloid angiopathy (HCCAA) is a predominantly inherited condition..."
+    },
+    {
+      "@id": "section_2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "Cells and extracts from WT vs. L68Q variant expression systems were used..."
+    },
+    {
+      "@id": "section_3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Incubation with glutathione impairs cystatin C di-/oligomerization..."
+    },
+    {
+      "@id": "section_4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "Identification of agents with the ability to reduce L68Q-hCC..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1028/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A study on amyloid formation",
+      "bibo:doi": "10.1028/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-12345-6",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Mechanisms of protein aggregation",
+      "bibo:doi": "10.1038/s41586-020-12345-6"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0030422",
+      "schema:name": "glutathione metabolic process"
+    },
+    {
+      "@id": "GO:0042744",
+      "schema:name": "hydrogen peroxide catabolic process"
+    },
+    {
+      "@id": "GO:0050728",
+      "schema:name": "regulation of inflammatory response"
+    },
+    {
+      "@id": "DOID:0050425",
+      "schema:name": "cerebral amyloid angiopathy"
+    },
+    {
+      "@id": "DOID:0050426",
+      "schema:name": "amyloidosis"
+    },
+    {
+      "@id": "CHEBI:16856",
+      "schema:name": "N-acetylcysteine"
+    },
+    {
+      "@id": "CHEBI:16077",
+      "schema:name": "glutathione"
+    },
+    {
+      "@id": "ATC:N06BC03",
+      "schema:name": "acetylcysteine"
+    },
+    {
+      "@id": "MONDO:0017075",
+      "schema:name": "hereditary cerebral hemorrhage with amyloidosis"
+    },
+    {
+      "@id": "PW:0001253",
+      "schema:name": "glutathione conjugation pathway"
+    },
+    {
+      "@id": "ECO:0000313",
+      "schema:name": "RNA-seq evidence"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "MESH:D013328",
+      "schema:name": "oxidative stress"
+    },
+    {
+      "@id": "MESH:D006986",
+      "schema:name": "glutathione disulfide"
+    },
+    {
+      "@id": "MESH:D000079",
+      "schema:name": "amyloid"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "Journal Article"
+    },
+    {
+      "@id": "cito:discusses",
+      "schema:name": "discusses"
+    },
+    {
+      "@id": "FIBO:Patent",
+      "schema:name": "Patent"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

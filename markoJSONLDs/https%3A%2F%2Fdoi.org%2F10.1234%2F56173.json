@@ -1,0 +1,175 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1234/56173",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "PTI-00703: Review of Preclinical Findings and Potential Implications",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/21b012b6-ce5c-4b98-b0b2-03d54cad1fc7",
+      "@type": "foaf:Person",
+      "foaf:name": "John Doe"
+    },
+    {
+      "@id": "https://orcid.org/21b012b6-ce5c-4b98-b0b2-03d54cad1fc8",
+      "@type": "foaf:Person",
+      "foaf:name": "Jane Smith"
+    }
+  ],
+  "dcterms:abstract": "PTI-00703 shows promise in preclinical models for preventing and dissolving plaques and tangles, though no clinical efficacy and safety data for humans exist. Research using cat's claw, a primary component, illustrates neuroprotective benefits in animals.",
+  "schema:datePublished": "2023-09-01",
+  "schema:keywords": [
+    "PTI-00703",
+    "cat's claw",
+    "neuroprotection",
+    "plaque reduction",
+    "preclinical research"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1234/journal",
+    "@type": "fabio:Journal",
+    "schema:name": "Alzheimer's Drug Discovery Foundation Reports"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Evidence Summary",
+      "fabio:hasContent": "PTI-00703 prevents the formation and dissolution of plaques and tangles in preclinical models, with no human data available."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Neuroprotective Benefit",
+      "fabio:hasContent": "Preclinical studies demonstrate inhibition of plaque and tangle formation, reduced astrocytosis and microgliosis, and improved memory in mice."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Safety",
+      "fabio:hasContent": "No toxicity data for PTI-00703. Reported adverse effects of cat's claw include gastritis, headache, vomiting, and dizziness, similar to placebo rates."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Inhibition of Aβ Aggregation by PTI-00703 Components",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1016/j.jalz.2016.06.3725",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "The Role of Proanthocyanidins in Neuroprotection",
+      "bibo:doi": "10.1016/j.jalz.2016.06.3725"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007417",
+      "schema:name": "central nervous system development"
+    },
+    {
+      "@id": "GO:0019882",
+      "schema:name": "antigen processing and presentation"
+    },
+    {
+      "@id": "GO:0050769",
+      "schema:name": "positive regulation of neurogenesis"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:3312",
+      "schema:name": "amyloidosis"
+    },
+    {
+      "@id": "CHEBI:16908",
+      "schema:name": "catechin"
+    },
+    {
+      "@id": "CHEBI:27267",
+      "schema:name": "proanthocyanidin"
+    },
+    {
+      "@id": "CHEBI:17855",
+      "schema:name": "chlorogenic acid"
+    },
+    {
+      "@id": "ATC:N06DX01",
+      "schema:name": "memantine"
+    },
+    {
+      "@id": "MONDO:0004979",
+      "schema:name": "mild cognitive impairment"
+    },
+    {
+      "@id": "MONDO:0011281",
+      "schema:name": "frontotemporal dementia"
+    },
+    {
+      "@id": "PW:0000284",
+      "schema:name": "neuroinflammatory pathway"
+    },
+    {
+      "@id": "PW:0001592",
+      "schema:name": "amyloid-beta formation pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0005543",
+      "schema:name": "competitive inhibition evidence"
+    },
+    {
+      "@id": "MESH:D059348",
+      "schema:name": "Uncaria"
+    },
+    {
+      "@id": "MESH:D016577",
+      "schema:name": "Flavonoids"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "Academic Article"
+    },
+    {
+      "@id": "cito:cites",
+      "schema:name": "cites"
+    },
+    {
+      "@id": "biro:Reference",
+      "schema:name": "Reference"
+    },
+    {
+      "@id": "fabio:ResearchArticle",
+      "schema:name": "Research Article"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

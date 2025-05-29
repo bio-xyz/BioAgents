@@ -1,0 +1,193 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1234/12169",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "P110: A Peptide Targeting Mitochondrial Dysfunction in Neurodegenerative Diseases",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/e8cee0d4-2a80-4740-8c49-e05781f1a83d",
+      "@type": "foaf:Person",
+      "foaf:name": "Research Team"
+    }
+  ],
+  "dcterms:abstract": "P110 is a therapeutic peptide targeting mitochondrial dysfunction by inhibiting pathological mitochondrial fragmentation. It has shown neuroprotective benefits in preclinical models through restoring mitochondrial homeostasis.",
+  "schema:datePublished": "2019-10-08",
+  "schema:keywords": [
+    "mitochondrial dysfunction",
+    "neurodegeneration",
+    "P110 peptide",
+    "Drp1",
+    "Alzheimer's disease",
+    "Huntington's disease"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://alzdiscovery.org",
+    "@type": "fabio:Journal",
+    "schema:name": "Cognitive Vitality Reports"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "section1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Evidence Summary",
+      "fabio:hasContent": "Restores mitochondrial homeostasis in preclinical models by inhibiting pathological mitochondrial fragmentation."
+    },
+    {
+      "@id": "section2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Neuroprotective Benefit",
+      "fabio:hasContent": "P110 restores mitochondrial function, improves autophagic flux, and reduces neuroinflammation in preclinical models."
+    },
+    {
+      "@id": "section3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Aging and Related Health Concerns",
+      "fabio:hasContent": "Excessive mitochondrial fragmentation is associated with cardiovascular disease and diabetes. P110 could improve mitochondrial homeostasis."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A novel Drp1 inhibitor diminishes aberrant mitochondrial fission and neurotoxicity.",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1093/hmg/ddt301",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Inhibition of mitochondrial fragmentation diminishes Huntington's disease-associated neurodegeneration.",
+      "bibo:doi": "10.1093/hmg/ddt301"
+    },
+    {
+      "@id": "https://doi.org/10.1002/mds.25695",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Potential biomarkers to follow the progression and treatment response of Huntington’s disease.",
+      "bibo:doi": "10.1002/mds.25695"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007005",
+      "schema:name": "mitochondrion organization"
+    },
+    {
+      "@id": "GO:0006399",
+      "schema:name": "tRNA metabolic process"
+    },
+    {
+      "@id": "GO:0006508",
+      "schema:name": "proteolysis"
+    },
+    {
+      "@id": "GO:0006914",
+      "schema:name": "autophagy"
+    },
+    {
+      "@id": "GO:0007346",
+      "schema:name": "regulation of mitochondrial fission"
+    },
+    {
+      "@id": "DOID:14330",
+      "schema:name": "Alzheimer's disease"
+    },
+    {
+      "@id": "DOID:12858",
+      "schema:name": "Parkinson's disease"
+    },
+    {
+      "@id": "DOID:10652",
+      "schema:name": "Huntington's disease"
+    },
+    {
+      "@id": "DOID:9364",
+      "schema:name": "amyotrophic lateral sclerosis"
+    },
+    {
+      "@id": "CHEBI:16991",
+      "schema:name": "adenosine triphosphate"
+    },
+    {
+      "@id": "CHEBI:48266",
+      "schema:name": "reactive oxygen species"
+    },
+    {
+      "@id": "CHEBI:16474",
+      "schema:name": "hydrogen peroxide"
+    },
+    {
+      "@id": "CHEBI:52495",
+      "schema:name": "lipopolysaccharide"
+    },
+    {
+      "@id": "ATC:N06DX01",
+      "schema:name": "memantine"
+    },
+    {
+      "@id": "ATC:N06DA02",
+      "schema:name": "donepezil"
+    },
+    {
+      "@id": "MONDO:0005264",
+      "schema:name": "mitochondrial neurogastrointestinal encephalomyopathy"
+    },
+    {
+      "@id": "PW:0000025",
+      "schema:name": "mitochondrial biogenesis pathway"
+    },
+    {
+      "@id": "PW:0000179",
+      "schema:name": "oxidative phosphorylation pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0000318",
+      "schema:name": "genetic interaction evidence"
+    },
+    {
+      "@id": "MESH:D010051",
+      "schema:name": "Mitochondria"
+    },
+    {
+      "@id": "MESH:D008400",
+      "schema:name": "Neurodegenerative Diseases"
+    },
+    {
+      "@id": "MESH:D001921",
+      "schema:name": "Autophagy"
+    },
+    {
+      "@id": "MESH:D012044",
+      "schema:name": "Reactive Oxygen Species"
+    },
+    {
+      "@id": "MESH:D020492",
+      "schema:name": "Mitochondrial Dynamics"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

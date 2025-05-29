@@ -1,0 +1,179 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1093/brain/aww057",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "PMPCA mutations cause abnormal mitochondrial protein processing in patients with non-progressive cerebellar ataxia",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-1825-0097",
+      "@type": "foaf:Person",
+      "foaf:name": "Rebekah K. Jobling"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-2001-2277",
+      "@type": "foaf:Person",
+      "foaf:name": "Mirna Assoum"
+    }
+  ],
+  "dcterms:abstract": "Non-progressive cerebellar ataxias are disorders causing static encephalopathy. The paper reports mutations in PMPCA in 17 patients which lead to abnormal mitochondrial protein processing. These mutations are linked with cerebellar ataxia resembling Friedreich ataxia due to impacts on the function of mitochondrial processing peptidase.",
+  "schema:datePublished": "2015-01-01",
+  "schema:keywords": [
+    "cerebellar ataxia",
+    "PMPCA",
+    "mitochondrial processing peptidase",
+    "non-progressive",
+    "mitochondrial protein processing"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1093/brain",
+    "@type": "fabio:Journal",
+    "schema:name": "Brain"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "#introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Non-progressive cerebellar ataxias are a rare group of disorders that comprise approximately 10% of static infantile encephalopathy. The report on mutations in PMPCA is key for understanding these conditions."
+    },
+    {
+      "@id": "#methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Materials and Methods",
+      "fabio:hasContent": "Seventeen patients from four families were included in this study involving clinical and genetic analysis."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Mitochondrial protein import: A carboxyl-terminal processing event required for function",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-03154-4",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Recessive mutations in mitochondrial peptidyl prolyl isomerase reveal its role in neurodegeneration",
+      "bibo:doi": "10.1038/s41586-020-03154-4"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0006096",
+      "schema:name": "glycolytic process"
+    },
+    {
+      "@id": "GO:0005759",
+      "schema:name": "mitochondrial matrix"
+    },
+    {
+      "@id": "GO:0006457",
+      "schema:name": "protein folding"
+    },
+    {
+      "@id": "DOID:0050955",
+      "schema:name": "spinocerebellar ataxia"
+    },
+    {
+      "@id": "DOID:1488",
+      "schema:name": "Friedreich ataxia"
+    },
+    {
+      "@id": "CHEBI:15379",
+      "schema:name": "glutathione"
+    },
+    {
+      "@id": "CHEBI:30616",
+      "schema:name": "lactic acid"
+    },
+    {
+      "@id": "PW:0000221",
+      "schema:name": "tricarboxylic acid cycle pathway"
+    },
+    {
+      "@id": "PW:0000060",
+      "schema:name": "electron transport chain"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0000353",
+      "schema:name": "disease-associated evidence"
+    },
+    {
+      "@id": "MONDO:0018890",
+      "schema:name": "non-progressive cerebellar ataxia"
+    },
+    {
+      "@id": "MONDO:0007905",
+      "schema:name": "Arabia cerebellar ataxia"
+    },
+    {
+      "@id": "MESH:D002563",
+      "schema:name": "Cerebellar Ataxia"
+    },
+    {
+      "@id": "MESH:D019587",
+      "schema:name": "Mitochondrial Diseases"
+    },
+    {
+      "@id": "BIBO:Quote",
+      "schema:name": "Quote"
+    },
+    {
+      "@id": "BIBO:AcademicArticle",
+      "schema:name": "Academic Article"
+    },
+    {
+      "@id": "CITO:usesMethodIn",
+      "schema:name": "uses method in"
+    },
+    {
+      "@id": "CITO:citesAsSourceDocument",
+      "schema:name": "cites as source document"
+    },
+    {
+      "@id": "CHEBI:80330",
+      "schema:name": "succinate"
+    },
+    {
+      "@id": "CHEBI:16412",
+      "schema:name": "malate"
+    },
+    {
+      "@id": "GO:0046872",
+      "schema:name": "metal ion binding"
+    },
+    {
+      "@id": "GO:0007005",
+      "schema:name": "mitochondrion organization"
+    },
+    {
+      "@id": "ECO:0000316",
+      "schema:name": "genetic interaction evidence"
+    },
+    {
+      "@id": "PW:0000002",
+      "schema:name": "glycolysis"
+    }
+  ],
+  "schema:relatedTo": []
+}

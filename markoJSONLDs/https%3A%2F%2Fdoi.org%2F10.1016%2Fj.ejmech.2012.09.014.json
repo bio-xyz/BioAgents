@@ -1,0 +1,196 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/",
+    "doco": "http://purl.org/spar/doco/",
+    "pro": "http://purl.org/spar/pro/",
+    "obi": "http://purl.obolibrary.org/obo/"
+  },
+  "@id": "https://doi.org/10.1016/j.ejmech.2012.09.014",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Synthesis and biological evaluation of new piplartine analogues as potent aldose reductase inhibitors (ARIs)",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Vidadala Ramasubba Rao"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Puppala Muntha"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Guddeti Shankaraiah"
+    }
+  ],
+  "dcterms:abstract": "As a continuation of our efforts directed towards the development of anti-diabetic agents from natural sources, piplartine was isolated from Piper chaba, and was found to inhibit recombinant human ALR2 with an IC50 of 160 μM. To improve the efficacy, a series of analogues have been synthesized by modification of the styryl/aromatic and heterocyclic ring functionalities of this natural product lead. All the derivatives were tested for their ALR2 inhibitory activity, and results indicated that adducts 3e, 3c and 2j prepared by the Michael addition of piplartine with indole derivatives displayed potent ARI activity, while the other compounds displayed varying degrees of inhibition. The active compounds were also capable of preventing sorbitol accumulation in human red blood cells.",
+  "schema:datePublished": "2012-11-30",
+  "schema:keywords": [
+    "Piper chaba",
+    "Piplartine",
+    "Chemical modification",
+    "Aldose reductase inhibition",
+    "Michael addition",
+    "Baylis-Hillman reaction"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1016/j.ejmech",
+    "@type": "fabio:Journal",
+    "schema:name": "European Journal of Medicinal Chemistry"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "#introduction",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "According to the latest WHO estimates, approximately 200 million people worldwide are suffering from diabetes. Aldose reductase (ALR2) is the rate-limiting enzyme of the polyol pathway and reduces excess glucose to sorbitol."
+    },
+    {
+      "@id": "#chemistry",
+      "@type": "fabio:Section",
+      "dcterms:title": "Chemistry",
+      "fabio:hasContent": "In view of the fact that the imide functionality is essential for ARI activity, we focused on the synthesis of new analogues by exploiting the other functional moieties."
+    },
+    {
+      "@id": "#biological-activity",
+      "@type": "fabio:Section",
+      "dcterms:title": "Biological activity",
+      "fabio:hasContent": "The major objective of this program has been to identify highly potent, and efficacious ALR2 inhibitors for treatment of chronic diabetic complications."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A Novel Role for Aldose Reductase in Mediating Diabetic Complications",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "New Insights into Aldose Reductase Inhibition and Diabetes",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0004022",
+      "schema:name": "alditol:NADP+ 1-oxidoreductase activity"
+    },
+    {
+      "@id": "GO:0030266",
+      "schema:name": "lung alveolar epithelium development"
+    },
+    {
+      "@id": "GO:0052636",
+      "schema:name": "drug catabolic process"
+    },
+    {
+      "@id": "DOID:11715",
+      "schema:name": "diabetes mellitus"
+    },
+    {
+      "@id": "DOID:9352",
+      "schema:name": "diabetic retinopathy"
+    },
+    {
+      "@id": "CHEBI:8065",
+      "schema:name": "piplartine"
+    },
+    {
+      "@id": "CHEBI:25636",
+      "schema:name": "indole"
+    },
+    {
+      "@id": "CHEBI:35517",
+      "schema:name": "iodine"
+    },
+    {
+      "@id": "ATC:A10BX03",
+      "schema:name": "acarbose"
+    },
+    {
+      "@id": "MONDO:0005147",
+      "schema:name": "type 2 diabetes mellitus"
+    },
+    {
+      "@id": "MONDO:0010242",
+      "schema:name": "diabetic kidney disease"
+    },
+    {
+      "@id": "PW:0000037",
+      "schema:name": "glucose metabolic pathway"
+    },
+    {
+      "@id": "PW:0000136",
+      "schema:name": "polyol pathway"
+    },
+    {
+      "@id": "ECO:0000205",
+      "schema:name": "negative genetic interaction evidence"
+    },
+    {
+      "@id": "ECO:0000218",
+      "schema:name": "interaction evidence used in manual assertion"
+    },
+    {
+      "@id": "MESH:D007563",
+      "schema:name": "Indoles"
+    },
+    {
+      "@id": "MESH:D010735",
+      "schema:name": "Piper nigrum"
+    },
+    {
+      "@id": "MESH:D000067954",
+      "schema:name": "Sodium Iodide"
+    },
+    {
+      "@id": "BIBO:Article",
+      "schema:name": "scholarly article"
+    },
+    {
+      "@id": "BIBO:Patent",
+      "schema:name": "patent"
+    },
+    {
+      "@id": "cito:discusses",
+      "schema:name": "cites as evidence"
+    },
+    {
+      "@id": "cito:confirms",
+      "schema:name": "confirms"
+    },
+    {
+      "@id": "biro:Thesis",
+      "schema:name": "thesis"
+    },
+    {
+      "@id": "fabo:Journal",
+      "schema:name": "journal"
+    }
+  ],
+  "schema:relatedTo": [
+    {
+      "@id": "did:dkg:base:84532/0xd5550173b0f7b8766ab2770e4ba86caf714a5af5/101963",
+      "@type": "schema:Organization",
+      "schema:name": "Cerebrum DAO"
+    }
+  ]
+}

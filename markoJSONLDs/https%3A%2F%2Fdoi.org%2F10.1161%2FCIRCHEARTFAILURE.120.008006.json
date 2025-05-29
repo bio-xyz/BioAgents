@@ -1,0 +1,161 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1161/CIRCHEARTFAILURE.120.008006",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Tubulin Detyrosination: An Emerging Therapeutic Target in Hypertrophic Cardiomyopathy",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-0000-0001",
+      "@type": "foaf:Person",
+      "foaf:name": "Kenneth B. Margulies"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-0000-0002",
+      "@type": "foaf:Person",
+      "foaf:name": "Benjamin L. Prosser"
+    }
+  ],
+  "dcterms:abstract": "Since the first reported series of patients with 'cardiac hypertrophy of unknown cause' in 1944, insights into the primary pathogenesis and secondary consequences of hypertrophic cardiomyopathy (HCM) have advanced considerably...",
+  "schema:datePublished": "2021-01-01",
+  "schema:keywords": [
+    "editorials",
+    "cytoskeletal dynamics",
+    "hypertrophic cardiomyopathy"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1161/CIRCHEARTFAILURE",
+    "@type": "fabio:Journal",
+    "schema:name": "Circulation: Heart Failure"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "Since the first reported series of patients with 'cardiac hypertrophy of unknown cause' in 1944..."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Research Findings",
+      "fabio:hasContent": "Notable exceptions were abnormalities in cytoskeletal proteins, particularly the abundance of detyrosinated α-tubulin..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/s0002-8703(43)91039-2",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Cardiac hypertrophy of unknown cause",
+      "bibo:doi": "10.1016/s0002-8703(43)91039-2"
+    },
+    {
+      "@id": "https://doi.org/10.1038/srep22133",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Suppression of detyrosinated microtubules improves cardiomyocyte function",
+      "bibo:doi": "10.1038/srep22133"
+    }
+  ],
+  "schema:about": [
+    {
+      "@id": "GO:0007020",
+      "schema:name": "microtubule nucleation"
+    },
+    {
+      "@id": "GO:0048479",
+      "schema:name": "sarcolemma"
+    },
+    {
+      "@id": "GO:0008015",
+      "schema:name": "blood circulation"
+    },
+    {
+      "@id": "DOID:9137",
+      "schema:name": "hypertrophic cardiomyopathy"
+    },
+    {
+      "@id": "DOID:0050686",
+      "schema:name": "cardiovascular system disease"
+    },
+    {
+      "@id": "CHEBI:27283",
+      "schema:name": "parthenolide"
+    },
+    {
+      "@id": "CHEBI:48322",
+      "schema:name": "cardiotonic agent"
+    },
+    {
+      "@id": "ATC:C01EB17",
+      "schema:name": "oubain"
+    },
+    {
+      "@id": "MONDO:0001056",
+      "schema:name": "cardiac hypertrophy"
+    },
+    {
+      "@id": "MONDO:0018874",
+      "schema:name": "left ventricular outflow obstruction"
+    },
+    {
+      "@id": "PW:0000874",
+      "schema:name": "regulation of heart contraction"
+    },
+    {
+      "@id": "PW:0000005",
+      "schema:name": "beta-adrenergic receptor signaling pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "ECO:0007021",
+      "schema:name": "manual assertion used in automatic assertion generation"
+    },
+    {
+      "@id": "MESH:D006331",
+      "schema:name": "Heart Failure"
+    },
+    {
+      "@id": "MESH:D006973",
+      "schema:name": "Hypertrophy"
+    },
+    {
+      "@id": "MESH:D010392",
+      "schema:name": "Mycobacterium bovis"
+    },
+    {
+      "@id": "bibo:Document",
+      "schema:name": "scientific paper"
+    },
+    {
+      "@id": "cito:reviews",
+      "schema:name": "citation review"
+    },
+    {
+      "@id": "cito:citesAsEvidence",
+      "schema:name": "cites as evidence"
+    },
+    {
+      "@id": "fabio:ResearchArticle",
+      "schema:name": "research article"
+    }
+  ],
+  "schema:relatedTo": []
+}
