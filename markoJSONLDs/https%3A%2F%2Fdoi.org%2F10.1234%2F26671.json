@@ -1,0 +1,195 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1234/26671",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Human Tissue Engineered Blood Vessel for Adult Arterial Revascularization",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0001-2345-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Nicolas L'Heureux"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-3456-7890",
+      "@type": "foaf:Person",
+      "foaf:name": "Nathalie Dusserre"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-4567-8901",
+      "@type": "foaf:Person",
+      "foaf:name": "Gerhardt König"
+    }
+  ],
+  "dcterms:abstract": "There is a critical need for alternatives to native veins or arteries for vascular surgery. This study presents the use of human fibroblasts to construct Tissue Engineered Blood Vessels (TEBVs) for arterial bypass grafting. These vessels demonstrated mechanical properties similar to human blood vessels and were successfully integrated in animal models.",
+  "schema:datePublished": "2006-03-01",
+  "schema:keywords": [
+    "Tissue engineering",
+    "Blood vessels",
+    "Arterial revascularization",
+    "Biomaterials"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1234/nm",
+    "@type": "fabio:Journal",
+    "schema:name": "Nature Medicine"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "#methods",
+      "@type": "fabio:Section",
+      "dcterms:title": "Methods",
+      "fabio:hasContent": "Human skin fibroblasts were extracted and cultured for sheet production. The TEBV was assembled using these sheets and evaluated for strength and integration."
+    },
+    {
+      "@id": "#results",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "The TEBVs demonstrated positive healing characteristics and stability over several months in animal models."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "A foundational study on tissue-engineered blood vessels",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    },
+    {
+      "@id": "https://doi.org/10.1038/s41586-020-XXXXX",
+      "@type": "schema:ScholarlyArticle",
+      "dcterms:title": "Advanced techniques in vascular tissue engineering",
+      "bibo:doi": "10.1038/s41586-020-XXXXX"
+    }
+  ],
+  "ontologies": [
+    {
+      "@id": "GO:0062023",
+      "schema:name": "collateral sprouting"
+    },
+    {
+      "@id": "GO:0009611",
+      "schema:name": "response to wounding"
+    },
+    {
+      "@id": "GO:0008150",
+      "schema:name": "biological_process"
+    },
+    {
+      "@id": "GO:0010543",
+      "schema:name": "regulation of platelet activation"
+    },
+    {
+      "@id": "GO:0008284",
+      "schema:name": "positive regulation of cell proliferation"
+    },
+    {
+      "@id": "DOID:114",
+      "schema:name": "blood vessel disease"
+    },
+    {
+      "@id": "DOID:3312",
+      "schema:name": "peripheral vascular disease"
+    },
+    {
+      "@id": "DOID:0060333",
+      "schema:name": "inflammatory response"
+    },
+    {
+      "@id": "DOID:8453",
+      "schema:name": "vascular endothelial cell growth factor"
+    },
+    {
+      "@id": "CHEBI:24431",
+      "schema:name": "calcium"
+    },
+    {
+      "@id": "CHEBI:26078",
+      "schema:name": "sodium chloride"
+    },
+    {
+      "@id": "CHEBI:63637",
+      "schema:name": "streptomycin"
+    },
+    {
+      "@id": "ATC:B01AC06",
+      "schema:name": "acetylsalicylic acid"
+    },
+    {
+      "@id": "ATC:L04AA06",
+      "schema:name": "cyclosporine"
+    },
+    {
+      "@id": "ATC:B01AC04",
+      "schema:name": "clopidogrel"
+    },
+    {
+      "@id": "MONDO:0019391",
+      "schema:name": "atherosclerosis"
+    },
+    {
+      "@id": "MONDO:0005070",
+      "schema:name": "coronary artery disease"
+    },
+    {
+      "@id": "PW:0001685",
+      "schema:name": "vascular endothelial growth factor signaling pathway"
+    },
+    {
+      "@id": "PW:0000063",
+      "schema:name": "extracellular matrix organization"
+    },
+    {
+      "@id": "ECO:0000353",
+      "schema:name": "in vivo assay evidence"
+    },
+    {
+      "@id": "ECO:0000312",
+      "schema:name": "microscopy evidence"
+    },
+    {
+      "@id": "ECO:0000204",
+      "schema:name": "western blot evidence"
+    },
+    {
+      "@id": "MESH:D012716",
+      "schema:name": "Vascular Endothelial Growth Factors"
+    },
+    {
+      "@id": "MESH:D009369",
+      "schema:name": "Platelet Aggregation Inhibitors"
+    },
+    {
+      "@id": "MESH:D002317",
+      "schema:name": "Calcium Chloride"
+    },
+    {
+      "@id": "bibo:Document",
+      "schema:name": "scholarly article"
+    },
+    {
+      "@id": "cito:citesAsSupportingEvidence",
+      "schema:name": "cites as supporting evidence"
+    },
+    {
+      "@id": "fabio:ResearchArticle",
+      "schema:name": "research article"
+    }
+  ],
+  "schema:relatedTo": []
+}

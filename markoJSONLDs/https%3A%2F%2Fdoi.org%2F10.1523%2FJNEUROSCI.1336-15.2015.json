@@ -1,0 +1,203 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "fabio": "http://purl.org/spar/fabio/",
+    "cito": "http://purl.org/spar/cito/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "bibo": "http://purl.org/ontology/bibo/",
+    "go": "http://purl.obolibrary.org/obo/GO_",
+    "doid": "http://purl.org/obo/DOID_",
+    "chebi": "http://purl.org/obo/CHEBI_",
+    "atc": "http://purl.org/obo/ATC_",
+    "pw": "http://purl.org/obo/PW_",
+    "eco": "http://purl.org/obo/ECO_",
+    "mondo": "http://purl.org/obo/MONDO_",
+    "comptox": "https://comptox.epa.gov/",
+    "mesh": "http://id.nlm.nih.gov/mesh/"
+  },
+  "@id": "https://doi.org/10.1523/JNEUROSCI.1336-15.2015",
+  "@type": "bibo:AcademicArticle",
+  "dcterms:title": "Longitudinal Changes in Prefrontal Cortex Activation Underlie Declines in Adolescent Risk Taking",
+  "dcterms:creator": [
+    {
+      "@id": "https://orcid.org/0000-0002-0001-2345",
+      "@type": "foaf:Person",
+      "foaf:name": "Yang Qu"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-0002-3456",
+      "@type": "foaf:Person",
+      "foaf:name": "Adriana Galvan"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-0003-4567",
+      "@type": "foaf:Person",
+      "foaf:name": "Andrew J. Fuligni"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-0004-5678",
+      "@type": "foaf:Person",
+      "foaf:name": "Matthew D. Lieberman"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-0005-6789",
+      "@type": "foaf:Person",
+      "foaf:name": "Evaa H. Telzer"
+    }
+  ],
+  "dcterms:abstract": "Adolescence is a critical developmental phase during which risk-taking behaviors increase across a variety of species, raising the importance of understanding how brain changes contribute to such behaviors. Using longitudinal functional magnetic resonance imaging in human adolescents, we found that ventrolateral prefrontal cortex (VLPFC) activation decreased during an experimental risk-taking task over time, with greater declines in VLPFC associated with greater declines in self-reported risky behavior.",
+  "schema:datePublished": "2015-08-12",
+  "schema:keywords": [
+    "adolescence",
+    "MRI",
+    "prefrontal cortex",
+    "risk taking"
+  ],
+  "fabio:hasPublicationVenue": {
+    "@id": "https://doi.org/10.1523/JNEUROSCI",
+    "@type": "fabio:Journal",
+    "schema:name": "Journal of Neuroscience"
+  },
+  "fabio:hasPart": [
+    {
+      "@id": "sec1",
+      "@type": "fabio:Section",
+      "dcterms:title": "Introduction",
+      "fabio:hasContent": "In humans, rodents, and primates, adolescent youth exhibit an increase in risk-taking behavior..."
+    },
+    {
+      "@id": "sec2",
+      "@type": "fabio:Section",
+      "dcterms:title": "Materials and Methods",
+      "fabio:hasContent": "Twenty-four adolescents completed two fMRI scans, ~1.5 years apart..."
+    },
+    {
+      "@id": "sec3",
+      "@type": "fabio:Section",
+      "dcterms:title": "Results",
+      "fabio:hasContent": "Following the example of previous studies, we assessed risk-taking behavior on the BART..."
+    },
+    {
+      "@id": "sec4",
+      "@type": "fabio:Section",
+      "dcterms:title": "Discussion",
+      "fabio:hasContent": "Adolescence is a time of dramatic brain development, accompanied by changes in risk-taking behavior..."
+    }
+  ],
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.neuropsychologia.2008.10.010",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Risky behavior in adolescents: Neural development and its implications",
+      "bibo:doi": "10.1016/j.neuropsychologia.2008.10.010"
+    },
+    {
+      "@id": "https://doi.org/10.1523/JNEUROSCI.5088-08.2009",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Neural correlates of risk-taking behavior in adolescents",
+      "bibo:doi": "10.1523/JNEUROSCI.5088-08.2009"
+    },
+    {
+      "@id": "https://doi.org/10.1098/rstb.2009.0089",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Connections between brain development and adolescent risk-taking behavior",
+      "bibo:doi": "10.1098/rstb.2009.0089"
+    }
+  ],
+  "ontologies": [
+    {
+      "@id": "GO:0050890",
+      "schema:name": "cognition"
+    },
+    {
+      "@id": "GO:0007611",
+      "schema:name": "learning or memory"
+    },
+    {
+      "@id": "DOID:10608",
+      "schema:name": "adolescent behavior disorder"
+    },
+    {
+      "@id": "MONDO:0007186",
+      "schema:name": "behavioral disorder"
+    },
+    {
+      "@id": "PW:0000377",
+      "schema:name": "dopamine signaling pathway"
+    },
+    {
+      "@id": "CHEBI:18276",
+      "schema:name": "dopamine"
+    },
+    {
+      "@id": "GO:0007612",
+      "schema:name": "visual perception"
+    },
+    {
+      "@id": "GO:0048731",
+      "schema:name": "system development"
+    },
+    {
+      "@id": "DOID:11152",
+      "schema:name": "behavior disorder"
+    },
+    {
+      "@id": "MONDO:0019623",
+      "schema:name": "neurodevelopmental disorder"
+    },
+    {
+      "@id": "GO:0043005",
+      "schema:name": "neuron projection"
+    },
+    {
+      "@id": "PW:0000402",
+      "schema:name": "GABA signaling pathway"
+    },
+    {
+      "@id": "ECO:0000315",
+      "schema:name": "mutant phenotype evidence"
+    },
+    {
+      "@id": "CHEBI:25512",
+      "schema:name": "gamma-aminobutyric acid"
+    },
+    {
+      "@id": "GO:0006836",
+      "schema:name": "neurotransmitter transport"
+    },
+    {
+      "@id": "MESH:D002490",
+      "schema:name": "Cognition Disorders"
+    },
+    {
+      "@id": "GO:0008066",
+      "schema:name": "glutamate receptor activity"
+    },
+    {
+      "@id": "GO:0098772",
+      "schema:name": "molecular function regulation"
+    },
+    {
+      "@id": "GO:0043086",
+      "schema:name": "negative regulation of catalytic activity"
+    },
+    {
+      "@id": "CHEBI:26667",
+      "schema:name": "glutamate"
+    },
+    {
+      "@id": "ATC:N06BA04",
+      "schema:name": "methylphenidate"
+    },
+    {
+      "@id": "ECO:0000181",
+      "schema:name": "curated data evidence"
+    },
+    {
+      "@id": "GO:0035249",
+      "schema:name": "dopamine receptor activity"
+    }
+  ],
+  "schema:relatedTo": []
+}
