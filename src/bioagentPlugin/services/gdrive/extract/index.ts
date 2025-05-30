@@ -13,6 +13,8 @@ async function extractPaper(images: OpenAIImage[]) {
   );
   const client = Config.instructorOai;
 
+  // TODO: aside of images we could get some data from the internet or OpenAlex, like citations
+
   const { _meta, ...paper } = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -50,12 +52,15 @@ async function extractOntologies(images: OpenAIImage[]) {
         content: [...images],
       },
     ],
+    // TODO: this is incorrect, 'ontologies' doesn't belong to any ontology
     response_model: { schema: OntologiesSchema, name: "Ontologies" },
     max_retries: 3,
   });
   console.log(
     `[extractOntologies] Ontologies extraction completed successfully`
   );
+
+  // TODO: check if the ontologies match to real world examples, consider using a model with search
   return ontologies;
 }
 
@@ -69,7 +74,7 @@ export async function categorizeIntoDAOsString(abstract: string) {
     messages: [
       {
         role: "system",
-        content: categorizeIntoDAOsPrompt
+        content: categorizeIntoDAOsPrompt,
       },
       {
         role: "user",
@@ -93,7 +98,13 @@ export async function generateKa(images: OpenAIImage[]) {
   res[0]["ontologies"] = res[1]["ontologies"];
   console.log(`[generateKa] Knowledge extraction successfully completed`);
 
-  const relatedDAOsString = await categorizeIntoDAOsString([res[0]["dcterms:abstract"], res[0]["dcterms:title"], JSON.stringify(res[0]["schema:keywords"])].join("\n"));
+  const relatedDAOsString = await categorizeIntoDAOsString(
+    [
+      res[0]["dcterms:abstract"],
+      res[0]["dcterms:title"],
+      JSON.stringify(res[0]["schema:keywords"]),
+    ].join("\n")
+  );
 
   console.log(`[generateKa] Related DAOs: ${relatedDAOsString}`);
 
