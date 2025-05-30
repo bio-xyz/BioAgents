@@ -48,12 +48,7 @@
   ],
   "dcterms:abstract": "Adolescence is a critical developmental phase during which risk-taking behaviors increase across a variety of species, raising the importance of understanding how brain changes contribute to such behaviors. Using longitudinal functional magnetic resonance imaging in human adolescents, we found that ventrolateral prefrontal cortex (VLPFC) activation decreased during an experimental risk-taking task over time, with greater declines in VLPFC associated with greater declines in self-reported risky behavior.",
   "schema:datePublished": "2015-08-12",
-  "schema:keywords": [
-    "adolescence",
-    "MRI",
-    "prefrontal cortex",
-    "risk taking"
-  ],
+  "schema:keywords": ["adolescence", "MRI", "prefrontal cortex", "risk taking"],
   "fabio:hasPublicationVenue": {
     "@id": "https://doi.org/10.1523/JNEUROSCI",
     "@type": "fabio:Journal",
@@ -105,7 +100,7 @@
       "bibo:doi": "10.1098/rstb.2009.0089"
     }
   ],
-  "ontologies": [
+  "schema:about": [
     {
       "@id": "GO:0050890",
       "schema:name": "cognition"

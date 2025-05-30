@@ -77,7 +77,7 @@
       "bibo:doi": "10.1038/s41586-020-XXXXX"
     }
   ],
-  "ontologies": [
+  "schema:about": [
     {
       "@id": "GO:0062023",
       "schema:name": "collateral sprouting"
