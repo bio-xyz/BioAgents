@@ -32,9 +32,9 @@ export interface FileInfo {
 
 async function calculateMD5(filePath: string): Promise<string> {
   const fileBuffer = await fs.readFile(filePath);
-  const hashSum = crypto.createHash('md5');
+  const hashSum = crypto.createHash("md5");
   hashSum.update(fileBuffer);
-  return hashSum.digest('hex');
+  return hashSum.digest("hex");
 }
 
 export async function downloadFile(
@@ -100,8 +100,8 @@ async function getFilesInfo(): Promise<FileInfo[]> {
     const files = await fs.readdir(paperFolder);
     const fileInfos: FileInfo[] = await Promise.all(
       files
-        .filter(file => file.toLowerCase().endsWith('.pdf'))
-        .map(async file => {
+        .filter((file) => file.toLowerCase().endsWith(".pdf"))
+        .map(async (file) => {
           const filePath = path.join(paperFolder, file);
           const stats = await fs.stat(filePath);
           const md5Checksum = await calculateMD5(filePath);
@@ -109,7 +109,7 @@ async function getFilesInfo(): Promise<FileInfo[]> {
             id: filePath,
             name: file,
             md5Checksum,
-            size: stats.size
+            size: stats.size,
           };
         })
     );
@@ -125,7 +125,7 @@ export async function watchFolderChanges(runtime: IAgentRuntime) {
         : `local folder: ${process.env.PAPER_FOLDER}`
     } for changes`
   );
-  
+
   DkgClient = new DKG({
     environment: runtime.getSetting("DKG_ENVIRONMENT"),
     endpoint: runtime.getSetting("DKG_HOSTNAME"),
@@ -140,9 +140,9 @@ export async function watchFolderChanges(runtime: IAgentRuntime) {
     contentType: "all",
     nodeApiVersion: "/v1",
   });
-  
+
   let knownHashes = new Set<string>();
-  
+
   // Load existing processed file hashes from database
   let response = await db
     .select({ hash: fileMetadataTable.hash })
@@ -184,11 +184,29 @@ export async function watchFolderChanges(runtime: IAgentRuntime) {
     } else {
       logger.info("Successfully stored JSON-LD to Oxigraph");
 
+      // Optionally store JSON in configured output folder if env var is present
+      if (process.env.JSONLD_OUTPUT_FOLDER) {
+        const outputDir = path.resolve(
+          process.cwd(),
+          process.env.JSONLD_OUTPUT_FOLDER
+        );
+        try {
+          await fs.access(outputDir);
+        } catch {
+          await fs.mkdir(outputDir, { recursive: true });
+        }
+        const safeId = encodeURIComponent(ka["@id"]);
+        const fileName = `${safeId}.json`;
+        const filePath = path.join(outputDir, fileName);
+
+        await fs.writeFile(filePath, JSON.stringify(ka, null, 2), "utf-8");
+        logger.info(`Saved KA JSON to ${filePath}`);
+      }
 
       // Store file metadata in database after successful processing
       await db
         .insert(fileMetadataTable)
-         // @ts-ignore
+        // @ts-ignore
         .values({
           id: file.id as string,
           hash: file.md5Checksum as string,
