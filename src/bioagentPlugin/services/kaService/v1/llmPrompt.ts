@@ -1,30 +1,30 @@
 // prompts.ts
 
 import {
-    basic_info_example_input,
-    basic_info_example_output,
-    citations_example_input,
-    citations_example_output,
-    subgraph_go_example_input,
-    subgraph_go_example_output,
-    subgraph_doid_example_input,
-    subgraph_doid_example_output,
-    subgraph_chebi_example_input,
-    subgraph_chebi_example_output,
-    subgraph_atc_example_input,
-    subgraph_atc_example_output,
-    example_basic_info,
-    example_spar_output,
-    example_go_output,
-    example_doid_output,
-    example_chebi_output,
-    gene_ontology_example_input,
-    doid_ontology_example_input,
-    chebi_ontology_example_input,
-    example_json_citations,
-    example_graph,
-    incorrect_json_example,
-    correct_json_example,
+  basic_info_example_input,
+  basic_info_example_output,
+  citations_example_input,
+  citations_example_output,
+  subgraph_go_example_input,
+  subgraph_go_example_output,
+  subgraph_doid_example_input,
+  subgraph_doid_example_output,
+  subgraph_chebi_example_input,
+  subgraph_chebi_example_output,
+  subgraph_atc_example_input,
+  subgraph_atc_example_output,
+  example_basic_info,
+  example_spar_output,
+  example_go_output,
+  example_doid_output,
+  example_chebi_output,
+  gene_ontology_example_input,
+  doid_ontology_example_input,
+  chebi_ontology_example_input,
+  example_json_citations,
+  example_graph,
+  incorrect_json_example,
+  correct_json_example,
 } from "./exampleForPrompts";
 
 /**
@@ -32,7 +32,7 @@ import {
  * from a list of GO candidates.
  */
 export function get_go_api_prompt(term: string, go_candidates): string {
-    return `
+  return `
     Given the biological context, which of the following Gene Ontology (GO) terms best matches the description for '${term}'? Please select the most appropriate GO term or indicate if none apply by replying 'None'.
 
     GO Candidates in JSON format: ${JSON.stringify(go_candidates)}
@@ -47,7 +47,7 @@ export function get_go_api_prompt(term: string, go_candidates): string {
  * from a list of DOID candidates.
  */
 export function get_doid_api_prompt(term: string, doid_candidates): string {
-    return `
+  return `
     Given the biological context, which of the following Disease Ontology (DOID) terms best matches the description for '${term}'? Please select the most appropriate DOID term or indicate if none apply by replying 'None'.
 
     DOID Candidates in JSON format: ${JSON.stringify(doid_candidates)}
@@ -62,7 +62,7 @@ export function get_doid_api_prompt(term: string, doid_candidates): string {
  * from a list of ChEBI candidates.
  */
 export function get_chebi_api_prompt(term: string, chebi_candidates): string {
-    return `
+  return `
     Given the biological context, which of the following Chemical Entities of Biological Interest (ChEBI) terms best matches the description for '${term}'? Please select the most appropriate ChEBI term or indicate if none apply by replying 'None'.
 
     ChEBI Candidates in JSON format: ${JSON.stringify(chebi_candidates)}
@@ -77,7 +77,7 @@ export function get_chebi_api_prompt(term: string, chebi_candidates): string {
  * from a list of ATC candidates.
  */
 export function get_atc_api_prompt(term: string, atc_candidates): string {
-    return `
+  return `
     Given the biological context, which of the following Anatomical Therapeutic Chemical (ATC) terms best matches the description for '${term}'? Please select the most appropriate ATC term or indicate if none apply by replying 'None'.
 
     ATC Candidates in JSON format: ${JSON.stringify(atc_candidates)}
@@ -88,11 +88,71 @@ export function get_atc_api_prompt(term: string, atc_candidates): string {
 }
 
 /**
+ * Returns a prompt for choosing the most appropriate Mondo term
+ * from a list of Mondo candidates.
+ */
+export function get_mondo_api_prompt(term: string, mondo_candidates): string {
+  return `
+      Given the biological context, which of the following Mondo Disease Ontology terms best matches the description for '${term}'? Please select the most appropriate Mondo term or indicate if none apply by replying 'None'.
+  
+      Mondo Candidates in JSON format: ${JSON.stringify(mondo_candidates)}
+  
+      You must output the Mondo candidate which is the most suitable by replying with its id (e.g. 'MONDO_0005015'). If there are no suitable candidates output 'None'.
+      MAKE SURE TO ONLY OUTPUT THE MOST SUITABLE ID OR 'None'. THE ID MUST BE IN FORMAT "MONDO_NUMBER" - USE "_" ALWAYS. DO NOT OUTPUT ANYTHING ELSE.
+      `;
+}
+
+/**
+ * Returns a prompt for choosing the most appropriate ECO term
+ * from a list of ECO candidates.
+ */
+export function get_eco_api_prompt(term: string, eco_candidates): string {
+  return `
+      Given the biological context, which of the following Evidence & Conclusion Ontology (ECO) terms best matches the description for '${term}'? Please select the most appropriate ECO term or indicate if none apply by replying 'None'.
+  
+      ECO Candidates in JSON format: ${JSON.stringify(eco_candidates)}
+  
+      You must output the ECO candidate which is the most suitable by replying with its id (e.g. 'ECO_0000006'). If there are no suitable candidates output 'None'.
+      MAKE SURE TO ONLY OUTPUT THE MOST SUITABLE ID OR 'None'. THE ID MUST BE IN FORMAT "ECO_NUMBER" - USE "_" ALWAYS. DO NOT OUTPUT ANYTHING ELSE.
+      `;
+}
+
+/**
+ * Returns a prompt for choosing the most appropriate Pathway Ontology (PW) term
+ * from a list of PW candidates.
+ */
+export function get_pw_api_prompt(term: string, pw_candidates): string {
+  return `
+      Given the biological context, which of the following Pathway Ontology (PW) terms best matches the description for '${term}'? Please select the most appropriate PW term or indicate if none apply by replying 'None'.
+  
+      PW Candidates in JSON format: ${JSON.stringify(pw_candidates)}
+  
+      You must output the PW candidate which is the most suitable by replying with its id (e.g. 'PW_0001059'). If there are no suitable candidates, output 'None'.
+      MAKE SURE TO ONLY OUTPUT THE MOST SUITABLE ID OR 'None'.
+      `;
+}
+
+/**
+ * Returns a prompt for choosing the most appropriate MeSH term
+ * from a list of MeSH candidates.
+ */
+export function get_mesh_api_prompt(term: string, mesh_candidates): string {
+  return `
+      Given the biological context, which of the following Medical Subject Headings (MeSH) terms best matches the description for '${term}'? Please select the most appropriate MeSH term or indicate if none apply by replying 'None'.
+  
+      MeSH Candidates in JSON format: ${JSON.stringify(mesh_candidates)}
+  
+      You must output the MeSH candidate which is the most suitable by replying with its id (e.g. 'D008881'). If there are no suitable candidates, output 'None'.
+      MAKE SURE TO ONLY OUTPUT THE MOST SUITABLE ID OR 'None'.
+      `;
+}
+
+/**
  * Returns a prompt for extracting basic paper info (title, authors, abstract, etc.)
  * from an array of paper JSON chunks.
  */
 export function get_prompt_basic_info(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     You are provided with chunks of a scientific paper in the form of JSON array elements, each containing parts of the paper such as potential titles, authors, and abstracts. Your task is to analyze these chunks incrementally to update and output the information listed below. If an element contains relevant information that improves upon or adds to the current data, update the respective fields; otherwise.
 
     **Task**
@@ -132,7 +192,7 @@ export function get_prompt_basic_info(paper_array): string {
  * Returns a prompt for extracting citation info from the last pages of a paper.
  */
 export function get_prompt_citations(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     Analyze the provided chunks of the final few pages of a scientific paper formatted as JSON array elements. Each element contains potential citations, likely preceded by the term 'References'.
 
     **Task**:
@@ -164,7 +224,7 @@ export function get_prompt_citations(paper_array): string {
  * Returns a prompt for extracting Gene Ontology (GO) relationships from a parsed paper.
  */
 export function get_prompt_go_subgraph(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     You are provided with a parsed scientific paper in the form of a JSON array. Analyze this array to extract relationships using Gene Ontology (GO) terms and identifiers based on the scientific analysis conducted within the paper. Utilize only the recognized relationships in the Gene Ontology, which include: "is_a", "part_of", "regulates", "positively_regulates", "negatively_regulates", "occurs_in", "capable_of", "capable_of_part_of", "has_part", "has_input", "has_output", "derives_from", and "derives_into". Each extracted relationship should be accompanied by a brief explanation that clarifies the relationship within the context of the scientific findings.
 
     Structure your response as a JSON array containing objects. Each object should have the following properties:
@@ -194,7 +254,7 @@ export function get_prompt_go_subgraph(paper_array): string {
  * using DOID (Disease Ontology).
  */
 export function get_prompt_doid_subgraph(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     You are provided with a parsed scientific paper in the form of a JSON array. Analyze this array to extract diseases and findings about them using Human Disease Ontology (DOID) terms and identifiers based on the scientific analysis conducted within the paper.
 
     Structure your response as a JSON array containing objects. Each object should have the following properties:
@@ -223,7 +283,7 @@ export function get_prompt_doid_subgraph(paper_array): string {
  * using ChEBI (Chemical Entities of Biological Interest).
  */
 export function get_prompt_chebi_subgraph(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     You are provided with a parsed scientific paper in the form of a JSON array. Analyze this array to extract chemical compounds and findings about them using Chemical Entities of Biological Interest (ChEBI) terms and identifiers based on the scientific analysis conducted within the paper.
 
     Structure your response as a JSON array containing objects. Each object should have the following properties:
@@ -252,7 +312,7 @@ export function get_prompt_chebi_subgraph(paper_array): string {
  * using the ATC (Anatomical Therapeutic Chemical) classification.
  */
 export function get_prompt_atc_subgraph(paper_array): string {
-    return `**Prompt**:
+  return `**Prompt**:
     You are provided with a parsed scientific paper in the form of a JSON array. Analyze this array to extract medications and findings about them using Anatomical Therapeutic Chemical (ATC) terms and identifiers based on the scientific analysis conducted within the paper.
 
     Structure your response as a JSON array containing objects. Each object should have the following properties:
@@ -280,7 +340,7 @@ export function get_prompt_atc_subgraph(paper_array): string {
  * Returns a prompt to transform citation info into SPAR-compliant JSON-LD.
  */
 export function get_prompt_spar_citations(citations: string): string {
-    return `
+  return `
     **Task**
     Transform the provided citation information about a scientific paper into a JSON array of citations following the format I provide you.
     One citation should be represented as one object, with an "@id" field which represents the DOI URL and "dcterms:title" field which represents the title, and only the title, author name can be removed in the "dcterms:title" field.
@@ -301,7 +361,7 @@ export function get_prompt_spar_citations(citations: string): string {
  * Returns a prompt to transform basic paper info into a SPAR/OBI-based JSON-LD.
  */
 export function get_prompt_spar_ontology(basic_info_text: string): string {
-    return `
+  return `
     ** Task: **
     Transform the provided basic information about a scientific paper into a JSON-LD object using appropriate elements from the SPAR Ontologies. The input includes key metadata such as title, authors, abstract, and other publication details. Your task is to utilize the FaBiO, CiTO, DoCO, and PRO ontologies to create a rich, semantically detailed representation of the paper.
 
@@ -353,7 +413,7 @@ export function get_prompt_spar_ontology(basic_info_text: string): string {
  * Returns a prompt to transform a GO subgraph into a JSON array using GO relationships.
  */
 export function get_prompt_go_ontology(generated_go_subgraph): string {
-    return `
+  return `
     ** Task: **
     Transform the provided basic information about a scientific paper into a JSON array using appropriate elements from the Gene Ontology (GO). The input includes Gene Ontology (GO) terms in a simple JSON format which you should transfer into an array format for an RDF graph. Your task is to utilize the GO ontology to create a rich, semantically detailed representation of terms and relationships described.
 
@@ -394,9 +454,9 @@ export function get_prompt_go_ontology(generated_go_subgraph): string {
 
     ** Actual Input JSON **
     Gene Ontology terms and relationships: ${JSON.stringify(
-        generated_go_subgraph,
-        null,
-        2
+      generated_go_subgraph,
+      null,
+      2
     )}
 
     ** Note **
@@ -410,7 +470,7 @@ export function get_prompt_go_ontology(generated_go_subgraph): string {
  * Returns a prompt to transform a DOID subgraph into a JSON array using DOID relationships.
  */
 export function get_prompt_doid_ontology(generated_doid_subgraph): string {
-    return `
+  return `
     ** Task: **
     Transform the provided basic information about a scientific paper into a JSON array using appropriate elements from the Disease Ontology (DOID). The input includes Disease Ontology (DOID) terms in a simple JSON format which you should transfer into an array format for an RDF graph. Your task is to utilize the DOID ontology to create a rich, semantically detailed representation of terms and relationships described.
 
@@ -440,9 +500,9 @@ export function get_prompt_doid_ontology(generated_doid_subgraph): string {
 
     ** Actual Input JSON **
     Disease ontology terms and relationships: ${JSON.stringify(
-        generated_doid_subgraph,
-        null,
-        2
+      generated_doid_subgraph,
+      null,
+      2
     )}
 
     ** Note **
@@ -456,7 +516,7 @@ export function get_prompt_doid_ontology(generated_doid_subgraph): string {
  * Returns a prompt to transform a ChEBI subgraph into a JSON array using ChEBI relationships.
  */
 export function get_prompt_chebi_ontology(generated_chebi_subgraph): string {
-    return `
+  return `
     ** Task: **
     Transform the provided basic information about a scientific paper into a JSON array using appropriate elements from the Chemical Entities of Biological Interest (ChEBI). The input includes ChEBI terms in a simple JSON format which you should transfer into an array format for an RDF graph. Your task is to utilize the ChEBI ontology to create a rich, semantically detailed representation of terms and relationships described.
 
@@ -486,9 +546,9 @@ export function get_prompt_chebi_ontology(generated_chebi_subgraph): string {
 
     ** Actual Input JSON **
     Disease ontology terms and relationships: ${JSON.stringify(
-        generated_chebi_subgraph,
-        null,
-        2
+      generated_chebi_subgraph,
+      null,
+      2
     )}
 
     ** Note **
@@ -503,18 +563,18 @@ export function get_prompt_chebi_ontology(generated_chebi_subgraph): string {
  * given an array of page text data.
  */
 export function get_prompt_section_page_numbers(
-    paper_array,
-    sections: string[]
+  paper_array,
+  sections: string[]
 ): string {
-    let prompt = `Given the following pages of a research paper, identify the start and stop pages for each one of the provided sections\n\n`;
+  let prompt = `Given the following pages of a research paper, identify the start and stop pages for each one of the provided sections\n\n`;
 
-    paper_array.forEach((element) => {
-        const pageNumber = element.metadata?.page_number;
-        const text = element.text;
-        prompt += `Page ${pageNumber}:\n${text}\n\n`;
-    });
+  paper_array.forEach((element) => {
+    const pageNumber = element.metadata?.page_number;
+    const text = element.text;
+    prompt += `Page ${pageNumber}:\n${text}\n\n`;
+  });
 
-    prompt += `Please provide the start and stop pages for each section in the following format:
+  prompt += `Please provide the start and stop pages for each section in the following format:
     
     ** Example input (ONLY AN EXAMPLE, DO NOT COPY DATA FROM HERE FOR ACTUAL OUTPUT)**
     Introduction, abstract
@@ -528,14 +588,14 @@ export function get_prompt_section_page_numbers(
 
     ** Your output **
     ${JSON.stringify(
-        sections.map((section) => `${section}, start, end`),
-        null,
-        2
+      sections.map((section) => `${section}, start, end`),
+      null,
+      2
     )}
 
     OUTPUT ONLY THE SECTIONS AND PAGE NUMBERS IN THE EXAMPLE FORMAT, ONLY FOR THE SECTIONS FROM THE INPUT. DO NOT CONSIDER OTHER SECTIONS OR ADD ANY OTHER COMMENTS, EXPLANATIONS ETC. 
     `;
-    return prompt;
+  return prompt;
 }
 
 /**
@@ -543,13 +603,13 @@ export function get_prompt_section_page_numbers(
  * from an RDF JSON-LD graph.
  */
 export function get_prompt_vectorization_summary(graph): string {
-    // Shallow clone of the graph
-    const graphCopy = JSON.parse(JSON.stringify(graph));
-    if (graphCopy["cito:cites"]) {
-        delete graphCopy["cito:cites"];
-    }
+  // Shallow clone of the graph
+  const graphCopy = JSON.parse(JSON.stringify(graph));
+  if (graphCopy["cito:cites"]) {
+    delete graphCopy["cito:cites"];
+  }
 
-    return `
+  return `
     ** Task: **
     Generate a comprehensive textual summary based on the provided RDF JSON-LD graph. The summary should include as much information as possible that would be useful for similarity search.
 
@@ -596,7 +656,7 @@ export function get_prompt_vectorization_summary(graph): string {
  * Returns a prompt to convert incorrectly formatted text into valid JSON.
  */
 export function get_prompt_convert_to_json(incorrect_json: string): string {
-    return `
+  return `
     ** Task: **
     Convert the following incorrectly formatted text into a valid JSON format. Ensure that any incomplete or cut-off elements are properly removed, and the resulting JSON structure is correct.
 
@@ -633,12 +693,12 @@ export function get_prompt_convert_to_json(incorrect_json: string): string {
  * based on the given RDF JSON-LD graph.
  */
 export function get_prompt_suggested_questions(graph): string {
-    const graphCopy = JSON.parse(JSON.stringify(graph));
-    if (graphCopy["cito:cites"]) {
-        delete graphCopy["cito:cites"];
-    }
+  const graphCopy = JSON.parse(JSON.stringify(graph));
+  if (graphCopy["cito:cites"]) {
+    delete graphCopy["cito:cites"];
+  }
 
-    return `
+  return `
     ** Task: **
     Generate three suggested research questions based on the provided RDF JSON-LD graph. The questions should be related to the key entities, assets, or topics in the graph and should be useful for exploring the content further.
 

@@ -44,7 +44,8 @@ Generate a rich, diverse set of ontology terms for my scientific paper JSON-LD u
 \`\`\`json
 {
   "@id": "[PREFIX]:[ID_NUMBER]",
-  "schema:name": "[OFFICIAL_LABEL]"
+  "dcterms:name": "[OFFICIAL_LABEL]",
+  "dcterms:description": "[DESCRIPTION]"
 }
 \`\`\`
 
@@ -73,8 +74,9 @@ Include terms from these ontologies (3-5 terms from each where relevant):
 
 1. **ALL terms MUST be real and verifiable** with:
    - Correct prefix format (e.g., "GO:0008150", "DOID:14330")
-   - Genuine numeric ID (never use placeholders like "xxxx")
-   - Accurate official label as "schema:name"
+   - Genuine numeric ID (never use placeholders like "xxxx") 
+   - Accurate official label as "dcterms:name"
+   - Description of what was found regarding to that term in the paper, in "dcterms:description" field
 
 2. **Prioritize terms that are:**
    - Domain-specific rather than overly general
@@ -92,18 +94,103 @@ Include terms from these ontologies (3-5 terms from each where relevant):
 4. **DO NOT use any of the example ontology terms listed below unless they are specifically relevant to my research paper topic.** Select terms that actually apply to my research:
 
 \`\`\`json
-"cito:discusses": [
-  {"@id": "GO:0006915", "schema:name": "apoptotic process"},
-  {"@id": "GO:0007154", "schema:name": "cell communication"},
-  {"@id": "DOID:14330", "schema:name": "lung cancer"},
-  {"@id": "MONDO:0005148", "schema:name": "breast cancer"},
-  {"@id": "CHEBI:15377", "schema:name": "water"},
-  {"@id": "CHEBI:27732", "schema:name": "morphine"},
-  {"@id": "ATC:N02AA01", "schema:name": "morphine"},
-  {"@id": "PW:0000013", "schema:name": "citric acid cycle pathway"},
-  {"@id": "ECO:0000006", "schema:name": "experimental evidence"},
-  {"@id": "MESH:D015179", "schema:name": "Pre-Eclampsia"}
+"schema:about": [
+  {
+    "@id": "GO:0006915",
+    "dcterms:name": "apoptotic process",
+    "dcterms:description": "The paper discusses programmed cell death mechanisms in relation to cancer development"
+  },
+  {
+    "@id": "GO:0007154", 
+    "dcterms:name": "cell communication",
+    "dcterms:description": "The research examines intercellular signaling pathways between cancer cells"
+  },
+  {
+    "@id": "DOID:14330",
+    "dcterms:name": "lung cancer", 
+    "dcterms:description": "Study includes analysis of lung cancer progression and metastasis"
+  },
+  {
+    "@id": "MONDO:0005148",
+    "dcterms:name": "breast cancer",
+    "dcterms:description": "Research compares molecular mechanisms between breast and lung cancer types"
+  },
+  {
+    "@id": "CHEBI:15377",
+    "dcterms:name": "water",
+    "dcterms:description": "Used as control solvent in experimental procedures"
+  },
+  {
+    "@id": "CHEBI:27732",
+    "dcterms:name": "morphine",
+    "dcterms:description": "Discussed as analgesic treatment in cancer pain management"
+  },
+  {
+    "@id": "ATC:N02AA01",
+    "dcterms:name": "morphine",
+    "dcterms:description": "Referenced in context of pain management protocols"
+  },
+  {
+    "@id": "PW:0000013",
+    "dcterms:name": "citric acid cycle pathway",
+    "dcterms:description": "Analysis of metabolic changes in cancer cell energy production"
+  },
+  {
+    "@id": "ECO:0000006",
+    "dcterms:name": "experimental evidence",
+    "dcterms:description": "Type of evidence used to support key findings in the research"
+  },
+  {
+    "@id": "MESH:D015179",
+    "dcterms:name": "Pre-Eclampsia",
+    "dcterms:description": "Discussed as a complication affecting treatment options"
+  }
 ]
 \`\`\`
 
-Provide a minimum of 25-30 diverse, relevant ontology terms that would appear in the "cito:discusses" section of my scientific paper. Ensure ALL terms are genuine entries that exist in their respective ontologies and are directly related to my specific research topic.`;
+Provide a minimum of 25-30 diverse, relevant ontology terms that would appear in the "schema:about" section of my scientific paper. Ensure ALL terms are genuine entries that exist in their respective ontologies and are directly related to my specific research topic.`;
+// TODO: perhaps replace schema:about with cito:discusses
+
+export const citationsExtractionPrompt = `# Citation Extraction Prompt
+
+You are a specialized assistant that extracts citations and references from scientific papers. Focus on the References/Bibliography section, typically found at the end of papers.
+
+## **Output Format**
+
+Return exactly one JSON object with this structure:
+
+\`\`\`json
+{
+  "cito:cites": [
+    {
+      "@id": "https://doi.org/10.1016/j.cell.2005.05.012",
+      "@type": "bibo:AcademicArticle",
+      "dcterms:title": "Title of the cited work",
+      "bibo:doi": "10.1016/j.cell.2005.05.012"
+    }
+  ]
+}
+\`\`\`
+
+## **Requirements**
+
+1. **Extract ALL citations** from the reference list/bibliography section
+2. **For each citation:**
+   - **@id**: Use DOI URL if available (https://doi.org/10.xxxx), otherwise create unique identifier
+   - **@type**: Usually "bibo:AcademicArticle" or "schema:ScholarlyArticle"
+   - **dcterms:title**: Exact title of the cited work
+   - **bibo:doi**: DOI string without https://doi.org/ prefix (optional if DOI not available)
+
+3. **Quality Guidelines:**
+   - Extract titles exactly as they appear
+   - Include DOI when clearly visible in reference format
+   - Focus on academic articles, books, and formal publications
+   - Skip informal citations or incomplete references
+   - Ensure each citation has at minimum @id and dcterms:title
+
+4. **Output Requirements:**
+   - Return only the JSON object
+   - No additional commentary or markdown
+   - Must be valid JSON that matches the schema above
+
+**Your Task**: Extract all citations from the reference section and format them according to the schema above.`;

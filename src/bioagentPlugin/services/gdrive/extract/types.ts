@@ -19,3 +19,21 @@ export type OpenAIImage = {
 };
 
 export type InstructorClient = IC<OpenAI> | IC<Anthropic>;
+
+export interface ParsedTeiXmlDocument {
+  title: string | null;
+  doi: string | null;
+  abstract: string | null;
+  introduction: string | null;
+  methods: string | null;
+  results: string | null;
+  discussion: string | null;
+  conclusion: string | null;
+  futureWork: string | null;
+  appendix: string | null;
+  citations: string | null;
+  authors: string[];
+  datePublished: string | null;
+  publisher: string | null;
+  error?: string;
+}

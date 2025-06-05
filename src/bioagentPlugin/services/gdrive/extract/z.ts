@@ -120,7 +120,7 @@ const SectionSchema = z.object({
 });
 
 // citation schema
-const CitationSchema = z.object({
+export const CitationSchema = z.object({
   "@id": z
     .string()
     .describe(
@@ -146,29 +146,20 @@ export const OntologyTermSchema = z.object({
   "@id": z
     .string()
     .describe(
-      "IRI of the ontology term (e.g., http://purl.obolibrary.org/obo/GO_0070765 for 'gamma secretase activity')."
-    ),
-  "schema:name": z
-    .string()
-    .optional()
-    .describe(
-      "Human-readable label of the ontology term (e.g., 'gamma secretase activity')."
+      "Short form of the ontology term (e.g., 'MONDO_0004975', 'GO_0070765')."
     ),
   "dcterms:name": z
     .string()
-    .optional()
     .describe(
-      "Alternative property for human-readable name of the ontology term."
+      "Human-readable label of the ontology term (e.g., 'gamma secretase activity')."
     ),
-  "dcterms:title": z
+  "schema:url": z
     .string()
-    .optional()
     .describe(
-      "Title of the ontology term, typically used for disease or chemical entities."
+      "Full URL path to the ontology term (e.g., 'http://purl.obolibrary.org/obo/GO_0070765')."
     ),
   "dcterms:description": z
     .string()
-    .optional()
     .describe(
       "Detailed description of the ontology term and its relevance to the paper."
     ),
@@ -244,7 +235,7 @@ const RelatedOrganizationSchema = z.object({
 });
 
 export const OntologiesSchema = z.object({
-  ontologies: z.array(OntologyTermSchema),
+  "schema:about": z.array(OntologyTermSchema),
 });
 
 // research paper schema
@@ -256,12 +247,12 @@ export const PaperSchema = z
       .describe(
         "Top-level identifier for the paper, typically a DOI (e.g., https://doi.org/10.1371/journal.pone.0173240)."
       )
+      // TODO: look into whether the default is screwing stuff up
       .default(`https://doi.org/10.1234/${crypto.randomInt(10000, 99999)}`),
-    "@type": z
-      .string()
-      .describe(
-        "Type of the paper (e.g., 'fabio:ResearchPaper', 'bibo:AcademicArticle', 'schema:ScholarlyArticle')."
-      ),
+    "@type": z.string().describe(
+      // TODO: perhaps should just use one of these
+      "Type of the paper (e.g., 'fabio:ResearchPaper', 'bibo:AcademicArticle', 'schema:ScholarlyArticle')."
+    ),
     "dcterms:title": z
       .string()
       .describe("Full title of the paper as it appears in the publication."),
@@ -334,11 +325,13 @@ export const PaperSchema = z
       .describe(
         "Plain text representation of the paper's content, useful for full-text search and analysis."
       ),
+    // TODO: this is not performing well
     "cito:cites": z
       .array(CitationSchema)
       .describe(
         "References/citations the paper includes, with identifiers and titles."
       ),
+    // TODO: these are never extracted it seems, but the OntologySchema is followed (ontologies:)
     "obi:OBI_0000299": z
       .array(OntologyTermSchema)
       .optional()

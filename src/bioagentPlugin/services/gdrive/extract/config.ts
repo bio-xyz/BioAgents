@@ -23,6 +23,7 @@ export default class Config {
     width: 595,
     height: 842,
   };
+  private static _email: string = process.env.EMAIL || null;
 
   private constructor() {}
 
@@ -128,5 +129,10 @@ export default class Config {
   public static get instructorAnthropic() {
     this.getInstance();
     return this._instructorAnthropic;
+  }
+
+  public static get email() {
+    this.getInstance();
+    return this._email;
   }
 }
