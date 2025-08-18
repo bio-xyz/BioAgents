@@ -1,4 +1,4 @@
-# BioAgents V2
+# BioAgents
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
@@ -6,11 +6,11 @@
   <img src="https://img.shields.io/badge/node-v23.3.0-brightgreen" />
 </p>
 
-An advanced AI agent framework for biological and scientific research. BioAgents V2 provides powerful conversational AI capabilities with specialized knowledge in biology, life sciences, and scientific research methodologies.
+An advanced AI agent framework for biological and scientific research. BioAgents provides powerful conversational AI capabilities with specialized knowledge in biology, life sciences, and scientific research methodologies.
 
-## About BioAgents V2
+## About BioAgents
 
-BioAgents V2 is an AI system designed to assist researchers, students, and professionals in the biological sciences. Built on the ElizaOS framework, it combines state-of-the-art language models with sophisticated knowledge management systems to provide expert-level assistance in scientific inquiry and research.
+BioAgents is an AI system designed to assist researchers, students, and professionals in the biological sciences. Built on the ElizaOS framework, it combines state-of-the-art language models with sophisticated knowledge management systems to provide expert-level assistance in scientific inquiry and research.
 
 ## 🚀 Quick Start
 
@@ -23,8 +23,8 @@ BioAgents V2 is an AI system designed to assist researchers, students, and profe
 
 ```bash
 # Clone the repository
-git clone https://github.com/bio-xyz/BioAgentsv2.git
-cd BioAgentsv2
+git clone https://github.com/bio-xyz/BioAgents.git
+cd BioAgents
 
 # Install dependencies
 bun install
@@ -35,7 +35,7 @@ bun run build
 # Navigate to the project starter
 cd packages/project-starter
 
-# Start BioAgents V2
+# Start BioAgents
 bun run ../cli/dist/index.js start
 ```
 
@@ -176,7 +176,7 @@ bun run ../cli/dist/index.js start
 ## 📂 Project Structure
 
 ```
-BioAgentsv2/
+BioAgents/
 ├── packages/
 │   ├── core/          # Core AI functionality
 │   ├── cli/           # Command-line interface
@@ -186,13 +186,13 @@ BioAgentsv2/
 │       ├── scripts/
 │       │   └── eval/  # Agent evaluation and load testing
 │       └── src/
-│           └── character.ts  # BioAgents V2 AI personality and behavior, loaded from a GitHub gist
+│           └── character.ts  # BioAgents AI personality and behavior, loaded from a GitHub gist
 └── README.md          # This file
 ```
 
 ### AI Capabilities
 
-The BioAgents V2 agent incorporates multiple plugins for enhanced functionality:
+The BioAgents agent incorporates multiple plugins for enhanced functionality:
 
 - **Knowledge Plugin**: Access to scientific papers, research data, and biological knowledge
 - **Knowledge Graph Plugin**: Advanced scientific research capabilities (see details below)
@@ -244,7 +244,7 @@ When users ask research questions, the plugin automatically:
 
 **Populating the Knowledge Graph:**
 
-The knowledge graph needs to be populated with scientific data before it can be queried. BioAgents V2 includes a script [load-kg.ts](packages/plugin-kg/src/scripts/load-kg.ts) to load JSON-LD formatted scientific papers into an Oxigraph triple store.
+The knowledge graph needs to be populated with scientific data before it can be queried. BioAgents includes a script [load-kg.ts](packages/plugin-kg/src/scripts/load-kg.ts) to load JSON-LD formatted scientific papers into an Oxigraph triple store.
 
 **Prerequisites:**
 
@@ -327,7 +327,7 @@ Twitter plugin also allows your agent to post, by generating a random option (1,
 
 ## 🧪 Testing & Evaluation
 
-BioAgents V2 includes comprehensive evaluation and load testing capabilities:
+BioAgents includes comprehensive evaluation and load testing capabilities:
 
 ### Agent Evaluation System
 
