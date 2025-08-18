@@ -1,0 +1,169 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data:rw
+    ports:
+      - '8432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - eliza-network
+
+  oxigraph:
+    image: ghcr.io/oxigraph/oxigraph
+    command: serve --location /data --bind [::]:7878
+    volumes:
+      - oxigraph-data:/data
+    ports:
+      - '7878:7878'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "curl -s -X POST --data 'query=SELECT (COUNT(*) AS ?count) WHERE { GRAPH ?g { ?s ?p ?o } }' -H 'Accept: application/sparql-results+json' http://localhost:7878/query | grep -q 'results'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+    networks:
+      - eliza-network
+
+  # Uses pre-built image from GitHub Actions instead of building locally
+  kg-loader:
+    image: ${IMAGE_TAG:-docker.io/${DOCKER_USERNAME:-bioagents}/bioagents:latest}
+    command: sh -c "echo 'Starting KG loader...' && bun run ./scripts/load-kg.ts"
+    working_dir: /app/packages/project-starter
+    environment:
+      - OXIGRAPH_URL=http://oxigraph:7878
+      - KG_GOOGLE_DRIVE_FOLDER_ID=${KG_GOOGLE_DRIVE_FOLDER_ID}
+      - GCP_JSON_CREDENTIALS=${GCP_JSON_CREDENTIALS}
+    depends_on:
+      oxigraph:
+        condition: service_started
+    networks:
+      - eliza-network
+    restart: 'no'
+
+  migrate:
+    image: ${IMAGE_TAG:-docker.io/${DOCKER_USERNAME:-bioagents}/bioagents:latest}
+    command: npx drizzle-kit migrate --config=drizzle.config.ts
+    working_dir: /app/packages/plugin-sql
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - eliza-network
+    restart: 'no'
+
+  # Uses pre-built image from GitHub Actions instead of building locally
+  agent:
+    image: ${IMAGE_TAG:-docker.io/${DOCKER_USERNAME:-bioagents}/bioagents:latest}
+    command: bun start
+    working_dir: /app/packages/project-starter
+    volumes:
+      - /var/run/tappd.sock:/var/run/tappd.sock
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOAD_DOCS_ON_STARTUP=${LOAD_DOCS_ON_STARTUP}
+      - DISCORD_APPLICATION_ID=${DISCORD_APPLICATION_ID}
+      - DISCORD_API_TOKEN=${DISCORD_API_TOKEN}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DISCORD_VOICE_CHANNEL_ID=${DISCORD_VOICE_CHANNEL_ID}
+      # PostgreSQL Configuration
+      - APP_NAME=${APP_NAME}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - KG_TRIPLE_STORE_URL=${KG_TRIPLE_STORE_URL}
+      - KG_GENERATION_MODEL=${KG_GENERATION_MODEL}
+      # RAG Knowledge Configuration
+      - CTX_KNOWLEDGE_ENABLED=${CTX_KNOWLEDGE_ENABLED:-true}
+
+      # Knowledge Plugin Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER}
+      - TEXT_EMBEDDING_MODEL=${TEXT_EMBEDDING_MODEL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TEXT_PROVIDER=${TEXT_PROVIDER}
+      - TEXT_MODEL=${TEXT_MODEL}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_LARGE_MODEL=${OPENROUTER_LARGE_MODEL}
+      - OPENROUTER_SMALL_MODEL=${OPENROUTER_SMALL_MODEL}
+
+      # Knowledge Plugin Rate Limiting
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+      - REQUESTS_PER_MINUTE=${REQUESTS_PER_MINUTE}
+      - TOKENS_PER_MINUTE=${TOKENS_PER_MINUTE}
+      - MAX_INPUT_TOKENS=${MAX_INPUT_TOKENS}
+      - MAX_OUTPUT_TOKENS=${MAX_OUTPUT_TOKENS}
+
+      # Knowledge Plugin Document Processing
+      - MAX_DOCUMENTS_TO_PROCESS=${MAX_DOCUMENTS_TO_PROCESS}
+      - DOCUMENT_PROCESSING_BATCH_SIZE=${DOCUMENT_PROCESSING_BATCH_SIZE}
+      - CHUNK_SIZE=${CHUNK_SIZE}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP}
+      - MAX_CHUNKS_PER_DOCUMENT=${MAX_CHUNKS_PER_DOCUMENT}
+      - ANTHROPIC_LARGE_MODEL=${ANTHROPIC_LARGE_MODEL}
+      - CHUNK_PROCESSING_DELAY_MS=${CHUNK_PROCESSING_DELAY_MS}
+
+      # Langfuse Plugin Configuration
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      
+      # Privy Authentication Configuration
+      - PRIVY_APP_ID=${PRIVY_APP_ID}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET}
+      
+      # Agent Configuration
+      - AGENT_CONFIG_URL=${AGENT_CONFIG_URL}
+      - ELIZA_SERVER_AUTH_TOKEN=${ELIZA_SERVER_AUTH_TOKEN}
+      - SURVEY_SOURCE=${SURVEY_SOURCE:-./surveys.json}
+      
+      # Twitter Configuration (dummy values with all features disabled)
+      - TWITTER_API_KEY=dummy_api_key
+      - TWITTER_API_SECRET_KEY=dummy_api_secret
+      - TWITTER_ACCESS_TOKEN=dummy_access_token  
+      - TWITTER_ACCESS_TOKEN_SECRET=dummy_access_secret
+      - TWITTER_ENABLE_POST=false
+      - TWITTER_ENABLE_REPLIES=false
+      - TWITTER_ENABLE_ACTIONS=false
+      - TWITTER_DRY_RUN=true
+      
+    ports:
+      - '3000:3000'
+      - '50000-50100:50000-50100/udp'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kg-loader:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    restart: always
+    networks:
+      - eliza-network
+
+networks:
+  eliza-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  oxigraph-data:

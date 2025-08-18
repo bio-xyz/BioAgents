@@ -1,0 +1,10 @@
+*
+
+!dist/**
+!package.json
+!readme.md
+!tsup.config.ts
+!schema.sql
+!seed.sql
+!config.toml
+__tests__/**

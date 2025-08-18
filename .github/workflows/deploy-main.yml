@@ -1,0 +1,21 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy (branch, tag, or SHA)'
+        required: true
+        default: 'main'
+
+jobs:
+  deploy:
+    name: Deploy to Production Environment
+    uses: ./.github/workflows/deployment.yml
+    with:
+      environment: main
+      ref: ${{ github.event.inputs.ref || github.ref }}
+    secrets: inherit

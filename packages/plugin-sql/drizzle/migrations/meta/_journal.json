@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1751910502704,
+      "tag": "0000_add_papers_field_to_messages",
+      "breakpoints": true
+    }
+  ]
+}

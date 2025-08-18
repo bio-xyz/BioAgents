@@ -1,0 +1,370 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        required: true
+        default: 'main'
+        options:
+          - main
+          - dev
+        description: Name of the target environment (dev or main).
+      skip_build:
+        type: boolean
+        required: false
+        default: false
+        description: Skip Docker build and use existing image.
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+        description: Name of the target environment (dev or main).
+      ref:
+        type: string
+        required: true
+        description: The tag or SHA to checkout.
+      skip_build:
+        type: boolean
+        required: false
+        default: false
+        description: Skip Docker build and use existing image.
+
+env:
+  # Application configuration - Update these for your setup
+  APP_NAME: bioagents
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || github.repository_owner }}
+  DOCKER_IMAGE: bioagents
+  DOCKER_REGISTRY: docker.io
+  DOCKER_REGISTRY_USERNAME: ${{ vars.DOCKER_USERNAME || github.repository_owner }}
+  DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+
+  # Digital Ocean Configuration - Environment-specific values from GitHub vars
+  DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
+  DO_DROPLET_ID: ${{ vars.DO_DROPLET_ID }}
+  DO_DROPLET_IP: ${{ vars.DO_DROPLET_IP }}
+  DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+  DO_SSH_USER: ${{ vars.DO_SSH_USER || 'root' }}
+
+  # Application Environment Variables
+  OPENAI_API_KEY: ${{ vars.OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+  POSTGRES_PASSWORD: ${{ vars.POSTGRES_PASSWORD || secrets.POSTGRES_PASSWORD }}
+  DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID || secrets.DISCORD_APPLICATION_ID }}
+  DISCORD_API_TOKEN: ${{ vars.DISCORD_API_TOKEN || secrets.DISCORD_API_TOKEN }}
+  ELEVENLABS_API_KEY: ${{ vars.ELEVENLABS_API_KEY || secrets.ELEVENLABS_API_KEY }}
+  DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID || secrets.DISCORD_GUILD_ID }}
+  DISCORD_VOICE_CHANNEL_ID: ${{ vars.DISCORD_VOICE_CHANNEL_ID || secrets.DISCORD_VOICE_CHANNEL_ID }}
+  KG_GOOGLE_DRIVE_FOLDER_ID: ${{ vars.KG_GOOGLE_DRIVE_FOLDER_ID || secrets.KG_GOOGLE_DRIVE_FOLDER_ID }}
+  GCP_JSON_CREDENTIALS: ${{ vars.GCP_JSON_CREDENTIALS || secrets.GCP_JSON_CREDENTIALS }}
+  ANTHROPIC_API_KEY: ${{ vars.ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
+  OPENROUTER_API_KEY: ${{ vars.OPENROUTER_API_KEY || secrets.OPENROUTER_API_KEY }}
+
+  # Application Configuration
+  AGENT_CONFIG_URL: ${{ vars.AGENT_CONFIG_URL || secrets.AGENT_CONFIG_URL }}
+  ELIZA_SERVER_AUTH_TOKEN: ${{ secrets.ELIZA_SERVER_AUTH_TOKEN }}
+  
+  # Privy Configuration
+  PRIVY_APP_ID: ${{ vars.PRIVY_APP_ID }}
+  PRIVY_APP_SECRET: ${{ secrets.PRIVY_APP_SECRET }}
+
+  # Langfuse Configuration (only secret key from GitHub secrets)
+  LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: self-hosted
+    if: ${{ !(inputs.skip_build || false) }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ env.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ env.DOCKER_REGISTRY_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          no-cache: true
+
+  deploy-to-droplet:
+    name: Deploy to Digital Ocean Droplet
+    runs-on: self-hosted
+    needs: build-and-push
+    if: always() && (needs.build-and-push.result == 'success' || (inputs.skip_build || false))
+    environment:
+      name: ${{ inputs.environment || 'main' }}
+      url: ${{ (inputs.environment || 'main') == 'main' && 'https://emreulgac.xyz' || 'https://dev.aubr.ai' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Debug build outputs
+        run: |
+          echo "Environment: ${{ inputs.environment || 'main' }}"
+          echo "DOCKER_USERNAME variable: '${{ vars.DOCKER_USERNAME }}'"
+          echo "Repository owner: '${{ github.repository_owner }}'"
+          echo "Final DOCKER_USERNAME: '${{ vars.DOCKER_USERNAME || github.repository_owner }}'"
+          echo "Build job result: ${{ needs.build-and-push.result }}"
+          echo "Image tags from build: ${{ needs.build-and-push.outputs.image-tag }}"
+          echo "Image digest from build: ${{ needs.build-and-push.outputs.image-digest }}"
+
+          # Fail if build job didn't succeed
+          if [ "${{ needs.build-and-push.result }}" != "success" ]; then
+            echo "❌ Build job failed, cannot deploy"
+            exit 1
+          fi
+
+          # Fail if no image tags were produced
+          if [ -z "${{ needs.build-and-push.outputs.image-tag }}" ]; then
+            echo "❌ No image tags produced by build job"
+            exit 1
+          fi
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ env.DO_API_TOKEN }}
+
+      - name: Verify build outputs
+        run: |
+          # Verify we have a valid image tag from the build step
+          FULL_TAGS="${{ needs.build-and-push.outputs.image-tag }}"
+          echo "Available tags: $FULL_TAGS"
+
+          if [ -z "$FULL_TAGS" ]; then
+            echo "❌ No image tags found from build step"
+            exit 1
+          fi
+
+          echo "✅ Docker image built successfully"
+
+      - name: Create deployment environment file
+        run: |
+          # Extract the specific image tag to use
+          if [ "${{ inputs.skip_build }}" = "true" ]; then
+            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest"
+            echo "Using existing image tag: $IMAGE_TAG"
+          else
+            FULL_TAGS="${{ needs.build-and-push.outputs.image-tag }}"
+            IMAGE_TAG=$(echo "$FULL_TAGS" | grep "${{ inputs.ref }}" | head -1)
+            if [ -z "$IMAGE_TAG" ]; then
+              IMAGE_TAG=$(echo "$FULL_TAGS" | head -1)
+            fi
+            echo "Using newly built image tag: $IMAGE_TAG"
+          fi
+
+          # Set NODE_ENV based on environment
+          NODE_ENV="development"
+          if [ "${{ inputs.environment }}" = "main" ]; then
+            NODE_ENV="production"
+          fi
+
+          cat > .env.production << EOF
+          # Application Configuration - Hardcoded
+          APP_NAME=bioagents
+          NODE_ENV=$NODE_ENV
+
+          # Docker Image Configuration
+          IMAGE_TAG=$IMAGE_TAG
+
+          # Docker Registry Configuration
+          DOCKER_REGISTRY_USERNAME=${{ env.DOCKER_REGISTRY_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD=${{ env.DOCKER_REGISTRY_PASSWORD }}
+
+          # API Keys
+          OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}
+          ELEVENLABS_API_KEY=${{ env.ELEVENLABS_API_KEY }}
+
+          # Database Configuration - Hardcoded + Secret
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB=postgres
+
+          # Discord Configuration
+          DISCORD_APPLICATION_ID=${{ env.DISCORD_APPLICATION_ID }}
+          DISCORD_API_TOKEN=${{ env.DISCORD_API_TOKEN }}
+          DISCORD_GUILD_ID=${{ env.DISCORD_GUILD_ID }}
+          DISCORD_VOICE_CHANNEL_ID=${{ env.DISCORD_VOICE_CHANNEL_ID }}
+
+          # Knowledge Graph Configuration
+          KG_TRIPLE_STORE_URL=http://oxigraph:7878/query
+          OXIGRAPH_URL=http://oxigraph:7878
+          KG_GOOGLE_DRIVE_FOLDER_ID=${{ env.KG_GOOGLE_DRIVE_FOLDER_ID }}
+          GCP_JSON_CREDENTIALS='${{ env.GCP_JSON_CREDENTIALS }}'
+          KG_GENERATION_MODEL=gpt-4.1
+
+          # Application Configuration
+          AGENT_CONFIG_URL=${{ env.AGENT_CONFIG_URL }}
+          ELIZA_SERVER_AUTH_TOKEN=${{ env.ELIZA_SERVER_AUTH_TOKEN }}
+          PRIVY_APP_ID=${{ env.PRIVY_APP_ID }}
+          PRIVY_APP_SECRET=${{ env.PRIVY_APP_SECRET }}
+          SURVEY_SOURCE=./surveys.json
+
+          # Application Knowledge Settings - Hardcoded
+          LOAD_DOCS_ON_STARTUP=true
+          CTX_KNOWLEDGE_ENABLED=true
+
+          # Knowledge Plugin Configuration - Hardcoded values
+          EMBEDDING_PROVIDER=openai
+          TEXT_EMBEDDING_MODEL=text-embedding-3-large
+          ANTHROPIC_API_KEY=${{ env.ANTHROPIC_API_KEY }}
+          TEXT_PROVIDER=anthropic
+          TEXT_MODEL=anthropic/claude-opus-4
+          OPENROUTER_LARGE_MODEL=anthropic/claude-opus-4
+          OPENROUTER_SMALL_MODEL=google/gemini-2.5-flash
+          OPENROUTER_API_KEY=${{ env.OPENROUTER_API_KEY }}
+
+          # Knowledge Plugin Rate Limiting - Hardcoded values
+          MAX_CONCURRENT_REQUESTS=1
+          REQUESTS_PER_MINUTE=60
+          TOKENS_PER_MINUTE=150000
+          MAX_INPUT_TOKENS=2000
+          MAX_OUTPUT_TOKENS=2000
+
+          # Knowledge Plugin Document Processing - Hardcoded values
+          MAX_DOCUMENTS_TO_PROCESS=1
+          DOCUMENT_PROCESSING_BATCH_SIZE=1
+          CHUNK_SIZE=2000
+          CHUNK_OVERLAP=50
+          MAX_CHUNKS_PER_DOCUMENT=5
+          ANTHROPIC_LARGE_MODEL=claude-opus-4-20250514
+          CHUNK_PROCESSING_DELAY_MS=2000
+
+          # Langfuse Plugin Configuration - Hardcoded values (except secret key)
+          LANGFUSE_SECRET_KEY=${{ env.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST=https://cloud.langfuse.com
+          LANGFUSE_DEBUG=true
+          LANGFUSE_PUBLIC_KEY=pk-lf-3f26b4d3-68e8-41ed-847d-fe16761dfc80
+          EOF
+
+      - name: Debug KG Loader Environment
+        run: |
+          echo "=== KG LOADER DEBUG ==="
+          echo "KG_GOOGLE_DRIVE_FOLDER_ID present: $([ -n "${{ env.KG_GOOGLE_DRIVE_FOLDER_ID }}" ] && echo 'YES' || echo 'NO')"
+          echo "GCP_JSON_CREDENTIALS present: $([ -n "${{ env.GCP_JSON_CREDENTIALS }}" ] && echo 'YES' || echo 'NO')"
+          echo "Environment file created successfully"
+
+      - name: Copy files locally
+        run: |
+          # Since we're running on self-hosted runner (the droplet itself), copy files directly
+          cp docker-compose.yaml /opt/bioagents/
+          cp .env.production /opt/bioagents/.env
+
+      - name: Deploy Locally
+        run: |
+          set -euo pipefail
+          
+          echo "🚀 Starting deployment to ${{ inputs.environment || 'main' }}..."
+          
+          # Login to Docker registry
+          echo "${{ env.DOCKER_REGISTRY_PASSWORD }}" | docker login ${{ env.DOCKER_REGISTRY }} -u "${{ env.DOCKER_REGISTRY_USERNAME }}" --password-stdin
+          
+          # Change to app directory
+          cd /opt/bioagents
+          
+          # Load environment variables (including IMAGE_TAG)
+          source .env
+          echo "Using image: $IMAGE_TAG"
+          
+          # Stop existing services and cleanup
+          echo "Stopping existing services..."
+          docker compose down || true
+          docker system prune -f || true
+          
+          # Pull latest images and start
+          echo "Pulling latest images..."
+          docker compose pull
+          
+          echo "Starting services..."
+          docker compose up -d
+          
+          # Check deployment
+          sleep 10
+          docker compose ps
+          
+          echo "✅ Deployment to ${{ inputs.environment || 'main' }} completed!"
+
+      - name: Verify deployment
+        run: |
+          set -euo pipefail
+          
+          cd /opt/bioagents
+          
+          # Check if services are running
+          if docker compose ps | grep -q "Up"; then
+            echo "✅ Services are running successfully"
+            
+            # Test connectivity
+            if curl -f http://localhost:3000 2>/dev/null; then
+              echo "✅ Application is responding"
+            else
+              echo "⚠️ Application may not be ready yet"
+            fi
+          else
+            echo "❌ Services not running properly"
+            docker compose ps
+            exit 1
+          fi
+
+  notify-deployment:
+    name: Notify Deployment Status
+    runs-on: self-hosted
+    needs: [build-and-push, deploy-to-droplet]
+    if: always()
+
+    steps:
+      - name: Deployment Success
+        if: needs.deploy-to-droplet.result == 'success'
+        run: |
+          echo "🎉 Deployment to ${{ inputs.environment }} completed successfully!"
+          echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+          echo "Environment: ${{ inputs.environment || 'main' }}"
+          echo "Droplet IP: ${{ vars.DO_DROPLET_IP }}"
+
+      - name: Deployment Failure
+        if: needs.deploy-to-droplet.result == 'failure'
+        run: |
+          echo "❌ Deployment to ${{ inputs.environment || 'main' }} failed!"
+          exit 1

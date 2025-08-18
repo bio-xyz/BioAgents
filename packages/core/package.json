@@ -1,0 +1,79 @@
+{
+  "name": "@elizaos/core",
+  "version": "1.0.12",
+  "description": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bun": "./src/index.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "bun": "./src/index.ts",
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./v1": {
+      "import": {
+        "types": "./dist/specs/v1/index.d.ts",
+        "default": "./dist/specs/v1/index.js"
+      }
+    },
+    "./v2": {
+      "import": {
+        "types": "./dist/specs/v2/index.d.ts",
+        "default": "./dist/specs/v2/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist .turbo node_modules .turbo-tsconfig.json tsconfig.tsbuildinfo",
+    "dev": "tsup --watch",
+    "build:docs": "cd docs && bun run build",
+    "test": "bun test --coverage",
+    "test:coverage": "bun test --coverage",
+    "test:watch": "bun test --watch",
+    "format": "prettier --write ./src",
+    "format:check": "prettier --check ./src",
+    "lint": "prettier --write ./src"
+  },
+  "author": "ElizaOS",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.3",
+    "@types/uuid": "10.0.0",
+    "prettier": "3.5.3",
+    "tsup": "8.5.0",
+    "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "@sentry/browser": "^9.22.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
+    "dotenv": "16.5.0",
+    "events": "^3.3.0",
+    "glob": "11.0.3",
+    "handlebars": "^4.7.8",
+    "js-sha1": "0.7.0",
+    "langchain": "^0.3.15",
+    "pdfjs-dist": "^5.2.133",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "stream-browserify": "^3.0.0",
+    "unique-names-generator": "4.7.1",
+    "uuid": "11.1.0",
+    "zod": "^3.24.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "d5bd5c43bfebeb7ac02f9e029f924cb6cd5c2ec7"
+}

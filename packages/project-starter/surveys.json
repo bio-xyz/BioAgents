@@ -1,0 +1,56 @@
+[
+  {
+    "name": "IIEF-5",
+    "description": "Erectile Function Screening",
+    "triggers": [
+      "erectile dysfunction",
+      "ed",
+      "erection",
+      "morning wood",
+      "performance",
+      "libido",
+      "sex drive"
+    ],
+    "questions": [
+      "Confidence in getting/keeping erection? (1-5)",
+      "Erections hard enough for sex? (1-5)",
+      "Keep erection after penetration? (1-5)",
+      "Difficulty keeping erection to finish? (1-5)",
+      "Sex attempts satisfactory? (1-5)"
+    ],
+    "scoring": "22-25=No ED, 17-21=Mild ED, 12-16=Moderate ED, 5-11=Severe ED",
+    "prompt": "Want to run through the IIEF-5 erectile function screening? Takes 2 minutes and gives you clinical data instead of guesswork."
+  },
+  {
+    "name": "ADAM",
+    "description": "Testosterone Screening",
+    "triggers": ["testosterone", "low t", "energy", "fatigue", "muscle", "strength", "mood"],
+    "questions": [
+      "Less libido? (Yes/No)",
+      "Low energy? (Yes/No)",
+      "Less strength/endurance? (Yes/No)",
+      "Lost height? (Yes/No)",
+      "Less enjoyment of life? (Yes/No)",
+      "Sad/grumpy? (Yes/No)",
+      "Weaker erections? (Yes/No)",
+      "Worse at sports? (Yes/No)",
+      "Fall asleep after dinner? (Yes/No)",
+      "Worse work performance? (Yes/No)"
+    ],
+    "scoring": "Positive if Q1 or Q7 = Yes, or any 3+ = Yes",
+    "prompt": "Want to do the ADAM testosterone screen? It's the gold standard for low T symptoms."
+  },
+  {
+    "name": "VAS",
+    "description": "Wellness Assessment",
+    "triggers": ["stress", "sleep", "mood", "anxiety", "wellness", "burnout"],
+    "questions": [
+      "Energy (0=none, 10=max)",
+      "Sleep (0=terrible, 10=perfect)",
+      "Stress (0=none, 10=max)",
+      "Libido (0=none, 10=max)"
+    ],
+    "scoring": "32-40=Excellent, 24-31=Good, 16-23=Moderate, 0-15=Multiple concerns",
+    "prompt": "Want a quick wellness check? The VAS covers 4 key health markers."
+  }
+]
