@@ -397,7 +397,7 @@ We welcome contributions! Please feel free to submit issues and pull requests.
 
 ## 📄 License
 
-TBD
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
