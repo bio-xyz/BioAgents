@@ -303,7 +303,7 @@ Your JSON-LD files should follow standard scientific metadata schemas. Each file
 
 Your JSON-LD files should follow the scientific metadata schema defined in [`packages/plugin-kg/src/constants/constants.ts`](./packages/plugin-kg/src/constants/constants.ts). This schema is based on standard vocabularies such as [schema.org](https://schema.org/), [Dublin Core](https://www.dublincore.org/specifications/dublin-core/dcmi-terms/), [FOAF](http://xmlns.com/foaf/0.1/), [BIBO](http://purl.org/ontology/bibo/), and others.
 
-To convert your science papers from PDF format to this JSON LD format, it's highly recommended you use [BioAgents](https://github.com/bio-xyz/BioAgents/tree/main) (v1) repository, specifically the linked branch. The guide for that is in the readme over there.
+To convert your science papers from PDF format to this JSON LD format, it's highly recommended you use [BioAgents](https://github.com/bio-xyz/BioAgents-v1/tree/main) (v1). The guide for that is in the readme over there.
 
 ### Knowledge plugin
 
