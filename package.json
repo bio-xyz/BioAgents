@@ -1,0 +1,29 @@
+{
+  "name": "bioagents-openai-agentkit",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "^3.6.2",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "prettier-plugin-packagejson": "^2.5.19"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.66.0",
+    "@google/genai": "^1.25.0",
+    "@openai/agents": "^0.1.9",
+    "axios": "^1.12.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "elysia": "^1.4.12",
+    "zod": "3"
+  },
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts"
+  }
+}
