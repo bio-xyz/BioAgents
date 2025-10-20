@@ -1,4 +1,4 @@
-import { type Tool, type State, type Message } from "../../types/core";
+import { type Message, type State, type Tool } from "../../types/core";
 
 export const planningTool: Tool = {
   name: "PLANNING",
@@ -10,7 +10,7 @@ export const planningTool: Tool = {
     // TODO: implement actual logic for planning
     return {
       providers: ["OPENSCHOLAR"],
-      actions: ["REPLY"],
+      actions: ["HYPOTHESIS"],
     };
   },
 };

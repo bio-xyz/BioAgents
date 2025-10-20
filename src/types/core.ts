@@ -26,3 +26,12 @@ export type Tool = {
   description: string;
   execute: (input: any) => Promise<any>;
 };
+
+export type LLMProvider = "google" | "openai" | "anthropic" | "openrouter";
+
+export type Paper = {
+  doi: string;
+  title: string;
+  chunkText?: string;
+  abstract?: string;
+};
