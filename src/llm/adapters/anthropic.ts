@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic from "@anthropic-ai/sdk";
 import type {
   Message,
   MessageCreateParamsNonStreaming,
@@ -6,11 +6,17 @@ import type {
   ToolChoice,
   WebSearchResultBlock,
   WebSearchToolResultBlock,
-} from '@anthropic-ai/sdk/resources/messages/messages';
+} from "@anthropic-ai/sdk/resources/messages/messages";
 
-import { LLMAdapter } from '../adapter';
-import type { LLMProvider, LLMRequest, LLMResponse, LLMTool, WebSearchResult } from '../types';
-import { hasUrlInMessages, enrichMessagesWithUrlContent } from './utils';
+import { LLMAdapter } from "../adapter";
+import type {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  LLMTool,
+  WebSearchResult,
+} from "../types";
+import { hasUrlInMessages, enrichMessagesWithUrlContent } from "./utils";
 
 interface BuildRequestOptions {
   includeWebSearch?: boolean;
@@ -23,7 +29,7 @@ export class AnthropicAdapter extends LLMAdapter {
     super(provider);
 
     if (!provider.apiKey) {
-      throw new Error('Anthropic provider requires an API key');
+      throw new Error("Anthropic provider requires an API key");
     }
 
     const clientOptions: ConstructorParameters<typeof Anthropic>[0] = {
@@ -60,7 +66,9 @@ export class AnthropicAdapter extends LLMAdapter {
   }> {
     // Always enrich for web search requests
     const enrichedRequest = await this.enrichRequestIfNeeded(request);
-    const anthropicRequest = this.buildRequest(enrichedRequest, { includeWebSearch: true });
+    const anthropicRequest = this.buildRequest(enrichedRequest, {
+      includeWebSearch: true,
+    });
 
     try {
       const response = await this.client.messages.create(anthropicRequest);
@@ -73,13 +81,15 @@ export class AnthropicAdapter extends LLMAdapter {
     }
   }
 
-  protected transformRequest(request: LLMRequest): MessageCreateParamsNonStreaming {
+  protected transformRequest(
+    request: LLMRequest,
+  ): MessageCreateParamsNonStreaming {
     return this.buildRequest(request);
   }
 
   protected transformResponse(response: Message): LLMResponse {
     const textContent = this.extractTextBlocks(response);
-    const content = textContent.join('\n\n');
+    const content = textContent.join("\n\n");
 
     return {
       content,
@@ -87,7 +97,8 @@ export class AnthropicAdapter extends LLMAdapter {
         ? {
             promptTokens: response.usage.input_tokens,
             completionTokens: response.usage.output_tokens,
-            totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+            totalTokens:
+              response.usage.input_tokens + response.usage.output_tokens,
           }
         : undefined,
     };
@@ -95,7 +106,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private async enrichRequestIfNeeded(
     request: LLMRequest,
-    _forceWebSearch = false
+    _forceWebSearch = false,
   ): Promise<LLMRequest> {
     // Build temporary messages to check for URLs
     const tempMessages = request.messages.map((m) => ({
@@ -116,7 +127,7 @@ export class AnthropicAdapter extends LLMAdapter {
     return {
       ...request,
       messages: enrichedMessages.map((m) => ({
-        role: m.role as 'system' | 'user' | 'assistant',
+        role: m.role as "system" | "user" | "assistant",
         content: m.content,
       })),
     };
@@ -124,16 +135,18 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private buildRequest(
     request: LLMRequest,
-    options: BuildRequestOptions = {}
+    options: BuildRequestOptions = {},
   ): MessageCreateParamsNonStreaming {
     const { includeWebSearch = false } = options;
 
     const userAndAssistantMessages = request.messages.filter(
-      (message) => message.role === 'user' || message.role === 'assistant'
+      (message) => message.role === "user" || message.role === "assistant",
     );
 
     if (userAndAssistantMessages.length === 0) {
-      throw new Error('Anthropic requires at least one user or assistant message in the request');
+      throw new Error(
+        "Anthropic requires at least one user or assistant message in the request",
+      );
     }
 
     const systemSegments: string[] = [];
@@ -142,7 +155,7 @@ export class AnthropicAdapter extends LLMAdapter {
     }
 
     request.messages
-      .filter((message) => message.role === 'system')
+      .filter((message) => message.role === "system")
       .forEach((message) => {
         if (message.content) {
           systemSegments.push(message.content);
@@ -152,14 +165,14 @@ export class AnthropicAdapter extends LLMAdapter {
     const anthropicRequest: MessageCreateParamsNonStreaming = {
       model: request.model,
       messages: userAndAssistantMessages.map((message) => ({
-        role: message.role as 'user' | 'assistant',
+        role: message.role as "user" | "assistant",
         content: message.content,
       })),
       max_tokens: request.maxTokens ?? 5000,
     };
 
     if (systemSegments.length > 0) {
-      anthropicRequest.system = systemSegments.join('\n\n');
+      anthropicRequest.system = systemSegments.join("\n\n");
     }
 
     if (request.temperature !== undefined) {
@@ -170,7 +183,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
     if (request.thinkingBudget !== undefined) {
       anthropicRequest.thinking = {
-        type: 'enabled',
+        type: "enabled",
         budget_tokens: request.thinkingBudget,
       };
     }
@@ -182,15 +195,17 @@ export class AnthropicAdapter extends LLMAdapter {
 
     if (includeWebSearch) {
       anthropicRequest.tools = this.ensureWebSearchTool(anthropicRequest.tools);
-      anthropicRequest.tool_choice = this.ensureToolChoice(anthropicRequest.tool_choice);
+      anthropicRequest.tool_choice = this.ensureToolChoice(
+        anthropicRequest.tool_choice,
+      );
     }
 
     return anthropicRequest;
   }
 
   private mapTools(
-    tools: LLMTool[] | undefined
-  ): NonNullable<MessageCreateParamsNonStreaming['tools']> {
+    tools: LLMTool[] | undefined,
+  ): NonNullable<MessageCreateParamsNonStreaming["tools"]> {
     if (!Array.isArray(tools)) {
       return [];
     }
@@ -198,19 +213,22 @@ export class AnthropicAdapter extends LLMAdapter {
     return tools
       .map((tool) => this.mapToolToAnthropic(tool))
       .filter(
-        (tool): tool is NonNullable<MessageCreateParamsNonStreaming['tools']>[number] =>
-          tool !== null
+        (
+          tool,
+        ): tool is NonNullable<
+          MessageCreateParamsNonStreaming["tools"]
+        >[number] => tool !== null,
       );
   }
 
   private mapToolToAnthropic(
-    tool: LLMTool
-  ): NonNullable<MessageCreateParamsNonStreaming['tools']>[number] | null {
+    tool: LLMTool,
+  ): NonNullable<MessageCreateParamsNonStreaming["tools"]>[number] | null {
     switch (tool.type) {
-      case 'webSearch':
+      case "webSearch":
         return {
-          type: 'web_search_20250305',
-          name: 'web_search',
+          type: "web_search_20250305",
+          name: "web_search",
           max_uses: 3,
         };
       default:
@@ -219,22 +237,22 @@ export class AnthropicAdapter extends LLMAdapter {
   }
 
   private ensureWebSearchTool(
-    tools?: MessageCreateParamsNonStreaming['tools']
-  ): MessageCreateParamsNonStreaming['tools'] {
+    tools?: MessageCreateParamsNonStreaming["tools"],
+  ): MessageCreateParamsNonStreaming["tools"] {
     const updatedTools = tools ? [...tools] : [];
     const hasWebSearchTool = updatedTools.some((tool) => {
-      if (typeof tool !== 'object' || tool === null) {
+      if (typeof tool !== "object" || tool === null) {
         return false;
       }
 
       const type = (tool as { type?: unknown }).type;
-      return typeof type === 'string' && type.startsWith('web_search');
+      return typeof type === "string" && type.startsWith("web_search");
     });
 
     if (!hasWebSearchTool) {
       updatedTools.push({
-        type: 'web_search_20250305',
-        name: 'web_search',
+        type: "web_search_20250305",
+        name: "web_search",
         max_uses: 3,
       });
     }
@@ -247,7 +265,7 @@ export class AnthropicAdapter extends LLMAdapter {
       return existingChoice;
     }
 
-    return { type: 'auto' };
+    return { type: "auto" };
   }
 
   private transformWebSearchResponse(response: Message): {
@@ -256,7 +274,7 @@ export class AnthropicAdapter extends LLMAdapter {
     webSearchResults: WebSearchResult[];
   } {
     const textBlocks = this.extractTextBlocks(response);
-    const llmOutput = textBlocks.join('\n\n');
+    const llmOutput = textBlocks.join("\n\n");
 
     let cleanedLLMOutput = llmOutput;
     const citationIndices = new Set<number>();
@@ -264,21 +282,22 @@ export class AnthropicAdapter extends LLMAdapter {
     cleanedLLMOutput = cleanedLLMOutput.replace(
       /<cite index="([^"]+)">([^<]+)<\/cite>/g,
       (_match, indexAttribute: string, innerText: string) => {
-        const indices = indexAttribute.split(',');
+        const indices = indexAttribute.split(",");
         indices.forEach((entry) => {
-          const [leading] = entry.split('-');
-          const numericIndex = Number.parseInt(leading, 10);
+          const [leading] = entry.split("-");
+          const numericIndex = Number.parseInt(leading!, 10);
           if (!Number.isNaN(numericIndex)) {
             citationIndices.add(numericIndex - 1);
           }
         });
 
         return innerText;
-      }
+      },
     );
 
     const webSearchBlock = response.content.find(
-      (block): block is WebSearchToolResultBlock => block.type === 'web_search_tool_result'
+      (block): block is WebSearchToolResultBlock =>
+        block.type === "web_search_tool_result",
     );
 
     let rawResults: WebSearchResultBlock[] = [];
@@ -286,7 +305,10 @@ export class AnthropicAdapter extends LLMAdapter {
       rawResults = webSearchBlock.content as WebSearchResultBlock[];
     }
 
-    const webSearchResults = this.buildWebSearchResults(rawResults, citationIndices);
+    const webSearchResults = this.buildWebSearchResults(
+      rawResults,
+      citationIndices,
+    );
 
     return {
       cleanedLLMOutput: cleanedLLMOutput.trim(),
@@ -297,14 +319,14 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private extractTextBlocks(response: Message): string[] {
     return response.content
-      .filter((block): block is TextBlock => block.type === 'text')
+      .filter((block): block is TextBlock => block.type === "text")
       .map((block) => block.text.trim())
       .filter((text) => text.length > 0);
   }
 
   private buildWebSearchResults(
     results: WebSearchResultBlock[],
-    citationIndices: Set<number>
+    citationIndices: Set<number>,
   ): WebSearchResult[] {
     const deduped = new Map<string, WebSearchResult>();
 
@@ -326,7 +348,7 @@ export class AnthropicAdapter extends LLMAdapter {
       }
 
       deduped.set(normalized, {
-        title: result.title || '',
+        title: result.title || "",
         url: result.url,
         originalUrl: result.url,
         index: order,
@@ -339,10 +361,10 @@ export class AnthropicAdapter extends LLMAdapter {
   private normalizeUrl(url: string): string {
     try {
       const parsed = new URL(url);
-      parsed.hash = '';
+      parsed.hash = "";
       parsed.searchParams.sort();
 
-      if (parsed.pathname.endsWith('/') && parsed.pathname.length > 1) {
+      if (parsed.pathname.endsWith("/") && parsed.pathname.length > 1) {
         parsed.pathname = parsed.pathname.slice(0, -1);
       }
 

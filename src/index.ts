@@ -28,7 +28,7 @@ app.post("/api/chat", async ({ body }) => {
     };
   }
 
-  // create message in DB, and pass to planning tool later
+  // TODO: create message in DB, and pass to planning tool later
   const createdMessage = {
     conversationId,
     id: "1",
