@@ -1,8 +1,13 @@
-import { type State, type Message } from "../../types/core";
 import axios from "axios";
-import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
+import character from "../../character";
+import { getMessagesByConversation, updateMessage } from "../../db/operations";
 import { LLM } from "../../llm/provider";
-import { addVariablesToState } from "../../utils/state";
+import { type Message, type State } from "../../types/core";
+import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
+import {
+  addVariablesToState,
+  formatConversationHistory,
+} from "../../utils/state";
 
 interface OpenScholarChunk {
   reranker_score: number;
@@ -82,6 +87,44 @@ async function getReformulatedHallmarkQuestion(
   return llmResponse.content;
 }
 
+async function getStandaloneMessage(
+  thread: any[],
+  latestMessage: string,
+): Promise<string> {
+  // If thread is empty or only has 1 message, return the message as-is
+  if (thread.length <= 1) {
+    return latestMessage;
+  }
+
+  // Format conversation history (exclude the last message as it's passed separately)
+  // Each DB message contains both user question and assistant response
+  const conversationHistory = formatConversationHistory(thread.slice(0, -1));
+
+  const prompt = character.templates.standaloneMessageTemplate
+    .replace("{conversationHistory}", conversationHistory)
+    .replace("{latestMessage}", latestMessage);
+
+  const llmProvider = new LLM({
+    name: "google",
+    apiKey: process.env.GOOGLE_API_KEY!,
+  });
+
+  const llmRequest = {
+    model: "gemini-2.5-pro",
+    messages: [
+      {
+        role: "user" as const,
+        content: prompt,
+      },
+    ],
+    maxTokens: 150,
+  };
+
+  const llmResponse = await llmProvider.createChatCompletion(llmRequest);
+
+  return llmResponse.content.trim();
+}
+
 export const openscholarTool = {
   name: "OPENSCHOLAR",
   description:
@@ -89,13 +132,22 @@ export const openscholarTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
-    const cacheKey = `openscholar:data:${message.content.text}:${message.conversationId}`;
-    // TODO: get conversation thread
-    const thread = [];
+    const cacheKey = `openscholar:data:${message.question}:${message.conversation_id}`;
 
-    // TODO: get actual standalone message based on thread
-    const standaloneMessage = message.content.text;
-    const question = standaloneMessage!;
+    // Get conversation thread (last 3 DB messages = 6 actual messages)
+    const allMessages = await getMessagesByConversation(
+      message.conversation_id,
+      3,
+    );
+    // Reverse to get chronological order (oldest first)
+    const thread = allMessages.reverse();
+
+    // Generate standalone message based on thread
+    const standaloneMessage = await getStandaloneMessage(
+      thread,
+      message.question || "",
+    );
+    const question = standaloneMessage;
 
     // TODO: implement actual cache for openscholar results
     const cachedResult = null;
@@ -141,7 +193,7 @@ export const openscholarTool = {
       openScholarPapers,
       openScholarRaw,
       openScholarPaperDois,
-      shortenedPapers,
+      // shortenedPapers,
     });
 
     // TODO: return result
@@ -159,7 +211,18 @@ export const openscholarTool = {
     };
 
     // TODO: add result to cache
-    // TODO: update answer eval with OpenScholar chunks
+
+    // Update message in DB with current state
+    if (message.id) {
+      try {
+        await updateMessage(message.id, {
+          state: state.values,
+        });
+      } catch (err) {
+        // Log error but don't fail the tool execution
+        console.error("Failed to update message in DB:", err);
+      }
+    }
 
     return result;
   },

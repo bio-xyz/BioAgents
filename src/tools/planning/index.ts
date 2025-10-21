@@ -2,7 +2,12 @@ import character from "../../character";
 import { LLM } from "../../llm/provider";
 import { type Message, type State, type Tool } from "../../types/core";
 import logger from "../../utils/logger";
-import { composePromptFromState, parseKeyValueXml } from "../../utils/state";
+import {
+  composePromptFromState,
+  formatConversationHistory,
+  parseKeyValueXml,
+} from "../../utils/state";
+import { getMessagesByConversation } from "../../db/operations";
 
 export const planningTool: Tool = {
   name: "PLANNING",
@@ -39,6 +44,26 @@ export const planningTool: Tool = {
     // planning is the most important part, so we'll make sure to try 3 times to get it right
     const MAX_RETRIES = 3;
 
+    // Fetch conversation history (last 3 DB messages = 6 actual messages)
+    let conversationHistory: any[] = [];
+    try {
+      conversationHistory = await getMessagesByConversation(
+        message.conversation_id,
+        3,
+      );
+      // Reverse to get chronological order (oldest first)
+      conversationHistory = conversationHistory.reverse();
+    } catch (err) {
+      logger.warn({ err }, "failed_to_fetch_conversation_history");
+    }
+
+    // Format conversation history
+    let historyText = "";
+    if (conversationHistory.length > 0) {
+      const formattedHistory = formatConversationHistory(conversationHistory);
+      historyText = `\n\nPrevious conversation:\n${formattedHistory}\n`;
+    }
+
     const messages = [
       {
         role: "assistant" as const,
@@ -46,7 +71,7 @@ export const planningTool: Tool = {
       },
       {
         role: "user" as const,
-        content: `User message to evaluate: ${message.content.text}`,
+        content: `${historyText}\n\nUser message to evaluate: ${message.question}`,
       },
     ];
 

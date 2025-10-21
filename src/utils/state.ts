@@ -82,6 +82,31 @@ export function cleanWebSearchResults(
   });
 }
 
+/**
+ * Format conversation history from DB messages
+ * Each DB message contains both user question and assistant response
+ * @param messages - Array of messages from the database
+ * @returns Formatted conversation history string
+ */
+export function formatConversationHistory(messages: any[]): string {
+  if (!messages || messages.length === 0) {
+    return "";
+  }
+
+  return messages
+    .flatMap((msg) => {
+      const formattedMessages = [];
+      if (msg.question) {
+        formattedMessages.push(`User: ${msg.question}`);
+      }
+      if (msg.content) {
+        formattedMessages.push(`Assistant: ${msg.content}`);
+      }
+      return formattedMessages;
+    })
+    .join("\n");
+}
+
 export function parseKeyValueXml(text: string): Record<string, any> | null {
   if (!text) return null;
 

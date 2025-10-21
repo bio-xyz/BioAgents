@@ -1,11 +1,14 @@
 import character from "../../character";
+import { getMessagesByConversation, updateMessage } from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import type { LLMResponse, LLMTool, WebSearchResponse } from "../../llm/types";
 import { type Message, type Paper, type State } from "../../types/core";
 import logger from "../../utils/logger";
 import {
+  addVariablesToState,
   cleanWebSearchResults,
   composePromptFromState,
+  formatConversationHistory,
   getUniquePapers,
 } from "../../utils/state";
 
@@ -48,10 +51,7 @@ export const replyTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
     // TODO: broadcast REPLYING state
-    let source: "ui" | "twitter";
-    source = "ui";
-
-    // TODO: fetch twitter thread if source is twitter
+    const source = state.values.source;
 
     let prompt = "";
     // auto tool choice by default
@@ -80,9 +80,34 @@ export const replyTool = {
     }
 
     prompt = composePromptFromState(state, template);
-    // TODO: include conversation history - both twitter and regular and add it to prompt
 
-    prompt += `\n\nYou need to reply to the following question:\n${message.content.text}`;
+    // Include conversation history
+    let conversationHistory: any[] = [];
+    if (source === "ui") {
+      // Fetch last 5 DB messages (= 10 actual messages: 5 questions + 5 responses)
+      try {
+        conversationHistory = await getMessagesByConversation(
+          message.conversation_id,
+          5,
+        );
+        // Reverse to get chronological order (oldest first)
+        conversationHistory = conversationHistory.reverse();
+      } catch (err) {
+        logger.warn({ err }, "failed_to_fetch_conversation_history");
+      }
+    } else if (source === "twitter") {
+      // TODO: fetch twitter thread
+      conversationHistory = [];
+    }
+
+    // Add conversation history to prompt if available
+    // Each DB message contains both user question and assistant response
+    if (conversationHistory.length > 0) {
+      const historyText = formatConversationHistory(conversationHistory);
+      prompt += `\n\nPrevious conversation:\n${historyText}\n`;
+    }
+
+    prompt += `\n\nYou need to reply to the following question:\n${message.question}`;
 
     const useWebSearch = templateKey.toLowerCase().includes("web");
     if (useWebSearch) {
@@ -132,7 +157,7 @@ export const replyTool = {
       model: REPLY_LLM_MODEL,
       systemInstruction,
       messages,
-      maxTokens: 768 + 4096, // openai counts maxtokens = replyTokens + thinkingBudget
+      maxTokens: 768, // openai counts maxtokens = replyTokens + thinkingBudget
       thinkingBudget: 4096,
       tools: tools.length > 0 ? tools : undefined,
     };
@@ -232,16 +257,31 @@ export const replyTool = {
     const uniquePapers = getUniquePapers(state);
     const cleanedWebSearchResults = cleanWebSearchResults(webSearchResults);
 
+    addVariablesToState(state, {
+      webSearchResults: cleanedWebSearchResults,
+      thought: thoughtText,
+    });
+
     const responseContent = {
       thought: thoughtText,
       text: finalText || "",
       actions: ["REPLY"],
       papers: uniquePapers,
-      // TODO: propagate this to the UI, so that the user can see the web search results
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // TODO: update answer eval
+    // Update message in DB with final content and state
+    if (message.id) {
+      try {
+        await updateMessage(message.id, {
+          content: evalText,
+          state: state.values,
+        });
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_message");
+      }
+    }
+
     // TODO: broadcast messageState DONE
 
     return responseContent;
