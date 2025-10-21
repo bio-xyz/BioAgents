@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { cors } from "@elysiajs/cors";
 import { getTool } from "./tools";
 import type { State } from "./types/core";
 import logger from "./utils/logger";
@@ -15,6 +16,9 @@ type ChatResponse = {
 type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
 
 const app = new Elysia()
+  // Enable CORS for frontend access
+  .use(cors())
+
   // Basic request logging (optional)
   .onRequest(({ request }) => {
     if (!logger) return;
@@ -26,6 +30,38 @@ const app = new Elysia()
   .onError(({ code, error }) => {
     if (!logger) return;
     logger.error({ code, err: error }, "unhandled_error");
+  })
+
+  // Serve the Preact UI (from client/dist)
+  .get("/", () => {
+    return Bun.file("client/dist/index.html");
+  })
+
+  // Serve the bundled Preact app JS file
+  .get("/index.js", () => {
+    return new Response(Bun.file("client/dist/index.js"), {
+      headers: {
+        "Content-Type": "application/javascript",
+      },
+    });
+  })
+
+  // Serve the bundled CSS file
+  .get("/index.css", () => {
+    return new Response(Bun.file("client/dist/index.css"), {
+      headers: {
+        "Content-Type": "text/css",
+      },
+    });
+  })
+
+  // Serve source map for debugging
+  .get("/index.js.map", () => {
+    return new Response(Bun.file("client/dist/index.js.map"), {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
   })
 
   // Input validation for the POST body
