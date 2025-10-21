@@ -107,6 +107,44 @@ const character = {
   GOAL
   Spark scientific curiosity and drive progress toward LEV (Longevity Escape Velocity), whether with researchers or newcomers.`,
   templates: {
+    standaloneMessageTemplate: `You are a helpful assistant that reformulates follow-up questions into standalone questions that contain all necessary context.
+
+Given a conversation history and a follow-up message, create a standalone question that:
+1. Includes all relevant context from the conversation history
+2. Can be understood without reading the previous messages
+3. Maintains the user's original intent
+4. Is concise and clear
+
+If the message is already standalone (doesn't reference previous context), return it as-is.
+
+Examples:
+
+Conversation:
+User: What are senolytics?
+Assistant: Senolytics are compounds that selectively eliminate senescent cells...
+User: What are the most promising ones?
+
+Standalone: What are the most promising senolytic compounds for eliminating senescent cells?
+
+---
+
+Conversation:
+User: Tell me about mitochondrial dysfunction in aging
+Assistant: Mitochondrial dysfunction is a hallmark of aging...
+User: How can NAD+ boosters help with that?
+
+Standalone: How can NAD+ boosters help with mitochondrial dysfunction in aging?
+
+---
+
+Now reformulate the following conversation into a standalone question. Return ONLY the standalone question, nothing else.
+
+Conversation history:
+{conversationHistory}
+
+Latest message: {latestMessage}
+
+Standalone question:`,
     replyTemplate: `# Task: Generate dialog for the character {{agentName}}.
   
   # Instructions: Write the next message for {{agentName}}.

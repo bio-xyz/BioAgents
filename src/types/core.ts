@@ -1,16 +1,15 @@
 import { z } from "zod";
 
 export const MessageSchema = z.object({
-  id: z.string().uuid(),
-  createdAt: z.string().datetime(), // ISO 8601
-  conversationId: z.string().min(1),
+  id: z.string().uuid().optional(),
+  conversation_id: z.string().min(1),
+  user_id: z.string().min(1),
+  question: z.string(),
+  content: z.string(),
+  state: z.any().optional(),
+  response_time: z.number().optional(),
   source: z.string().optional(),
-  content: z.object({
-    thought: z.string().optional(),
-    text: z.string().optional(),
-    actions: z.array(z.string()).optional(),
-    providers: z.array(z.string()).optional(),
-  }),
+  created_at: z.string().datetime().optional(),
 });
 
 export type Message = z.infer<typeof MessageSchema>;

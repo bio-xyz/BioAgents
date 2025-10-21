@@ -1,8 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useState } from "preact/hooks";
 
 export interface SendMessageParams {
   message: string;
   conversationId: string;
+  userId: string;
   file?: File | null;
 }
 
@@ -19,27 +20,33 @@ export interface UseChatAPIReturn {
  */
 export function useChatAPI(): UseChatAPIReturn {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   /**
    * Send a message to the chat API
    */
-  const sendMessage = async ({ message, conversationId, file }: SendMessageParams): Promise<string> => {
+  const sendMessage = async ({
+    message,
+    conversationId,
+    userId,
+    file,
+  }: SendMessageParams): Promise<string> => {
     setIsLoading(true);
-    setError('');
+    setError("");
 
     try {
       const formData = new FormData();
-      formData.append('message', message || '');
-      formData.append('conversationId', conversationId);
+      formData.append("message", message || "");
+      formData.append("conversationId", conversationId);
+      formData.append("userId", userId);
 
       if (file) {
-        formData.append('file', file);
+        formData.append("file", file);
       }
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        body: formData
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        body: formData,
       });
 
       if (!response.ok) {
@@ -49,12 +56,15 @@ export function useChatAPI(): UseChatAPIReturn {
       const data = await response.json();
 
       if (!data.text) {
-        throw new Error('No response text received');
+        throw new Error("No response text received");
       }
 
       return data.text;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send message. Please try again.';
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Failed to send message. Please try again.";
       setError(errorMessage);
       throw err;
     } finally {
@@ -66,7 +76,7 @@ export function useChatAPI(): UseChatAPIReturn {
    * Clear error message
    */
   const clearError = () => {
-    setError('');
+    setError("");
   };
 
   return {

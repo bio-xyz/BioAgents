@@ -1,20 +1,20 @@
-import { useState } from 'preact/hooks';
+import { useState } from "preact/hooks";
 
-import { WelcomeScreen } from './components/WelcomeScreen';
-import { Message } from './components/Message';
-import { TypingIndicator } from './components/TypingIndicator';
-import { ChatInput } from './components/ChatInput';
-import { ErrorMessage } from './components/ErrorMessage';
-import { Sidebar } from './components/Sidebar';
+import { ChatInput } from "./components/ChatInput";
+import { ErrorMessage } from "./components/ErrorMessage";
+import { Message } from "./components/Message";
+import { Sidebar } from "./components/Sidebar";
+import { TypingIndicator } from "./components/TypingIndicator";
+import { WelcomeScreen } from "./components/WelcomeScreen";
 
 // Custom hooks
 import {
-  useSessions,
+  useAutoScroll,
   useChatAPI,
   useFileUpload,
+  useSessions,
   useTypingAnimation,
-  useAutoScroll
-} from './hooks';
+} from "./hooks";
 
 export function App() {
   // Session management
@@ -41,10 +41,13 @@ export function App() {
   const { isTyping, animateText } = useTypingAnimation();
 
   // Auto-scroll
-  const { containerRef, scrollToBottom } = useAutoScroll([currentSession.messages, isTyping]);
+  const { containerRef, scrollToBottom } = useAutoScroll([
+    currentSession.messages,
+    isTyping,
+  ]);
 
   // Input state
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState("");
 
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -63,16 +66,20 @@ export function App() {
     // Create user message
     const userMessage = {
       id: Date.now(),
-      role: 'user' as const,
-      content: trimmedInput || (selectedFile ? `[Attached: ${selectedFile.name}]` : ''),
-      file: selectedFile ? { name: selectedFile.name, size: selectedFile.size } : undefined
+      role: "user" as const,
+      content:
+        trimmedInput ||
+        (selectedFile ? `[Attached: ${selectedFile.name}]` : ""),
+      file: selectedFile
+        ? { name: selectedFile.name, size: selectedFile.size }
+        : undefined,
     };
 
     addMessage(userMessage);
 
     // Update session title if it's the first message
     if (messages.length === 0) {
-      const title = trimmedInput || selectedFile?.name || 'New conversation';
+      const title = trimmedInput || selectedFile?.name || "New conversation";
       updateSessionTitle(currentSessionId, title);
     }
 
@@ -80,7 +87,7 @@ export function App() {
     const fileToSend = selectedFile;
 
     // Clear input and file
-    setInputValue('');
+    setInputValue("");
     clearFile();
     scrollToBottom();
 
@@ -89,35 +96,35 @@ export function App() {
       const responseText = await sendMessage({
         message: trimmedInput,
         conversationId: currentSessionId,
-        file: fileToSend
+        userId: currentSessionId,
+        file: fileToSend,
       });
 
       // Create temp message for typing animation
       const tempId = Date.now();
       addMessage({
         id: tempId,
-        role: 'assistant' as const,
-        content: ''
+        role: "assistant" as const,
+        content: "",
       });
 
       // Animate the response
       await animateText(
         responseText,
         (currentText) => {
-          updateSessionMessages(currentSessionId, prev =>
-            prev.map(msg =>
-              msg.id === tempId ? { ...msg, content: currentText } : msg
-            )
+          updateSessionMessages(currentSessionId, (prev) =>
+            prev.map((msg) =>
+              msg.id === tempId ? { ...msg, content: currentText } : msg,
+            ),
           );
           scrollToBottom();
         },
         () => {
           scrollToBottom();
-        }
+        },
       );
-
     } catch (err) {
-      console.error('Chat error:', err);
+      console.error("Chat error:", err);
       // Remove user message on error
       removeMessage(userMessage.id);
     }
@@ -156,27 +163,28 @@ export function App() {
           onClick={() => setIsMobileSidebarOpen(true)}
           aria-label="Open menu"
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
 
-
-        {error && (
-          <ErrorMessage
-            message={error}
-            onClose={clearError}
-          />
-        )}
+        {error && <ErrorMessage message={error} onClose={clearError} />}
 
         <div className="chat-container" ref={containerRef}>
           {messages.length === 0 && (
             <WelcomeScreen onExampleClick={(text) => setInputValue(text)} />
           )}
 
-          {messages.map(msg => (
+          {messages.map((msg) => (
             <Message key={msg.id} message={msg} />
           ))}
 

@@ -1,4 +1,10 @@
 import { Elysia, t } from "elysia";
+import {
+  createMessage,
+  updateMessage,
+  createConversation,
+  createUser,
+} from "../db/operations";
 import { getTool } from "../tools";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
@@ -6,6 +12,7 @@ import logger from "../utils/logger";
 type ChatRequest = {
   message: string;
   conversationId: string;
+  userId: string;
 };
 
 type ChatResponse = {
@@ -14,13 +21,72 @@ type ChatResponse = {
 
 type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
 
+// TODO: This is a temporary safeguard while the repo is WIP
+// In production, users and conversations should be created through proper auth/onboarding flows
+async function conditionallyCreateMockUserAndConversation(
+  userId: string,
+  conversationId: string,
+): Promise<{ success: boolean; error?: string }> {
+  // Ensure user exists (create if not)
+  try {
+    await createUser({
+      id: userId,
+      username: `user_${userId.slice(0, 8)}`,
+      email: `${userId}@temp.local`,
+    });
+    if (logger) logger.info({ userId }, "user_created");
+  } catch (err: any) {
+    // Ignore duplicate key errors (user already exists)
+    if (err.code !== "23505") {
+      if (logger) logger.error({ err }, "create_user_failed");
+      return { success: false, error: "Failed to create user" };
+    }
+  }
+
+  // Ensure conversation exists (create if not)
+  try {
+    await createConversation({
+      id: conversationId,
+      user_id: userId,
+    });
+    if (logger) logger.info({ conversationId }, "conversation_created");
+  } catch (err: any) {
+    // Ignore duplicate key errors (conversation already exists)
+    if (err.code !== "23505") {
+      if (logger) logger.error({ err }, "create_conversation_failed");
+      return { success: false, error: "Failed to create conversation" };
+    }
+  }
+
+  return { success: true };
+}
+
 export const chatRoute = new Elysia().post(
   "/api/chat",
-  async ({ body, set }) => {
-    const { message, conversationId } = body as ChatRequest;
+  async ({ body, set, request }) => {
+    const startTime = Date.now();
 
-    // Initialize state per request
-    const state: State = { values: {} };
+    // Handle FormData (sent from frontend for file upload support)
+    let message: string;
+    let conversationId: string;
+    let userId: string;
+
+    if (body instanceof FormData) {
+      message = body.get("message") as string;
+      conversationId = body.get("conversationId") as string;
+      userId = body.get("userId") as string;
+    } else {
+      ({ message, conversationId, userId } = body as ChatRequest);
+    }
+
+    // Validate required fields
+    if (!message || !conversationId || !userId) {
+      set.status = 400;
+      return {
+        ok: false,
+        error: "Missing required fields: message, conversationId, userId",
+      };
+    }
 
     const planningTool = getTool("PLANNING");
     if (!planningTool) {
@@ -28,12 +94,40 @@ export const chatRoute = new Elysia().post(
       return { ok: false, error: "Planning tool not found" };
     }
 
-    // TODO: create message in DB, and pass to planning tool later
-    const createdMessage = {
+    // Ensure user and conversation exist (WIP safeguard)
+    const setupResult = await conditionallyCreateMockUserAndConversation(
+      userId,
       conversationId,
-      id: crypto.randomUUID?.() ?? "1",
-      createdAt: new Date().toISOString(),
-      content: { text: message },
+    );
+    if (!setupResult.success) {
+      set.status = 500;
+      return { ok: false, error: setupResult.error || "Setup failed" };
+    }
+
+    // Create message in DB
+    let createdMessage;
+    try {
+      createdMessage = await createMessage({
+        conversation_id: conversationId,
+        user_id: userId,
+        question: message,
+        content: "", // answer will be updated later
+        source: "ui", // TODO: source hardcoded for now
+      });
+    } catch (err) {
+      if (logger) logger.error({ err }, "create_message_failed");
+      set.status = 500;
+      return { ok: false, error: "Failed to create message" };
+    }
+
+    // Initialize state per request
+    const state: State = {
+      values: {
+        messageId: createdMessage.id,
+        conversationId,
+        userId,
+        source: createdMessage.source,
+      },
     };
 
     // Execute planning tool
@@ -108,13 +202,20 @@ export const chatRoute = new Elysia().post(
       return { ok: false, error: `Action tool execution failed: ${action}` };
     }
 
+    // Calculate and update response time
+    const responseTime = Date.now() - startTime;
+    try {
+      await updateMessage(createdMessage.id, {
+        response_time: responseTime,
+      });
+    } catch (err) {
+      if (logger) logger.error({ err }, "failed_to_update_response_time");
+    }
+
     return actionResult;
   },
   {
-    body: t.Object({
-      message: t.String({ minLength: 1 }),
-      conversationId: t.String({ minLength: 1 }),
-    }),
+    // Note: Body validation removed to support FormData from frontend
     response: t.Union([
       t.Object({ text: t.String() }),
       t.Object({ ok: t.Literal(false), error: t.String() }),

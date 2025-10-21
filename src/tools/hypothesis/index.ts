@@ -1,7 +1,8 @@
 import character from "../../character";
+import { updateMessage } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
-import { composePromptFromState } from "../../utils/state";
+import { addVariablesToState, composePromptFromState } from "../../utils/state";
 import type { THypothesisZod } from "./types";
 import {
   generateFinalResponse,
@@ -48,7 +49,7 @@ export const hypothesisTool = {
     }
 
     const useWebSearch = hypDocs.length == 0;
-    const question = message.content.text!;
+    const question = message.question!;
     let webSearchResults: WebSearchResults[] = [];
     try {
       logger.info(`Generating hypothesis`);
@@ -85,7 +86,7 @@ export const hypothesisTool = {
       character.templates.hypothesisActionTemplate,
     );
 
-    prompt += `\n\nYou need to reply to the following question:\n${message.content.text}`;
+    prompt += `\n\nYou need to reply to the following question:\n${message.question}`;
 
     logger.info(`Final prompt: ${prompt}`);
 
@@ -156,6 +157,11 @@ export const hypothesisTool = {
       );
     });
 
+    addVariablesToState(state, {
+      thought: (state.values.hypothesisThought as string) ?? finalText.thought,
+      webSearchResults: cleanedWebSearchResults,
+    });
+
     const responseContent = {
       thought: (state.values.hypothesisThought as string) ?? finalText.thought,
       text: finalText.finalText || "",
@@ -164,7 +170,18 @@ export const hypothesisTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // TODO: update answerEval
+    // Update message in DB with final msg text (content) and state
+    if (message.id) {
+      try {
+        await updateMessage(message.id, {
+          content: responseContent.text,
+          state: state.values,
+        });
+      } catch (err) {
+        // Log error but don't fail the tool execution
+        logger.error({ err }, "failed_to_update_message");
+      }
+    }
 
     // broadcast messageState DONE
 
