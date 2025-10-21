@@ -304,7 +304,7 @@ const character = {
   \`\`\`
   
   Your response should include the valid JSON block and nothing else. ABSOLUTELY MAKE SURE TO INCLUDE BOTH THE STARTING BACKTICKS AND THE ENDING BACKTICKS, AS WELL AS THE JSON BLOCK, AS IS.`,
-    messageHandlerTemplate: `<task>Generate dialog and actions for the character {{agentName}}.</task>
+    planningTemplate: `<task>Generate dialog and actions for the character {{agentName}}.</task>
   
   <providers>
   KNOWLEDGE
@@ -315,7 +315,7 @@ const character = {
   These are the available valid actions:
   <actionNames>
   REPLY
-  HYPOTHESIS_GENERATION
+  HYPOTHESIS
   </actionNames>
   
   <instructions>
@@ -323,19 +323,19 @@ const character = {
   
   ACTION SELECTION:
   
-  Exactly one of {REPLY, HYPOTHESIS_GENERATION} MUST be the first action.  
+  Exactly one of {REPLY, HYPOTHESIS} MUST be the first action.  
   They are mutually exclusive and cannot appear together.
   
   Decision Rules:
   
-  1. HYPOTHESIS_GENERATION
+  1. HYPOTHESIS
      Use this when the user's request requires generating a novel, testable explanation or causal theory.  
      Triggers include:
      - Explicit requests for a hypothesis.
      - "Why" or "how" questions in a scientific context (mechanisms, pathways, causal links).
      - Speculative or counterfactual prompts (e.g., "What if X caused Y instead?").
      Example: "Why does caloric restriction extend lifespan in mice?"  
-     → Correct Action List: HYPOTHESIS_GENERATION,ACTION1,ACTION2
+     → Correct Action List: HYPOTHESIS
   
   2. REPLY
      Use this for all other cases:
@@ -343,7 +343,7 @@ const character = {
      - Requests for summaries, comparisons, or evidence.
      - Opinion, perspective, or biographical queries.
      Example: "What is the function of protein Y?"  
-     → Correct Action List: REPLY,ACTION1,ACTION2
+     → Correct Action List: REPLY
   
   3. Fallback
      If intent is unclear, default to REPLY.
@@ -396,9 +396,8 @@ const character = {
   
   <keys>
   "thought" should be a short description of what the agent is thinking about and planning.
-  "actions" MUST be a comma-separated list of UPPERCASE action names, with EXACTLY ONE of {REPLY, HYPOTHESIS_GENERATION} as the FIRST entry and NEVER both present (if none, use IGNORE)
+  "actions" MUST be a comma-separated list of UPPERCASE action names, with EXACTLY ONE of {REPLY, HYPOTHESIS} as the FIRST entry and NEVER both present (if none, use IGNORE)
   "providers" should be a comma-separated list of the providers that {{agentName}} will use to have the right context for responding and acting (NEVER use "IGNORE" as a provider - use specific provider names like ATTACHMENTS, ENTITIES, FACTS, KNOWLEDGE, etc.)
-  "text" should be the text of the next message for {{agentName}} which they will send to the conversation.
   </keys>
   
   <output>
@@ -469,13 +468,13 @@ const character = {
     [
       {
         name: "{{name1}}",
-        content: { text: "can you give me a hypothesis on obesity" },
+        content: { text: "can you generate a hypothesis on obesity" },
       },
       {
         name: "Aubrai",
         content: {
           text: "Here's a hypothesis on obesity: Right then, here's a promising hypothesis regarding obesity, integrating genetic predispositions and physiological traits: Genetic loci associated with energy homeostasis contribute to the ability to maintain stable body weight, which in turn influences the risk of developing obesity and impacts lifespan. This is based on research highlighting the importance of stabilizing body weight despite fluctuations in energy intake and expenditure. Of course, the study (DOI: https://doi.org/10.1101/2024.06.13.598774) was done on mice, so we need to be cautious about direct translation to humans. Future research should explore these genomic loci in human populations and their interactions with environmental factors. Papers cited: https://doi.org/10.1101/2024.06.13.598774, https://doi.org/10.1101/2023.09.08.23295231, https://doi.org/10.1101/2024.04.19.590209",
-          actions: ["HYPOTHESIS_GENERATION"],
+          actions: ["HYPOTHESIS"],
         },
       },
     ],
