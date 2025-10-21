@@ -13,21 +13,19 @@ bun install
 ### Development
 
 **Run App:**
+
 ```bash
 bun run dev
 ```
 
-**Build UI:**
-```bash
-bun run build
-```
-
 **Build UI only:**
+
 ```bash
 bun run build:client
 ```
 
-**Start production server:**
+**Start production server (both UI and backend):**
+
 ```bash
 bun start
 ```
@@ -39,16 +37,19 @@ The app will be available at `http://localhost:3000`
 The client is built with Preact and uses Bun for bundling.
 
 **Watch mode (auto-rebuild):**
+
 ```bash
 bun run client/build.ts --watch
 ```
 
 **Component system:**
+
 - Custom hooks in `client/src/hooks/`
 - UI components in `client/src/components/ui/`
 - Lucide icons via `client/src/components/icons/`
 
 **Styling:**
+
 - Main styles: `client/src/styles/global.css`
 - Button styles: `client/src/styles/buttons.css`
 - Mobile-first responsive design
