@@ -2,18 +2,8 @@ import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { getTool } from "./tools";
 import type { State } from "./types/core";
+import { chatRoute } from "./routes/chat";
 import logger from "./utils/logger";
-
-type ChatRequest = {
-  message: string;
-  conversationId: string;
-};
-
-type ChatResponse = {
-  text: string;
-};
-
-type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
 
 const app = new Elysia()
   // Enable CORS for frontend access
@@ -168,6 +158,7 @@ const app = new Elysia()
       ]),
     },
   );
+  .use(chatRoute);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
