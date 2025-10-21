@@ -1,8 +1,12 @@
+import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { chatRoute } from "./routes/chat";
 import logger from "./utils/logger";
 
 const app = new Elysia()
+  // Enable CORS for frontend access
+  .use(cors())
+
   // Basic request logging (optional)
   .onRequest(({ request }) => {
     if (!logger) return;
@@ -14,6 +18,38 @@ const app = new Elysia()
   .onError(({ code, error }) => {
     if (!logger) return;
     logger.error({ code, err: error }, "unhandled_error");
+  })
+
+  // Serve the Preact UI (from client/dist)
+  .get("/", () => {
+    return Bun.file("client/dist/index.html");
+  })
+
+  // Serve the bundled Preact app JS file
+  .get("/index.js", () => {
+    return new Response(Bun.file("client/dist/index.js"), {
+      headers: {
+        "Content-Type": "application/javascript",
+      },
+    });
+  })
+
+  // Serve the bundled CSS file
+  .get("/index.css", () => {
+    return new Response(Bun.file("client/dist/index.css"), {
+      headers: {
+        "Content-Type": "text/css",
+      },
+    });
+  })
+
+  // Serve source map for debugging
+  .get("/index.js.map", () => {
+    return new Response(Bun.file("client/dist/index.js.map"), {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
   })
   .use(chatRoute);
 
