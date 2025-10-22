@@ -7,6 +7,7 @@ import logger from "./utils/logger";
 const app = new Elysia()
   // Enable CORS for frontend access
   .use(cors({
+    origin: true, // Allow all origins (Coolify handles domain routing)
     credentials: true, // Important: allow cookies
   }))
 
@@ -60,6 +61,11 @@ const app = new Elysia()
         "Content-Type": "application/json",
       },
     });
+  })
+
+  // Handle favicon (prevent 404 errors)
+  .get("/favicon.ico", () => {
+    return new Response(null, { status: 204 });
   })
 
   // API routes (not protected by UI auth)
