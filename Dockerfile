@@ -1,5 +1,5 @@
-# Use Bun official image
-FROM oven/bun:1 AS base
+# Use latest Bun official image with full Node.js compatibility
+FROM oven/bun:latest AS base
 
 # Set working directory
 WORKDIR /app
@@ -22,8 +22,9 @@ RUN bun install --frozen-lockfile --production
 # Expose port
 EXPOSE 3000
 
-# Set production environment
+# Set production environment with Node.js compatibility
 ENV NODE_ENV=production
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=/tmp
 
 # Run as non-root user for security
 USER bun
@@ -32,5 +33,5 @@ USER bun
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD bun run -e 'fetch("http://localhost:3000/api/auth/status").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
 
-# Start the server
+# Start the server with Node.js compatibility mode
 CMD ["bun", "run", "src/index.ts"]
