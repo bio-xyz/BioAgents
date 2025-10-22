@@ -13,6 +13,19 @@ const clientDir = import.meta.dir;
 const distDir = join(clientDir, 'dist');
 const isWatchMode = process.argv.includes('--watch');
 
+// Load environment variables from parent directory's .env file
+const envPath = join(clientDir, '..', '.env');
+if (existsSync(envPath)) {
+  const envContent = readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const match = line.match(/^([^=:#]+)=(.*)$/);
+    if (match) {
+      const [, key, value] = match;
+      process.env[key.trim()] = value.trim();
+    }
+  }
+}
+
 // Ensure dist directory exists
 if (!existsSync(distDir)) {
   mkdirSync(distDir, { recursive: true });
@@ -29,7 +42,11 @@ async function build() {
     minify: !isWatchMode, // Don't minify in watch mode for faster builds
     target: 'browser',
     sourcemap: 'external',
-    splitting: true, // Enable code splitting for better HMR
+    splitting: false, // Disable code splitting to avoid chunk files the server doesn't handle
+    define: {
+      'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ''),
+      'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || ''),
+    },
   });
 
   if (!buildResult.success) {

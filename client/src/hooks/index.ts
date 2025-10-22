@@ -9,6 +9,7 @@ export { useFileUpload } from './useFileUpload';
 export { useTypingAnimation } from './useTypingAnimation';
 export { useAutoScroll } from './useAutoScroll';
 export { useAutoResize } from './useAutoResize';
+export { useAuth } from './useAuth';
 
 export type { Message, Session, UseSessionsReturn } from './useSessions';
 export type { SendMessageParams, UseChatAPIReturn } from './useChatAPI';
