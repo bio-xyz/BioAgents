@@ -6,6 +6,7 @@ import { Message } from "./components/Message";
 import { Sidebar } from "./components/Sidebar";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { WelcomeScreen } from "./components/WelcomeScreen";
+import { LoginScreen } from "./components/LoginScreen";
 
 // Custom hooks
 import {
@@ -14,14 +15,20 @@ import {
   useFileUpload,
   useSessions,
   useTypingAnimation,
+  useAuth,
 } from "./hooks";
 
 export function App() {
+  // Auth management
+  const { isAuthenticated, isAuthRequired, isChecking, login } = useAuth();
+
   // Session management
   const {
     sessions,
     currentSession,
     currentSessionId,
+    userId,
+    isLoading: isLoadingSessions,
     addMessage,
     removeMessage,
     updateSessionMessages,
@@ -96,7 +103,7 @@ export function App() {
       const responseText = await sendMessage({
         message: trimmedInput,
         conversationId: currentSessionId,
-        userId: currentSessionId,
+        userId: userId,
         file: fileToSend,
       });
 
@@ -130,6 +137,28 @@ export function App() {
     }
   };
 
+  // Show loading screen while checking auth
+  if (isChecking) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'var(--bg-primary)',
+        color: 'var(--text-secondary)'
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
+  // Show login screen if auth is required and user is not authenticated
+  if (isAuthRequired && !isAuthenticated) {
+    return <LoginScreen onLogin={login} />;
+  }
+
+  // Show main app
   return (
     <div className="app">
       {/* Mobile overlay */}
@@ -180,15 +209,23 @@ export function App() {
         {error && <ErrorMessage message={error} onClose={clearError} />}
 
         <div className="chat-container" ref={containerRef}>
-          {messages.length === 0 && (
-            <WelcomeScreen onExampleClick={(text) => setInputValue(text)} />
+          {isLoadingSessions ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+              Loading conversations...
+            </div>
+          ) : (
+            <>
+              {messages.length === 0 && (
+                <WelcomeScreen onExampleClick={(text) => setInputValue(text)} />
+              )}
+
+              {messages.map((msg) => (
+                <Message key={msg.id} message={msg} />
+              ))}
+
+              {isLoading && !isTyping && <TypingIndicator />}
+            </>
           )}
-
-          {messages.map((msg) => (
-            <Message key={msg.id} message={msg} />
-          ))}
-
-          {isLoading && !isTyping && <TypingIndicator />}
         </div>
 
         <ChatInput

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.66.0",
+    "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/cors": "^1.4.0",
     "@elysiajs/html": "^1.4.0",
     "@elysiajs/static": "^1.4.4",
