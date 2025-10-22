@@ -66,7 +66,15 @@ export const replyTool = {
       "You have access to the following chunks from your different knowledge bases. You should use these to answer the user's question if they are relevant to the user's question:\n";
 
     if (state.values.knowledge?.length) {
-      providerString += `Knowledge chunks (from Aubrey De Grey's knowledge base): ${state.values.knowledge}\n`;
+      // Create a concatenated string of knowledge for prompts
+      const knowledgeString = state.values.knowledge
+        .map(
+          (doc: any, index: number) =>
+            `[${index + 1}] ${doc.title} - ${doc.content}`,
+        )
+        .join("\n\n");
+
+      providerString += `Knowledge chunks (from Aubrey De Grey's knowledge base): ${knowledgeString}\n`;
     }
 
     if (state.values.openScholarRaw?.length) {
