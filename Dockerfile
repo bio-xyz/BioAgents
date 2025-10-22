@@ -5,10 +5,11 @@ FROM oven/bun:latest AS base
 WORKDIR /app
 
 # Copy dependency files
-COPY package.json bun.lock ./
+COPY package.json bun.lock* ./
 
 # Install ALL dependencies (needed for build)
-RUN bun install --frozen-lockfile
+# Don't use --frozen-lockfile in production builds (causes issues if lock is out of sync)
+RUN bun install
 
 # Copy source code
 COPY . .
@@ -17,7 +18,7 @@ COPY . .
 RUN cd client && bun run build
 
 # Remove dev dependencies after build
-RUN bun install --frozen-lockfile --production
+RUN bun install --production
 
 # Expose port
 EXPOSE 3000
