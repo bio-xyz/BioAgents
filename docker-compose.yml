@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  bioagents:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Required: Your API keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+
+      # Agent Configuration
+      - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
+      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-openai}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gpt-4}
+      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-openai}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gpt-4}
+      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-openai}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gpt-4}
+      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-openai}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gpt-4}
+
+      # Optional: UI Password Protection
+      - UI_PASSWORD=${UI_PASSWORD:-}
+
+      # Optional: Supabase
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
+
+      # Server Configuration
+      - PORT=3000
+      - NODE_ENV=production
+
+    # Optional: Mount .env file
+    env_file:
+      - .env
+
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
