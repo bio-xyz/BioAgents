@@ -38,6 +38,16 @@ export const hypothesisTool = {
       context: "This chunk is from OpenScholar RAG on longevity and aging",
     }));
 
+    // add top 3 knowledge chunks to hypDocs too
+    const knowledgeChunks = state.values.knowledge.slice(0, 3);
+    knowledgeChunks.forEach((chunk: any) => {
+      hypDocs.push({
+        title: chunk.title,
+        text: chunk.content,
+        context: "This chunk is from Aubrey De Grey's knowledge base",
+      });
+    });
+
     if (hypDocs.length == 0) {
       logger.info(
         "No relevant docs found in both KG and openscholar for hyp gen, falling back to web search",
