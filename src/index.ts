@@ -7,6 +7,7 @@ import logger from "./utils/logger";
 const app = new Elysia()
   // Enable CORS for frontend access
   .use(cors({
+    origin: true, // Allow all origins (Coolify handles domain routing)
     credentials: true, // Important: allow cookies
   }))
 
@@ -62,13 +63,22 @@ const app = new Elysia()
     });
   })
 
+  // Handle favicon (prevent 404 errors)
+  .get("/favicon.ico", () => {
+    return new Response(null, { status: 204 });
+  })
+
   // API routes (not protected by UI auth)
   .use(chatRoute);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify
 
-app.listen(port, () => {
+app.listen({
+  port,
+  hostname,
+}, () => {
   if (logger)
-    logger.info({ url: `http://localhost:${port}` }, "server_listening");
-  else console.log(`Server listening on http://localhost:${port}`);
+    logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
+  else console.log(`Server listening on http://${hostname}:${port}`);
 });
