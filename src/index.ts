@@ -1,11 +1,14 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { chatRoute } from "./routes/chat";
+import { authRoute } from "./routes/auth";
 import logger from "./utils/logger";
 
 const app = new Elysia()
   // Enable CORS for frontend access
-  .use(cors())
+  .use(cors({
+    credentials: true, // Important: allow cookies
+  }))
 
   // Basic request logging (optional)
   .onRequest(({ request }) => {
@@ -19,6 +22,13 @@ const app = new Elysia()
     if (!logger) return;
     logger.error({ code, err: error }, "unhandled_error");
   })
+
+  // Mount auth routes (no protection needed for auth endpoints)
+  .use(authRoute)
+
+  // Note: We always serve UI files regardless of auth status
+  // The frontend (useAuth hook) will check /api/auth/status and show login screen if needed
+  // This allows the login UI to render properly
 
   // Serve the Preact UI (from client/dist)
   .get("/", () => {
@@ -51,6 +61,8 @@ const app = new Elysia()
       },
     });
   })
+
+  // API routes (not protected by UI auth)
   .use(chatRoute);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;

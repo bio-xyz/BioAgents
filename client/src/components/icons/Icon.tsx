@@ -19,6 +19,20 @@ import {
   ChevronRight,
   File,
   MoreHorizontal,
+  Mic,
+  Image,
+  Globe,
+  Lightbulb,
+  ThumbsUp,
+  ThumbsDown,
+  Share2,
+  RefreshCw,
+  Dna,
+  Microscope,
+  Activity,
+  Syringe,
+  Pill,
+  FlaskConical,
 } from 'lucide-preact';
 
 export interface IconProps {
@@ -44,6 +58,20 @@ const iconMap: Record<string, any> = {
   chevronRight: ChevronRight,
   file: File,
   menu: MoreHorizontal,
+  mic: Mic,
+  image: Image,
+  globe: Globe,
+  lightbulb: Lightbulb,
+  thumbsUp: ThumbsUp,
+  thumbsDown: ThumbsDown,
+  share: Share2,
+  refresh: RefreshCw,
+  dna: Dna,
+  microscope: Microscope,
+  activity: Activity,
+  syringe: Syringe,
+  pill: Pill,
+  flask: FlaskConical,
 };
 
 /**
