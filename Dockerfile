@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy dependency files
 COPY package.json bun.lock ./
 
-# Install dependencies
-RUN bun install --frozen-lockfile
+# Install dependencies (production only, no dev dependencies)
+RUN bun install --frozen-lockfile --production
 
 # Copy source code
 COPY . .
@@ -21,6 +21,13 @@ EXPOSE 3000
 
 # Set production environment
 ENV NODE_ENV=production
+
+# Run as non-root user for security
+USER bun
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD bun run -e 'fetch("http://localhost:3000/api/auth/status").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
 
 # Start the server
 CMD ["bun", "run", "src/index.ts"]
