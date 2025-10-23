@@ -1,9 +1,14 @@
 import axios from "axios";
 import character from "../../character";
-import { getMessagesByConversation, updateMessage } from "../../db/operations";
+import {
+  getMessagesByConversation,
+  updateMessage,
+  updateState,
+} from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import { type Message, type State } from "../../types/core";
 import { SimpleCache } from "../../utils/cache";
+import logger from "../../utils/logger";
 import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
 import {
   addVariablesToState,
@@ -150,14 +155,12 @@ export const openscholarTool = {
         openScholarPaperDois: cachedResult.values.openScholarPaperDois,
       });
 
-      // Update message in DB with cached state
-      if (message.id) {
+      // Update state in DB with cached state
+      if (state.id) {
         try {
-          await updateMessage(message.id, {
-            state: state.values,
-          });
+          await updateState(state.id, state.values);
         } catch (err) {
-          console.error("Failed to update message in DB:", err);
+          console.error("Failed to update state in DB:", err);
         }
       }
 
@@ -210,7 +213,7 @@ export const openscholarTool = {
     // TODO: shortened papers for Twitter
     const shortenedPapers: string[] = [];
 
-    // TODO: logger.info openscholar dois
+    logger.info(`OpenScholar dois: ${openScholarPaperDois.join(", ")}`);
 
     addVariablesToState(state, {
       openScholarPapers,
@@ -235,15 +238,13 @@ export const openscholarTool = {
     // Cache the result for 30 minutes
     openScholarCache.set(cacheKey, result, 30 * 60 * 1000);
 
-    // Update message in DB with current state
-    if (message.id) {
+    // Update state in DB
+    if (state.id) {
       try {
-        await updateMessage(message.id, {
-          state: state.values,
-        });
+        await updateState(state.id, state.values);
       } catch (err) {
         // Log error but don't fail the tool execution
-        console.error("Failed to update message in DB:", err);
+        console.error("Failed to update state in DB:", err);
       }
     }
 

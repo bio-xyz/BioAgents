@@ -1,9 +1,10 @@
 import { Elysia, t } from "elysia";
 import {
-  createMessage,
-  updateMessage,
   createConversation,
+  createMessage,
+  createState,
   createUser,
+  updateMessage,
 } from "../db/operations";
 import { getTool } from "../tools";
 import type { State } from "../types/core";
@@ -104,7 +105,23 @@ export const chatRoute = new Elysia().post(
       return { ok: false, error: setupResult.error || "Setup failed" };
     }
 
-    // Create message in DB
+    // Create initial state in DB
+    let stateRecord;
+    try {
+      stateRecord = await createState({
+        values: {
+          conversationId,
+          userId,
+          source: "ui",
+        },
+      });
+    } catch (err) {
+      if (logger) logger.error({ err }, "create_state_failed");
+      set.status = 500;
+      return { ok: false, error: "Failed to create state" };
+    }
+
+    // Create message in DB with state_id
     let createdMessage;
     try {
       createdMessage = await createMessage({
@@ -113,6 +130,7 @@ export const chatRoute = new Elysia().post(
         question: message,
         content: "", // answer will be updated later
         source: "ui", // TODO: source hardcoded for now
+        state_id: stateRecord.id,
       });
     } catch (err) {
       if (logger) logger.error({ err }, "create_message_failed");
@@ -122,6 +140,7 @@ export const chatRoute = new Elysia().post(
 
     // Initialize state per request
     const state: State = {
+      id: stateRecord.id,
       values: {
         messageId: createdMessage.id,
         conversationId,

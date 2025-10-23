@@ -1,5 +1,9 @@
 import character from "../../character";
-import { getMessagesByConversation, updateMessage } from "../../db/operations";
+import {
+  getMessagesByConversation,
+  updateMessage,
+  updateState,
+} from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import type { LLMResponse, LLMTool, WebSearchResponse } from "../../llm/types";
 import { type Message, type Paper, type State } from "../../types/core";
@@ -278,15 +282,22 @@ export const replyTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message in DB with final content and state
+    // Update message and state in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
           content: evalText,
-          state: state.values,
         });
       } catch (err) {
         logger.error({ err }, "failed_to_update_message");
+      }
+    }
+
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
       }
     }
 
