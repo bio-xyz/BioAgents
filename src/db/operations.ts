@@ -20,13 +20,20 @@ export interface Conversation {
   user_id: string;
 }
 
+export interface State {
+  id?: string;
+  values: any;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Message {
   id?: string;
   conversation_id: string;
   user_id: string;
   question?: string;
   content: string;
-  state?: any;
+  state_id?: string;
   response_time?: number;
   source?: string;
 }
@@ -85,7 +92,7 @@ export async function getMessagesByConversation(
 ) {
   let query = supabase
     .from("messages")
-    .select("*")
+    .select("*, state:states(*)")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false });
 
@@ -94,6 +101,41 @@ export async function getMessagesByConversation(
   }
 
   const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+}
+
+// State operations
+export async function createState(stateData: { values: any }) {
+  const { data, error } = await supabase
+    .from("states")
+    .insert(stateData)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateState(id: string, values: any) {
+  const { data, error } = await supabase
+    .from("states")
+    .update({ values })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getState(id: string) {
+  const { data, error } = await supabase
+    .from("states")
+    .select("*")
+    .eq("id", id)
+    .single();
 
   if (error) throw error;
   return data;

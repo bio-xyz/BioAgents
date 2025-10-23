@@ -1,13 +1,22 @@
 import axios from "axios";
 import character from "../../character";
-import { getMessagesByConversation, updateMessage } from "../../db/operations";
+import {
+  getMessagesByConversation,
+  updateMessage,
+  updateState,
+} from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import { type Message, type State } from "../../types/core";
+import { SimpleCache } from "../../utils/cache";
+import logger from "../../utils/logger";
 import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
 import {
   addVariablesToState,
   formatConversationHistory,
 } from "../../utils/state";
+
+// Cache for OpenScholar results (30 minutes TTL)
+const openScholarCache = new SimpleCache<any>();
 
 interface OpenScholarChunk {
   reranker_score: number;
@@ -132,7 +141,31 @@ export const openscholarTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
+    addVariablesToState(state, { currentStep: "OPENSCHOLAR" });
+
     const cacheKey = `openscholar:data:${message.question}:${message.conversation_id}`;
+
+    // Check cache first
+    const cachedResult = openScholarCache.get(cacheKey);
+    if (cachedResult) {
+      // Restore state from cached result
+      addVariablesToState(state, {
+        openScholarPapers: cachedResult.values.openScholarPapers,
+        openScholarRaw: cachedResult.values.openScholarRaw,
+        openScholarPaperDois: cachedResult.values.openScholarPaperDois,
+      });
+
+      // Update state in DB with cached state
+      if (state.id) {
+        try {
+          await updateState(state.id, state.values);
+        } catch (err) {
+          console.error("Failed to update state in DB:", err);
+        }
+      }
+
+      return cachedResult;
+    }
 
     // Get conversation thread (last 3 DB messages = 6 actual messages)
     const allMessages = await getMessagesByConversation(
@@ -148,13 +181,6 @@ export const openscholarTool = {
       message.question || "",
     );
     const question = standaloneMessage;
-
-    // TODO: implement actual cache for openscholar results
-    const cachedResult = null;
-
-    if (cachedResult) {
-      return cachedResult;
-    }
 
     const topChunks = await fetchOpenScholarChunks(question);
 
@@ -187,7 +213,7 @@ export const openscholarTool = {
     // TODO: shortened papers for Twitter
     const shortenedPapers: string[] = [];
 
-    // TODO: logger.info openscholar dois
+    logger.info(`OpenScholar dois: ${openScholarPaperDois.join(", ")}`);
 
     addVariablesToState(state, {
       openScholarPapers,
@@ -196,7 +222,6 @@ export const openscholarTool = {
       // shortenedPapers,
     });
 
-    // TODO: return result
     const result = {
       text: "OpenScholar papers",
       values: {
@@ -210,17 +235,16 @@ export const openscholarTool = {
       },
     };
 
-    // TODO: add result to cache
+    // Cache the result for 30 minutes
+    openScholarCache.set(cacheKey, result, 30 * 60 * 1000);
 
-    // Update message in DB with current state
-    if (message.id) {
+    // Update state in DB
+    if (state.id) {
       try {
-        await updateMessage(message.id, {
-          state: state.values,
-        });
+        await updateState(state.id, state.values);
       } catch (err) {
         // Log error but don't fail the tool execution
-        console.error("Failed to update message in DB:", err);
+        console.error("Failed to update state in DB:", err);
       }
     }
 
