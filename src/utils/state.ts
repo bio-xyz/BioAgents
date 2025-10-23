@@ -2,6 +2,8 @@ import type { WebSearchResult } from "../llm/types";
 import type { Paper, State } from "../types/core";
 import logger from "./logger";
 
+// TODO: make state a separate table rather than a column in the messages table
+
 export function addVariablesToState(
   state: State,
   variables: Record<string, any>,

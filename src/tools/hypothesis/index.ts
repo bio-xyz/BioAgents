@@ -19,7 +19,7 @@ export const hypothesisTool = {
     const { state, message } = input;
     let hypothesisStructured: THypothesisZod | null = null;
 
-    // TODO: broadcast HYPOTHESIS_GENERATION state
+    addVariablesToState(state, { currentStep: "HYPOTHESIS_GENERATION" });
 
     // TODO: get twitter thread if source is twitter
 
@@ -193,7 +193,7 @@ export const hypothesisTool = {
       }
     }
 
-    // broadcast messageState DONE
+    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },

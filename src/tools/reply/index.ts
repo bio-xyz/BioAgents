@@ -50,7 +50,7 @@ export const replyTool = {
   description: "Reply to the user's message based on the agent flow",
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
-    // TODO: broadcast REPLYING state
+    addVariablesToState(state, { currentStep: "REPLYING" });
     const source = state.values.source;
 
     let prompt = "";
@@ -290,7 +290,7 @@ export const replyTool = {
       }
     }
 
-    // TODO: broadcast messageState DONE
+    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },
