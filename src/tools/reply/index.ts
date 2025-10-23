@@ -1,5 +1,9 @@
 import character from "../../character";
-import { getMessagesByConversation, updateMessage } from "../../db/operations";
+import {
+  getMessagesByConversation,
+  updateMessage,
+  updateState,
+} from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import type { LLMResponse, LLMTool, WebSearchResponse } from "../../llm/types";
 import { type Message, type Paper, type State } from "../../types/core";
@@ -50,7 +54,7 @@ export const replyTool = {
   description: "Reply to the user's message based on the agent flow",
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
-    // TODO: broadcast REPLYING state
+    addVariablesToState(state, { currentStep: "REPLYING" });
     const source = state.values.source;
 
     let prompt = "";
@@ -278,19 +282,26 @@ export const replyTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message in DB with final content and state
+    // Update message and state in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
           content: evalText,
-          state: state.values,
         });
       } catch (err) {
         logger.error({ err }, "failed_to_update_message");
       }
     }
 
-    // TODO: broadcast messageState DONE
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
+
+    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },

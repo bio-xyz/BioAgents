@@ -1,5 +1,8 @@
 import character from "../../character";
-import { getMessagesByConversation, updateMessage } from "../../db/operations";
+import {
+  getMessagesByConversation,
+  updateState,
+} from "../../db/operations";
 import { VectorSearchWithDocuments } from "../../embeddings/vectorSearchWithDocs";
 import { LLM } from "../../llm/provider";
 import { type Message, type State } from "../../types/core";
@@ -105,14 +108,12 @@ export const knowledgeTool = {
       },
     };
 
-    // Update message in DB with current state
-    if (message.id) {
+    // Update state in DB
+    if (state.id) {
       try {
-        await updateMessage(message.id, {
-          state: state.values,
-        });
+        await updateState(state.id, state.values);
       } catch (err) {
-        logger.error("Failed to update message in DB:", err as any);
+        logger.error("Failed to update state in DB:", err as any);
       }
     }
 

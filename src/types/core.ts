@@ -14,7 +14,10 @@ export const MessageSchema = z.object({
 
 export type Message = z.infer<typeof MessageSchema>;
 
+// TODO: add expiry to state rows in DB
+// TODO: add conversation state
 export const StateSchema = z.object({
+  id: z.string().uuid().optional(),
   values: z.record(z.any()),
 });
 

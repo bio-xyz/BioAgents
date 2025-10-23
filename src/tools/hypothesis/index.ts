@@ -1,5 +1,5 @@
 import character from "../../character";
-import { updateMessage } from "../../db/operations";
+import { updateMessage, updateState } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
 import { addVariablesToState, composePromptFromState } from "../../utils/state";
@@ -19,7 +19,7 @@ export const hypothesisTool = {
     const { state, message } = input;
     let hypothesisStructured: THypothesisZod | null = null;
 
-    // TODO: broadcast HYPOTHESIS_GENERATION state
+    addVariablesToState(state, { currentStep: "HYPOTHESIS_GENERATION" });
 
     // TODO: get twitter thread if source is twitter
 
@@ -180,12 +180,11 @@ export const hypothesisTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message in DB with final msg text (content) and state
+    // Update message and state in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
           content: responseContent.text,
-          state: state.values,
         });
       } catch (err) {
         // Log error but don't fail the tool execution
@@ -193,7 +192,15 @@ export const hypothesisTool = {
       }
     }
 
-    // broadcast messageState DONE
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
+
+    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },
