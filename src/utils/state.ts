@@ -1,6 +1,8 @@
 import type { WebSearchResult } from "../llm/types";
 import type { Paper, State } from "../types/core";
 import logger from "./logger";
+import character from "../character";
+import { LLM } from "../llm/provider";
 
 // TODO: make state a separate table rather than a column in the messages table
 
@@ -23,7 +25,7 @@ export function composePromptFromState(state: State, prompt: string): string {
 }
 
 export function getUniquePapers(state: State): Paper[] {
-  // Merge papers from both KG and OpenScholar without duplicates
+  // Merge papers from KG, OpenScholar, and Semantic Scholar without duplicates
   const kgPapers = state.values.kgPapers || [];
 
   // Transform OpenScholar raw data to include chunk text as abstract
@@ -35,7 +37,10 @@ export function getUniquePapers(state: State): Paper[] {
     }),
   );
 
-  const allPapers = [...kgPapers, ...openScholarPapers];
+  // Semantic Scholar papers already in correct format
+  const semanticScholarPapers = state.values.semanticScholarPapers || [];
+
+  const allPapers = [...kgPapers, ...openScholarPapers, ...semanticScholarPapers];
   // Deduplicate by DOI (keep first occurrence)
   const seenDois = new Set<string>();
   const uniquePapers = allPapers.filter((paper) => {
@@ -107,6 +112,51 @@ export function formatConversationHistory(messages: any[]): string {
       return formattedMessages;
     })
     .join("\n");
+}
+
+/**
+ * Generate a standalone message from conversation thread
+ * If thread has only 1 message, returns the message as-is
+ * Otherwise, uses LLM to create a standalone question from conversation context
+ * @param thread - Array of messages from the database
+ * @param latestMessage - The latest user message
+ * @returns Standalone message string
+ */
+export async function getStandaloneMessage(
+  thread: any[],
+  latestMessage: string,
+): Promise<string> {
+  // If thread is empty or only has 1 message, return the message as-is
+  if (thread.length <= 1) {
+    return latestMessage;
+  }
+
+  // Format conversation history (exclude the last message as it's passed separately)
+  const conversationHistory = formatConversationHistory(thread.slice(0, -1));
+
+  const prompt = character.templates.standaloneMessageTemplate
+    .replace("{conversationHistory}", conversationHistory)
+    .replace("{latestMessage}", latestMessage);
+
+  const llmProvider = new LLM({
+    name: "google",
+    apiKey: process.env.GOOGLE_API_KEY!,
+  });
+
+  const llmRequest = {
+    model: "gemini-2.5-pro",
+    messages: [
+      {
+        role: "user" as const,
+        content: prompt,
+      },
+    ],
+    maxTokens: 150,
+  };
+
+  const llmResponse = await llmProvider.createChatCompletion(llmRequest);
+
+  return llmResponse.content.trim();
 }
 
 export function parseKeyValueXml(text: string): Record<string, any> | null {

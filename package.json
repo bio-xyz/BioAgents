@@ -13,6 +13,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.26",
     "@anthropic-ai/sdk": "^0.66.0",
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/cors": "^1.4.0",
