@@ -190,6 +190,29 @@ export function Sidebar({ sessions, currentSessionId, onSessionSelect, onNewSess
               </>
             )}
           </div>
+
+          <div className="sidebar-footer">
+            <Button
+              variant="ghost"
+              icon="logout"
+              onClick={async () => {
+                try {
+                  await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                  });
+                  // Reload to show login screen
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Logout failed:', error);
+                }
+              }}
+              className="sidebar-logout-btn"
+              title="Logout"
+            >
+              Logout
+            </Button>
+          </div>
         </>
       )}
     </div>

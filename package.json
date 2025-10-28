@@ -33,10 +33,12 @@
     "marked": "^16.4.1",
     "natural": "^8.1.0",
     "openai": "^6.6.0",
+    "papaparse": "^5.5.3",
     "pino": "^10.1.0",
     "pino-pretty": "^13.1.2",
     "postgres": "^3.4.7",
     "preact": "^10.27.2",
+    "xlsx": "^0.18.5",
     "zod": "3"
   },
   "scripts": {

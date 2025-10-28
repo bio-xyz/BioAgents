@@ -20,9 +20,10 @@ export interface LLMRequest {
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';
   format?: any; // Optional format for structured output (e.g., zodTextFormat)
+  fileUris?: Array<{ fileUri: string; mimeType: string }>; // For Gemini File API
 }
 // Coming soon: additional tool types
-export type LLMToolType = 'webSearch';
+export type LLMToolType = 'webSearch' | 'codeExecution';
 export interface LLMTool {
   type: LLMToolType;
 }

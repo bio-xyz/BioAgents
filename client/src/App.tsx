@@ -42,7 +42,7 @@ export function App() {
   const { isLoading, error, sendMessage, clearError } = useChatAPI();
 
   // File upload
-  const { selectedFile, selectFile, removeFile, clearFile } = useFileUpload();
+  const { selectedFile, selectedFiles, selectFile, selectFiles, removeFile, clearFile } = useFileUpload();
 
   // Typing animation
   const { isTyping, animateText } = useTypingAnimation();
@@ -66,19 +66,30 @@ export function App() {
    */
   const handleSend = async () => {
     const trimmedInput = inputValue.trim();
-    if ((!trimmedInput && !selectedFile) || isLoading) return;
+    const hasFiles = selectedFiles.length > 0;
+
+    console.log('[App.handleSend] Input:', trimmedInput);
+    console.log('[App.handleSend] Selected files:', selectedFiles);
+    console.log('[App.handleSend] Has files:', hasFiles);
+
+    if ((!trimmedInput && !hasFiles) || isLoading) return;
 
     clearError();
+
+    // Create display text for files
+    const fileText = hasFiles
+      ? selectedFiles.length === 1
+        ? `[Attached: ${selectedFiles[0].name}]`
+        : `[Attached ${selectedFiles.length} files]`
+      : "";
 
     // Create user message
     const userMessage = {
       id: Date.now(),
       role: "user" as const,
-      content:
-        trimmedInput ||
-        (selectedFile ? `[Attached: ${selectedFile.name}]` : ""),
-      file: selectedFile
-        ? { name: selectedFile.name, size: selectedFile.size }
+      content: trimmedInput || fileText,
+      files: hasFiles
+        ? selectedFiles.map((f) => ({ name: f.name, size: f.size }))
         : undefined,
     };
 
@@ -86,25 +97,25 @@ export function App() {
 
     // Update session title if it's the first message
     if (messages.length === 0) {
-      const title = trimmedInput || selectedFile?.name || "New conversation";
+      const title = trimmedInput || selectedFiles[0]?.name || "New conversation";
       updateSessionTitle(currentSessionId, title);
     }
 
-    // Store file reference before clearing state
-    const fileToSend = selectedFile;
+    // Store file references before clearing state
+    const filesToSend = [...selectedFiles];
 
-    // Clear input and file
+    // Clear input and files
     setInputValue("");
     clearFile();
     scrollToBottom();
 
     try {
       // Send message to API
-      const responseText = await sendMessage({
+      const response = await sendMessage({
         message: trimmedInput,
         conversationId: currentSessionId,
         userId: userId,
-        file: fileToSend,
+        files: filesToSend,
       });
 
       // Create temp message for typing animation
@@ -113,15 +124,18 @@ export function App() {
         id: tempId,
         role: "assistant" as const,
         content: "",
+        files: response.files, // Include file metadata from response
       });
 
       // Animate the response
       await animateText(
-        responseText,
+        response.text,
         (currentText) => {
           updateSessionMessages(currentSessionId, (prev) =>
             prev.map((msg) =>
-              msg.id === tempId ? { ...msg, content: currentText } : msg,
+              msg.id === tempId
+                ? { ...msg, content: currentText, files: response.files }
+                : msg,
             ),
           );
           scrollToBottom();
@@ -235,7 +249,14 @@ export function App() {
           disabled={isLoading}
           placeholder="Type your message..."
           selectedFile={selectedFile}
-          onFileSelect={selectFile}
+          selectedFiles={selectedFiles}
+          onFileSelect={(fileOrFiles: File | File[]) => {
+            if (Array.isArray(fileOrFiles)) {
+              selectFiles(fileOrFiles);
+            } else {
+              selectFile(fileOrFiles);
+            }
+          }}
           onFileRemove={removeFile}
         />
       </div>

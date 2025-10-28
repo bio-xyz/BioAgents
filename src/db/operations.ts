@@ -36,6 +36,7 @@ export interface Message {
   state_id?: string;
   response_time?: number;
   source?: string;
+  files?: any; // JSONB field for file metadata
 }
 
 // User operations

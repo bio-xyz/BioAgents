@@ -566,6 +566,17 @@ body {
     height: 18px;
 }
 
+.message-action-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: var(--text-tertiary) !important;
+}
+
+.message-action-disabled:hover {
+    background: transparent !important;
+    color: var(--text-tertiary) !important;
+}
+
 /* Markdown styling */
 .message-content h1,
 .message-content h2,
@@ -629,6 +640,52 @@ body {
     display: flex;
     flex-direction: column;
     width: 100%;
+}
+
+/* Message file badges */
+.message-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+/* Align user message files to the right */
+.message.user .message-files {
+    justify-content: flex-end;
+    margin-left: auto;
+    max-width: fit-content;
+}
+
+.message-file-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.message.user .message-file-badge {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent-color);
+}
+
+.message-file-badge .file-name {
+    color: var(--text-primary);
+    font-weight: 500;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-file-badge .file-size {
+    color: var(--text-tertiary);
+    font-size: 10px;
 }
 
 .message-content blockquote {
@@ -1140,6 +1197,17 @@ textarea::placeholder {
     cursor: not-allowed;
 }
 
+.input-action-btn-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: var(--text-tertiary);
+}
+
+.input-action-btn-disabled:hover {
+    background: transparent !important;
+    color: var(--text-tertiary) !important;
+}
+
 .input-send-btn {
     display: flex;
     align-items: center;
@@ -1176,20 +1244,35 @@ textarea::placeholder {
 
 .file-preview-inline {
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    padding: 8px 12px;
-    background: var(--accent-light);
-    border-radius: 8px;
     margin-bottom: 12px;
-    border: 1px solid var(--border-color);
 }
 
-.file-preview-inline .file-name {
+.file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.file-chip:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-color);
+}
+
+.file-chip .file-name {
     color: var(--text-primary);
-    flex: 1;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .file-remove-inline {
