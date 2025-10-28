@@ -38,3 +38,5 @@ client/dist/
 *.bundle.js
 
 docs/*
+
+.claude/skills/skill-creator/*
