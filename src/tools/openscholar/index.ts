@@ -1,5 +1,4 @@
 import axios from "axios";
-import character from "../../character";
 import {
   getMessagesByConversation,
   updateMessage,
@@ -12,7 +11,7 @@ import logger from "../../utils/logger";
 import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
 import {
   addVariablesToState,
-  formatConversationHistory,
+  getStandaloneMessage,
 } from "../../utils/state";
 
 // Cache for OpenScholar results (30 minutes TTL)
@@ -94,44 +93,6 @@ async function getReformulatedHallmarkQuestion(
   const llmResponse = await llmProvider.createChatCompletion(llmRequest);
 
   return llmResponse.content;
-}
-
-async function getStandaloneMessage(
-  thread: any[],
-  latestMessage: string,
-): Promise<string> {
-  // If thread is empty or only has 1 message, return the message as-is
-  if (thread.length <= 1) {
-    return latestMessage;
-  }
-
-  // Format conversation history (exclude the last message as it's passed separately)
-  // Each DB message contains both user question and assistant response
-  const conversationHistory = formatConversationHistory(thread.slice(0, -1));
-
-  const prompt = character.templates.standaloneMessageTemplate
-    .replace("{conversationHistory}", conversationHistory)
-    .replace("{latestMessage}", latestMessage);
-
-  const llmProvider = new LLM({
-    name: "google",
-    apiKey: process.env.GOOGLE_API_KEY!,
-  });
-
-  const llmRequest = {
-    model: "gemini-2.5-pro",
-    messages: [
-      {
-        role: "user" as const,
-        content: prompt,
-      },
-    ],
-    maxTokens: 150,
-  };
-
-  const llmResponse = await llmProvider.createChatCompletion(llmRequest);
-
-  return llmResponse.content.trim();
 }
 
 export const openscholarTool = {

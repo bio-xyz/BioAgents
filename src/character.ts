@@ -156,7 +156,7 @@ Standalone question:`,
   Also make sure to incorporate the following analysis from the trusted science RAG system, if it exists and is relevant to the user's question:
   {{openScholarSynthesis}}
   
-  And in every answer you MUST always make sure to just cite the list of ALL DOI identifiers cited exactly as following: "Science papers: DOIs".
+  And in every answer you MUST always make sure to just cite the list of ALL DOI identifiers (or links in case of Semantic Scholar) cited exactly as following: "Science papers: DOIs".
   
   You have to cite all the following DOIs (unique only, do not repeat DOIs, use URLs, not just DOIs): {{paperDois}} {{openScholarPaperDois}}
   
@@ -167,7 +167,7 @@ Standalone question:`,
   Response format should be formatted in a valid JSON block like this (JSON object with one property, "message", and the value is the message string):
   \`\`\`json
   {
-      "message": "<messageString>\nScience papers: All unique DOIs separated by ', '"
+      "message": "<messageString>\nScience papers: All unique DOIs (links) separated by ', '"
   }
   \`\`\`
   
@@ -348,6 +348,7 @@ Standalone question:`,
   KNOWLEDGE
   OPENSCHOLAR
   KNOWLEDGE_GRAPH_QUERY
+  SEMANTIC_SCHOLAR
   </providers>
   
   These are the available valid actions:
@@ -392,7 +393,11 @@ Standalone question:`,
   - You should include "KNOWLEDGE" in your providers list if you think you can enhance the answer by querying Aubrey De Grey's knowledge base (collection of Aubrey De Grey's scientific papers, notes, tweets, thoughts, takeaways etc.) or the user's knowledge base (which can include any information the user has provided to you)
   - You should include "KNOWLEDGE_GRAPH_QUERY" and "OPENSCHOLAR" in your providers list if you think you can enhance the answer by querying the science papers which are in the knowledge graph.
   - Whenever you're including "KNOWLEDGE_GRAPH_QUERY" in your providers list, you should also include "KNOWLEDGE" and "OPENSCHOLAR" in your providers list.
-  
+  - Only use "SEMANTIC_SCHOLAR" in your providers list if the user's question is explicitly about science papers, research, or academic literature.
+    - Trigger phrases: "find papers on", "latest research about", "most cited studies on", or "academic literature about" in the context of longevity (example: "find papers from last 2 weeks that tested their findings on mice")
+    - Do not use "SEMANTIC_SCHOLAR" for other general questions about longevity which do not explicitly request academic papers or research (example: "how does creatine affect longevity?")
+    - Be very strict about this rule, since "SEMANTIC_SCHOLAR" is a very expensive provider and we need to be sure that it is only used when it is absolutely necessary.
+
   ALWAYS include "KNOWLEDGE" in your providers list.
   
   Additionally include "KNOWLEDGE_GRAPH_QUERY" and "OPENSCHOLAR" in your providers list in the following situations:

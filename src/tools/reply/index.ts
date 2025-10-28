@@ -28,6 +28,7 @@ function selectTemplateKey(
     values: {
       finalPapers?: unknown[] | null;
       openScholarPapers?: unknown[] | null;
+      semanticScholarPapers?: unknown[] | null;
     };
   },
   source: string,
@@ -38,7 +39,8 @@ function selectTemplateKey(
   | "replyTemplate" {
   const hasPapers =
     Boolean(state.values.finalPapers?.length) ||
-    Boolean(state.values.openScholarPapers?.length);
+    Boolean(state.values.openScholarPapers?.length) ||
+    Boolean(state.values.semanticScholarPapers?.length);
 
   const isTwitter = source === "twitter";
 
@@ -86,9 +88,19 @@ export const replyTool = {
       providerString += `Science papers (from OpenScholar Scientific RAG system): ${state.values.openScholarRaw.map((paper: Paper) => `${paper.doi} - ${paper.title} - Abstract/Chunk: ${paper.chunkText}`).join("\n\n")}`;
     }
 
+    if (state.values.semanticScholarSynthesis) {
+      // Semantic Scholar synthesis is a text string with synthesized research findings (papers extracted separately)
+      providerString += `\n\nResearch synthesis (from Semantic Scholar via Claude Skill):\n${state.values.semanticScholarSynthesis}\n`;
+    }
+
+    if (state.values.semanticScholarPapers?.length) {
+      // each paper is of type {doi: string (URL), title: string, abstract: string (empty)}
+      providerString += `\n\nScience papers (from Semantic Scholar): ${state.values.semanticScholarPapers.map((paper: Paper) => `${paper.doi} - ${paper.title}`).join("\n")}`;
+    }
+
     if (state.values.finalPapers?.length) {
       // each paper is of type {doi: string, title: string, abstract: string}
-      providerString += `Science papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
+      providerString += `\n\nScience papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
     }
 
     prompt = composePromptFromState(state, template);
@@ -238,7 +250,6 @@ export const replyTool = {
           await googleLLMProvider!.createChatCompletion(googleLLMRequest);
       }
 
-      console.log("Temporary completion: ", completion);
       const rawContent = completion.content?.trim();
 
       if (!rawContent) {
