@@ -273,9 +273,9 @@ export const chatRoute = new Elysia().post(
       });
 
       // Include file metadata in response if files were uploaded
-      const uploadedFiles = state.values.uploadedFiles;
-      const fileMetadata = uploadedFiles?.length > 0
-        ? uploadedFiles.map((f: any) => ({
+      const rawFiles = state.values.rawFiles;
+      const fileMetadata = rawFiles?.length > 0
+        ? rawFiles.map((f: any) => ({
             filename: f.filename,
             mimeType: f.mimeType,
             size: f.metadata?.size,

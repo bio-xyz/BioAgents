@@ -148,8 +148,7 @@ export class GoogleAdapter extends LLMAdapter {
       };
     }
 
-    // Only include thinkingConfig for thinking models (gemini-2.0-flash-thinking-*)
-    if (request.thinkingBudget !== undefined && request.model.includes('thinking')) {
+    if (request.thinkingBudget !== undefined) {
       config.thinkingConfig = {
         includeThoughts: true,
         thinkingBudget: request.thinkingBudget,

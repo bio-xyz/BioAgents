@@ -45,19 +45,19 @@ export function addParsedFilesToContext(
   state: State,
   providerString: string
 ): string {
-  const uploadedFiles = state.values.uploadedFiles;
+  const rawFiles = state.values.rawFiles;
 
-  if (!uploadedFiles?.length) {
+  if (!rawFiles?.length) {
     return providerString;
   }
 
-  if (logger) logger.info(`📎 Adding ${uploadedFiles.length} uploaded file(s) to LLM context as text`);
+  if (logger) logger.info(`📎 Adding ${rawFiles.length} uploaded file(s) to LLM context as text`);
 
-  const filesString = uploadedFiles
+  const filesString = rawFiles
     .map((file: any, index: number) => {
-      const textLength = file.text?.length || 0;
+      const textLength = file.parsedText?.length || 0;
       if (logger) logger.info(`  [${index + 1}] ${file.filename} (${file.mimeType}) - ${textLength} characters`);
-      return `[File ${index + 1}] ${file.filename} (${file.mimeType}):\n${file.text}`;
+      return `[File ${index + 1}] ${file.filename} (${file.mimeType}):\n${file.parsedText}`;
     })
     .join("\n\n");
 

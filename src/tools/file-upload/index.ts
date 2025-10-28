@@ -2,7 +2,7 @@ import { updateState } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
 import { addVariablesToState } from "../../utils/state";
-import { parseFile, type ParsedFile } from "./parsers";
+import { parseFile } from "./parsers";
 import { MAX_FILE_SIZE_MB } from "./config";
 import { mbToBytes, formatFileSize } from "./utils";
 
@@ -23,8 +23,13 @@ const fileUploadTool = {
 
     if (logger) logger.info(`📎 Processing ${files.length} uploaded file(s)`);
 
-    const parsedFiles: ParsedFile[] = [];
-    const rawFiles: Array<{ buffer: Buffer; filename: string; mimeType: string }> = [];
+    const rawFiles: Array<{
+      buffer: Buffer;
+      filename: string;
+      mimeType: string;
+      parsedText: string;
+      metadata?: any;
+    }> = [];
     const errors: string[] = [];
 
     // Process each file
@@ -44,16 +49,17 @@ const fileUploadTool = {
 
         if (logger) logger.info(` Parsing file: ${file.name} (${file.type})`);
 
-        // Store raw file buffer for Gemini File API upload
+        // Parse the file for text context (fallback for non-Google providers)
+        const parsed = await parseFile(buffer, file.name, file.type);
+
+        // Store raw file buffer for Gemini File API + parsed text for fallback
         rawFiles.push({
           buffer,
           filename: file.name,
           mimeType: file.type,
+          parsedText: parsed.text,
+          metadata: parsed.metadata,
         });
-
-        // Parse the file for text context (fallback for non-Google providers)
-        const parsed = await parseFile(buffer, file.name, file.type);
-        parsedFiles.push(parsed);
 
         if (logger) logger.info(` Successfully parsed ${file.name}`);
       } catch (error) {
@@ -63,24 +69,16 @@ const fileUploadTool = {
       }
     }
 
-    // Add parsed files to state
-    const uploadedFiles = parsedFiles.map((file) => ({
-      filename: file.filename,
-      mimeType: file.mimeType,
-      text: file.text,
-      metadata: file.metadata,
-    }));
-
+    // Store only rawFiles with parsed text included
     addVariablesToState(state, {
-      uploadedFiles,
-      rawFiles, // Store raw file buffers for Gemini File API
+      rawFiles, // Contains buffer (for Gemini), parsedText (for fallback), and metadata
       fileUploadErrors: errors.length > 0 ? errors : undefined,
     });
 
     const result = {
-      text: `Processed ${parsedFiles.length} file(s)${errors.length > 0 ? ` with ${errors.length} error(s)` : ""}`,
+      text: `Processed ${rawFiles.length} file(s)${errors.length > 0 ? ` with ${errors.length} error(s)` : ""}`,
       values: {
-        uploadedFiles,
+        rawFiles,
         fileUploadErrors: errors.length > 0 ? errors : undefined,
       },
     };

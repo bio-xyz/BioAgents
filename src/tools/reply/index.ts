@@ -189,6 +189,9 @@ export const replyTool = {
     }
 
     // Handle file uploads for Google vs other providers
+    // Currently only Google Gemini supports native file upload via File API
+    // TODO: Support file upload for other LLM providers
+    // For now, other providers receive parsed text content as fallback
     let geminiFileUris: Array<{ fileUri: string; mimeType: string }> = [];
 
     if (state.values.rawFiles?.length && REPLY_LLM_PROVIDER === 'google') {
@@ -197,7 +200,7 @@ export const replyTool = {
     }
 
     // For non-Google providers or as fallback, add parsed text to context
-    if (state.values.uploadedFiles?.length && geminiFileUris.length === 0) {
+    if (state.values.rawFiles?.length && geminiFileUris.length === 0) {
       providerString = addParsedFilesToContext(state, providerString);
     }
 
