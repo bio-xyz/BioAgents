@@ -38,6 +38,7 @@ export interface Message {
   response_time?: number;
   source?: string;
   created_at?: string;
+  files?: any; // JSONB field for file metadata
 }
 
 // Client-side database operations

@@ -5,18 +5,28 @@ export interface SendMessageParams {
   conversationId: string;
   userId: string;
   file?: File | null;
+  files?: File[];
+}
+
+export interface ChatResponse {
+  text: string;
+  files?: Array<{
+    filename: string;
+    mimeType: string;
+    size?: number;
+  }>;
 }
 
 export interface UseChatAPIReturn {
   isLoading: boolean;
   error: string;
-  sendMessage: (params: SendMessageParams) => Promise<string>;
+  sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
   clearError: () => void;
 }
 
 /**
  * Custom hook for chat API communication
- * Handles sending messages and receiving responses
+ * Handles sending messages and receiving responses with support for multiple files
  */
 export function useChatAPI(): UseChatAPIReturn {
   const [isLoading, setIsLoading] = useState(false);
@@ -30,7 +40,8 @@ export function useChatAPI(): UseChatAPIReturn {
     conversationId,
     userId,
     file,
-  }: SendMessageParams): Promise<string> => {
+    files,
+  }: SendMessageParams): Promise<ChatResponse> => {
     setIsLoading(true);
     setError("");
 
@@ -40,26 +51,48 @@ export function useChatAPI(): UseChatAPIReturn {
       formData.append("conversationId", conversationId);
       formData.append("userId", userId);
 
-      if (file) {
-        formData.append("file", file);
+      // Support both single file (legacy) and multiple files
+      if (files && files.length > 0) {
+        console.log(`[useChatAPI] Sending ${files.length} files:`, files.map(f => f.name));
+        files.forEach((f) => {
+          formData.append("files", f);
+        });
+      } else if (file) {
+        console.log(`[useChatAPI] Sending 1 file:`, file.name);
+        formData.append("files", file);
+      } else {
+        console.log(`[useChatAPI] No files to send`);
       }
 
       const response = await fetch("/api/chat", {
         method: "POST",
         body: formData,
+        credentials: 'include', // Important: include cookies for auth
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // Handle 401 Unauthorized - session expired
+      if (response.status === 401) {
+        // Redirect to login or reload page to show login screen
+        window.location.reload();
+        throw new Error("Session expired. Please log in again.");
       }
 
       const data = await response.json();
+
+      // Handle error response from backend
+      if (!response.ok || (data.ok === false && data.error)) {
+        const errorMsg = data.error || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMsg);
+      }
 
       if (!data.text) {
         throw new Error("No response text received");
       }
 
-      return data.text;
+      return {
+        text: data.text,
+        files: data.files,
+      };
     } catch (err) {
       const errorMessage =
         err instanceof Error

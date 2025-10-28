@@ -7,11 +7,13 @@ import {
   type GroundingSupport,
   type GroundingChunk,
   type Tool as GoogleTool,
+  type File as GeminiFile,
 } from '@google/genai';
 
 import { LLMAdapter } from '../adapter';
 import type { LLMProvider, LLMRequest, LLMResponse, LLMTool, WebSearchResult } from '../types';
 import { hasUrlInMessages, enrichMessagesWithUrlContent } from './utils';
+import logger from '../../utils/logger';
 
 type GoogleContent = Content;
 
@@ -44,10 +46,13 @@ export class GoogleAdapter extends LLMAdapter {
       const response = await this.client.models.generateContent(parameters);
       return this.transformResponse(response);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Google chat completion failed: ${error.message}`);
-      }
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({
+        error: errorMessage,
+        model: parameters.model,
+        hasFiles: !!request.fileUris?.length
+      }, 'Google chat completion failed');
+      throw new Error(`Google chat completion failed: ${errorMessage}`);
     }
   }
 
@@ -56,7 +61,6 @@ export class GoogleAdapter extends LLMAdapter {
     llmOutput: string;
     webSearchResults?: WebSearchResult[];
   }> {
-    // Always enrich for web search requests
     const enrichedRequest = await this.enrichRequestIfNeeded(request);
     const parameters = this.transformRequest(enrichedRequest, { includeWebSearch: true });
 
@@ -64,10 +68,9 @@ export class GoogleAdapter extends LLMAdapter {
       const response = await this.client.models.generateContent(parameters);
       return this.transformWebSearchResponse(response);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Google web search failed: ${error.message}`);
-      }
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ error: errorMessage, model: parameters.model }, 'Google web search failed');
+      throw new Error(`Google web search failed: ${errorMessage}`);
     }
   }
 
@@ -90,13 +93,13 @@ export class GoogleAdapter extends LLMAdapter {
     // Enrich messages with URL content
     const enrichedMessages = await enrichMessagesWithUrlContent(tempMessages);
 
-    // Create new request with enriched messages
     return {
       ...request,
       messages: enrichedMessages.map((m) => ({
         role: m.role as 'system' | 'user' | 'assistant',
         content: m.content,
       })),
+      fileUris: request.fileUris,
     };
   }
 
@@ -150,6 +153,8 @@ export class GoogleAdapter extends LLMAdapter {
         includeThoughts: true,
         thinkingBudget: request.thinkingBudget,
       };
+    } else if (request.thinkingBudget !== undefined && !request.model.includes('thinking')) {
+      logger.warn('thinkingBudget specified but model does not support thinking');
     }
 
     const tools = this.mapTools(request.tools);
@@ -173,7 +178,7 @@ export class GoogleAdapter extends LLMAdapter {
   }
 
   private buildContents(request: LLMRequest): GoogleContent[] {
-    return request.messages
+    const contents = request.messages
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => {
         const role = message.role === 'assistant' ? 'model' : 'user';
@@ -182,19 +187,72 @@ export class GoogleAdapter extends LLMAdapter {
           parts: [{ text: message.content }],
         } as GoogleContent;
       });
+
+    // If file URIs are provided, add them to the last user message
+    if (request.fileUris && request.fileUris.length > 0) {
+      const lastUserMessageIndex = contents.map(c => c.role).lastIndexOf('user');
+      if (lastUserMessageIndex >= 0) {
+        const lastUserMessage = contents[lastUserMessageIndex];
+        if (lastUserMessage && lastUserMessage.parts) {
+          const fileParts = request.fileUris.map((fileInfo) => ({
+            fileData: {
+              fileUri: fileInfo.fileUri,
+              mimeType: fileInfo.mimeType,
+            },
+          }));
+          lastUserMessage.parts = [...lastUserMessage.parts, ...fileParts];
+          logger.info(`Attached ${request.fileUris.length} file(s) to request`);
+        }
+      } else {
+        logger.warn('No user message found to attach files to');
+      }
+    }
+
+    return contents;
   }
 
   protected transformResponse(response: GenerateContentResponse): LLMResponse {
-    const text = (response.text ?? '').trim();
+    let text = (response.text ?? '').trim();
     const usage = response.usageMetadata;
+
+    // Handle code execution parts
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      const hasCodeExecution = candidate.content.parts.some((part: any) =>
+        part.executableCode || part.codeExecutionResult
+      );
+      if (hasCodeExecution) {
+        const textParts: string[] = [];
+        let codeExecutionOutput: string | undefined = undefined;
+
+        candidate.content.parts.forEach((part: any) => {
+          if (part.codeExecutionResult?.output) {
+            codeExecutionOutput = part.codeExecutionResult.output;
+          }
+          if (part.text) {
+            textParts.push(part.text);
+          }
+        });
+
+        // Prefer the last text part if available, otherwise use code execution output
+        if (textParts.length > 0) {
+          const lastTextPart = textParts[textParts.length - 1];
+          if (lastTextPart) {
+            text = lastTextPart.trim();
+          }
+        } else if (codeExecutionOutput) {
+          text = (codeExecutionOutput as string).trim();
+        }
+      }
+    }
 
     return {
       content: text,
       usage: usage
         ? {
-            promptTokens: usage.promptTokenCount,
-            completionTokens: usage.candidatesTokenCount,
-            totalTokens: usage.totalTokenCount,
+            promptTokens: usage.promptTokenCount ?? 0,
+            completionTokens: usage.candidatesTokenCount ?? 0,
+            totalTokens: usage.totalTokenCount ?? 0,
           }
         : undefined,
     };
@@ -333,7 +391,7 @@ export class GoogleAdapter extends LLMAdapter {
 
       return redirectUrl;
     } catch (error) {
-      console.error('Error resolving redirect URL:', error);
+      logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Failed to resolve redirect URL');
       return redirectUrl;
     }
   }
@@ -352,8 +410,68 @@ export class GoogleAdapter extends LLMAdapter {
     switch (tool.type) {
       case 'webSearch':
         return { googleSearch: {} };
+      case 'codeExecution':
+        return { codeExecution: {} };
       default:
         return null;
+    }
+  }
+
+  /**
+   * Uploads a file to Gemini File API for use in chat requests
+   * @param fileBuffer - The file buffer to upload
+   * @param fileName - The name of the file
+   * @param mimeType - The MIME type of the file
+   * @returns The uploaded file metadata including URI
+   */
+  async uploadFile(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<GeminiFile> {
+    try {
+      logger.info(`Uploading file to Gemini: ${fileName}`);
+
+      const uint8Array = new Uint8Array(fileBuffer);
+      const blob = new Blob([uint8Array], { type: mimeType });
+
+      const uploadedFile = await this.client.files.upload({
+        file: blob,
+        config: {
+          displayName: fileName,
+          mimeType: mimeType,
+        },
+      });
+
+      // Wait for file to be in ACTIVE state (required before using in requests)
+      if (uploadedFile.state === 'PROCESSING') {
+        let retries = 0;
+        const maxRetries = 10;
+
+        while (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          if (!uploadedFile.name) {
+            throw new Error('File name is missing from upload response');
+          }
+
+          const fileStatus = await this.client.files.get({ name: uploadedFile.name });
+
+          if (fileStatus.state === 'ACTIVE') {
+            logger.info(`File uploaded and ready: ${fileName}`);
+            return fileStatus;
+          } else if (fileStatus.state === 'FAILED') {
+            throw new Error('File processing failed');
+          }
+
+          retries++;
+        }
+
+        throw new Error('File processing timeout - file did not become ACTIVE');
+      }
+
+      logger.info(`File uploaded successfully: ${fileName}`);
+      return uploadedFile;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error: errorMessage, fileName }, 'Failed to upload file to Gemini');
+      throw new Error(`Failed to upload file to Gemini: ${errorMessage}`);
     }
   }
 }

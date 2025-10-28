@@ -18,6 +18,11 @@ type ChatRequest = {
 
 type ChatResponse = {
   text: string;
+  files?: Array<{
+    filename: string;
+    mimeType: string;
+    size?: number;
+  }>;
 };
 
 type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
@@ -67,17 +72,28 @@ export const chatRoute = new Elysia().post(
   async ({ body, set, request }) => {
     const startTime = Date.now();
 
-    // Handle FormData (sent from frontend for file upload support)
+    // Handle parsed body (Elysia automatically parses FormData to object)
     let message: string;
     let conversationId: string;
     let userId: string;
+    let files: File[] = [];
 
-    if (body instanceof FormData) {
-      message = body.get("message") as string;
-      conversationId = body.get("conversationId") as string;
-      userId = body.get("userId") as string;
-    } else {
-      ({ message, conversationId, userId } = body as ChatRequest);
+    const parsedBody = body as any;
+    message = parsedBody.message;
+    conversationId = parsedBody.conversationId;
+    userId = parsedBody.userId;
+
+    // Extract files from parsed body
+    if (parsedBody.files) {
+      if (Array.isArray(parsedBody.files)) {
+        files = parsedBody.files.filter((f: any) => f instanceof File);
+      } else if (parsedBody.files instanceof File) {
+        files = [parsedBody.files];
+      }
+    }
+
+    if (files.length > 0) {
+      if (logger) logger.info(`Received request with ${files.length} file(s)`);
     }
 
     // Validate required fields
@@ -121,9 +137,17 @@ export const chatRoute = new Elysia().post(
       return { ok: false, error: "Failed to create state" };
     }
 
-    // Create message in DB with state_id
+    // Create message in DB with state_id and file metadata
     let createdMessage;
     try {
+      const fileMetadata = files.length > 0
+        ? files.map((f: any) => ({
+            name: f.name,
+            size: f.size,
+            type: f.type,
+          }))
+        : undefined;
+
       createdMessage = await createMessage({
         conversation_id: conversationId,
         user_id: userId,
@@ -131,6 +155,7 @@ export const chatRoute = new Elysia().post(
         content: "", // answer will be updated later
         source: "ui", // TODO: source hardcoded for now
         state_id: stateRecord.id,
+        files: fileMetadata, // Store file metadata in JSONB field
       });
     } catch (err) {
       if (logger) logger.error({ err }, "create_message_failed");
@@ -149,7 +174,27 @@ export const chatRoute = new Elysia().post(
       },
     };
 
-    // Execute planning tool
+    // Step 1: Process files FIRST if present (before planning)
+    // This allows the file content to be available in state for planning
+    if (files.length > 0) {
+      const fileUploadTool = getTool("FILE-UPLOAD");
+      if (fileUploadTool) {
+        try {
+          if (logger) logger.info(`Processing ${files.length} uploaded file(s) before planning`);
+          await fileUploadTool.execute({
+            state,
+            message: createdMessage,
+            files,
+          });
+        } catch (err) {
+          if (logger) logger.error({ err }, "file_upload_failed");
+          set.status = 500;
+          return { ok: false, error: "Failed to process uploaded files" };
+        }
+      }
+    }
+
+    // Step 2: Execute planning tool (now with file content available in state)
     let planningResult: {
       providers: string[];
       actions: string[];
@@ -159,15 +204,27 @@ export const chatRoute = new Elysia().post(
         state,
         message: createdMessage,
       });
+
+      if (logger) {
+        logger.info({
+          providers: planningResult.providers,
+          action: planningResult.actions[0]
+        }, 'Executing plan');
+      }
+
     } catch (err) {
       if (logger) logger.error({ err }, "planning_tool_failed");
       set.status = 500;
       return { ok: false, error: "Planning tool execution failed" };
     }
 
-    // Parallel execution of provider tools with failure isolation
+    // Step 3: Parallel execution of provider tools (excluding FILE-UPLOAD since already done)
     await Promise.all(
       (planningResult.providers ?? []).map(async (provider) => {
+        // Skip FILE-UPLOAD since we already processed it
+        if (provider === "FILE-UPLOAD") {
+          return { provider, result: { ok: true, data: {} } };
+        }
         const tool = getTool(provider);
         if (!tool) {
           if (logger) logger.warn({ provider }, "provider_tool_missing");
@@ -214,7 +271,21 @@ export const chatRoute = new Elysia().post(
         state,
         message: createdMessage,
       });
-      actionResult = { text: r.text };
+
+      // Include file metadata in response if files were uploaded
+      const rawFiles = state.values.rawFiles;
+      const fileMetadata = rawFiles?.length > 0
+        ? rawFiles.map((f: any) => ({
+            filename: f.filename,
+            mimeType: f.mimeType,
+            size: f.metadata?.size,
+          }))
+        : undefined;
+
+      actionResult = {
+        text: r.text,
+        files: fileMetadata,
+      };
     } catch (err) {
       if (logger) logger.error({ action, err }, "action_tool_failed");
       set.status = 500;
@@ -236,7 +307,18 @@ export const chatRoute = new Elysia().post(
   {
     // Note: Body validation removed to support FormData from frontend
     response: t.Union([
-      t.Object({ text: t.String() }),
+      t.Object({
+        text: t.String(),
+        files: t.Optional(
+          t.Array(
+            t.Object({
+              filename: t.String(),
+              mimeType: t.String(),
+              size: t.Optional(t.Number()),
+            }),
+          ),
+        ),
+      }),
       t.Object({ ok: t.Literal(false), error: t.String() }),
     ]),
   },

@@ -15,6 +15,13 @@ import {
   formatConversationHistory,
   getUniquePapers,
 } from "../../utils/state";
+import { detectFileTypes } from "./fileDetection";
+import { getFileAnalysisPrompt } from "./prompts";
+import {
+  uploadFilesToGemini,
+  addParsedFilesToContext,
+  configureToolsForFiles,
+} from "./fileHandler";
 
 type ProviderWebSearchResult = {
   title: string;
@@ -103,6 +110,9 @@ export const replyTool = {
       providerString += `\n\nScience papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
     }
 
+    // For non-Google providers, add parsed text to context now
+    // For Google, we'll upload files to Gemini File API after provider initialization
+
     prompt = composePromptFromState(state, template);
 
     // Include conversation history
@@ -133,13 +143,25 @@ export const replyTool = {
 
     prompt += `\n\nYou need to reply to the following question:\n${message.question}`;
 
-    const useWebSearch = templateKey.toLowerCase().includes("web");
-    if (useWebSearch) {
-      tools.push({ type: "webSearch" });
+    // Detect file types and add appropriate analysis instructions
+    const fileTypes = detectFileTypes(state.values.rawFiles);
+    const fileAnalysisPrompt = getFileAnalysisPrompt(
+      fileTypes.hasPDF,
+      fileTypes.hasDataFile,
+      fileTypes.hasImage
+    );
+    if (fileAnalysisPrompt) {
+      prompt += fileAnalysisPrompt;
     }
 
     const REPLY_LLM_PROVIDER = process.env.REPLY_LLM_PROVIDER!;
     const REPLY_LLM_MODEL = process.env.REPLY_LLM_MODEL!;
+
+    // Configure tools based on file types and provider
+    const toolConfig = configureToolsForFiles(templateKey, REPLY_LLM_PROVIDER, REPLY_LLM_MODEL, state);
+    tools.push(...toolConfig.tools);
+    const useWebSearch = toolConfig.useWebSearch;
+
     const llmApiKey =
       process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
     if (!llmApiKey) {
@@ -166,6 +188,22 @@ export const replyTool = {
       systemInstruction = character.system;
     }
 
+    // Handle file uploads for Google vs other providers
+    // Currently only Google Gemini supports native file upload via File API
+    // TODO: Support file upload for other LLM providers
+    // For now, other providers receive parsed text content as fallback
+    let geminiFileUris: Array<{ fileUri: string; mimeType: string }> = [];
+
+    if (state.values.rawFiles?.length && REPLY_LLM_PROVIDER === 'google') {
+      const googleAdapter = (llmProvider as any).adapter as any;
+      geminiFileUris = await uploadFilesToGemini(state, googleAdapter);
+    }
+
+    // For non-Google providers or as fallback, add parsed text to context
+    if (state.values.rawFiles?.length && geminiFileUris.length === 0) {
+      providerString = addParsedFilesToContext(state, providerString);
+    }
+
     const messages = [
       {
         role: "assistant" as const,
@@ -184,13 +222,24 @@ export const replyTool = {
       maxTokens: 768, // openai counts maxtokens = replyTokens + thinkingBudget
       thinkingBudget: 4096,
       tools: tools.length > 0 ? tools : undefined,
+      // Pass fileUris to adapter so it can add them as fileData parts in message
+      fileUris: geminiFileUris.length > 0 ? geminiFileUris : undefined,
     };
 
-    logger.info(`Provider string: ${providerString}\nFinal prompt: ${prompt}`);
+    const contextLength = providerString.length + prompt.length;
+    logger.info(`📊 LLM Context Stats:`);
+    logger.info(`   - Provider context: ${providerString.length} characters`);
+    logger.info(`   - Prompt: ${prompt.length} characters`);
+    logger.info(`   - Total context: ${contextLength} characters`);
+    logger.info(`   - Model: ${REPLY_LLM_MODEL}`);
+    logger.info(`   - Using web search: ${useWebSearch}`);
+
     let finalText = "";
     let evalText = "";
     let webSearchResults: ProviderWebSearchResult[] = [];
     let thoughtText = "";
+
+    logger.info(`🤖 Sending request to ${REPLY_LLM_PROVIDER}...`);
 
     if (useWebSearch) {
       let webResponse: WebSearchResponse;
@@ -219,6 +268,10 @@ export const replyTool = {
       evalText = webResponse.llmOutput;
       finalText = webResponse.cleanedLLMOutput || webResponse.llmOutput;
       webSearchResults = webResponse.webSearchResults ?? [];
+
+      logger.info(`✅ Received response from ${REPLY_LLM_PROVIDER}`);
+      logger.info(`   - Response length: ${finalText.length} characters`);
+      logger.info(`   - Web search results: ${webSearchResults.length}`);
 
       // Only add additional sources if source is twitter
       // if (webSearchResults.length > 0 && source === "twitter") {
@@ -268,6 +321,9 @@ export const replyTool = {
       }
 
       evalText = finalText;
+
+      logger.info(`✅ Received response from ${REPLY_LLM_PROVIDER}`);
+      logger.info(`   - Response length: ${finalText.length} characters`);
     }
 
     // TODO: POI logic goes here

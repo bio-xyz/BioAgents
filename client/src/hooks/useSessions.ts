@@ -15,6 +15,12 @@ export interface Message {
     name: string;
     size: number;
   };
+  files?: Array<{
+    name?: string;
+    filename?: string;
+    size?: number;
+    mimeType?: string;
+  }>;
 }
 
 export interface Session {
@@ -56,12 +62,18 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
   let idCounter = 0;
 
   for (const dbMsg of dbMessages) {
-    // Add user message (question)
+    // Add user message (question) with files if present
     if (dbMsg.question) {
       uiMessages.push({
         id: Date.now() + idCounter++,
         role: 'user',
         content: dbMsg.question,
+        files: dbMsg.files ? dbMsg.files.map((f: any) => ({
+          name: f.name,
+          filename: f.name,
+          size: f.size,
+          mimeType: f.type,
+        })) : undefined,
       });
     }
 
