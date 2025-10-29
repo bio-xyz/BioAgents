@@ -27,6 +27,7 @@ export type Tool = {
   name: string;
   description: string;
   execute: (input: any) => Promise<any>;
+  enabled?: boolean; // Tools are enabled by default
   payment?: {
     required: boolean;
     priceUSD: string;

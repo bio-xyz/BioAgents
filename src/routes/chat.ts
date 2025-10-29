@@ -14,12 +14,6 @@ import { createPayment } from "../db/x402Operations";
 import { usdToBaseUnits } from "../x402/service";
 import { x402Middleware } from "../middleware/x402";
 
-type ChatRequest = {
-  message: string;
-  conversationId: string;
-  userId: string;
-};
-
 type ChatResponse = {
   text: string;
   files?: Array<{
@@ -155,13 +149,14 @@ export const chatRoute = chatRoutePlugin.post(
     // Create message in DB with state_id and file metadata
     let createdMessage;
     try {
-      const fileMetadata = files.length > 0
-        ? files.map((f: any) => ({
-            name: f.name,
-            size: f.size,
-            type: f.type,
-          }))
-        : undefined;
+      const fileMetadata =
+        files.length > 0
+          ? files.map((f: any) => ({
+              name: f.name,
+              size: f.size,
+              type: f.type,
+            }))
+          : undefined;
 
       createdMessage = await createMessage({
         conversation_id: conversationId,
@@ -195,7 +190,10 @@ export const chatRoute = chatRoutePlugin.post(
       const fileUploadTool = getTool("FILE-UPLOAD");
       if (fileUploadTool) {
         try {
-          if (logger) logger.info(`Processing ${files.length} uploaded file(s) before planning`);
+          if (logger)
+            logger.info(
+              `Processing ${files.length} uploaded file(s) before planning`,
+            );
           await fileUploadTool.execute({
             state,
             message: createdMessage,
@@ -221,12 +219,14 @@ export const chatRoute = chatRoutePlugin.post(
       });
 
       if (logger) {
-        logger.info({
-          providers: planningResult.providers,
-          action: planningResult.actions[0]
-        }, 'Executing plan');
+        logger.info(
+          {
+            providers: planningResult.providers,
+            action: planningResult.actions[0],
+          },
+          "Executing plan",
+        );
       }
-
     } catch (err) {
       if (logger) logger.error({ err }, "planning_tool_failed");
       set.status = 500;
@@ -289,13 +289,14 @@ export const chatRoute = chatRoutePlugin.post(
 
       // Include file metadata in response if files were uploaded
       const rawFiles = state.values.rawFiles;
-      const fileMetadata = rawFiles?.length > 0
-        ? rawFiles.map((f: any) => ({
-            filename: f.filename,
-            mimeType: f.mimeType,
-            size: f.metadata?.size,
-          }))
-        : undefined;
+      const fileMetadata =
+        rawFiles?.length > 0
+          ? rawFiles.map((f: any) => ({
+              filename: f.filename,
+              mimeType: f.mimeType,
+              size: f.metadata?.size,
+            }))
+          : undefined;
 
       actionResult = {
         text: r.text,

@@ -10,6 +10,7 @@ const fileUploadTool = {
   name: "FILE-UPLOAD",
   description:
     "File upload provider that parses uploaded files (PDF, Excel, CSV, MD, JSON, TXT) and makes their content available to the LLM.",
+  enabled: true,
   execute: async (input: { state: State; message: Message; files?: File[] }) => {
     const { state, files } = input;
 

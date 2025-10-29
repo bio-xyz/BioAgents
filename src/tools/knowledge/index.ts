@@ -26,6 +26,7 @@ export const knowledgeTool = {
   name: "KNOWLEDGE",
   description:
     "Knowledge base RAG plugin that retrieves the most relevant chunks from the vector database to answer user queries.",
+  enabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
