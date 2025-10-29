@@ -18,6 +18,11 @@ bun install
 cp .env.example .env
 ```
 
+### Set up the database
+
+[General script](src/db/setup.sql)
+[Embedding script](src/embeddings/setup.sql)
+
 ### Development
 
 **Run App:**
