@@ -10,9 +10,12 @@ export { useTypingAnimation } from './useTypingAnimation';
 export { useAutoScroll } from './useAutoScroll';
 export { useAutoResize } from './useAutoResize';
 export { useAuth } from './useAuth';
+export { useX402Payment } from './useX402Payment';
+export { useToast } from './useToast';
 
 export type { Message, Session, UseSessionsReturn } from './useSessions';
 export type { SendMessageParams, UseChatAPIReturn } from './useChatAPI';
 export type { UseFileUploadReturn } from './useFileUpload';
 export type { UseTypingAnimationReturn } from './useTypingAnimation';
 export type { UseAutoScrollReturn } from './useAutoScroll';
+export type { UseX402PaymentReturn } from './useX402Payment';

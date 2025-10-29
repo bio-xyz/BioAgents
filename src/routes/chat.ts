@@ -9,6 +9,10 @@ import {
 import { getTool } from "../tools";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
+import { x402Config } from "../x402/config";
+import { createPayment } from "../db/x402Operations";
+import { usdToBaseUnits } from "../x402/service";
+import { x402Middleware } from "../middleware/x402";
 
 type ChatRequest = {
   message: string;
@@ -67,9 +71,20 @@ async function conditionallyCreateMockUserAndConversation(
   return { success: true };
 }
 
-export const chatRoute = new Elysia().post(
+const chatRoutePlugin = new Elysia()
+  .use(x402Middleware());
+
+export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
-  async ({ body, set, request }) => {
+  async (ctx) => {
+    const {
+      body,
+      set,
+      request,
+      paymentSettlement,
+      paymentRequirement,
+      paymentHeader,
+    } = ctx as any;
     const startTime = Date.now();
 
     // Handle parsed body (Elysia automatically parses FormData to object)
@@ -300,6 +315,38 @@ export const chatRoute = new Elysia().post(
       });
     } catch (err) {
       if (logger) logger.error({ err }, "failed_to_update_response_time");
+    }
+
+    if (
+      x402Config.enabled &&
+      paymentSettlement?.txHash &&
+      state.values?.estimatedCostUSD
+    ) {
+      const amountUsdString = String(state.values.estimatedCostUSD);
+      const amountUsdNumber = Number.parseFloat(amountUsdString) || 0;
+
+      try {
+        // TODO: capture payer address once facilitator response supports it for downstream receipts.
+        await createPayment({
+          user_id: userId,
+          conversation_id: conversationId,
+          message_id: createdMessage.id,
+          amount_usd: amountUsdNumber,
+          amount_wei: usdToBaseUnits(amountUsdString),
+          asset: x402Config.asset,
+          network: x402Config.network,
+          tools_used: planningResult.providers ?? [],
+          tx_hash: paymentSettlement.txHash,
+          network_id: paymentSettlement.networkId,
+          payment_status: "settled",
+          payment_header: paymentHeader ? { raw: paymentHeader } : null,
+          payment_requirements: paymentRequirement ?? null,
+        });
+      } catch (err) {
+        if (logger) {
+          logger.error({ err }, "x402_payment_record_failed");
+        }
+      }
     }
 
     return actionResult;

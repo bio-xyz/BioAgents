@@ -3,11 +3,13 @@ import { LLM } from "../../llm/provider";
 import { type Message, type State, type Tool } from "../../types/core";
 import logger from "../../utils/logger";
 import {
+  addVariablesToState,
   composePromptFromState,
   formatConversationHistory,
   parseKeyValueXml,
 } from "../../utils/state";
 import { getMessagesByConversation } from "../../db/operations";
+import { calculateRequestPrice } from "../../x402/pricing";
 
 export const planningTool: Tool = {
   name: "PLANNING",
@@ -94,10 +96,35 @@ export const planningTool: Tool = {
           throw new Error("Failed to parse XML response");
         }
 
-        const { actions, providers } = parsedXmlResponse;
+        const providersRaw = parsedXmlResponse.providers;
+        const providerList = Array.isArray(providersRaw)
+          ? providersRaw
+          : typeof providersRaw === "string"
+          ? providersRaw
+              .split(",")
+              .map((p: string) => p.trim())
+              .filter(Boolean)
+          : [];
+
+        const actionsRaw = parsedXmlResponse.actions;
+        const actionList = Array.isArray(actionsRaw)
+          ? actionsRaw
+          : typeof actionsRaw === "string"
+          ? actionsRaw
+              .split(",")
+              .map((a: string) => a.trim())
+              .filter(Boolean)
+          : [];
+
+        const estimatedCost = calculateRequestPrice(providerList);
+        // Store estimated cost for payment settlement after request completion
+        addVariablesToState(state, {
+          estimatedCostUSD: estimatedCost,
+        });
+
         return {
-          providers,
-          actions,
+          providers: providerList,
+          actions: actionList,
         };
       } catch (error) {
         console.error(

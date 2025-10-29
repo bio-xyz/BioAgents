@@ -27,6 +27,11 @@ export type Tool = {
   name: string;
   description: string;
   execute: (input: any) => Promise<any>;
+  payment?: {
+    required: boolean;
+    priceUSD: string;
+    tier: "free" | "basic" | "premium";
+  };
 };
 
 export type LLMProvider = "google" | "openai" | "anthropic" | "openrouter";
