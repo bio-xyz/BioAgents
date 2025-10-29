@@ -16,12 +16,12 @@ import {
   getUniquePapers,
 } from "../../utils/state";
 import { detectFileTypes } from "./fileDetection";
-import { getFileAnalysisPrompt } from "./prompts";
 import {
-  uploadFilesToGemini,
   addParsedFilesToContext,
   configureToolsForFiles,
+  uploadFilesToGemini,
 } from "./fileHandler";
+import { getFileAnalysisPrompt } from "./prompts";
 
 type ProviderWebSearchResult = {
   title: string;
@@ -148,7 +148,7 @@ export const replyTool = {
     const fileAnalysisPrompt = getFileAnalysisPrompt(
       fileTypes.hasPDF,
       fileTypes.hasDataFile,
-      fileTypes.hasImage
+      fileTypes.hasImage,
     );
     if (fileAnalysisPrompt) {
       prompt += fileAnalysisPrompt;
@@ -158,7 +158,12 @@ export const replyTool = {
     const REPLY_LLM_MODEL = process.env.REPLY_LLM_MODEL!;
 
     // Configure tools based on file types and provider
-    const toolConfig = configureToolsForFiles(templateKey, REPLY_LLM_PROVIDER, REPLY_LLM_MODEL, state);
+    const toolConfig = configureToolsForFiles(
+      templateKey,
+      REPLY_LLM_PROVIDER,
+      REPLY_LLM_MODEL,
+      state,
+    );
     tools.push(...toolConfig.tools);
     const useWebSearch = toolConfig.useWebSearch;
 
@@ -194,7 +199,7 @@ export const replyTool = {
     // For now, other providers receive parsed text content as fallback
     let geminiFileUris: Array<{ fileUri: string; mimeType: string }> = [];
 
-    if (state.values.rawFiles?.length && REPLY_LLM_PROVIDER === 'google') {
+    if (state.values.rawFiles?.length && REPLY_LLM_PROVIDER === "google") {
       const googleAdapter = (llmProvider as any).adapter as any;
       geminiFileUris = await uploadFilesToGemini(state, googleAdapter);
     }
@@ -326,7 +331,6 @@ export const replyTool = {
       logger.info(`   - Response length: ${finalText.length} characters`);
     }
 
-    // TODO: POI logic goes here
     // TODO: if source is twitter, add shortened science papers to the final answer
 
     logger.info(
