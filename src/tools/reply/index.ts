@@ -61,6 +61,7 @@ function selectTemplateKey(
 export const replyTool = {
   name: "REPLY",
   description: "Reply to the user's message based on the agent flow",
+  enabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
     addVariablesToState(state, { currentStep: "REPLYING" });
