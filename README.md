@@ -18,6 +18,8 @@ You can define and modify the agent's flow in the chat route. It currently calls
 
 [Tools](src/tools) are the core concept in this repository. We separate different logic into tools—including a planning tool, file upload tool, hypothesis tool, knowledge tool, knowledge graph tool, reply tool, and semantic search tool, with more coming soon.
 
+You can enable/disable each tool by switching the enabled boolean.
+
 ### State
 
 State is a key concept for tools. The message state contains all important information from processing a message—which science papers were cited, which knowledge was used, which files were uploaded, etc. Since state is stored as a large JSON object, you should ideally set up a database trigger to clear message states older than ~30 minutes. We plan to introduce a 'conversation' state soon, which will represent permanent conversation state and summarize the most important takeaways.
