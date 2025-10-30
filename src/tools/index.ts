@@ -26,8 +26,20 @@ class ToolRegistry {
         const tool = module[`${toolName}Tool`] || module.tool || module.default;
 
         if (tool && typeof tool === "object" && "name" in tool && "execute" in tool) {
-          this.tools.set(tool.name, tool as Tool);
-          console.log(`Registered tool: ${tool.name}`);
+          // Check if tool is enabled (default to true if not specified)
+          const isEnabledInTool = tool.enabled !== false;
+
+          // Check environment variable override (e.g., TOOL_PLANNING_ENABLED=false)
+          const envKey = `TOOL_${tool.name.toUpperCase().replace(/-/g, "_")}_ENABLED`;
+          const envValue = process.env[envKey];
+          const isEnabledByEnv = envValue === undefined ? isEnabledInTool : envValue === "true";
+
+          if (isEnabledByEnv) {
+            this.tools.set(tool.name, tool as Tool);
+            console.log(`Registered tool: ${tool.name}`);
+          } else {
+            console.log(`Skipped disabled tool: ${tool.name}`);
+          }
         }
       } catch (error) {
         console.warn(`Failed to load tool ${toolName}:`, error);

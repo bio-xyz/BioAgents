@@ -12,6 +12,7 @@ import { getMessagesByConversation } from "../../db/operations";
 export const planningTool: Tool = {
   name: "PLANNING",
   description: "Plan the agent workflow execution",
+  enabled: true,
   execute: async (input: {
     state: State;
     message: Message;

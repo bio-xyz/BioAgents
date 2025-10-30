@@ -1,0 +1,124 @@
+-- BioAgents Database Schema Setup
+-- Run this SQL in your Supabase/PostgreSQL database to set up all required tables
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Drop existing tables (cascade to handle foreign keys)
+DROP TABLE IF EXISTS messages CASCADE;
+DROP TABLE IF EXISTS states CASCADE;
+DROP TABLE IF EXISTS conversations CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- Users table
+CREATE TABLE users (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL UNIQUE,
+  used_invite_code TEXT,
+  points INTEGER DEFAULT 0,
+  has_completed_invite_flow BOOLEAN DEFAULT false,
+  invite_codes_remaining INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Conversations table
+CREATE TABLE conversations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- States table (stores message processing state)
+CREATE TABLE states (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  values JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Messages table
+CREATE TABLE messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  question TEXT,
+  content TEXT NOT NULL,
+  state_id UUID REFERENCES states(id) ON DELETE SET NULL,
+  response_time INTEGER, -- in milliseconds
+  source TEXT DEFAULT 'ui', -- 'ui', 'twitter', etc.
+  files JSONB, -- stores file metadata for uploads
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for common queries
+CREATE INDEX idx_conversations_user_id ON conversations(user_id);
+CREATE INDEX idx_conversations_created_at ON conversations(created_at DESC);
+
+CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX idx_messages_user_id ON messages(user_id);
+CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
+CREATE INDEX idx_messages_state_id ON messages(state_id);
+
+-- GIN index for JSONB fields (efficient for JSON queries)
+CREATE INDEX idx_states_values ON states USING GIN (values);
+CREATE INDEX idx_messages_files ON messages USING GIN (files);
+
+-- Function to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Triggers to update updated_at on record updates
+CREATE TRIGGER update_users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_conversations_updated_at
+  BEFORE UPDATE ON conversations
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_states_updated_at
+  BEFORE UPDATE ON states
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Optional: Create a function to clean up old states (performance optimization)
+-- States can grow large, so consider running this periodically
+CREATE OR REPLACE FUNCTION cleanup_old_states(days_to_keep INTEGER DEFAULT 1)
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  -- Delete states older than specified days that are not referenced by messages
+  DELETE FROM states
+  WHERE id IN (
+    SELECT s.id
+    FROM states s
+    LEFT JOIN messages m ON m.state_id = s.id
+    WHERE m.id IS NULL
+    AND s.created_at < NOW() - INTERVAL '1 day' * days_to_keep
+  );
+
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Optional: Schedule automatic cleanup (requires pg_cron extension)
+-- Uncomment if you have pg_cron enabled:
+-- SELECT cron.schedule('cleanup-old-states', '0 2 * * *', 'SELECT cleanup_old_states(1)');
+
+COMMENT ON TABLE users IS 'User accounts and profile information';
+COMMENT ON TABLE conversations IS 'Conversation threads between users and the agent';
+COMMENT ON TABLE messages IS 'Individual messages within conversations';
+COMMENT ON TABLE states IS 'Processing state for each message (papers cited, knowledge used, etc.)';
+COMMENT ON FUNCTION cleanup_old_states IS 'Removes orphaned states older than specified days to prevent database bloat';

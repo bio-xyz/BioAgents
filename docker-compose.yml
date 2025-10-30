@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   bioagents:
@@ -16,13 +16,13 @@ services:
       # Agent LLM Configuration
       - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
       - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-openai}
-      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gpt-4}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gpt-5}
       - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-openai}
-      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gpt-4}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gpt-5}
       - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-openai}
-      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gpt-4}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gpt-5}
       - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-openai}
-      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gpt-4}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gpt-5}
 
       # Embedding Configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
@@ -58,7 +58,14 @@ services:
 
     # Health check (using Bun's fetch, no curl needed)
     healthcheck:
-      test: ["CMD", "bun", "run", "-e", "fetch('http://localhost:3000/api/auth/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "bun",
+          "run",
+          "-e",
+          "fetch('http://localhost:3000/api/auth/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
