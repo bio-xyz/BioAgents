@@ -26,7 +26,7 @@ This directory packages helper scripts and configuration for working with the Op
     --query "cytokine storm mitigation strategies"
   ```
   Successful responses confirm the base model and index are wired correctly.
-- **Integrate with BioAgents.** Once the index and parquet live alongside this toolkit, you can create a simple FastAPI server locally and the framework can call into the OpenScholar tools to answer user questions by searching your curated corpus.
+- **Integrate with BioAgents.** Once the index and parquet sit alongside this toolkit, create a small FastAPI service to expose them; that endpoint becomes your `OPENSCHOLAR_API_URL`, and the framework can call it to answer questions against your curated corpus. When running locally you can skip auth, but if you deploy it remotely be sure to add authentication and require an `OPENSCHOLAR_API_KEY`.
 
 ## Deployment Notes
 
