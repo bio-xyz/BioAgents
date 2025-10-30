@@ -59,6 +59,82 @@ To create your own character, modify `src/character.ts` or create a new characte
 - Button styles: `client/src/styles/buttons.css`
 - Mobile-first responsive design
 
+**Payment Integration:**
+
+The UI includes integrated support for x402 micropayments using Coinbase embedded wallets:
+
+- Embedded wallet authentication via `client/src/components/EmbeddedWalletAuth.tsx`
+- x402 payment hooks in `client/src/hooks/useX402Payment.ts`
+- Seamless USDC payment flow for paid API requests
+- Toast notifications for payment status
+
+## x402 Payment Protocol
+
+BioAgents AgentKit supports USDC micropayments for API access using the x402 payment protocol with Coinbase's embedded wallet infrastructure.
+
+### Features
+
+- **Gasless Transfers**: Uses EIP-3009 for fee-free USDC transfers on Base
+- **Embedded Wallets**: Email-based wallet creation via Coinbase Developer Platform
+- **HTTP 402 Flow**: Standard "Payment Required" protocol for API monetization
+- **Base Network**: Supports both Base Sepolia (testnet) and Base (mainnet)
+
+### Configuration
+
+1. Set up your payment receiver address:
+```bash
+X402_ENABLED=true
+X402_PAYMENT_ADDRESS=0xYourWalletAddress
+```
+
+2. Get Coinbase CDP credentials from [Coinbase Developer Portal](https://portal.cdp.coinbase.com):
+```bash
+# API credentials for backend
+CDP_API_KEY_ID=your_key_id
+CDP_API_KEY_SECRET=your_key_secret
+
+# Project ID for embedded wallets (frontend)
+CDP_PROJECT_ID=your_project_id
+```
+
+3. Configure network (see `.env.example` for all options):
+```bash
+X402_NETWORK=base-sepolia  # or 'base' for mainnet
+X402_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e  # Base Sepolia USDC
+```
+
+### Payment Flow
+
+1. User connects wallet via email (embedded wallet created automatically)
+2. User makes a request to `/api/chat`
+3. Server responds with 402 Payment Required + payment details
+4. Client signs payment authorization (gasless EIP-3009 transfer)
+5. Client retries request with payment proof
+6. Server verifies and processes the request
+
+### Database Schema
+
+Payment records are stored in the `x402_payments` table (see `scripts/db/setup.sql`):
+
+```sql
+CREATE TABLE x402_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id TEXT NOT NULL,
+  user_id TEXT,
+  transaction_hash TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  currency TEXT NOT NULL,
+  network TEXT NOT NULL,
+  status TEXT NOT NULL,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+For more details on x402 implementation, see:
+- Backend: `src/x402/` directory
+- Frontend: `client/src/hooks/useX402Payment.ts` and `client/src/hooks/useEmbeddedWallet.ts`
+
 ## Project Structure
 
 ```

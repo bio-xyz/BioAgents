@@ -51,6 +51,7 @@ export interface UseX402PaymentReturn {
   fetchWithPayment: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   decodePaymentResponse: typeof decodeXPaymentResponse;
   checkBalance: () => Promise<void>;
+  setEmbeddedWalletClient: (client: any, address: string) => void;
 }
 
 export function useX402Payment(): UseX402PaymentReturn {
@@ -145,9 +146,6 @@ export function useX402Payment(): UseX402PaymentReturn {
 
   // Helper function to check balance for a specific address
   const checkBalanceForAddress = useCallback(async (address: string, provider: any) => {
-    console.log("[checkBalance] Starting balance check for:", address);
-    console.log("[checkBalance] Config network:", config?.network);
-
     setIsCheckingBalance(true);
     try {
       if (!provider) {
@@ -164,15 +162,10 @@ export function useX402Payment(): UseX402PaymentReturn {
             ? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
             : "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
-      console.log("[checkBalance] Using network:", network);
-      console.log("[checkBalance] USDC contract:", usdcAddress);
-
       // ERC20 balanceOf ABI
       const balanceOfAbi = "70a08231"; // balanceOf(address) - function selector
       const paddedAddress = address.slice(2).padStart(64, "0");
       const callData = `0x${balanceOfAbi}${paddedAddress}`;
-
-      console.log("[checkBalance] Call data:", callData);
 
       const balance = await provider.request({
         method: "eth_call",
@@ -408,6 +401,45 @@ export function useX402Payment(): UseX402PaymentReturn {
   // Calculate if user has insufficient balance (less than $0.10 for example)
   const hasInsufficientBalance = usdcBalance !== null && parseFloat(usdcBalance) < 0.10;
 
+  // Method to set embedded wallet client
+  const setEmbeddedWalletClient = useCallback((client: any, address: string) => {
+    if (!client || !address) {
+      console.error("[useX402Payment] Invalid embedded wallet client or address");
+      return;
+    }
+
+    // Set wallet address
+    setWalletAddress(address as Address);
+
+    // Set signer
+    signerRef.current = client as unknown as Signer;
+    signerPromiseRef.current = Promise.resolve(client as unknown as Signer);
+
+    // Create wrapped fetch with payment capability
+    // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
+    wrappedFetchRef.current = wrapFetchWithPayment(fetch, client as any);
+
+    // Create an EIP-1193 provider shim for balance checking
+    const providerShim = {
+      request: async ({ method, params }: any) => {
+        try {
+          // Forward all requests to the client's transport
+          return await client.transport.request({ method, params });
+        } catch (error) {
+          console.error("[useX402Payment] Provider shim error:", method, error);
+          throw error;
+        }
+      },
+    };
+
+    providerRef.current = providerShim;
+
+    // Check balance immediately after setting client
+    setTimeout(async () => {
+      await checkBalanceForAddress(address, providerShim);
+    }, 500);
+  }, [checkBalanceForAddress]);
+
   return {
     config,
     pricing,
@@ -426,5 +458,6 @@ export function useX402Payment(): UseX402PaymentReturn {
     fetchWithPayment,
     decodePaymentResponse: decodeXPaymentResponse,
     checkBalance,
+    setEmbeddedWalletClient,
   };
 }

@@ -12,6 +12,8 @@ export { useAutoResize } from './useAutoResize';
 export { useAuth } from './useAuth';
 export { useX402Payment } from './useX402Payment';
 export { useToast } from './useToast';
+export { useEmbeddedWallet } from './useEmbeddedWallet';
+export { useEmbeddedWalletClient } from './useEmbeddedWalletClient';
 
 export type { Message, Session, UseSessionsReturn } from './useSessions';
 export type { SendMessageParams, UseChatAPIReturn } from './useChatAPI';

@@ -13,6 +13,7 @@ import { x402Config } from "../x402/config";
 import { createPayment } from "../db/x402Operations";
 import { usdToBaseUnits } from "../x402/service";
 import { x402Middleware } from "../middleware/x402";
+import { calculateRequestPrice } from "../x402/pricing";
 
 type ChatResponse = {
   text: string;
@@ -251,6 +252,15 @@ export const chatRoute = chatRoutePlugin.post(
         }
 
         try {
+          // Initialize estimatedCostsUSD object if not exists
+          if (!state.values.estimatedCostsUSD) {
+            state.values.estimatedCostsUSD = {};
+          }
+
+          // Track cost for this provider before execution
+          const providerCost = calculateRequestPrice([provider]);
+          state.values.estimatedCostsUSD[provider] = parseFloat(providerCost);
+
           const data = await tool.execute({
             state,
             message: createdMessage,
@@ -279,6 +289,13 @@ export const chatRoute = chatRoutePlugin.post(
       set.status = 500;
       return { ok: false, error: `Action tool not found: ${action}` };
     }
+
+    // Track cost for action tool
+    if (!state.values.estimatedCostsUSD) {
+      state.values.estimatedCostsUSD = {};
+    }
+    const actionCost = calculateRequestPrice([action]);
+    state.values.estimatedCostsUSD[action] = parseFloat(actionCost);
 
     let actionResult: ChatResponse;
     try {
@@ -318,13 +335,23 @@ export const chatRoute = chatRoutePlugin.post(
       if (logger) logger.error({ err }, "failed_to_update_response_time");
     }
 
+    // Calculate total cost from all provider costs
+    let totalCostUSD = 0;
+    if (state.values?.estimatedCostsUSD) {
+      // Sum all individual provider costs
+      totalCostUSD = Object.values(state.values.estimatedCostsUSD).reduce(
+        (sum: number, cost: any) => sum + (parseFloat(String(cost)) || 0),
+        0
+      );
+    }
+
     if (
       x402Config.enabled &&
       paymentSettlement?.txHash &&
-      state.values?.estimatedCostUSD
+      totalCostUSD > 0
     ) {
-      const amountUsdString = String(state.values.estimatedCostUSD);
-      const amountUsdNumber = Number.parseFloat(amountUsdString) || 0;
+      const amountUsdString = totalCostUSD.toFixed(2);
+      const amountUsdNumber = totalCostUSD;
 
       try {
         // TODO: capture payer address once facilitator response supports it for downstream receipts.

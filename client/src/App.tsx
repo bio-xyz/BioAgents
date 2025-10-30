@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useState, useEffect } from "preact/hooks";
 
 import { ChatInput } from "./components/ChatInput";
 import { ErrorMessage } from "./components/ErrorMessage";
@@ -8,6 +8,8 @@ import { TypingIndicator } from "./components/TypingIndicator";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { LoginScreen } from "./components/LoginScreen";
 import { ToastContainer } from "./components/Toast";
+import { EmbeddedWalletAuth } from "./components/EmbeddedWalletAuth";
+import { Modal } from "./components/ui/Modal";
 
 // Custom hooks
 import {
@@ -19,6 +21,7 @@ import {
   useAuth,
   useX402Payment,
   useToast,
+  useEmbeddedWallet,
 } from "./hooks";
 
 export function App() {
@@ -49,16 +52,20 @@ export function App() {
   const {
     enabled: x402Enabled,
     walletAddress,
-    isConnecting: isWalletConnecting,
-    connectWallet,
-    disconnectWallet,
     error: x402Error,
     usdcBalance,
-    isCheckingBalance,
     hasInsufficientBalance,
     checkBalance,
     config: x402ConfigData,
   } = x402;
+
+  // Embedded wallet state (only if x402 is enabled)
+  const embeddedWallet = x402Enabled ? useEmbeddedWallet(x402ConfigData?.network) : null;
+  const {
+    isSignedIn: isEmbeddedWalletConnected,
+    evmAddress: embeddedWalletAddress,
+    walletClient: embeddedWalletClient,
+  } = embeddedWallet || { isSignedIn: false, evmAddress: null, walletClient: null };
 
   // Chat API
   const {
@@ -87,7 +94,17 @@ export function App() {
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Wallet modal state
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+
   const messages = currentSession.messages;
+
+  // Integrate embedded wallet with x402 payments (only if x402 is enabled)
+  useEffect(() => {
+    if (x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && embeddedWalletClient) {
+      x402.setEmbeddedWalletClient(embeddedWalletClient, embeddedWalletAddress);
+    }
+  }, [x402Enabled, isEmbeddedWalletConnected, embeddedWalletAddress, embeddedWalletClient]);
 
   /**
    * Handle sending a message
@@ -254,108 +271,58 @@ export function App() {
           </svg>
         </button>
 
-        {x402Enabled && (
-          <div
-            style={{
-              margin: "0.75rem 0 1rem 0",
-              padding: "0.75rem 1rem",
-              borderRadius: "0.75rem",
-              background: "rgba(15, 23, 42, 0.08)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-            }}
-          >
-            {walletAddress ? (
-              <>
-                <div style={{ flex: "1", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                    Wallet: <strong style={{ color: "var(--text-primary)" }}>
-                      {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
-                    </strong>
-                  </span>
-                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                    Balance: {isCheckingBalance ? (
-                      <span>Checking...</span>
-                    ) : (
-                      <strong style={{ color: hasInsufficientBalance ? "#ef4444" : "#16a34a" }}>
-                        ${usdcBalance || "0.00"} USDC
-                      </strong>
-                    )}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", marginLeft: "auto", flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      navigator.clipboard.writeText(walletAddress);
-                      const btn = e.currentTarget as HTMLButtonElement;
-                      const originalText = btn.textContent;
-                      btn.textContent = "Copied!";
-                      setTimeout(() => {
-                        btn.textContent = originalText || "Copy";
-                      }, 2000);
-                    }}
-                    style={{
-                      background: "var(--accent-light)",
-                      border: "1px solid var(--accent-color)",
-                      color: "var(--accent-color)",
-                      padding: "0.3rem 0.7rem",
-                      borderRadius: "0.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.8rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Copy
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void disconnectWallet()}
-                    style={{
-                      background: "transparent",
-                      border: "1px solid rgba(15, 23, 42, 0.4)",
-                      color: "var(--text-primary)",
-                      padding: "0.3rem 0.7rem",
-                      borderRadius: "0.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.8rem",
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", flex: "1" }}>
-                  Connect your wallet to authorize paid requests.
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void connectWallet().catch((err) =>
-                      console.error("Wallet connection failed", err),
-                    )
-                  }
-                  disabled={isWalletConnecting}
-                  style={{
-                    background: "#0052ff",
-                    border: "none",
-                    color: "white",
-                    padding: "0.4rem 0.9rem",
-                    borderRadius: "0.5rem",
-                    cursor: isWalletConnecting ? "progress" : "pointer",
-                    opacity: isWalletConnecting ? 0.6 : 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {isWalletConnecting ? "Connecting…" : "Connect Wallet"}
-                </button>
-              </>
-            )}
+        {x402Enabled && !isEmbeddedWalletConnected && (
+          <div style={{ margin: "0.75rem 0", padding: "0.75rem 1rem", background: "#0a0a0a", borderRadius: "12px", border: "1px solid #262626" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 600, color: "#ffffff" }}>
+                  Connect Your Wallet
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "#a1a1a1" }}>
+                  Create a secure wallet to access paid features
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWalletModalOpen(true)}
+                style={{
+                  background: "#10b981",
+                  border: "none",
+                  color: "#000000",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  transition: "all 0.2s ease",
+                  boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  whiteSpace: "nowrap",
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 6px 16px rgba(16, 185, 129, 0.4)";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.3)";
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Connect Wallet
+              </button>
+            </div>
+          </div>
+        )}
+
+        {x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && (
+          <div style={{ margin: "0.75rem 0" }}>
+            <EmbeddedWalletAuth />
           </div>
         )}
 
@@ -531,6 +498,21 @@ export function App() {
         />
       </div>
     </div>
+
+    {/* Wallet Connection Modal - Only show if x402 is enabled */}
+    {x402Enabled && (
+      <Modal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        maxWidth="550px"
+      >
+        <EmbeddedWalletAuth
+          onWalletConnected={() => {
+            setIsWalletModalOpen(false);
+          }}
+        />
+      </Modal>
+    )}
     </>
   );
 }

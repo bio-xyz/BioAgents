@@ -130,29 +130,21 @@ export function useChatAPI(
       if (paymentResponseHeader) {
         try {
           const paymentResponse = decodePaymentResponse(paymentResponseHeader);
-          
+
           // Payment response contains transaction hash
           if (paymentResponse?.transaction) {
             setPaymentTxHash(paymentResponse.transaction);
-            
+
             // Show success toast with transaction link
             const network = paymentResponse.network || "base-sepolia";
-            const explorerUrl = network.includes("sepolia")
-              ? `https://sepolia.basescan.org/tx/${paymentResponse.transaction}`
-              : `https://basescan.org/tx/${paymentResponse.transaction}`;
-            
+            const txShort = `${paymentResponse.transaction.slice(0, 8)}...${paymentResponse.transaction.slice(-6)}`;
+
             toast.success(
-              `✅ Payment Confirmed\n\nTransaction: ${paymentResponse.transaction.slice(0, 10)}...${paymentResponse.transaction.slice(-8)}`,
-              5000
+              `✅ Payment Transaction Approved!\n\nYour payment has been successfully processed.\n\nTx: ${txShort}`,
+              7000
             );
-            
-            // Show processing toast after payment
-            setTimeout(() => {
-              toast.info(
-                `🧠 BioAgent Processing\n\nYour request has been received and is being analyzed. Please wait while we generate your response.`,
-                6000
-              );
-            }, 500);
+
+            console.log("[useChatAPI] Payment successful - Transaction:", paymentResponse.transaction);
           }
         } catch (err) {
           console.warn("[useChatAPI] Failed to decode payment response:", err);

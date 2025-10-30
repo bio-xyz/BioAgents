@@ -3,7 +3,6 @@ import { LLM } from "../../llm/provider";
 import { type Message, type State, type Tool } from "../../types/core";
 import logger from "../../utils/logger";
 import {
-  addVariablesToState,
   composePromptFromState,
   formatConversationHistory,
   parseKeyValueXml,
@@ -117,11 +116,14 @@ export const planningTool: Tool = {
               .filter(Boolean)
           : [];
 
-        const estimatedCost = calculateRequestPrice(providerList);
-        // Store estimated cost for payment settlement after request completion
-        addVariablesToState(state, {
-          estimatedCostUSD: estimatedCost,
-        });
+        // Initialize estimatedCostsUSD object if it doesn't exist
+        if (!state.values.estimatedCostsUSD) {
+          state.values.estimatedCostsUSD = {};
+        }
+
+        // Store estimated cost for PLANNING tool specifically
+        const planningCost = calculateRequestPrice(["PLANNING"]);
+        state.values.estimatedCostsUSD["PLANNING"] = parseFloat(planningCost);
 
         return {
           providers: providerList,

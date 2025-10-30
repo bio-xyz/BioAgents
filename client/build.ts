@@ -7,7 +7,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, watch } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 const clientDir = import.meta.dir;
 const distDir = join(clientDir, 'dist');
@@ -35,7 +35,7 @@ async function build() {
   const startTime = Date.now();
   console.log('🔨 Building Preact UI...');
 
-  // Bundle JavaScript
+  // Bundle JavaScript with React to Preact aliasing
   const buildResult = await Bun.build({
     entrypoints: [join(clientDir, 'src/index.jsx')],
     outdir: distDir,
@@ -46,7 +46,32 @@ async function build() {
     define: {
       'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ''),
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || ''),
+      'import.meta.env.CDP_PROJECT_ID': JSON.stringify(process.env.CDP_PROJECT_ID || 'your-project-id-here'),
     },
+    plugins: [
+      {
+        name: 'react-to-preact-alias',
+        setup(build) {
+          // Get absolute paths to Preact modules
+          const nodeModulesPath = resolve(clientDir, '..', 'node_modules');
+          const preactCompatPath = resolve(nodeModulesPath, 'preact', 'compat', 'dist', 'compat.module.js');
+          const preactJsxRuntimePath = resolve(nodeModulesPath, 'preact', 'jsx-runtime', 'dist', 'jsxRuntime.module.js');
+
+          // Redirect all React imports to Preact compat with absolute paths
+          build.onResolve({ filter: /^react$/ }, () => {
+            return { path: preactCompatPath };
+          });
+
+          build.onResolve({ filter: /^react-dom$/ }, () => {
+            return { path: preactCompatPath };
+          });
+
+          build.onResolve({ filter: /^react\/jsx-runtime$/ }, () => {
+            return { path: preactJsxRuntimePath };
+          });
+        },
+      },
+    ],
   });
 
   if (!buildResult.success) {
