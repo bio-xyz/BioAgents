@@ -28,6 +28,11 @@ export type Tool = {
   description: string;
   execute: (input: any) => Promise<any>;
   enabled?: boolean; // Tools are enabled by default
+  payment?: {
+    required: boolean;
+    priceUSD: string;
+    tier: "free" | "basic" | "premium";
+  };
 };
 
 export type LLMProvider = "google" | "openai" | "anthropic" | "openrouter";

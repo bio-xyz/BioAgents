@@ -8,6 +8,7 @@ import {
   parseKeyValueXml,
 } from "../../utils/state";
 import { getMessagesByConversation } from "../../db/operations";
+import { calculateRequestPrice } from "../../x402/pricing";
 
 export const planningTool: Tool = {
   name: "PLANNING",
@@ -95,10 +96,38 @@ export const planningTool: Tool = {
           throw new Error("Failed to parse XML response");
         }
 
-        const { actions, providers } = parsedXmlResponse;
+        const providersRaw = parsedXmlResponse.providers;
+        const providerList = Array.isArray(providersRaw)
+          ? providersRaw
+          : typeof providersRaw === "string"
+          ? providersRaw
+              .split(",")
+              .map((p: string) => p.trim())
+              .filter(Boolean)
+          : [];
+
+        const actionsRaw = parsedXmlResponse.actions;
+        const actionList = Array.isArray(actionsRaw)
+          ? actionsRaw
+          : typeof actionsRaw === "string"
+          ? actionsRaw
+              .split(",")
+              .map((a: string) => a.trim())
+              .filter(Boolean)
+          : [];
+
+        // Initialize estimatedCostsUSD object if it doesn't exist
+        if (!state.values.estimatedCostsUSD) {
+          state.values.estimatedCostsUSD = {};
+        }
+
+        // Store estimated cost for PLANNING tool specifically
+        const planningCost = calculateRequestPrice(["PLANNING"]);
+        state.values.estimatedCostsUSD["PLANNING"] = parseFloat(planningCost);
+
         return {
-          providers,
-          actions,
+          providers: providerList,
+          actions: actionList,
         };
       } catch (error) {
         console.error(

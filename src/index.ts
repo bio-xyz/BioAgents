@@ -2,6 +2,8 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { chatRoute } from "./routes/chat";
 import { authRoute } from "./routes/auth";
+import { x402Middleware } from "./middleware/x402";
+import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
 const app = new Elysia()
@@ -10,6 +12,9 @@ const app = new Elysia()
     origin: true, // Allow all origins (Coolify handles domain routing)
     credentials: true, // Important: allow cookies
   }))
+
+  // Apply x402 payment gating (only active when enabled via config)
+  .use(x402Middleware())
 
   // Basic request logging (optional)
   .onRequest(({ request }) => {
@@ -26,6 +31,7 @@ const app = new Elysia()
 
   // Mount auth routes (no protection needed for auth endpoints)
   .use(authRoute)
+  .use(x402Route)
 
   // Note: We always serve UI files regardless of auth status
   // The frontend (useAuth hook) will check /api/auth/status and show login screen if needed
@@ -66,6 +72,12 @@ const app = new Elysia()
   // Handle favicon (prevent 404 errors)
   .get("/favicon.ico", () => {
     return new Response(null, { status: 204 });
+  })
+
+  // Debug endpoint
+  .get("/api/health", () => {
+    if (logger) logger.info("Health check endpoint hit");
+    return { status: "ok", timestamp: new Date().toISOString() };
   })
 
   // API routes (not protected by UI auth)

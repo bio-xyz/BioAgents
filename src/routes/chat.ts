@@ -9,6 +9,11 @@ import {
 import { getTool } from "../tools";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
+import { x402Config } from "../x402/config";
+import { createPayment } from "../db/x402Operations";
+import { usdToBaseUnits } from "../x402/service";
+import { x402Middleware } from "../middleware/x402";
+import { calculateRequestPrice } from "../x402/pricing";
 
 type ChatResponse = {
   text: string;
@@ -61,9 +66,20 @@ async function conditionallyCreateMockUserAndConversation(
   return { success: true };
 }
 
-export const chatRoute = new Elysia().post(
+const chatRoutePlugin = new Elysia()
+  .use(x402Middleware());
+
+export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
-  async ({ body, set, request }) => {
+  async (ctx) => {
+    const {
+      body,
+      set,
+      request,
+      paymentSettlement,
+      paymentRequirement,
+      paymentHeader,
+    } = ctx as any;
     const startTime = Date.now();
 
     // Handle parsed body (Elysia automatically parses FormData to object)
@@ -236,6 +252,15 @@ export const chatRoute = new Elysia().post(
         }
 
         try {
+          // Initialize estimatedCostsUSD object if not exists
+          if (!state.values.estimatedCostsUSD) {
+            state.values.estimatedCostsUSD = {};
+          }
+
+          // Track cost for this provider before execution
+          const providerCost = calculateRequestPrice([provider]);
+          state.values.estimatedCostsUSD[provider] = parseFloat(providerCost);
+
           const data = await tool.execute({
             state,
             message: createdMessage,
@@ -264,6 +289,13 @@ export const chatRoute = new Elysia().post(
       set.status = 500;
       return { ok: false, error: `Action tool not found: ${action}` };
     }
+
+    // Track cost for action tool
+    if (!state.values.estimatedCostsUSD) {
+      state.values.estimatedCostsUSD = {};
+    }
+    const actionCost = calculateRequestPrice([action]);
+    state.values.estimatedCostsUSD[action] = parseFloat(actionCost);
 
     let actionResult: ChatResponse;
     try {
@@ -301,6 +333,48 @@ export const chatRoute = new Elysia().post(
       });
     } catch (err) {
       if (logger) logger.error({ err }, "failed_to_update_response_time");
+    }
+
+    // Calculate total cost from all provider costs
+    let totalCostUSD = 0;
+    if (state.values?.estimatedCostsUSD) {
+      // Sum all individual provider costs
+      totalCostUSD = Object.values(state.values.estimatedCostsUSD).reduce(
+        (sum: number, cost: any) => sum + (parseFloat(String(cost)) || 0),
+        0
+      );
+    }
+
+    if (
+      x402Config.enabled &&
+      paymentSettlement?.txHash &&
+      totalCostUSD > 0
+    ) {
+      const amountUsdString = totalCostUSD.toFixed(2);
+      const amountUsdNumber = totalCostUSD;
+
+      try {
+        // TODO: capture payer address once facilitator response supports it for downstream receipts.
+        await createPayment({
+          user_id: userId,
+          conversation_id: conversationId,
+          message_id: createdMessage.id,
+          amount_usd: amountUsdNumber,
+          amount_wei: usdToBaseUnits(amountUsdString),
+          asset: x402Config.asset,
+          network: x402Config.network,
+          tools_used: planningResult.providers ?? [],
+          tx_hash: paymentSettlement.txHash,
+          network_id: paymentSettlement.networkId,
+          payment_status: "settled",
+          payment_header: paymentHeader ? { raw: paymentHeader } : null,
+          payment_requirements: paymentRequirement ?? null,
+        });
+      } catch (err) {
+        if (logger) {
+          logger.error({ err }, "x402_payment_record_failed");
+        }
+      }
     }
 
     return actionResult;
