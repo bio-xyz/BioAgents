@@ -7,9 +7,10 @@ import { useSignOut } from "@coinbase/cdp-hooks";
 
 interface EmbeddedWalletAuthProps {
   onWalletConnected?: (address: string) => void;
+  usdcBalance?: string;
 }
 
-export function EmbeddedWalletAuth({ onWalletConnected }: EmbeddedWalletAuthProps) {
+export function EmbeddedWalletAuth({ onWalletConnected, usdcBalance }: EmbeddedWalletAuthProps) {
   const { isSignedIn } = useIsSignedIn();
   const { signInWithEmail } = useSignInWithEmail();
   const { verifyEmailOTP } = useVerifyEmailOTP();
@@ -120,8 +121,23 @@ export function EmbeddedWalletAuth({ onWalletConnected }: EmbeddedWalletAuthProp
               }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "12px", color: "#a1a1a1", marginBottom: "2px" }}>
-                Wallet Connected
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
+                <span style={{ fontSize: "12px", color: "#a1a1a1" }}>
+                  Wallet Connected
+                </span>
+                {usdcBalance && (
+                  <span style={{
+                    fontSize: "12px",
+                    color: "#10b981",
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    background: "rgba(16, 185, 129, 0.1)",
+                    borderRadius: "4px",
+                    border: "1px solid rgba(16, 185, 129, 0.2)"
+                  }}>
+                    ${usdcBalance} USDC
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: "14px", color: "#ffffff", fontWeight: 600, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {evmAddress.slice(0, 8)}...{evmAddress.slice(-6)}

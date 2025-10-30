@@ -348,7 +348,7 @@ export function App() {
 
         {x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && (
           <div style={{ margin: "0.75rem 0" }}>
-            <EmbeddedWalletAuth />
+            <EmbeddedWalletAuth usdcBalance={usdcBalance} />
           </div>
         )}
 

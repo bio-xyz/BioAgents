@@ -166,6 +166,13 @@ export function useChatAPI(
             );
 
             console.log("[useChatAPI] Payment successful - Transaction:", paymentResponse.transaction);
+
+            // Refresh USDC balance after successful payment
+            if (x402Context?.checkBalance) {
+              setTimeout(() => {
+                x402Context.checkBalance();
+              }, 1000); // Wait 1 second for transaction to settle
+            }
           }
         } catch (err) {
           console.warn("[useChatAPI] Failed to decode payment response:", err);
