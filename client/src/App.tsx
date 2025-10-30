@@ -10,6 +10,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { ToastContainer } from "./components/Toast";
 import { EmbeddedWalletAuth } from "./components/EmbeddedWalletAuth";
 import { Modal } from "./components/ui/Modal";
+import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
 
 // Custom hooks
 import {
@@ -74,6 +75,9 @@ export function App() {
     paymentTxHash,
     sendMessage,
     clearError,
+    pendingPayment,
+    confirmPayment,
+    cancelPayment,
   } = useChatAPI(x402);
 
   // File upload
@@ -96,6 +100,12 @@ export function App() {
 
   // Wallet modal state
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+
+  // Store pending message data for after payment confirmation
+  const [pendingMessageData, setPendingMessageData] = useState<{
+    content: string;
+    fileMetadata?: Array<{ name: string; size: number }>;
+  } | null>(null);
 
   const messages = currentSession.messages;
 
@@ -128,34 +138,25 @@ export function App() {
         : `[Attached ${selectedFiles.length} files]`
       : "";
 
-    // Create user message
-    const userMessage = {
-      id: Date.now(),
-      role: "user" as const,
-      content: trimmedInput || fileText,
-      files: hasFiles
-        ? selectedFiles.map((f) => ({ name: f.name, size: f.size }))
-        : undefined,
-    };
-
-    addMessage(userMessage);
-
-    // Update session title if it's the first message
-    if (messages.length === 0) {
-      const title = trimmedInput || selectedFiles[0]?.name || "New conversation";
-      updateSessionTitle(currentSessionId, title);
-    }
-
     // Store file references before clearing state
     const filesToSend = [...selectedFiles];
+    const messageContent = trimmedInput || fileText;
+    const fileMetadata = hasFiles
+      ? selectedFiles.map((f) => ({ name: f.name, size: f.size }))
+      : undefined;
 
-    // Clear input and files
+    // Store for use after payment confirmation
+    setPendingMessageData({
+      content: messageContent,
+      fileMetadata,
+    });
+
+    // Clear input and files BEFORE sending to improve UX
     setInputValue("");
     clearFile();
-    scrollToBottom();
 
     try {
-      // Send message to API
+      // Send message to API - this will trigger payment confirmation modal if needed
       const response = await sendMessage({
         message: trimmedInput,
         conversationId: currentSessionId,
@@ -163,40 +164,65 @@ export function App() {
         files: filesToSend,
       });
 
-      // Create temp message for typing animation
-      const tempId = Date.now();
-      addMessage({
-        id: tempId,
-        role: "assistant" as const,
-        content: "",
-        files: response.files, // Include file metadata from response
-      });
+      // Only continue if we got a response (not empty from payment confirmation)
+      if (response.text) {
+        // Add user message to chat
+        const userMessage = {
+          id: Date.now(),
+          role: "user" as const,
+          content: messageContent,
+          files: fileMetadata,
+        };
 
-      // Animate the response
-      await animateText(
-        response.text,
-        (currentText) => {
-          updateSessionMessages(currentSessionId, (prev) =>
-            prev.map((msg) =>
-              msg.id === tempId
-                ? { ...msg, content: currentText, files: response.files }
-                : msg,
-            ),
-          );
-          scrollToBottom();
-        },
-        () => {
-          scrollToBottom();
-        },
-      );
+        addMessage(userMessage);
+
+        // Update session title if it's the first message
+        if (messages.length === 0) {
+          const title = trimmedInput || selectedFiles[0]?.name || "New conversation";
+          updateSessionTitle(currentSessionId, title);
+        }
+
+        scrollToBottom();
+
+        // Create temp message for typing animation
+        const tempId = Date.now();
+        addMessage({
+          id: tempId,
+          role: "assistant" as const,
+          content: "",
+          files: response.files,
+        });
+
+        // Animate the response
+        await animateText(
+          response.text,
+          (currentText) => {
+            updateSessionMessages(currentSessionId, (prev) =>
+              prev.map((msg) =>
+                msg.id === tempId
+                  ? { ...msg, content: currentText, files: response.files }
+                  : msg,
+              ),
+            );
+            scrollToBottom();
+          },
+          () => {
+            scrollToBottom();
+          },
+        );
+
+        // Clear pending message data after successful send
+        setPendingMessageData(null);
+      }
     } catch (err: any) {
       console.error("Chat error:", err);
-      if (err?.isPaymentRequired) {
-        // Keep the original message so the user can retry after payment
+      // Don't show error for payment confirmation - modal is handling it
+      if (err?.isPaymentConfirmation) {
         return;
       }
-      // Remove user message on non-payment errors
-      removeMessage(userMessage.id);
+      // For other errors, restore the input so user can try again
+      setInputValue(trimmedInput);
+      setPendingMessageData(null);
     }
   };
 
@@ -512,6 +538,80 @@ export function App() {
           }}
         />
       </Modal>
+    )}
+
+    {/* Payment Confirmation Modal */}
+    {pendingPayment && (
+      <PaymentConfirmationModal
+        isOpen={!!pendingPayment}
+        amount={pendingPayment.amount}
+        currency={pendingPayment.currency}
+        network={pendingPayment.network}
+        onConfirm={async () => {
+          if (!pendingMessageData) return;
+
+          // Add user message to chat IMMEDIATELY after confirmation
+          const userMessage = {
+            id: Date.now(),
+            role: "user" as const,
+            content: pendingMessageData.content,
+            files: pendingMessageData.fileMetadata,
+          };
+
+          addMessage(userMessage);
+
+          // Update session title if it's the first message
+          if (messages.length === 0) {
+            const title = pendingMessageData.content || "New conversation";
+            updateSessionTitle(currentSessionId, title);
+          }
+
+          // Let message animation complete and scroll
+          setTimeout(() => scrollToBottom(), 50);
+
+          // Now process the payment and get response
+          const response = await confirmPayment();
+
+          if (response && response.text) {
+            // Create temp message for typing animation
+            const tempId = Date.now();
+            addMessage({
+              id: tempId,
+              role: "assistant" as const,
+              content: "",
+              files: response.files,
+            });
+
+            // Scroll to show assistant response
+            setTimeout(() => scrollToBottom(), 50);
+
+            // Animate the response
+            await animateText(
+              response.text,
+              (currentText) => {
+                updateSessionMessages(currentSessionId, (prev) =>
+                  prev.map((msg) =>
+                    msg.id === tempId
+                      ? { ...msg, content: currentText, files: response.files }
+                      : msg,
+                  ),
+                );
+                scrollToBottom();
+              },
+              () => {
+                scrollToBottom();
+              },
+            );
+
+            // Clear pending message data after successful send
+            setPendingMessageData(null);
+          }
+        }}
+        onCancel={() => {
+          cancelPayment();
+          setPendingMessageData(null);
+        }}
+      />
     )}
     </>
   );

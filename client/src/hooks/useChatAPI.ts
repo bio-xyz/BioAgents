@@ -19,12 +19,21 @@ export interface ChatResponse {
   }>;
 }
 
+export interface PaymentConfirmationRequest {
+  amount: string;
+  currency: string;
+  network: string;
+}
+
 export interface UseChatAPIReturn {
   isLoading: boolean;
   error: string;
   sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
   clearError: () => void;
   paymentTxHash: string | null;
+  pendingPayment: PaymentConfirmationRequest | null;
+  confirmPayment: () => Promise<ChatResponse | null>;
+  cancelPayment: () => void;
 }
 
 /**
@@ -38,24 +47,19 @@ export function useChatAPI(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [paymentTxHash, setPaymentTxHash] = useState<string | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PaymentConfirmationRequest | null>(null);
+  const [pendingMessageParams, setPendingMessageParams] = useState<SendMessageParams | null>(null);
   const {
     fetchWithPayment,
     decodePaymentResponse,
+    config: x402Config,
   } = x402Context ?? useX402Payment();
 
   /**
-   * Send a message to the chat API
+   * Internal function to actually send the message (after confirmation if needed)
    */
-  const sendMessage = async ({
-    message,
-    conversationId,
-    userId,
-    file,
-    files,
-  }: SendMessageParams): Promise<ChatResponse> => {
-    setIsLoading(true);
-    setError("");
-    setPaymentTxHash(null);
+  const sendMessageInternal = async (params: SendMessageParams, skipPaymentCheck = false): Promise<ChatResponse> => {
+    const { message, conversationId, userId, file, files } = params;
 
     try {
       const formData = new FormData();
@@ -65,38 +69,62 @@ export function useChatAPI(
 
       // Support both single file (legacy) and multiple files
       if (files && files.length > 0) {
-        console.log(
-          `[useChatAPI] Sending ${files.length} files:`,
-          files.map(f => f.name),
-        );
         files.forEach((f) => {
           formData.append("files", f);
         });
       } else if (file) {
-        console.log(`[useChatAPI] Sending 1 file:`, file.name);
         formData.append("files", file);
-      } else {
-        console.log(`[useChatAPI] No files to send`);
       }
 
-      console.log("[useChatAPI] Sending message to /api/chat");
-      
-      // Use wrapped fetch that handles x402 payments automatically
-      let response;
-      try {
+      // First, check if payment is required by making a regular fetch
+      let response: Response;
+
+      if (!skipPaymentCheck) {
+        // First try without payment to see if it's required
+        response = await fetch("/api/chat", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        // If 402, show confirmation modal instead of automatically paying
+        if (response.status === 402) {
+          const errorData = await response.json().catch(() => ({}));
+
+          // Extract payment amount from pricing header or response
+          const pricingHeader = response.headers.get("x-pricing");
+          let amount = "0.01"; // Default amount
+
+          if (pricingHeader) {
+            try {
+              const pricing = JSON.parse(pricingHeader);
+              amount = pricing.cost || pricing.price || "0.01";
+            } catch (e) {
+              // Use default
+            }
+          }
+
+          // Set pending payment for confirmation
+          setPendingPayment({
+            amount,
+            currency: x402Config?.asset || "USDC",
+            network: x402Config?.network || "base-sepolia",
+          });
+          setPendingMessageParams(params);
+          setIsLoading(false);
+
+          // Throw special error to stop processing
+          const confirmError: any = new Error("PAYMENT_CONFIRMATION_REQUIRED");
+          confirmError.isPaymentConfirmation = true;
+          throw confirmError;
+        }
+      } else {
+        // User confirmed, use payment-enabled fetch
         response = await fetchWithPayment("/api/chat", {
           method: "POST",
           body: formData,
           credentials: "include",
         });
-      } catch (err) {
-        console.error("[useChatAPI] Fetch error:", err);
-        // If x402-fetch fails, it might throw an error
-        // Check if it's a payment-related error
-        if (err.message?.includes("payment") || err.message?.includes("402")) {
-          throw new Error("💳 Payment failed. Please connect your wallet and ensure you have sufficient USDC balance.");
-        }
-        throw err;
       }
 
       // Handle 401 Unauthorized - session expired
@@ -105,20 +133,13 @@ export function useChatAPI(
         throw new Error("Session expired. Please log in again.");
       }
 
-      // Handle 402 - payment required (wallet not connected or x402-fetch didn't handle it)
+      // Handle 402 after payment attempt
       if (response.status === 402) {
-        const errorData = await response.json().catch(() => ({}));
-        
-        // Show toast notification
         toast.error(
-          "💳 Payment Required\n\nThis action requires payment. Please connect your wallet to continue.\n\nIf your wallet is already connected, ensure you have sufficient USDC balance.",
+          "💳 Payment failed. Please ensure you have sufficient USDC balance.",
           8000
         );
-        
-        // Show a clear message to connect wallet
-        throw new Error(
-          "💳 Payment Required\n\nThis action requires payment. Please connect your wallet to continue.\n\nIf your wallet is already connected, ensure you have sufficient USDC balance."
-        );
+        throw new Error("💳 Payment failed. Please ensure you have sufficient USDC balance.");
       }
 
       // x402-fetch automatically handles 402 responses
@@ -167,22 +188,65 @@ export function useChatAPI(
         text: data.text,
         files: data.files,
       };
-    } catch (err) {
+    } catch (err: any) {
+      // Don't show error for payment confirmation request
+      if (err?.isPaymentConfirmation) {
+        return { text: "", files: [] }; // Return empty response, modal will handle it
+      }
+
       const errorMessage =
         err instanceof Error
           ? err.message
           : "Failed to send message. Please try again.";
       setError(errorMessage);
-      
+
       // Show error toast for non-payment errors
       if (!errorMessage.includes("Payment Required") && !errorMessage.includes("Session expired")) {
         toast.error(`❌ Error: ${errorMessage}`, 6000);
       }
-      
+
       throw err;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /**
+   * Public sendMessage function - entry point for sending messages
+   */
+  const sendMessage = async (params: SendMessageParams): Promise<ChatResponse> => {
+    setIsLoading(true);
+    setError("");
+    setPaymentTxHash(null);
+
+    return sendMessageInternal(params, false);
+  };
+
+  /**
+   * Confirm payment and proceed with sending message
+   */
+  const confirmPayment = async (): Promise<ChatResponse | null> => {
+    if (!pendingMessageParams) return null;
+
+    setPendingPayment(null);
+    setIsLoading(true);
+
+    try {
+      const response = await sendMessageInternal(pendingMessageParams, true);
+      return response;
+    } finally {
+      setPendingMessageParams(null);
+    }
+  };
+
+  /**
+   * Cancel pending payment
+   */
+  const cancelPayment = () => {
+    setPendingPayment(null);
+    setPendingMessageParams(null);
+    setIsLoading(false);
+    setError("");
   };
 
   /**
@@ -198,5 +262,8 @@ export function useChatAPI(
     sendMessage,
     clearError,
     paymentTxHash,
+    pendingPayment,
+    confirmPayment,
+    cancelPayment,
   };
 }

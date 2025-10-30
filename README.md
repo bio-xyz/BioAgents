@@ -103,14 +103,24 @@ X402_NETWORK=base-sepolia  # or 'base' for mainnet
 X402_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e  # Base Sepolia USDC
 ```
 
-### Payment Flow
+### How It Works (User Perspective)
+
+1. **Create Wallet**: User signs up with their email through Coinbase's embedded wallet system - a wallet is created automatically
+2. **Deposit USDC**: User deposits USDC to their wallet address on Base network (or Base Sepolia for testnet)
+3. **Make Requests**: Each API request costs a small amount of USDC (e.g., $0.01-$0.10 depending on complexity)
+4. **Auto-Payment**: When the user sends a message, they see a payment confirmation modal showing the cost
+5. **Confirm & Pay**: After confirmation, USDC is deducted from their wallet balance using gasless transfers (no network fees)
+6. **Get Response**: The AI processes the request and returns the response
+
+### Technical Payment Flow
 
 1. User connects wallet via email (embedded wallet created automatically)
 2. User makes a request to `/api/chat`
 3. Server responds with 402 Payment Required + payment details
-4. Client signs payment authorization (gasless EIP-3009 transfer)
-5. Client retries request with payment proof
-6. Server verifies and processes the request
+4. Client shows payment confirmation modal
+5. Client signs payment authorization (gasless EIP-3009 transfer)
+6. Client retries request with payment proof
+7. Server verifies and processes the request
 
 ### Database Schema
 
