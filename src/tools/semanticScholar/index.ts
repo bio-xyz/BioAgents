@@ -9,6 +9,8 @@ import logger from "../../utils/logger";
 import {
   addVariablesToState,
   getStandaloneMessage,
+  startStep,
+  endStep,
 } from "../../utils/state";
 
 // Cache for Semantic Scholar results (4 hours TTL)
@@ -22,7 +24,16 @@ export const semanticScholarTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
-    addVariablesToState(state, { currentStep: "SEMANTIC_SCHOLAR" });
+    startStep(state, "SEMANTIC_SCHOLAR");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        console.error("Failed to update state in DB:", err);
+      }
+    }
 
     const cacheKey = `semantic-scholar:data:${message.question}:${message.conversation_id}`;
 
@@ -127,7 +138,9 @@ export const semanticScholarTool = {
     // Cache the result for 4 hours
     semanticScholarCache.set(cacheKey, result, 4 * 60 * 60 * 1000);
 
-    // Update state in DB
+    endStep(state, "SEMANTIC_SCHOLAR");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);

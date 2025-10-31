@@ -2,7 +2,7 @@ import character from "../../character";
 import { updateMessage, updateState } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
-import { addVariablesToState, composePromptFromState } from "../../utils/state";
+import { addVariablesToState, composePromptFromState, startStep, endStep } from "../../utils/state";
 import type { THypothesisZod } from "./types";
 import {
   generateFinalResponse,
@@ -20,7 +20,16 @@ export const hypothesisTool = {
     const { state, message } = input;
     let hypothesisStructured: THypothesisZod | null = null;
 
-    addVariablesToState(state, { currentStep: "HYPOTHESIS_GENERATION" });
+    startStep(state, "HYPOTHESIS");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
 
     // TODO: get twitter thread if source is twitter
 
@@ -181,7 +190,7 @@ export const hypothesisTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message and state in DB
+    // Update message in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
@@ -193,6 +202,9 @@ export const hypothesisTool = {
       }
     }
 
+    endStep(state, "HYPOTHESIS");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);
@@ -200,8 +212,6 @@ export const hypothesisTool = {
         logger.error({ err }, "failed_to_update_state");
       }
     }
-
-    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },

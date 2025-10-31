@@ -12,6 +12,8 @@ import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
 import {
   addVariablesToState,
   getStandaloneMessage,
+  startStep,
+  endStep,
 } from "../../utils/state";
 
 // Cache for OpenScholar results (30 minutes TTL)
@@ -103,7 +105,16 @@ export const openscholarTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
-    addVariablesToState(state, { currentStep: "OPENSCHOLAR" });
+    startStep(state, "OPENSCHOLAR");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        console.error("Failed to update state in DB:", err);
+      }
+    }
 
     const cacheKey = `openscholar:data:${message.question}:${message.conversation_id}`;
 
@@ -200,7 +211,9 @@ export const openscholarTool = {
     // Cache the result for 30 minutes
     openScholarCache.set(cacheKey, result, 30 * 60 * 1000);
 
-    // Update state in DB
+    endStep(state, "OPENSCHOLAR");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);

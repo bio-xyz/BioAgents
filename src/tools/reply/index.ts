@@ -14,6 +14,8 @@ import {
   composePromptFromState,
   formatConversationHistory,
   getUniquePapers,
+  startStep,
+  endStep,
 } from "../../utils/state";
 import { detectFileTypes } from "./fileDetection";
 import {
@@ -64,7 +66,17 @@ export const replyTool = {
   enabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
-    addVariablesToState(state, { currentStep: "REPLYING" });
+    startStep(state, "REPLY");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
+
     const source = state.values.source;
 
     let prompt = "";
@@ -354,7 +366,7 @@ export const replyTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message and state in DB
+    // Update message in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
@@ -365,6 +377,9 @@ export const replyTool = {
       }
     }
 
+    endStep(state, "REPLY");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);
@@ -372,8 +387,6 @@ export const replyTool = {
         logger.error({ err }, "failed_to_update_state");
       }
     }
-
-    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },
