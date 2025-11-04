@@ -254,15 +254,27 @@ export const replyTool = {
       },
     ];
 
+    state.values.finalResponse = "";
+
     const llmRequest = {
       model: REPLY_LLM_MODEL,
       systemInstruction,
       messages,
-      maxTokens: 768, // openai counts maxtokens = replyTokens + thinkingBudget
-      thinkingBudget: 4096,
+      maxTokens: 4096, // openai counts maxtokens = replyTokens + thinkingBudget
+      thinkingBudget: 1024,
       tools: tools.length > 0 ? tools : undefined,
       // Pass fileUris to adapter so it can add them as fileData parts in message
       fileUris: geminiFileUris.length > 0 ? geminiFileUris : undefined,
+      stream: true,
+      onStreamChunk: async (chunk: string, fullText: string) => {
+        // Update state with the full text (not just the chunk)
+        state.values.finalResponse = fullText;
+
+        // Update state in DB
+        if (state.id) {
+          await updateState(state.id, state.values);
+        }
+      },
     };
 
     const contextLength = providerString.length + prompt.length;

@@ -7,10 +7,11 @@ import type {
 } from "openai/resources/chat/completions";
 import type {
   Response as OpenAIResponse,
-  ResponseCreateParamsNonStreaming as ResponsesCreateParams,
+  Tool as OpenAITool,
+  ResponseCreateParamsStreaming,
   ResponseOutputMessage,
   ResponseOutputText,
-  Tool as OpenAITool,
+  ResponseCreateParamsNonStreaming as ResponsesCreateParams,
 } from "openai/resources/responses/responses";
 import { LLMAdapter } from "../adapter";
 import type {
@@ -50,6 +51,14 @@ export class OpenAIAdapter extends LLMAdapter {
 
     const transformedRequest = this.transformRequest(request);
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingCompletion(
+        transformedRequest,
+        request.onStreamChunk,
+      );
+    }
+
     try {
       const completion =
         await this.client.chat.completions.create(transformedRequest);
@@ -57,6 +66,50 @@ export class OpenAIAdapter extends LLMAdapter {
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`OpenAI chat completion failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private async createStreamingCompletion(
+    transformedRequest: ChatCompletionCreateParamsNonStreaming,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<LLMResponse> {
+    try {
+      const stream = await this.client.chat.completions.create({
+        ...transformedRequest,
+        stream: true,
+      });
+
+      let fullText = "";
+      let promptTokens = 0;
+      let completionTokens = 0;
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        if (delta) {
+          fullText += delta;
+          await onStreamChunk(delta, fullText);
+        }
+
+        // Capture usage if available (usually in the last chunk)
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens || 0;
+          completionTokens = chunk.usage.completion_tokens || 0;
+        }
+      }
+
+      return {
+        content: fullText,
+        usage: {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+        },
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`OpenAI streaming completion failed: ${error.message}`);
       }
       throw error;
     }
@@ -70,21 +123,86 @@ export class OpenAIAdapter extends LLMAdapter {
     const input = this.buildResponsesInput(request);
     const tools = this.buildWebSearchTools(request.tools);
 
-    try {
-      const response = await this.client.responses.create({
-        model: request.model,
-        input,
-        instructions: request.systemInstruction ?? undefined,
-        tools,
-        tool_choice: "auto",
-        max_output_tokens: request.maxTokens ?? undefined,
-        include: this.getWebSearchInclude(),
-      } as ResponsesCreateParams);
+    const params = {
+      model: request.model,
+      input,
+      instructions: request.systemInstruction ?? undefined,
+      tools,
+      tool_choice: "auto",
+      max_output_tokens: request.maxTokens ?? undefined,
+      include: this.getWebSearchInclude(),
+    } as ResponsesCreateParams;
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingWebSearch(params, request.onStreamChunk);
+    }
+
+    try {
+      const response = await this.client.responses.create(params);
       return this.transformWebSearchResponse(response);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`OpenAI web search failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private async createStreamingWebSearch(
+    params: ResponsesCreateParams,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<{
+    cleanedLLMOutput: string;
+    llmOutput: string;
+    webSearchResults?: WebSearchResult[];
+  }> {
+    try {
+      const stream = await this.client.responses.create({
+        ...params,
+        stream: true,
+      } as ResponseCreateParamsStreaming);
+
+      let fullText = "";
+      let finalResponse: OpenAIResponse | null = null;
+
+      for await (const event of stream) {
+        const eventType = (event as any).type;
+
+        // Listen for text delta events (streaming text chunks)
+        if (eventType === "response.output_text.delta") {
+          const delta = (event as any).delta || "";
+          if (delta) {
+            fullText += delta;
+            await onStreamChunk(delta, fullText);
+          }
+        }
+
+        // Capture final response for web search results
+        if (eventType === "response.completed" || eventType === "response.incomplete") {
+          finalResponse = (event as any).response;
+        }
+      }
+
+      // Use captured final response for web search results
+      if (finalResponse) {
+        const { webSearchResults } =
+          this.transformWebSearchResponse(finalResponse);
+        return {
+          llmOutput: fullText,
+          cleanedLLMOutput: fullText,
+          webSearchResults,
+        };
+      }
+
+      return {
+        llmOutput: fullText,
+        cleanedLLMOutput: fullText,
+        webSearchResults: [],
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`OpenAI streaming web search failed: ${error.message}`);
       }
       throw error;
     }
