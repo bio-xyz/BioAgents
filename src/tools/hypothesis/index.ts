@@ -24,7 +24,7 @@ export const hypothesisTool = {
 
     // TODO: get twitter thread if source is twitter
 
-    const openScholarPapers = state.values.openScholarRaw.map((paper: any) => ({
+    const openScholarPapers = (state.values.openScholarRaw || []).map((paper: any) => ({
       ...paper,
       abstract: paper.chunkText,
     }));

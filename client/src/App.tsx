@@ -155,6 +155,28 @@ export function App() {
     setInputValue("");
     clearFile();
 
+    // Add user message to chat IMMEDIATELY (before API call)
+    // This provides instant feedback to the user
+    const userMessage = {
+      id: Date.now(),
+      role: "user" as const,
+      content: messageContent,
+      files: fileMetadata,
+    };
+
+    console.log('[App] Adding user message immediately, current messages.length:', messages.length);
+    addMessage(userMessage);
+
+    // Update session title if it's the first message
+    const isFirstMessage = messages.length === 0;
+    if (isFirstMessage) {
+      const title = trimmedInput || (filesToSend[0]?.name) || "New conversation";
+      console.log('[App] First message - updating session title:', title);
+      updateSessionTitle(currentSessionId, title);
+    }
+
+    scrollToBottom();
+
     try {
       // Send message to API - this will trigger payment confirmation modal if needed
       const response = await sendMessage({
@@ -166,24 +188,6 @@ export function App() {
 
       // Only continue if we got a response (not empty from payment confirmation)
       if (response.text) {
-        // Add user message to chat
-        const userMessage = {
-          id: Date.now(),
-          role: "user" as const,
-          content: messageContent,
-          files: fileMetadata,
-        };
-
-        addMessage(userMessage);
-
-        // Update session title if it's the first message
-        if (messages.length === 0) {
-          const title = trimmedInput || selectedFiles[0]?.name || "New conversation";
-          updateSessionTitle(currentSessionId, title);
-        }
-
-        scrollToBottom();
-
         // Create temp message for typing animation
         const tempId = Date.now();
         addMessage({
@@ -192,6 +196,8 @@ export function App() {
           content: "",
           files: response.files,
         });
+
+        scrollToBottom();
 
         // Animate the response
         await animateText(
@@ -213,14 +219,21 @@ export function App() {
 
         // Clear pending message data after successful send
         setPendingMessageData(null);
+      } else {
+        // If payment confirmation is needed, remove the user message we just added
+        // since it will be added again after payment confirmation
+        removeMessage(userMessage.id);
       }
     } catch (err: any) {
       console.error("Chat error:", err);
       // Don't show error for payment confirmation - modal is handling it
       if (err?.isPaymentConfirmation) {
+        // Remove the user message since payment modal will re-add it
+        removeMessage(userMessage.id);
         return;
       }
-      // For other errors, restore the input so user can try again
+      // For other errors, remove the user message and restore the input so user can try again
+      removeMessage(userMessage.id);
       setInputValue(trimmedInput);
       setPendingMessageData(null);
     }

@@ -198,6 +198,13 @@ export function useSessions(): UseSessionsReturn {
 
   /**
    * Subscribe to real-time message updates for current conversation
+   *
+   * IMPORTANT: We need careful duplicate detection here because:
+   * 1. UI manually adds messages when user sends (App.tsx)
+   * 2. Backend creates/updates DB records → triggers INSERT/UPDATE events
+   * 3. We must prevent adding the same messages again
+   *
+   * Strategy: Check if message content already exists before adding
    */
   useEffect(() => {
     if (!currentSessionId) return;
@@ -213,26 +220,59 @@ export function useSessions(): UseSessionsReturn {
           filter: `conversation_id=eq.${currentSessionId}`,
         },
         (payload) => {
-          console.log('New message inserted:', payload);
+          console.log('[Realtime] Message INSERT:', payload);
           const newMessage = payload.new as DBMessage;
 
-          // Convert to UI message format (handles both question and content)
+          // Convert DB message to UI messages (question + content)
           const uiMessages = convertDBMessagesToUIMessages([newMessage]);
 
-          // Add to current session if not already present
           setSessions(prev =>
             prev.map(session => {
               if (session.id !== currentSessionId) return session;
 
-              // Filter out messages that already exist
-              const existingIds = new Set(session.messages.map(m => m.id));
-              const newMessages = uiMessages.filter(m => !existingIds.has(m.id));
+              // Advanced duplicate detection: check by content similarity
+              const existingMessages = session.messages;
+              const newMessagesToAdd: Message[] = [];
 
-              if (newMessages.length === 0) return session;
+              for (const uiMsg of uiMessages) {
+                const trimmedContent = uiMsg.content.trim();
+                if (!trimmedContent) continue; // Skip empty messages
+
+                // Check if a message with this content already exists
+                // For assistant messages, also check for partial matches (animation in progress)
+                const isDuplicate = existingMessages.some(existing => {
+                  if (existing.role !== uiMsg.role) return false;
+                  const existingText = existing.content.trim();
+
+                  // Exact match - always a duplicate
+                  if (existingText === trimmedContent) return true;
+
+                  // For assistant messages, check for partial matches (typing animation)
+                  if (uiMsg.role === 'assistant') {
+                    // If trimmedContent is the full response and existingText is partial (animating)
+                    if (existingText.length > 0 && trimmedContent.startsWith(existingText)) return true;
+                    // If existingText is the full response and trimmedContent is partial (shouldn't happen but be safe)
+                    if (trimmedContent.length > 0 && existingText.startsWith(trimmedContent)) return true;
+                    // If existing is empty (animation just started)
+                    if (existingText === '' && uiMsg.role === 'assistant') return true;
+                  }
+
+                  return false;
+                });
+
+                if (!isDuplicate) {
+                  console.log('[Realtime] Adding new message from INSERT:', uiMsg.role, trimmedContent.slice(0, 50));
+                  newMessagesToAdd.push(uiMsg);
+                } else {
+                  console.log('[Realtime] Skipping duplicate from INSERT:', uiMsg.role, trimmedContent.slice(0, 50));
+                }
+              }
+
+              if (newMessagesToAdd.length === 0) return session;
 
               return {
                 ...session,
-                messages: [...session.messages, ...newMessages],
+                messages: [...session.messages, ...newMessagesToAdd],
               };
             })
           );
@@ -247,47 +287,83 @@ export function useSessions(): UseSessionsReturn {
           filter: `conversation_id=eq.${currentSessionId}`,
         },
         (payload) => {
-          console.log('Message updated:', payload);
+          console.log('[Realtime] Message UPDATE:', payload);
           const updatedMessage = payload.new as DBMessage;
 
-          // When a message is updated, the backend is likely updating the content (assistant response)
-          // We need to update or add the assistant message in the UI
           setSessions(prev =>
             prev.map(session => {
               if (session.id !== currentSessionId) return session;
 
+              // When a message is updated, the backend is updating the content (assistant response)
+              if (!updatedMessage.content || !updatedMessage.content.trim()) {
+                return session; // No content to update
+              }
+
               const messages = [...session.messages];
+              const updatedContent = updatedMessage.content.trim();
 
-              // Find if we already have an assistant message for this DB message
-              // We identify it by checking if the previous message (user message) matches the question
-              if (updatedMessage.content && updatedMessage.content.trim() !== '') {
-                // Find the last occurrence of the user message with this question
-                let foundIndex = -1;
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  if (messages[i].role === 'user' && messages[i].content === updatedMessage.question) {
-                    foundIndex = i;
-                    break;
-                  }
+              // Find the user message with this question
+              let userMsgIndex = -1;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === 'user' && messages[i].content === updatedMessage.question) {
+                  userMsgIndex = i;
+                  break;
                 }
+              }
 
-                if (foundIndex !== -1) {
-                  // Check if there's already an assistant message after this user message
-                  const nextIndex = foundIndex + 1;
-                  if (nextIndex < messages.length && messages[nextIndex].role === 'assistant') {
-                    // Update existing assistant message
-                    messages[nextIndex] = {
-                      ...messages[nextIndex],
-                      content: updatedMessage.content,
-                    };
-                  } else {
-                    // Add new assistant message after the user message
-                    messages.splice(nextIndex, 0, {
-                      id: Date.now(),
-                      role: 'assistant',
-                      content: updatedMessage.content,
-                    });
-                  }
+              if (userMsgIndex === -1) {
+                console.log('[Realtime] UPDATE: Could not find matching user message');
+                return session; // Can't find the user message, skip
+              }
+
+              const nextIndex = userMsgIndex + 1;
+
+              // Check if assistant message already exists after user message
+              if (nextIndex < messages.length && messages[nextIndex].role === 'assistant') {
+                const existingContent = messages[nextIndex].content.trim();
+
+                console.log('[Realtime] UPDATE: Found existing assistant message');
+                console.log('[Realtime] UPDATE: Existing content length:', existingContent.length);
+                console.log('[Realtime] UPDATE: Updated content length:', updatedContent.length);
+                console.log('[Realtime] UPDATE: Existing preview:', existingContent.slice(0, 100));
+                console.log('[Realtime] UPDATE: Updated preview:', updatedContent.slice(0, 100));
+
+                // IMPORTANT: During typing animation, existingContent may be a partial substring
+                // of updatedContent. We should NOT update if:
+                // 1. Content already matches exactly (animation finished)
+                // 2. Updated content starts with existing content (animation in progress)
+                // 3. Existing content is empty (animation just started)
+                const isAnimating = existingContent === '' || updatedContent.startsWith(existingContent);
+                const isIdentical = existingContent === updatedContent;
+
+                console.log('[Realtime] UPDATE: isAnimating?', isAnimating, 'isIdentical?', isIdentical);
+
+                if (isIdentical) {
+                  console.log('[Realtime] Skipping UPDATE - content already matches');
+                } else if (isAnimating) {
+                  console.log('[Realtime] Skipping UPDATE - typing animation in progress');
+                } else {
+                  console.log('[Realtime] Updating assistant message from UPDATE (content changed)');
+                  messages[nextIndex] = {
+                    ...messages[nextIndex],
+                    content: updatedMessage.content,
+                  };
                 }
+              } else {
+                // No assistant message exists yet after this user message
+                console.log('[Realtime] UPDATE: No assistant message found at position', nextIndex);
+                console.log('[Realtime] UPDATE: Total messages:', messages.length);
+                console.log('[Realtime] UPDATE: Messages:', messages.map(m => `${m.role}: ${m.content.slice(0, 30)}...`));
+
+                // CRITICAL FIX: If there's no assistant message at the expected position,
+                // it means the UPDATE event fired BEFORE the UI created the typing animation.
+                // In this case, we should ALWAYS skip because the UI will handle it.
+                // We should NEVER add a message from UPDATE when none exists - the UI owns message creation.
+                console.log('[Realtime] ⚠️ Skipping UPDATE - UI has not created assistant message yet');
+                console.log('[Realtime] This UPDATE event fired too early, typing animation will handle it');
+
+                // Don't add anything - let the UI's typing animation handle it
+                return session;
               }
 
               return {
