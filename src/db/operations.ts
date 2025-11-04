@@ -18,9 +18,17 @@ export interface User {
 export interface Conversation {
   id?: string;
   user_id: string;
+  conversation_state_id?: string;
 }
 
 export interface State {
+  id?: string;
+  values: any;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ConversationState {
   id?: string;
   values: any;
   created_at?: string;
@@ -136,6 +144,69 @@ export async function getState(id: string) {
     .from("states")
     .select("*")
     .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// ConversationState operations
+export async function createConversationState(stateData: { values: any }) {
+  const { data, error } = await supabase
+    .from("conversation_states")
+    .insert(stateData)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateConversationState(id: string, values: any) {
+  const { data, error } = await supabase
+    .from("conversation_states")
+    .update({ values })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getConversationState(id: string) {
+  const { data, error } = await supabase
+    .from("conversation_states")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Get conversation by ID
+export async function getConversation(id: string) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Update conversation to link conversation_state_id
+export async function updateConversation(
+  id: string,
+  updates: Partial<Conversation>,
+) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .update(updates)
+    .eq("id", id)
+    .select()
     .single();
 
   if (error) throw error;

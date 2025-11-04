@@ -95,20 +95,21 @@ export const semanticScholarTool = {
     const fullResult = skillResult.result;
 
     // Parse papers from the result
-    // Papers are in format: "1. [Title] - URL: [url], Citations: [count]"
-    const paperRegex = /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)/gm;
+    // Papers are in format: "1. [Title] - URL: [url], Citations: [count], Abstract: [abstract]"
+    const paperRegex = /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)(?:,\s+Citations:\s+\d+)?(?:,\s+Abstract:\s+(.+?))?$/gm;
     const semanticScholarPapers: Array<{doi: string, title: string, abstract: string}> = [];
 
     let match;
     while ((match = paperRegex.exec(fullResult)) !== null) {
       const title = match[1]?.trim();
       const url = match[2]?.trim();
+      const abstract = match[3]?.trim() || "";
 
       if (title && url) {
         semanticScholarPapers.push({
           doi: url, // Using URL as DOI
           title: title,
-          abstract: "", // Empty abstract
+          abstract: abstract === "N/A" ? "" : abstract,
         });
       }
     }

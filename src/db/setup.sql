@@ -23,18 +23,27 @@ CREATE TABLE users (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Conversations table
-CREATE TABLE conversations (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- States table (stores message processing state)
 CREATE TABLE states (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   values JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Conversation States table (stores persistent conversation state)
+CREATE TABLE conversation_states (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  values JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Conversations table
+CREATE TABLE conversations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_state_id UUID REFERENCES conversation_states(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -56,6 +65,7 @@ CREATE TABLE messages (
 -- Create indexes for common queries
 CREATE INDEX idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX idx_conversations_created_at ON conversations(created_at DESC);
+CREATE INDEX idx_conversations_conversation_state_id ON conversations(conversation_state_id);
 
 CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
@@ -64,6 +74,7 @@ CREATE INDEX idx_messages_state_id ON messages(state_id);
 
 -- GIN index for JSONB fields (efficient for JSON queries)
 CREATE INDEX idx_states_values ON states USING GIN (values);
+CREATE INDEX idx_conversation_states_values ON conversation_states USING GIN (values);
 CREATE INDEX idx_messages_files ON messages USING GIN (files);
 
 -- Function to automatically update updated_at timestamp
@@ -88,6 +99,11 @@ CREATE TRIGGER update_conversations_updated_at
 
 CREATE TRIGGER update_states_updated_at
   BEFORE UPDATE ON states
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_conversation_states_updated_at
+  BEFORE UPDATE ON conversation_states
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
@@ -171,6 +187,7 @@ GROUP BY user_id;
 
 COMMENT ON TABLE users IS 'User accounts and profile information';
 COMMENT ON TABLE conversations IS 'Conversation threads between users and the agent';
+COMMENT ON TABLE conversation_states IS 'Persistent state for each conversation (summarized context, key takeaways, etc.)';
 COMMENT ON TABLE messages IS 'Individual messages within conversations';
 COMMENT ON TABLE states IS 'Processing state for each message (papers cited, knowledge used, etc.)';
 COMMENT ON TABLE x402_payments IS 'Payment records for x402 protocol transactions';
