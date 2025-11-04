@@ -48,12 +48,57 @@ export class AnthropicAdapter extends LLMAdapter {
     const enrichedRequest = await this.enrichRequestIfNeeded(request);
     const anthropicRequest = this.transformRequest(enrichedRequest);
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingCompletion(anthropicRequest, request.onStreamChunk);
+    }
+
     try {
       const response = await this.client.messages.create(anthropicRequest);
       return this.transformResponse(response);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Anthropic chat completion failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private async createStreamingCompletion(
+    anthropicRequest: MessageCreateParamsNonStreaming,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<LLMResponse> {
+    try {
+      let fullText = "";
+      let promptTokens = 0;
+      let completionTokens = 0;
+
+      const stream = this.client.messages.stream(anthropicRequest);
+
+      stream.on('text', async (text) => {
+        fullText += text;
+        await onStreamChunk(text, fullText);
+      });
+
+      // Wait for stream to complete and get final message
+      const finalMessage = await stream.finalMessage();
+
+      if (finalMessage.usage) {
+        promptTokens = finalMessage.usage.input_tokens;
+        completionTokens = finalMessage.usage.output_tokens;
+      }
+
+      return {
+        content: fullText,
+        usage: {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+        },
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Anthropic streaming completion failed: ${error.message}`);
       }
       throw error;
     }
@@ -70,12 +115,54 @@ export class AnthropicAdapter extends LLMAdapter {
       includeWebSearch: true,
     });
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingWebSearch(anthropicRequest, request.onStreamChunk);
+    }
+
     try {
       const response = await this.client.messages.create(anthropicRequest);
       return this.transformWebSearchResponse(response);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Anthropic web search failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private async createStreamingWebSearch(
+    anthropicRequest: MessageCreateParamsNonStreaming,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<{
+    cleanedLLMOutput: string;
+    llmOutput: string;
+    webSearchResults?: WebSearchResult[];
+  }> {
+    try {
+      let fullText = "";
+
+      const stream = this.client.messages.stream(anthropicRequest);
+
+      stream.on('text', async (text) => {
+        fullText += text;
+        await onStreamChunk(text, fullText);
+      });
+
+      // Wait for stream to complete and get final message
+      const finalMessage = await stream.finalMessage();
+
+      // Transform the final message to extract web search results
+      const result = this.transformWebSearchResponse(finalMessage);
+
+      return {
+        ...result,
+        llmOutput: fullText,
+        cleanedLLMOutput: result.cleanedLLMOutput || fullText,
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Anthropic streaming web search failed: ${error.message}`);
       }
       throw error;
     }

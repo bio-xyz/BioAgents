@@ -42,6 +42,11 @@ export class GoogleAdapter extends LLMAdapter {
     const enrichedRequest = await this.enrichRequestIfNeeded(request);
     const parameters = this.transformRequest(enrichedRequest);
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingCompletion(parameters, request.onStreamChunk);
+    }
+
     try {
       const response = await this.client.models.generateContent(parameters);
       return this.transformResponse(response);
@@ -56,6 +61,51 @@ export class GoogleAdapter extends LLMAdapter {
     }
   }
 
+  private async createStreamingCompletion(
+    parameters: {
+      model: string;
+      contents: GoogleContent[];
+      config?: Record<string, unknown>;
+    },
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<LLMResponse> {
+    try {
+      const stream = await this.client.models.generateContentStream(parameters);
+
+      let fullText = "";
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let totalTokens = 0;
+
+      for await (const chunk of stream) {
+        const delta = chunk.text || "";
+        if (delta) {
+          fullText += delta;
+          await onStreamChunk(delta, fullText);
+        }
+
+        // Capture usage if available
+        if (chunk.usageMetadata) {
+          promptTokens = chunk.usageMetadata.promptTokenCount ?? 0;
+          completionTokens = chunk.usageMetadata.candidatesTokenCount ?? 0;
+          totalTokens = chunk.usageMetadata.totalTokenCount ?? 0;
+        }
+      }
+
+      return {
+        content: fullText,
+        usage: {
+          promptTokens,
+          completionTokens,
+          totalTokens,
+        },
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Google streaming completion failed: ${errorMessage}`);
+    }
+  }
+
   async createChatCompletionWebSearch(request: LLMRequest): Promise<{
     cleanedLLMOutput: string;
     llmOutput: string;
@@ -64,6 +114,11 @@ export class GoogleAdapter extends LLMAdapter {
     const enrichedRequest = await this.enrichRequestIfNeeded(request);
     const parameters = this.transformRequest(enrichedRequest, { includeWebSearch: true });
 
+    // Handle streaming
+    if (request.stream && request.onStreamChunk) {
+      return this.createStreamingWebSearch(parameters, request.onStreamChunk);
+    }
+
     try {
       const response = await this.client.models.generateContent(parameters);
       return this.transformWebSearchResponse(response);
@@ -71,6 +126,56 @@ export class GoogleAdapter extends LLMAdapter {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ error: errorMessage, model: parameters.model }, 'Google web search failed');
       throw new Error(`Google web search failed: ${errorMessage}`);
+    }
+  }
+
+  private async createStreamingWebSearch(
+    parameters: {
+      model: string;
+      contents: GoogleContent[];
+      config?: Record<string, unknown>;
+    },
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+  ): Promise<{
+    cleanedLLMOutput: string;
+    llmOutput: string;
+    webSearchResults?: WebSearchResult[];
+  }> {
+    try {
+      const stream = await this.client.models.generateContentStream(parameters);
+
+      let fullText = "";
+      let finalResponse: GenerateContentResponse | null = null;
+
+      for await (const chunk of stream) {
+        const delta = chunk.text || "";
+        if (delta) {
+          fullText += delta;
+          await onStreamChunk(delta, fullText);
+        }
+
+        // Keep track of the last chunk which contains grounding metadata
+        finalResponse = chunk;
+      }
+
+      // Use the final response to extract web search results
+      if (finalResponse) {
+        const result = await this.transformWebSearchResponse(finalResponse);
+        return {
+          ...result,
+          llmOutput: fullText,
+          cleanedLLMOutput: result.cleanedLLMOutput || fullText,
+        };
+      }
+
+      return {
+        llmOutput: fullText,
+        cleanedLLMOutput: fullText,
+        webSearchResults: [],
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Google streaming web search failed: ${errorMessage}`);
     }
   }
 

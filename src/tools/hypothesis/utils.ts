@@ -84,21 +84,6 @@ export async function generateHypothesis(
     apiKey: llmApiKey,
   });
 
-  console.log(
-    `Temporary console log, messages: ${JSON.stringify([
-      {
-        role: "assistant" as const,
-        content: useWebSearch
-          ? "Use web search to formulate a hypothesis."
-          : documentText,
-      },
-      {
-        role: "user" as const,
-        content: hypGenInstruction,
-      },
-    ])}`,
-  );
-
   const llmRequest = {
     model,
     messages: [
@@ -170,6 +155,7 @@ export async function generateHypothesis(
 export async function generateFinalResponse(
   prompt: string,
   webSearchResults?: WebSearchResults[],
+  onStreamChunk?: (chunk: string, fullText: string) => Promise<void>,
 ) {
   const FINAL_LLM_PROVIDER: LLMProvider =
     (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
@@ -197,6 +183,8 @@ export async function generateFinalResponse(
     ],
     maxTokens: 5000,
     thinkingBudget: 1024,
+    stream: !!onStreamChunk,
+    onStreamChunk,
   };
 
   const response = await llmProvider.createChatCompletion(llmRequest);

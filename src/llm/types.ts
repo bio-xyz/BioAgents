@@ -21,6 +21,8 @@ export interface LLMRequest {
   reasoningEffort?: 'low' | 'medium' | 'high';
   format?: any; // Optional format for structured output (e.g., zodTextFormat)
   fileUris?: Array<{ fileUri: string; mimeType: string }>; // For Gemini File API
+  stream?: boolean; // Enable streaming responses
+  onStreamChunk?: (chunk: string, fullText: string) => Promise<void>; // Callback for each chunk
 }
 // Coming soon: additional tool types
 export type LLMToolType = 'webSearch' | 'codeExecution';

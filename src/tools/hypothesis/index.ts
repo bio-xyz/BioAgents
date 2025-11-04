@@ -109,7 +109,6 @@ export const hypothesisTool = {
         webSearchResults: hypWebSearchResults,
       } = await generateHypothesis(question, hypDocs, {
         maxTokens: 5500,
-        stream: true,
         thinking: true,
         thinkingBudget: 2500,
         useWebSearch,
@@ -140,8 +139,23 @@ export const hypothesisTool = {
 
     logger.info(`Final prompt: ${prompt}`);
 
+    // Initialize finalResponse in state
+    state.values.finalResponse = "";
+
     logger.info(`Generating final response to sent to chat/twittter`);
-    let finalText = await generateFinalResponse(prompt, webSearchResults);
+    let finalText = await generateFinalResponse(
+      prompt,
+      webSearchResults,
+      async (chunk: string, fullText: string) => {
+        // Update state with the full text (not just the chunk)
+        state.values.finalResponse = fullText;
+
+        // Update state in DB
+        if (state.id) {
+          await updateState(state.id, state.values);
+        }
+      },
+    );
     logger.info(`Generated final response to sent to chat/twittter`);
 
     // TODO: if source is twitter, create a POI
