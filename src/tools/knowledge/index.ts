@@ -8,6 +8,8 @@ import logger from "../../utils/logger";
 import {
   addVariablesToState,
   getStandaloneMessage,
+  startStep,
+  endStep,
 } from "../../utils/state";
 
 // Initialize vector search with documents
@@ -29,6 +31,17 @@ export const knowledgeTool = {
   enabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
+
+    startStep(state, "KNOWLEDGE");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error("Failed to update state in DB:", err as any);
+      }
+    }
 
     // Get conversation thread (last 3 DB messages = 6 actual messages)
     const allMessages = await getMessagesByConversation(
@@ -69,7 +82,9 @@ export const knowledgeTool = {
       },
     };
 
-    // Update state in DB
+    endStep(state, "KNOWLEDGE");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);

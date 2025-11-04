@@ -1,8 +1,17 @@
 import character from "../../character";
-import { updateMessage, updateState } from "../../db/operations";
+import {
+  updateMessage,
+  updateState,
+  type ConversationState,
+} from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
-import { addVariablesToState, composePromptFromState } from "../../utils/state";
+import {
+  addVariablesToState,
+  composePromptFromState,
+  endStep,
+  startStep,
+} from "../../utils/state";
 import type { THypothesisZod } from "./types";
 import {
   generateFinalResponse,
@@ -16,22 +25,43 @@ export const hypothesisTool = {
   name: "HYPOTHESIS",
   description: "Reply to the user's message based on the agent flow",
   enabled: true,
-  execute: async (input: { state: State; message: Message }) => {
-    const { state, message } = input;
+  execute: async (input: {
+    state: State;
+    conversationState?: ConversationState;
+    message: Message;
+  }) => {
+    const { state, conversationState, message } = input;
     let hypothesisStructured: THypothesisZod | null = null;
 
-    addVariablesToState(state, { currentStep: "HYPOTHESIS_GENERATION" });
+    startStep(state, "HYPOTHESIS");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
 
     // TODO: get twitter thread if source is twitter
 
-    const openScholarPapers = state.values.openScholarRaw.map((paper: any) => ({
-      ...paper,
-      abstract: paper.chunkText,
-    }));
+    const openScholarPapers = state.values.openScholarRaw?.map(
+      (paper: any) => ({
+        ...paper,
+        abstract: paper.chunkText,
+      }),
+    );
     // TODO: add actual KG papers
     const kgPapers: any[] = state.values.kgPapers || [];
 
-    const allPapers = [...openScholarPapers, ...kgPapers];
+    const conversationPapers = conversationState?.values.papers || [];
+
+    const allPapers = [
+      ...(openScholarPapers || []),
+      ...(kgPapers || []),
+      ...(conversationPapers || []),
+    ];
 
     let hypDocs: HypothesisDoc[] = allPapers.map((paper) => ({
       title: `${paper.doi} - ${paper.title}`,
@@ -40,7 +70,7 @@ export const hypothesisTool = {
     }));
 
     // add top 3 knowledge chunks to hypDocs too
-    const knowledgeChunks = state.values.knowledge.slice(0, 3);
+    const knowledgeChunks = (state.values.knowledge || []).slice(0, 3);
     knowledgeChunks.forEach((chunk: any) => {
       hypDocs.push({
         title: chunk.title,
@@ -49,13 +79,22 @@ export const hypothesisTool = {
       });
     });
 
+    // add conversation key insights & methodology & title as one chunk to hypDocs
+    if (conversationState?.values.keyInsights?.length) {
+      hypDocs.push({
+        title: conversationState.values.conversationTitle || "No title",
+        text: `Conversation Title: ${conversationState.values.conversationTitle || "No title"}\nConversation Goal: ${conversationState.values.conversationGoal || "No goal"}\nMethodology: ${conversationState.values.methodology || "No methodology"}\nKey Insights: ${conversationState.values.keyInsights.join("\n")}`,
+        context: "This chunk is from the current conversation history",
+      });
+    }
+
     if (hypDocs.length == 0) {
       logger.info(
         "No relevant docs found in both KG and openscholar for hyp gen, falling back to web search",
       );
     } else {
       logger.info(
-        `Using hyp docs: ${hypDocs.map((doc) => doc.title).join(", ")}`,
+        `Using hyp docs: ${hypDocs.map((doc) => `${doc.title} - ${doc.text.slice(0, 100)}...`).join(", ")}`,
       );
     }
 
@@ -169,6 +208,7 @@ export const hypothesisTool = {
     });
 
     addVariablesToState(state, {
+      finalResponse: finalText.finalText,
       thought: (state.values.hypothesisThought as string) ?? finalText.thought,
       webSearchResults: cleanedWebSearchResults,
     });
@@ -181,7 +221,7 @@ export const hypothesisTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message and state in DB
+    // Update message in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
@@ -193,6 +233,9 @@ export const hypothesisTool = {
       }
     }
 
+    endStep(state, "HYPOTHESIS");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);
@@ -200,8 +243,6 @@ export const hypothesisTool = {
         logger.error({ err }, "failed_to_update_state");
       }
     }
-
-    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },

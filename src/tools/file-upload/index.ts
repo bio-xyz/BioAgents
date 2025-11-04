@@ -1,7 +1,7 @@
 import { updateState } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
-import { addVariablesToState } from "../../utils/state";
+import { addVariablesToState, startStep, endStep } from "../../utils/state";
 import { parseFile } from "./parsers";
 import { MAX_FILE_SIZE_MB } from "./config";
 import { mbToBytes, formatFileSize } from "./utils";
@@ -13,6 +13,17 @@ const fileUploadTool = {
   enabled: true,
   execute: async (input: { state: State; message: Message; files?: File[] }) => {
     const { state, files } = input;
+
+    startStep(state, "FILE_UPLOAD");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        if (logger) logger.error("Failed to update state in DB:", err as any);
+      }
+    }
 
     if (!files || files.length === 0) {
       if (logger) logger.warn("FILE-UPLOAD tool called but no files provided");
@@ -84,7 +95,9 @@ const fileUploadTool = {
       },
     };
 
-    // Update state in DB
+    endStep(state, "FILE_UPLOAD");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);

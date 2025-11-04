@@ -119,10 +119,12 @@ Provide a comprehensive natural language response that:
 
 ```
 Science papers:
-1. [Paper Title 1] - URL: [url or "N/A"], Citations: [count]
-2. [Paper Title 2] - URL: [url or "N/A"], Citations: [count]
+1. [Paper Title 1] - URL: [url or "N/A"], Citations: [count], Abstract: [abstract or "N/A"]
+2. [Paper Title 2] - URL: [url or "N/A"], Citations: [count], Abstract: [abstract or "N/A"]
 ...
 ```
+
+**IMPORTANT:** Always include the Abstract field for each paper. If the abstract is available in the search results, include it. If not available, use "N/A".
 
 ### Example Response Format
 
@@ -141,9 +143,9 @@ the Buck Institute has focused on combinatorial approaches, testing multiple
 interventions simultaneously.
 
 Science papers:
-1. Rapamycin extends lifespan in genetically heterogeneous mice - URL: https://www.semanticscholar.org/paper/abc123, Citations: 1247
-2. Caloric restriction delays disease onset in rhesus monkeys - URL: https://www.semanticscholar.org/paper/def456, Citations: 892
-3. NAD+ metabolism and age-related diseases - URL: https://www.semanticscholar.org/paper/ghi789, Citations: 634
+1. Rapamycin extends lifespan in genetically heterogeneous mice - URL: https://www.semanticscholar.org/paper/abc123, Citations: 1247, Abstract: Rapamycin is a specific inhibitor of the mechanistic target of rapamycin (mTOR), which plays a central role in cell growth and metabolism. This study demonstrates that rapamycin extends median and maximal lifespan in genetically heterogeneous mice when fed beginning at 600 days of age.
+2. Caloric restriction delays disease onset in rhesus monkeys - URL: https://www.semanticscholar.org/paper/def456, Citations: 892, Abstract: Caloric restriction (CR) extends lifespan in many species. We report findings of a 20-year longitudinal adult-onset CR study in rhesus monkeys aimed at filling the knowledge gap of CR effects in a long-lived nonhuman primate.
+3. NAD+ metabolism and age-related diseases - URL: https://www.semanticscholar.org/paper/ghi789, Citations: 634, Abstract: NAD+ levels decline during aging in multiple tissues. This decline has been linked to several age-related diseases and may represent a key factor in aging itself.
 ```
 
 ## Important Notes

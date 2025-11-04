@@ -185,7 +185,7 @@ def format_paper(paper: Dict[str, Any], index: int) -> str:
     abstract = paper.get("abstract")
     if abstract:
         # Truncate long abstracts
-        abstract_preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
+        abstract_preview = abstract
         output += f"   Abstract: {abstract_preview}\n"
 
     return output

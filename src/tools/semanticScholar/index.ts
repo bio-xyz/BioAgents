@@ -9,6 +9,8 @@ import logger from "../../utils/logger";
 import {
   addVariablesToState,
   getStandaloneMessage,
+  startStep,
+  endStep,
 } from "../../utils/state";
 
 // Cache for Semantic Scholar results (4 hours TTL)
@@ -22,7 +24,16 @@ export const semanticScholarTool = {
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
-    addVariablesToState(state, { currentStep: "SEMANTIC_SCHOLAR" });
+    startStep(state, "SEMANTIC_SCHOLAR");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        console.error("Failed to update state in DB:", err);
+      }
+    }
 
     const cacheKey = `semantic-scholar:data:${message.question}:${message.conversation_id}`;
 
@@ -84,20 +95,21 @@ export const semanticScholarTool = {
     const fullResult = skillResult.result;
 
     // Parse papers from the result
-    // Papers are in format: "1. [Title] - URL: [url], Citations: [count]"
-    const paperRegex = /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)/gm;
+    // Papers are in format: "1. [Title] - URL: [url], Citations: [count], Abstract: [abstract]"
+    const paperRegex = /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)(?:,\s+Citations:\s+\d+)?(?:,\s+Abstract:\s+(.+?))?$/gm;
     const semanticScholarPapers: Array<{doi: string, title: string, abstract: string}> = [];
 
     let match;
     while ((match = paperRegex.exec(fullResult)) !== null) {
       const title = match[1]?.trim();
       const url = match[2]?.trim();
+      const abstract = match[3]?.trim() || "";
 
       if (title && url) {
         semanticScholarPapers.push({
           doi: url, // Using URL as DOI
           title: title,
-          abstract: "", // Empty abstract
+          abstract: abstract === "N/A" ? "" : abstract,
         });
       }
     }
@@ -127,7 +139,9 @@ export const semanticScholarTool = {
     // Cache the result for 4 hours
     semanticScholarCache.set(cacheKey, result, 4 * 60 * 60 * 1000);
 
-    // Update state in DB
+    endStep(state, "SEMANTIC_SCHOLAR");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);

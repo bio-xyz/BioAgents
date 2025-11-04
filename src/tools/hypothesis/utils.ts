@@ -1,11 +1,11 @@
 import { zodTextFormat } from "openai/helpers/zod";
-import { HypothesisZodSchema } from "./types";
-import type { THypothesisZod } from "./types";
-import { hypGenPrompt, hypGenWebPrompt } from "./prompts";
-import logger from "../../utils/logger";
+import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMProvider } from "../../types/core";
-import character from "../../character";
+import logger from "../../utils/logger";
+import { hypGenPrompt, hypGenWebPrompt } from "./prompts";
+import type { THypothesisZod } from "./types";
+import { HypothesisZodSchema } from "./types";
 
 export type DocumentBlock = {
   type: "document";
@@ -62,10 +62,10 @@ export async function generateHypothesis(
 
   // Build document content
   const documentText = documents
-    .map((d) => `Title: ${d.title}\nContext: ${d.context}\n\n${d.text}`)
-    .join("\n\n---\n\n");
+    .map((d) => `Title: ${d.title}\n\n${d.text}`)
+    .join("\n\n\n");
 
-  const systemInstruction = useWebSearch
+  const hypGenInstruction = useWebSearch
     ? hypGenWebPrompt.replace("{{question}}", question)
     : hypGenPrompt.replace("{{question}}", question);
 
@@ -84,10 +84,8 @@ export async function generateHypothesis(
     apiKey: llmApiKey,
   });
 
-  const llmRequest = {
-    model,
-    systemInstruction,
-    messages: [
+  console.log(
+    `Temporary console log, messages: ${JSON.stringify([
       {
         role: "assistant" as const,
         content: useWebSearch
@@ -96,7 +94,23 @@ export async function generateHypothesis(
       },
       {
         role: "user" as const,
-        content: `Original Research Question: ${question}`,
+        content: hypGenInstruction,
+      },
+    ])}`,
+  );
+
+  const llmRequest = {
+    model,
+    messages: [
+      {
+        role: "assistant" as const,
+        content: useWebSearch
+          ? "Use web search to formulate a hypothesis."
+          : `Use the following evidence set to formulate a hypothesis: ${documentText}`,
+      },
+      {
+        role: "user" as const,
+        content: hypGenInstruction,
       },
     ],
     maxTokens: options.maxTokens ?? 2048,

@@ -14,19 +14,98 @@ export const MessageSchema = z.object({
 
 export type Message = z.infer<typeof MessageSchema>;
 
+// State values interface for better type safety
+export interface StateValues {
+  // Request metadata
+  messageId?: string;
+  conversationId?: string;
+  userId?: string;
+  source?: string;
+
+  // Cost tracking
+  estimatedCostsUSD?: Record<string, number>;
+
+  // File upload
+  rawFiles?: Array<{
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    parsedText: string;
+    metadata?: any;
+  }>;
+  fileUploadErrors?: string[];
+
+  // OpenScholar provider
+  openScholarPapers?: Array<{ title: string; doi: string }>;
+  openScholarRaw?: Array<{ title: string; doi: string; chunkText: string }>;
+  openScholarPaperDois?: string[];
+  openScholarShortenedPapers?: string[];
+  openScholarSynthesis?: string;
+
+  // Semantic Scholar provider
+  semanticScholarSynthesis?: string;
+  semanticScholarPapers?: Paper[];
+
+  // Knowledge provider
+  knowledge?: Array<{ title: string; content: string }>;
+
+  // Knowledge Graph provider
+  kgPapers?: any[];
+  finalPapers?: Paper[];
+
+  // Hypothesis action
+  hypothesis?: string;
+  hypothesisThought?: string;
+
+  // Action responses
+  finalResponse?: string; // Final text response from REPLY or HYPOTHESIS
+  webSearchResults?: Array<{
+    title: string;
+    url: string;
+    originalUrl: string;
+    index: number;
+  }>;
+  thought?: string;
+
+  // Step tracking
+  steps?: Record<string, { start: number; end?: number }>;
+}
+
+// Conversation state values interface (extends StateValues with persistent data)
+export interface ConversationStateValues extends StateValues {
+  // Persistent conversation data
+  conversationTitle?: string; // Title of the conversation
+  papers?: Paper[]; // All papers referenced in conversation
+  conversationGoal?: string;
+  keyInsights?: string[];
+  methodology?: string;
+}
+
 // TODO: add expiry to state rows in DB
-// TODO: add conversation state
 export const StateSchema = z.object({
   id: z.string().uuid().optional(),
   values: z.record(z.any()),
 });
 
-export type State = z.infer<typeof StateSchema>;
+export type State = {
+  id?: string;
+  values: StateValues;
+};
+
+export type ConversationState = {
+  id?: string;
+  values: ConversationStateValues;
+};
 
 export type Tool = {
   name: string;
   description: string;
-  execute: (input: any) => Promise<any>;
+  execute: (input: {
+    state: State;
+    conversationState?: State;
+    message: any;
+    [key: string]: any;
+  }) => Promise<any>;
   enabled?: boolean; // Tools are enabled by default
   payment?: {
     required: boolean;
