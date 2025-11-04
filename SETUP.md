@@ -18,6 +18,8 @@ bun install
 cp .env.example .env
 ```
 
+Pick your LLM providers for each of the tools, e.g. if you pick OpenAI for all of them, then adding the OPENAI_API_KEY is sufficient.
+
 ### Set up the database
 
 [General script](src/db/setup.sql)
@@ -32,6 +34,7 @@ bun run dev
 ```
 
 **Build UI only:**
+You need to rebuild the UI after you make any changes to it.
 
 ```bash
 bun run build:client

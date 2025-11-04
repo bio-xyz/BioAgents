@@ -50,4 +50,3 @@ END;
 $$;
 
 
-CREATE INDEX idx_documents_filepath ON documents USING GIN ((metadata ->> 'filePath'));

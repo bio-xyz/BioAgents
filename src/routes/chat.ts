@@ -1,19 +1,23 @@
 import { Elysia, t } from "elysia";
 import {
   createConversation,
+  createConversationState,
   createMessage,
   createState,
   createUser,
+  getConversation,
+  getConversationState,
+  updateConversation,
   updateMessage,
 } from "../db/operations";
+import { createPayment } from "../db/x402Operations";
+import { x402Middleware } from "../middleware/x402";
 import { getTool } from "../tools";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
 import { x402Config } from "../x402/config";
-import { createPayment } from "../db/x402Operations";
-import { usdToBaseUnits } from "../x402/service";
-import { x402Middleware } from "../middleware/x402";
 import { calculateRequestPrice } from "../x402/pricing";
+import { usdToBaseUnits } from "../x402/service";
 
 type ChatResponse = {
   text: string;
@@ -66,8 +70,7 @@ async function conditionallyCreateMockUserAndConversation(
   return { success: true };
 }
 
-const chatRoutePlugin = new Elysia()
-  .use(x402Middleware());
+const chatRoutePlugin = new Elysia().use(x402Middleware());
 
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
@@ -131,6 +134,47 @@ export const chatRoute = chatRoutePlugin.post(
       return { ok: false, error: setupResult.error || "Setup failed" };
     }
 
+    // Get or create conversation state
+    let conversationStateRecord;
+    try {
+      // First get the conversation record to find its conversation_state_id
+      logger.info(
+        `Getting conversation record for conversationId: ${conversationId}`,
+      );
+      const conversation = await getConversation(conversationId);
+
+      if (conversation.conversation_state_id) {
+        // Conversation state exists, fetch it
+        conversationStateRecord = await getConversationState(
+          conversation.conversation_state_id,
+        );
+        if (logger)
+          logger.info(
+            { conversationStateId: conversationStateRecord.id },
+            "conversation_state_fetched",
+          );
+      } else {
+        // Conversation state doesn't exist, create it
+        conversationStateRecord = await createConversationState({ values: {} });
+
+        // Link conversation to conversation state
+        await updateConversation(conversationId, {
+          conversation_state_id: conversationStateRecord.id,
+        });
+
+        if (logger)
+          logger.info(
+            { conversationStateId: conversationStateRecord.id },
+            "conversation_state_created",
+          );
+      }
+    } catch (err) {
+      if (logger)
+        logger.error({ err }, "get_or_create_conversation_state_failed");
+      set.status = 500;
+      return { ok: false, error: "Failed to get or create conversation state" };
+    }
+
     // Create initial state in DB
     let stateRecord;
     try {
@@ -174,7 +218,7 @@ export const chatRoute = chatRoutePlugin.post(
       return { ok: false, error: "Failed to create message" };
     }
 
-    // Initialize state per request
+    // Initialize state per request (message-specific state)
     const state: State = {
       id: stateRecord.id,
       values: {
@@ -183,6 +227,12 @@ export const chatRoute = chatRoutePlugin.post(
         userId,
         source: createdMessage.source,
       },
+    };
+
+    // Initialize conversation state (persistent across messages)
+    const conversationState: State = {
+      id: conversationStateRecord.id,
+      values: conversationStateRecord.values,
     };
 
     // Step 1: Process files FIRST if present (before planning)
@@ -197,6 +247,7 @@ export const chatRoute = chatRoutePlugin.post(
             );
           await fileUploadTool.execute({
             state,
+            conversationState,
             message: createdMessage,
             files,
           });
@@ -216,6 +267,7 @@ export const chatRoute = chatRoutePlugin.post(
     try {
       planningResult = await planningTool.execute({
         state,
+        conversationState,
         message: createdMessage,
       });
 
@@ -263,6 +315,7 @@ export const chatRoute = chatRoutePlugin.post(
 
           const data = await tool.execute({
             state,
+            conversationState,
             message: createdMessage,
           });
           const res: ToolResult = { ok: true, data };
@@ -278,12 +331,14 @@ export const chatRoute = chatRoutePlugin.post(
       }),
     );
 
+    // Step 4: Get the primary action from planning
     const action = planningResult.actions?.[0];
     if (!action) {
       set.status = 500;
       return { ok: false, error: "No action specified by planning tool" };
     }
 
+    // Step 4: Execute primary action (REPLY or HYPOTHESIS)
     const actionTool = getTool(action);
     if (!actionTool) {
       set.status = 500;
@@ -297,33 +352,53 @@ export const chatRoute = chatRoutePlugin.post(
     const actionCost = calculateRequestPrice([action]);
     state.values.estimatedCostsUSD[action] = parseFloat(actionCost);
 
-    let actionResult: ChatResponse;
-    try {
-      const r = await actionTool.execute({
-        state,
-        message: createdMessage,
-      });
+    const primaryActionResult = await actionTool.execute({
+      state,
+      conversationState,
+      message: createdMessage,
+    });
 
-      // Include file metadata in response if files were uploaded
-      const rawFiles = state.values.rawFiles;
-      const fileMetadata =
-        rawFiles?.length > 0
-          ? rawFiles.map((f: any) => ({
-              filename: f.filename,
-              mimeType: f.mimeType,
-              size: f.metadata?.size,
-            }))
-          : undefined;
+    // Step 5: Execute REFLECTION after primary action completes
+    const reflectionTool = getTool("REFLECTION");
+    if (reflectionTool) {
+      try {
+        // Track cost for REFLECTION tool
+        if (!state.values.estimatedCostsUSD) {
+          state.values.estimatedCostsUSD = {};
+        }
+        const reflectionCost = calculateRequestPrice(["REFLECTION"]);
+        state.values.estimatedCostsUSD["REFLECTION"] =
+          parseFloat(reflectionCost);
 
-      actionResult = {
-        text: r.text,
-        files: fileMetadata,
-      };
-    } catch (err) {
-      if (logger) logger.error({ action, err }, "action_tool_failed");
-      set.status = 500;
-      return { ok: false, error: `Action tool execution failed: ${action}` };
+        await reflectionTool.execute({
+          state,
+          conversationState,
+          message: createdMessage,
+        });
+        if (logger) logger.info("REFLECTION executed successfully");
+      } catch (err) {
+        if (logger) logger.error({ err }, "reflection_tool_failed");
+        // Don't fail the request if REFLECTION fails
+      }
+    } else {
+      if (logger) logger.warn("REFLECTION tool not found");
     }
+
+    // Include file metadata in response if files were uploaded
+    const rawFiles = state.values.rawFiles;
+    const fileMetadata =
+      rawFiles?.length && rawFiles?.length > 0
+        ? rawFiles?.map((f: any) => ({
+            filename: f.filename,
+            mimeType: f.mimeType,
+            size: f.metadata?.size,
+          }))
+        : undefined;
+
+    const actionResult: ChatResponse = {
+      text: primaryActionResult.text,
+      files: fileMetadata,
+    };
 
     // Calculate and update response time
     const responseTime = Date.now() - startTime;
@@ -341,15 +416,11 @@ export const chatRoute = chatRoutePlugin.post(
       // Sum all individual provider costs
       totalCostUSD = Object.values(state.values.estimatedCostsUSD).reduce(
         (sum: number, cost: any) => sum + (parseFloat(String(cost)) || 0),
-        0
+        0,
       );
     }
 
-    if (
-      x402Config.enabled &&
-      paymentSettlement?.txHash &&
-      totalCostUSD > 0
-    ) {
+    if (x402Config.enabled && paymentSettlement?.txHash && totalCostUSD > 0) {
       const amountUsdString = totalCostUSD.toFixed(2);
       const amountUsdNumber = totalCostUSD;
 

@@ -6,6 +6,8 @@ import {
   composePromptFromState,
   formatConversationHistory,
   parseKeyValueXml,
+  startStep,
+  endStep,
 } from "../../utils/state";
 import { getMessagesByConversation } from "../../db/operations";
 import { calculateRequestPrice } from "../../x402/pricing";
@@ -19,6 +21,18 @@ export const planningTool: Tool = {
     message: Message;
   }): Promise<{ providers: string[]; actions: string[] }> => {
     const { state, message } = input;
+
+    startStep(state, "PLANNING");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        const { updateState } = await import("../../db/operations");
+        await updateState(state.id, state.values);
+      } catch (err) {
+        console.error("Failed to update state in DB:", err);
+      }
+    }
 
     // TODO: idea - instead of providers/actions use a less structured approach, outline steps in 'levels'
     const prompt = composePromptFromState(
@@ -125,6 +139,18 @@ export const planningTool: Tool = {
         const planningCost = calculateRequestPrice(["PLANNING"]);
         state.values.estimatedCostsUSD["PLANNING"] = parseFloat(planningCost);
 
+        endStep(state, "PLANNING");
+
+        // Update state in DB after endStep
+        if (state.id) {
+          try {
+            const { updateState } = await import("../../db/operations");
+            await updateState(state.id, state.values);
+          } catch (err) {
+            console.error("Failed to update state in DB:", err);
+          }
+        }
+
         return {
           providers: providerList,
           actions: actionList,
@@ -138,6 +164,18 @@ export const planningTool: Tool = {
     }
 
     // planning LLM failed, return empty arrays
+    endStep(state, "PLANNING");
+
+    // Update state in DB after endStep
+    if (state.id) {
+      try {
+        const { updateState } = await import("../../db/operations");
+        await updateState(state.id, state.values);
+      } catch (err) {
+        console.error("Failed to update state in DB:", err);
+      }
+    }
+
     return {
       providers: [],
       actions: [],

@@ -16,6 +16,25 @@ export function addVariablesToState(
   };
 }
 
+export function startStep(state: State, stepName: string) {
+  if (!state.values.steps) {
+    state.values.steps = {};
+  }
+  state.values.steps[stepName] = {
+    start: Date.now(),
+  };
+}
+
+export function endStep(state: State, stepName: string) {
+  if (!state.values.steps) {
+    state.values.steps = {};
+  }
+  if (!state.values.steps[stepName]) {
+    state.values.steps[stepName] = {};
+  }
+  state.values.steps[stepName].end = Date.now();
+}
+
 export function composePromptFromState(state: State, prompt: string): string {
   // for each key in state.values, replace the {{key}} with the value of the key
   for (const key in state.values) {

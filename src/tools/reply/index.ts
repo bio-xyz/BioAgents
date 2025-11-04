@@ -6,14 +6,21 @@ import {
 } from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import type { LLMResponse, LLMTool, WebSearchResponse } from "../../llm/types";
-import { type Message, type Paper, type State } from "../../types/core";
+import {
+  type ConversationState,
+  type Message,
+  type Paper,
+  type State,
+} from "../../types/core";
 import logger from "../../utils/logger";
 import {
   addVariablesToState,
   cleanWebSearchResults,
   composePromptFromState,
+  endStep,
   formatConversationHistory,
   getUniquePapers,
+  startStep,
 } from "../../utils/state";
 import { detectFileTypes } from "./fileDetection";
 import {
@@ -62,9 +69,23 @@ export const replyTool = {
   name: "REPLY",
   description: "Reply to the user's message based on the agent flow",
   enabled: true,
-  execute: async (input: { state: State; message: Message }) => {
-    const { state, message } = input;
-    addVariablesToState(state, { currentStep: "REPLYING" });
+  execute: async (input: {
+    state: State;
+    conversationState?: ConversationState;
+    message: Message;
+  }) => {
+    const { state, conversationState, message } = input;
+    startStep(state, "REPLY");
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
+
     const source = state.values.source;
 
     let prompt = "";
@@ -109,6 +130,18 @@ export const replyTool = {
     if (state.values.finalPapers?.length) {
       // each paper is of type {doi: string, title: string, abstract: string}
       providerString += `\n\nScience papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
+    }
+
+    if (conversationState?.values.papers?.length) {
+      providerString += `\n\nMost important science papers (from the current conversation history): ${conversationState.values.papers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
+    }
+
+    if (conversationState?.values.keyInsights?.length) {
+      providerString += `\n\nKey insights (from the current conversation history): ${conversationState.values.keyInsights.map((insight: string) => `${insight}`).join("\n")}`;
+    }
+
+    if (conversationState?.values.methodology) {
+      providerString += `\n\nMethodology (from the current conversation history): ${conversationState.values.methodology}`;
     }
 
     // For non-Google providers, add parsed text to context now
@@ -342,6 +375,7 @@ export const replyTool = {
     const cleanedWebSearchResults = cleanWebSearchResults(webSearchResults);
 
     addVariablesToState(state, {
+      finalResponse: finalText,
       webSearchResults: cleanedWebSearchResults,
       thought: thoughtText,
     });
@@ -354,7 +388,7 @@ export const replyTool = {
       webSearchResults: cleanedWebSearchResults,
     };
 
-    // Update message and state in DB
+    // Update message in DB
     if (message.id) {
       try {
         await updateMessage(message.id, {
@@ -365,6 +399,9 @@ export const replyTool = {
       }
     }
 
+    endStep(state, "REPLY");
+
+    // Update state in DB after endStep
     if (state.id) {
       try {
         await updateState(state.id, state.values);
@@ -372,8 +409,6 @@ export const replyTool = {
         logger.error({ err }, "failed_to_update_state");
       }
     }
-
-    addVariablesToState(state, { currentStep: "DONE" });
 
     return responseContent;
   },
