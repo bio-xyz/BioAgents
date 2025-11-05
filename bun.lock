@@ -25,6 +25,7 @@
         "dotenv": "^17.2.3",
         "elysia": "^1.4.12",
         "front-matter": "^4.0.2",
+        "jose": "^6.1.0",
         "lucide-preact": "^0.546.0",
         "mammoth": "^1.11.0",
         "marked": "^16.4.1",

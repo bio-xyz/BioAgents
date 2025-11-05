@@ -4,6 +4,13 @@ import { x402Config } from "../x402/config";
 import { routePricing } from "../x402/pricing";
 import { x402Service } from "../x402/service";
 
+/**
+ * x402 Payment Middleware
+ *
+ * Enforces payment requirements using the x402 protocol.
+ * Can be bypassed for whitelisted users (e.g., Privy-authenticated).
+ */
+
 export interface X402MiddlewareOptions {
   enabled?: boolean;
 }
@@ -13,14 +20,30 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const plugin = new Elysia({ name: "x402-middleware" });
 
   if (!enabled) {
-    if (logger) logger.info("x402 middleware disabled");
+    if (logger) logger.info("x402_middleware_disabled");
     return plugin;
   }
 
-  if (logger) logger.info("x402 middleware enabled and active");
+  if (logger) logger.info("x402_middleware_enabled_and_active");
 
   plugin.onBeforeHandle({ as: 'scoped' }, async ({ request, path, set }: any) => {
-    if (logger) logger.info(`x402 checking path: ${path}`);
+    // Check if request should bypass x402 (whitelisted users)
+    if ((request as any).bypassX402) {
+      const user = (request as any).authenticatedUser;
+      if (logger) {
+        logger.info(
+          {
+            userId: user?.userId,
+            authMethod: user?.authMethod,
+            path,
+          },
+          "x402_bypassed_for_whitelisted_user",
+        );
+      }
+      return; // Skip x402 payment check entirely
+    }
+
+    if (logger) logger.info(`x402_checking_path: ${path}`);
 
     const pricing = routePricing.find((entry) => path.startsWith(entry.route));
     if (!pricing) {
@@ -56,6 +79,11 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     }
 
     // Payment header provided, verify it
+    // TODO: Add payment amount validation and duplicate tx_hash detection
+    // - Parse payment header to extract tx_hash and amount
+    // - Check if tx_hash already exists in x402_external or x402_payments (prevent duplicate payments)
+    // - Validate payment amount matches or exceeds expected cost
+    // - Store payment hash in cache with TTL to prevent replay attacks
     const requirement = x402Service.generatePaymentRequirement(
       resourceUrl,
       pricing.description,
