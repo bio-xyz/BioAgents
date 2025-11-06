@@ -1,10 +1,10 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 import { smartAuthMiddleware } from "../middleware/smartAuth";
 import { x402Middleware } from "../middleware/x402";
-import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
+import { ensureUserAndConversation, setupConversationData, X402_SYSTEM_USER_ID } from "../services/chat/setup";
 import { recordPayment } from "../services/chat/payment";
 import {
   createMessageRecord,
@@ -38,6 +38,22 @@ const chatRoutePlugin = new Elysia()
     }),
   )
   .use(x402Middleware());
+
+// GET endpoint for x402scan discovery
+// Returns 402 with payment requirements and outputSchema
+// The x402Middleware will handle this and return 402
+export const chatRouteGet = chatRoutePlugin.get(
+  "/api/chat",
+  async () => {
+    // This endpoint exists only for x402 discovery
+    // If a GET request reaches here (not intercepted by x402 middleware),
+    // it means x402 is disabled or bypassed
+    return {
+      message: "This endpoint requires POST method with payment.",
+      apiDocumentation: "https://your-docs-url.com/api",
+    };
+  },
+);
 
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
@@ -81,8 +97,10 @@ export const chatRoute = chatRoutePlugin.post(
         source = authenticatedUser.authMethod; // Fallback to auth method
       }
     } else {
-      // Unauthenticated (AI agent) - use provided or generate
-      userId = parsedBody.userId || `agent_${Date.now()}`;
+      // Unauthenticated (AI agent) - use system user for persistence
+      // Store the provided/generated agent ID in x402_external metadata
+      const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
+      userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
       source = "x402_agent"; // All external agents
     }
 
@@ -150,6 +168,7 @@ export const chatRoute = chatRoutePlugin.post(
       setupResult.isExternal || false,
       message,
       files.length,
+      setupResult.isExternal ? (parsedBody.userId || `agent_${Date.now()}`) : undefined,
     );
     if (!dataSetup.success) {
       set.status = 500;
@@ -279,23 +298,5 @@ export const chatRoute = chatRoutePlugin.post(
     });
 
     return response;
-  },
-  {
-    // Note: Body validation removed to support FormData from frontend
-    response: t.Union([
-      t.Object({
-        text: t.String(),
-        files: t.Optional(
-          t.Array(
-            t.Object({
-              filename: t.String(),
-              mimeType: t.String(),
-              size: t.Optional(t.Number()),
-            }),
-          ),
-        ),
-      }),
-      t.Object({ ok: t.Literal(false), error: t.String() }),
-    ]),
   },
 );

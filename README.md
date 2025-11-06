@@ -38,6 +38,8 @@ The knowledge tool includes vector database and embedding support in [embeddings
 
 To process documents for the knowledge tool's vector database, place them in the [docs directory](docs). Documents are processed on each run but never processed twice for the same document name.
 
+**Docker Deployment Note**: When deploying with Docker, agent-specific documentation in `docs/` and branding images in `client/public/images/` are persisted using Docker volumes. These directories are excluded from git (see `.gitignore`) but automatically mounted in your Docker containers via volume mounts defined in `docker-compose.yml`. This allows you to customize your agent with private documentation without committing it to the repository.
+
 ### Character File
 
 The [character file](src/character.ts) defines your agent's persona, behavior, and response templates. Customize it to configure:
@@ -82,24 +84,43 @@ BioAgents AgentKit supports **USDC micropayments** for API access using the x402
 
 ### Quick Start
 
-1. **Enable x402**:
+#### Testnet Setup (Development)
+
+1. **Enable x402 on testnet**:
 ```bash
 X402_ENABLED=true
-X402_PAYMENT_ADDRESS=0xYourAddress
+X402_ENVIRONMENT=testnet
+X402_PAYMENT_ADDRESS=0xYourBaseSepoliaAddress
 ```
 
-2. **Configure Authentication** (optional - for bypass):
+2. **Configure Authentication** (optional - for Privy bypass):
 ```bash
+# Optional: Only needed if using Privy authentication
 PRIVY_APP_ID=your_app_id
 PRIVY_VERIFICATION_KEY="your_public_key"
 ```
 
-3. **Get CDP Credentials** from [Coinbase Portal](https://portal.cdp.coinbase.com):
+3. **Get CDP Credentials** from [Coinbase Portal](https://portal.cdp.coinbase.com) (for embedded wallets):
 ```bash
-CDP_API_KEY_ID=your_key
-CDP_API_KEY_SECRET=your_secret
 CDP_PROJECT_ID=your_project
 ```
+
+#### Mainnet Setup (Production)
+
+1. **Enable x402 on mainnet**:
+```bash
+X402_ENABLED=true
+X402_ENVIRONMENT=mainnet
+X402_PAYMENT_ADDRESS=0xYourBaseMainnetAddress
+```
+
+2. **REQUIRED: Get CDP API Credentials** from [CDP API Portal](https://portal.cdp.coinbase.com/access/api):
+```bash
+CDP_API_KEY_ID=your_key_id
+CDP_API_KEY_SECRET=your_key_secret
+```
+
+Note: Mainnet requires CDP API credentials. The system automatically uses the CDP facilitator object for mainnet (not URL-based).
 
 ### Features
 

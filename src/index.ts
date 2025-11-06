@@ -1,6 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
-import { chatRoute } from "./routes/chat";
+import { chatRoute, chatRouteGet } from "./routes/chat";
 import { authRoute } from "./routes/auth";
 import { x402Middleware } from "./middleware/x402";
 import { x402Route } from "./routes/x402";
@@ -37,9 +37,24 @@ const app = new Elysia()
   // The frontend (useAuth hook) will check /api/auth/status and show login screen if needed
   // This allows the login UI to render properly
 
-  // Serve the Preact UI (from client/dist)
-  .get("/", () => {
-    return Bun.file("client/dist/index.html");
+  // Serve the Preact UI (from client/dist) with SEO metadata injection
+  .get("/", async () => {
+    const htmlFile = Bun.file("client/dist/index.html");
+    let htmlContent = await htmlFile.text();
+
+    // Inject SEO metadata from environment variables
+    const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
+    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+
+    htmlContent = htmlContent
+      .replace("{{SEO_TITLE}}", seoTitle)
+      .replace("{{SEO_DESCRIPTION}}", seoDescription);
+
+    return new Response(htmlContent, {
+      headers: {
+        "Content-Type": "text/html",
+      },
+    });
   })
 
   // Serve the bundled Preact app JS file
@@ -81,7 +96,8 @@ const app = new Elysia()
   })
 
   // API routes (not protected by UI auth)
-  .use(chatRoute);
+  .use(chatRouteGet) // GET /api/chat for x402scan discovery
+  .use(chatRoute);   // POST /api/chat for actual chat
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify

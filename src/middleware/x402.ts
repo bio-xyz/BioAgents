@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { settleResponseHeader } from "x402/types";
 import logger from "../utils/logger";
 import { x402Config } from "../x402/config";
 import { routePricing } from "../x402/pricing";
@@ -54,18 +55,33 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     if (logger) logger.info(`x402 pricing found for ${path}: $${pricing.priceUSD}`);
 
     const paymentHeader = request.headers.get("X-PAYMENT");
-    
+
     // Build full URL for resource field (x402 requires full URL, not just path)
+    // Check X-Forwarded-Proto header for correct protocol (ngrok, reverse proxies)
     const url = new URL(request.url);
-    const resourceUrl = `${url.protocol}//${url.host}${pricing.route}`;
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const protocol = forwardedProto || url.protocol.replace(':', '');
+    const resourceUrl = `${protocol}://${url.host}${pricing.route}`;
     
     if (!paymentHeader) {
       if (logger) logger.warn(`Payment required for ${path}, none provided`);
 
+      // Include outputSchema for external consumers (x402scan compliance)
       const requirement = x402Service.generatePaymentRequirement(
         resourceUrl,
         pricing.description,
         pricing.priceUSD,
+        {
+          includeOutputSchema: true, // External consumer needs full schema
+          metadata: {
+            title: "BioAgents Chat API",
+            description: "API for BioAgents chatbot",
+            image: "https://bioagents.xyz/logo.png",
+            tags: ["ai", "biology", "research", "longevity"],
+            documentation: "https://bioagents.xyz/docs",
+            apiVersion: "1.0.0",
+          },
+        }
       );
 
       set.status = 402;
@@ -84,6 +100,8 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     // - Check if tx_hash already exists in x402_external or x402_payments (prevent duplicate payments)
     // - Validate payment amount matches or exceeds expected cost
     // - Store payment hash in cache with TTL to prevent replay attacks
+
+    // For verification/settlement, outputSchema not needed (simpler payload)
     const requirement = x402Service.generatePaymentRequirement(
       resourceUrl,
       pricing.description,
@@ -119,7 +137,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
     if (!settlement.success) {
       if (logger) logger.error(
-        { path, error: settlement.error },
+        { path, errorReason: settlement.errorReason },
         "x402_payment_settlement_failed",
       );
 
@@ -129,13 +147,13 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       return {
         x402Version: 1,
         accepts: [requirement],
-        error: settlement.error ?? "Payment settlement failed",
+        error: settlement.errorReason ?? "Payment settlement failed",
       };
     }
 
     if (logger) {
       logger.info(
-        { path, txHash: settlement.txHash },
+        { path, transaction: settlement.transaction, network: settlement.network },
         "x402_payment_settled",
       );
     }
@@ -145,23 +163,23 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     (request as any).x402Settlement = settlement;
     (request as any).x402Requirement = requirement;
 
-    // Set X-PAYMENT-RESPONSE header for client
-    // This allows x402-fetch to decode the payment response
-    const paymentResponseData = {
-      success: settlement.success,
-      transaction: settlement.txHash,
-      network: settlement.networkId || requirement.network,
-    };
-    
-    // Encode payment response as base64 for header
-    const paymentResponseHeader = Buffer.from(JSON.stringify(paymentResponseData)).toString("base64");
-    set.headers["X-PAYMENT-RESPONSE"] = paymentResponseHeader;
+    // Set X-PAYMENT-RESPONSE header for client using official x402 encoder
+    // Ensure required fields are present
+    if (settlement.transaction && settlement.network) {
+      const paymentResponseHeader = settleResponseHeader({
+        success: settlement.success,
+        transaction: settlement.transaction,
+        network: settlement.network as any,
+        payer: settlement.payer,
+      });
+      set.headers["X-PAYMENT-RESPONSE"] = paymentResponseHeader;
 
-    if (logger) {
-      logger.info(
-        { paymentResponseHeader: paymentResponseHeader.substring(0, 50) + "..." },
-        "x402_response_header_set",
-      );
+      if (logger) {
+        logger.info(
+          { paymentResponseHeader: paymentResponseHeader.substring(0, 50) + "..." },
+          "x402_response_header_set",
+        );
+      }
     }
 
     return; // Continue to route handler

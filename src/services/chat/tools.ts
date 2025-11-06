@@ -24,54 +24,42 @@ export interface MessageCreationParams {
 }
 
 /**
- * Create message record (skip for external agents)
+ * Create message record (for both internal and external agents)
+ * External agents need persistent messages to enable multi-turn conversations
  */
 export async function createMessageRecord(
   params: MessageCreationParams,
 ): Promise<{ success: boolean; message?: any; error?: string }> {
   const { conversationId, userId, message, source, stateId, files, isExternal } = params;
 
-  if (!isExternal) {
-    try {
-      const fileMetadata =
-        files.length > 0
-          ? files.map((f: any) => ({
-              name: f.name,
-              size: f.size,
-              type: f.type,
-            }))
-          : undefined;
+  try {
+    const fileMetadata =
+      files.length > 0
+        ? files.map((f: any) => ({
+            name: f.name,
+            size: f.size,
+            type: f.type,
+          }))
+        : undefined;
 
-      const createdMessage = await createMessage({
-        conversation_id: conversationId,
-        user_id: userId,
-        question: message,
-        content: "",
-        source,
-        state_id: stateId,
-        files: fileMetadata,
-      });
-
-      return { success: true, message: createdMessage };
-    } catch (err) {
-      if (logger) logger.error({ err }, "create_message_failed");
-      return { success: false, error: "Failed to create message" };
-    }
-  } else {
-    // For external agents, create temporary message object
-    const tempMessage = {
-      id: `temp_msg_${conversationId}`,
+    const createdMessage = await createMessage({
       conversation_id: conversationId,
       user_id: userId,
       question: message,
       content: "",
       source,
       state_id: stateId,
-    };
+      files: fileMetadata,
+    });
+
     if (logger) {
-      logger.info("x402_agent_using_temporary_message_no_persistence");
+      logger.info({ messageId: createdMessage.id, isExternal }, "message_created");
     }
-    return { success: true, message: tempMessage };
+
+    return { success: true, message: createdMessage };
+  } catch (err) {
+    if (logger) logger.error({ err, isExternal }, "create_message_failed");
+    return { success: false, error: "Failed to create message" };
   }
 }
 

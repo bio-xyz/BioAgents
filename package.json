@@ -18,6 +18,7 @@
     "@coinbase/cdp-core": "^0.0.53",
     "@coinbase/cdp-hooks": "^0.0.53",
     "@coinbase/cdp-react": "^0.0.53",
+    "@coinbase/cdp-sdk": "^1.38.5",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@coinbase/x402": "^0.7.0",
     "@elysiajs/cookie": "^0.8.0",
@@ -46,6 +47,7 @@
     "postgres": "^3.4.7",
     "preact": "^10.27.2",
     "viem": "^2.21.26",
+    "x402": "^0.7.1",
     "x402-fetch": "^0.7.0",
     "xlsx": "^0.18.5",
     "zod": "3"

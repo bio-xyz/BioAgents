@@ -119,6 +119,7 @@ export async function setupConversationData(
   isExternal: boolean,
   message: string,
   fileCount: number,
+  agentId?: string,
 ): Promise<{ success: boolean; data?: ConversationSetup; error?: string }> {
   let conversationStateRecord: any;
   let stateRecord: any;
@@ -132,7 +133,7 @@ export async function setupConversationData(
         request_path: "/api/chat",
         payment_status: "pending",
         request_metadata: {
-          providedUserId: userId,
+          providedUserId: agentId || userId,
           messageLength: message.length,
           fileCount,
         },
@@ -149,82 +150,63 @@ export async function setupConversationData(
     }
   }
 
-  // Get or create conversation state (skip for external agents)
-  if (!isExternal) {
-    try {
-      const conversation = await getConversation(conversationId);
+  // Get or create conversation state (for both internal and external agents)
+  // External agents need persistent state to enable multi-turn conversations
+  try {
+    const conversation = await getConversation(conversationId);
 
-      if (conversation.conversation_state_id) {
-        conversationStateRecord = await getConversationState(
-          conversation.conversation_state_id,
-        );
-        if (logger) {
-          logger.info(
-            { conversationStateId: conversationStateRecord.id },
-            "conversation_state_fetched",
-          );
-        }
-      } else {
-        conversationStateRecord = await createConversationState({
-          values: {},
-        });
-
-        await updateConversation(conversationId, {
-          conversation_state_id: conversationStateRecord.id,
-        });
-
-        if (logger) {
-          logger.info(
-            { conversationStateId: conversationStateRecord.id },
-            "conversation_state_created",
-          );
-        }
-      }
-    } catch (err) {
-      if (logger) {
-        logger.error({ err }, "get_or_create_conversation_state_failed");
-      }
-      return {
-        success: false,
-        error: "Failed to get or create conversation state",
-      };
-    }
-  } else {
-    // For external agents, create a minimal conversation state (in-memory only)
-    conversationStateRecord = {
-      id: `temp_${conversationId}`,
-      values: {},
-    };
-    if (logger) {
-      logger.info(
-        "x402_agent_using_temporary_conversation_state_no_persistence",
+    if (conversation.conversation_state_id) {
+      conversationStateRecord = await getConversationState(
+        conversation.conversation_state_id,
       );
+      if (logger) {
+        logger.info(
+          { conversationStateId: conversationStateRecord.id, isExternal },
+          "conversation_state_fetched",
+        );
+      }
+    } else {
+      conversationStateRecord = await createConversationState({
+        values: {},
+      });
+
+      await updateConversation(conversationId, {
+        conversation_state_id: conversationStateRecord.id,
+      });
+
+      if (logger) {
+        logger.info(
+          { conversationStateId: conversationStateRecord.id, isExternal },
+          "conversation_state_created",
+        );
+      }
     }
+  } catch (err) {
+    if (logger) {
+      logger.error({ err, isExternal }, "get_or_create_conversation_state_failed");
+    }
+    return {
+      success: false,
+      error: "Failed to get or create conversation state",
+    };
   }
 
-  // Create initial state in DB (skip for external agents)
-  if (!isExternal) {
-    try {
-      stateRecord = await createState({
-        values: {
-          conversationId,
-          userId,
-          source,
-        },
-      });
-    } catch (err) {
-      if (logger) logger.error({ err }, "create_state_failed");
-      return { success: false, error: "Failed to create state" };
-    }
-  } else {
-    // For external agents, create temporary state record
-    stateRecord = {
-      id: `temp_state_${conversationId}`,
-      values: { conversationId, userId, source },
-    };
+  // Create initial state in DB (for both internal and external agents)
+  // External agents need persistent state to enable multi-turn conversations
+  try {
+    stateRecord = await createState({
+      values: {
+        conversationId,
+        userId,
+        source,
+      },
+    });
     if (logger) {
-      logger.info("x402_agent_using_temporary_state_no_persistence");
+      logger.info({ stateId: stateRecord.id, isExternal }, "state_created");
     }
+  } catch (err) {
+    if (logger) logger.error({ err, isExternal }, "create_state_failed");
+    return { success: false, error: "Failed to create state" };
   }
 
   return {

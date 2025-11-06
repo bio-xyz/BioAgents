@@ -3,6 +3,12 @@ version: "3.8"
 services:
   bioagents:
     build: .
+
+    # Persistent storage for agent-specific docs and images
+    volumes:
+      - bioagents-docs:/app/docs
+      - bioagents-images:/app/client/public/images
+
     ports:
       - "3000:3000"
     environment:
@@ -70,3 +76,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+# Named volumes for persistent storage
+# These volumes store agent-specific documentation and branding
+volumes:
+  bioagents-docs:
+    driver: local
+  bioagents-images:
+    driver: local
