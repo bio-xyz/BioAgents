@@ -36,6 +36,7 @@ export type HypothesisOptions = {
   thinking?: boolean;
   thinkingBudget?: number;
   useWebSearch?: boolean;
+  onStreamChunk?: (chunk: string, fullText: string) => Promise<void>;
 };
 
 export type WebSearchResults = {
@@ -103,6 +104,8 @@ export async function generateHypothesis(
       ? (options.thinkingBudget ?? 1024)
       : undefined,
     tools: useWebSearch ? [{ type: "webSearch" as const }] : undefined,
+    stream: options.stream ?? false,
+    onStreamChunk: options.onStreamChunk,
   };
 
   try {
@@ -114,13 +117,13 @@ export async function generateHypothesis(
       const webSearchResults = response.webSearchResults ?? [];
 
       // Append sources if available
-      if (webSearchResults.length > 0) {
-        const sourcesHeader = "\n\nAdditional sources:";
-        const sourcesList = webSearchResults
-          .map((result) => result.url)
-          .join("\n");
-        finalText += `${sourcesHeader}\n${sourcesList}`;
-      }
+      // if (webSearchResults.length > 0) {
+      //   const sourcesHeader = "\n\nAdditional sources:";
+      //   const sourcesList = webSearchResults
+      //     .map((result) => result.url)
+      //     .join("\n");
+      //   finalText += `${sourcesHeader}\n${sourcesList}`;
+      // }
 
       return {
         text: finalText,
