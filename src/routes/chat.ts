@@ -1,23 +1,20 @@
-import { Elysia, t } from "elysia";
-import {
-  createConversation,
-  createConversationState,
-  createMessage,
-  createState,
-  createUser,
-  getConversation,
-  getConversationState,
-  updateConversation,
-  updateMessage,
-} from "../db/operations";
-import { createPayment } from "../db/x402Operations";
-import { x402Middleware } from "../middleware/x402";
-import { getTool } from "../tools";
+import { Elysia } from "elysia";
 import type { State } from "../types/core";
 import logger from "../utils/logger";
-import { x402Config } from "../x402/config";
-import { calculateRequestPrice } from "../x402/pricing";
-import { usdToBaseUnits } from "../x402/service";
+import { generateUUID } from "../utils/uuid";
+import { smartAuthMiddleware } from "../middleware/smartAuth";
+import { x402Middleware } from "../middleware/x402";
+import { ensureUserAndConversation, setupConversationData, X402_SYSTEM_USER_ID } from "../services/chat/setup";
+import { recordPayment } from "../services/chat/payment";
+import {
+  createMessageRecord,
+  executeFileUpload,
+  executePlanning,
+  executeProviderTools,
+  executeActionTool,
+  executeReflection,
+  updateMessageResponseTime,
+} from "../services/chat/tools";
 
 type ChatResponse = {
   text: string;
@@ -28,49 +25,35 @@ type ChatResponse = {
   }>;
 };
 
-type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
+/**
+ * Chat Route with Three-Tier Access Control
+ *
+ * 1. smartAuthMiddleware - Verifies Privy JWT or CDP signature (optional)
+ * 2. x402Middleware - Enforces payment (bypassed for Privy users)
+ */
+const chatRoutePlugin = new Elysia()
+  .use(
+    smartAuthMiddleware({
+      optional: true, // Allow unauthenticated requests (AI agents)
+    }),
+  )
+  .use(x402Middleware());
 
-// TODO: This is a temporary safeguard while the repo is WIP
-// In production, users and conversations should be created through proper auth/onboarding flows
-async function conditionallyCreateMockUserAndConversation(
-  userId: string,
-  conversationId: string,
-): Promise<{ success: boolean; error?: string }> {
-  // Ensure user exists (create if not)
-  try {
-    await createUser({
-      id: userId,
-      username: `user_${userId.slice(0, 8)}`,
-      email: `${userId}@temp.local`,
-    });
-    if (logger) logger.info({ userId }, "user_created");
-  } catch (err: any) {
-    // Ignore duplicate key errors (user already exists)
-    if (err.code !== "23505") {
-      if (logger) logger.error({ err }, "create_user_failed");
-      return { success: false, error: "Failed to create user" };
-    }
-  }
-
-  // Ensure conversation exists (create if not)
-  try {
-    await createConversation({
-      id: conversationId,
-      user_id: userId,
-    });
-    if (logger) logger.info({ conversationId }, "conversation_created");
-  } catch (err: any) {
-    // Ignore duplicate key errors (conversation already exists)
-    if (err.code !== "23505") {
-      if (logger) logger.error({ err }, "create_conversation_failed");
-      return { success: false, error: "Failed to create conversation" };
-    }
-  }
-
-  return { success: true };
-}
-
-const chatRoutePlugin = new Elysia().use(x402Middleware());
+// GET endpoint for x402scan discovery
+// Returns 402 with payment requirements and outputSchema
+// The x402Middleware will handle this and return 402
+export const chatRouteGet = chatRoutePlugin.get(
+  "/api/chat",
+  async () => {
+    // This endpoint exists only for x402 discovery
+    // If a GET request reaches here (not intercepted by x402 middleware),
+    // it means x402 is disabled or bypassed
+    return {
+      message: "This endpoint requires POST method with payment.",
+      apiDocumentation: "https://your-docs-url.com/api",
+    };
+  },
+);
 
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
@@ -85,18 +68,56 @@ export const chatRoute = chatRoutePlugin.post(
     } = ctx as any;
     const startTime = Date.now();
 
-    // Handle parsed body (Elysia automatically parses FormData to object)
-    let message: string;
-    let conversationId: string;
-    let userId: string;
-    let files: File[] = [];
-
     const parsedBody = body as any;
-    message = parsedBody.message;
-    conversationId = parsedBody.conversationId;
-    userId = parsedBody.userId;
+    const authenticatedUser = (request as any).authenticatedUser;
+
+    // Extract message (REQUIRED)
+    const message = parsedBody.message;
+    if (!message) {
+      set.status = 400;
+      return {
+        ok: false,
+        error: "Missing required field: message",
+      };
+    }
+
+    // Determine userId and source (priority: auth > body > generate)
+    let userId: string;
+    let source: string;
+
+    if (authenticatedUser) {
+      userId = authenticatedUser.userId;
+
+      // Set descriptive source based on auth method
+      if (authenticatedUser.authMethod === "privy") {
+        source = "external_ui"; // Next.js frontend with Privy
+      } else if (authenticatedUser.authMethod === "cdp") {
+        source = "dev_ui"; // Internal dev UI with CDP wallets
+      } else {
+        source = authenticatedUser.authMethod; // Fallback to auth method
+      }
+    } else {
+      // Unauthenticated (AI agent) - use system user for persistence
+      // Store the provided/generated agent ID in x402_external metadata
+      const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
+      userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
+      source = "x402_agent"; // All external agents
+    }
+
+    // Auto-generate conversationId if not provided (UUID v4 format)
+    let conversationId = parsedBody.conversationId;
+    if (!conversationId) {
+      conversationId = generateUUID();
+      if (logger) {
+        logger.info(
+          { conversationId, userId },
+          "auto_generated_conversation_id",
+        );
+      }
+    }
 
     // Extract files from parsed body
+    let files: File[] = [];
     if (parsedBody.files) {
       if (Array.isArray(parsedBody.files)) {
         files = parsedBody.files.filter((f: any) => f instanceof File);
@@ -105,118 +126,74 @@ export const chatRoute = chatRoutePlugin.post(
       }
     }
 
-    if (files.length > 0) {
-      if (logger) logger.info(`Received request with ${files.length} file(s)`);
+    // Log request details
+    if (logger) {
+      logger.info(
+        {
+          userId,
+          conversationId,
+          source,
+          authMethod: authenticatedUser?.authMethod,
+          paidViaX402: !!paymentSettlement,
+          messageLength: message.length,
+          fileCount: files.length,
+        },
+        "chat_request_received",
+      );
     }
 
-    // Validate required fields
-    if (!message || !conversationId || !userId) {
-      set.status = 400;
-      return {
-        ok: false,
-        error: "Missing required fields: message, conversationId, userId",
-      };
-    }
+    // TODO: Implement rate limiting in general
+    // - Limit requests per conversationId per time window (e.g., 10 requests/minute)
+    // - Track last_request_at in x402_external table
+    // - Use Redis or in-memory cache for rate limit counters
+    // - Return 429 Too Many Requests with Retry-After header when exceeded
 
-    const planningTool = getTool("PLANNING");
-    if (!planningTool) {
-      set.status = 500;
-      return { ok: false, error: "Planning tool not found" };
-    }
-
-    // Ensure user and conversation exist (WIP safeguard)
-    const setupResult = await conditionallyCreateMockUserAndConversation(
+    // Ensure user and conversation exist (auth-aware)
+    const setupResult = await ensureUserAndConversation(
       userId,
       conversationId,
+      authenticatedUser?.authMethod,
+      source,
     );
     if (!setupResult.success) {
       set.status = 500;
       return { ok: false, error: setupResult.error || "Setup failed" };
     }
 
-    // Get or create conversation state
-    let conversationStateRecord;
-    try {
-      // First get the conversation record to find its conversation_state_id
-      logger.info(
-        `Getting conversation record for conversationId: ${conversationId}`,
-      );
-      const conversation = await getConversation(conversationId);
-
-      if (conversation.conversation_state_id) {
-        // Conversation state exists, fetch it
-        conversationStateRecord = await getConversationState(
-          conversation.conversation_state_id,
-        );
-        if (logger)
-          logger.info(
-            { conversationStateId: conversationStateRecord.id },
-            "conversation_state_fetched",
-          );
-      } else {
-        // Conversation state doesn't exist, create it
-        conversationStateRecord = await createConversationState({ values: {} });
-
-        // Link conversation to conversation state
-        await updateConversation(conversationId, {
-          conversation_state_id: conversationStateRecord.id,
-        });
-
-        if (logger)
-          logger.info(
-            { conversationStateId: conversationStateRecord.id },
-            "conversation_state_created",
-          );
-      }
-    } catch (err) {
-      if (logger)
-        logger.error({ err }, "get_or_create_conversation_state_failed");
+    // Setup conversation data (state, x402_external record)
+    const dataSetup = await setupConversationData(
+      conversationId,
+      userId,
+      source,
+      setupResult.isExternal || false,
+      message,
+      files.length,
+      setupResult.isExternal ? (parsedBody.userId || `agent_${Date.now()}`) : undefined,
+    );
+    if (!dataSetup.success) {
       set.status = 500;
-      return { ok: false, error: "Failed to get or create conversation state" };
+      return { ok: false, error: dataSetup.error || "Data setup failed" };
     }
 
-    // Create initial state in DB
-    let stateRecord;
-    try {
-      stateRecord = await createState({
-        values: {
-          conversationId,
-          userId,
-          source: "ui",
-        },
-      });
-    } catch (err) {
-      if (logger) logger.error({ err }, "create_state_failed");
+    const { conversationStateRecord, stateRecord, x402ExternalRecord } =
+      dataSetup.data!;
+
+    // Create message record
+    const messageResult = await createMessageRecord({
+      conversationId,
+      userId,
+      message,
+      source,
+      stateId: stateRecord.id,
+      files,
+      isExternal: setupResult.isExternal || false,
+    });
+    if (!messageResult.success) {
       set.status = 500;
-      return { ok: false, error: "Failed to create state" };
+      return { ok: false, error: messageResult.error || "Message creation failed" };
     }
 
-    // Create message in DB with state_id and file metadata
-    let createdMessage;
-    try {
-      const fileMetadata =
-        files.length > 0
-          ? files.map((f: any) => ({
-              name: f.name,
-              size: f.size,
-              type: f.type,
-            }))
-          : undefined;
-
-      createdMessage = await createMessage({
-        conversation_id: conversationId,
-        user_id: userId,
-        question: message,
-        content: "", // answer will be updated later
-        source: "ui", // TODO: source hardcoded for now
-        state_id: stateRecord.id,
-        files: fileMetadata, // Store file metadata in JSONB field
-      });
-    } catch (err) {
-      if (logger) logger.error({ err }, "create_message_failed");
-      set.status = 500;
-      return { ok: false, error: "Failed to create message" };
-    }
+    const createdMessage = messageResult.message!;
 
     // Initialize state per request (message-specific state)
     const state: State = {
@@ -235,154 +212,52 @@ export const chatRoute = chatRoutePlugin.post(
       values: conversationStateRecord.values,
     };
 
-    // Step 1: Process files FIRST if present (before planning)
-    // This allows the file content to be available in state for planning
-    if (files.length > 0) {
-      const fileUploadTool = getTool("FILE-UPLOAD");
-      if (fileUploadTool) {
-        try {
-          if (logger)
-            logger.info(
-              `Processing ${files.length} uploaded file(s) before planning`,
-            );
-          await fileUploadTool.execute({
-            state,
-            conversationState,
-            message: createdMessage,
-            files,
-          });
-        } catch (err) {
-          if (logger) logger.error({ err }, "file_upload_failed");
-          set.status = 500;
-          return { ok: false, error: "Failed to process uploaded files" };
-        }
-      }
-    }
-
-    // Step 2: Execute planning tool (now with file content available in state)
-    let planningResult: {
-      providers: string[];
-      actions: string[];
+    const toolContext = {
+      state,
+      conversationState,
+      message: createdMessage,
+      files,
     };
-    try {
-      planningResult = await planningTool.execute({
-        state,
-        conversationState,
-        message: createdMessage,
-      });
 
-      if (logger) {
-        logger.info(
-          {
-            providers: planningResult.providers,
-            action: planningResult.actions[0],
-          },
-          "Executing plan",
-        );
-      }
-    } catch (err) {
-      if (logger) logger.error({ err }, "planning_tool_failed");
+    // Step 1: Process files FIRST if present (before planning)
+    const fileResult = await executeFileUpload(toolContext);
+    if (!fileResult.success) {
       set.status = 500;
-      return { ok: false, error: "Planning tool execution failed" };
+      return { ok: false, error: fileResult.error || "File upload failed" };
     }
 
-    // Step 3: Parallel execution of provider tools (excluding FILE-UPLOAD since already done)
-    await Promise.all(
-      (planningResult.providers ?? []).map(async (provider) => {
-        // Skip FILE-UPLOAD since we already processed it
-        if (provider === "FILE-UPLOAD") {
-          return { provider, result: { ok: true, data: {} } };
-        }
-        const tool = getTool(provider);
-        if (!tool) {
-          if (logger) logger.warn({ provider }, "provider_tool_missing");
-          const res: ToolResult = {
-            ok: false,
-            error: `Tool not found for provider: ${provider}`,
-          };
-          return { provider, result: res };
-        }
+    // Step 2: Execute planning tool
+    const planningResult = await executePlanning(toolContext);
+    if (!planningResult.success) {
+      set.status = 500;
+      return {
+        ok: false,
+        error: planningResult.error || "Planning execution failed",
+      };
+    }
 
-        try {
-          // Initialize estimatedCostsUSD object if not exists
-          if (!state.values.estimatedCostsUSD) {
-            state.values.estimatedCostsUSD = {};
-          }
+    const { providers, actions } = planningResult.result!;
 
-          // Track cost for this provider before execution
-          const providerCost = calculateRequestPrice([provider]);
-          state.values.estimatedCostsUSD[provider] = parseFloat(providerCost);
+    // Step 3: Parallel execution of provider tools
+    await executeProviderTools(providers, toolContext);
 
-          const data = await tool.execute({
-            state,
-            conversationState,
-            message: createdMessage,
-          });
-          const res: ToolResult = { ok: true, data };
-          return { provider, result: res };
-        } catch (err) {
-          if (logger) logger.error({ provider, err }, "provider_tool_failed");
-          const res: ToolResult = {
-            ok: false,
-            error: `Tool execution failed for provider: ${provider}`,
-          };
-          return { provider, result: res };
-        }
-      }),
-    );
-
-    // Step 4: Get the primary action from planning
-    const action = planningResult.actions?.[0];
+    // Step 4: Execute primary action (REPLY or HYPOTHESIS)
+    const action = actions?.[0];
     if (!action) {
       set.status = 500;
       return { ok: false, error: "No action specified by planning tool" };
     }
 
-    // Step 4: Execute primary action (REPLY or HYPOTHESIS)
-    const actionTool = getTool(action);
-    if (!actionTool) {
+    const actionResult = await executeActionTool(action, toolContext);
+    if (!actionResult.success) {
       set.status = 500;
-      return { ok: false, error: `Action tool not found: ${action}` };
+      return { ok: false, error: actionResult.error || "Action execution failed" };
     }
 
-    // Track cost for action tool
-    if (!state.values.estimatedCostsUSD) {
-      state.values.estimatedCostsUSD = {};
-    }
-    const actionCost = calculateRequestPrice([action]);
-    state.values.estimatedCostsUSD[action] = parseFloat(actionCost);
-
-    const primaryActionResult = await actionTool.execute({
-      state,
-      conversationState,
-      message: createdMessage,
-    });
+    const primaryActionResult = actionResult.result;
 
     // Step 5: Execute REFLECTION after primary action completes
-    const reflectionTool = getTool("REFLECTION");
-    if (reflectionTool) {
-      try {
-        // Track cost for REFLECTION tool
-        if (!state.values.estimatedCostsUSD) {
-          state.values.estimatedCostsUSD = {};
-        }
-        const reflectionCost = calculateRequestPrice(["REFLECTION"]);
-        state.values.estimatedCostsUSD["REFLECTION"] =
-          parseFloat(reflectionCost);
-
-        await reflectionTool.execute({
-          state,
-          conversationState,
-          message: createdMessage,
-        });
-        if (logger) logger.info("REFLECTION executed successfully");
-      } catch (err) {
-        if (logger) logger.error({ err }, "reflection_tool_failed");
-        // Don't fail the request if REFLECTION fails
-      }
-    } else {
-      if (logger) logger.warn("REFLECTION tool not found");
-    }
+    await executeReflection(toolContext);
 
     // Include file metadata in response if files were uploaded
     const rawFiles = state.values.rawFiles;
@@ -395,77 +270,33 @@ export const chatRoute = chatRoutePlugin.post(
           }))
         : undefined;
 
-    const actionResult: ChatResponse = {
+    const response: ChatResponse = {
       text: primaryActionResult.text,
       files: fileMetadata,
     };
 
     // Calculate and update response time
     const responseTime = Date.now() - startTime;
-    try {
-      await updateMessage(createdMessage.id, {
-        response_time: responseTime,
-      });
-    } catch (err) {
-      if (logger) logger.error({ err }, "failed_to_update_response_time");
-    }
+    await updateMessageResponseTime(
+      createdMessage.id,
+      responseTime,
+      setupResult.isExternal || false,
+    );
 
-    // Calculate total cost from all provider costs
-    let totalCostUSD = 0;
-    if (state.values?.estimatedCostsUSD) {
-      // Sum all individual provider costs
-      totalCostUSD = Object.values(state.values.estimatedCostsUSD).reduce(
-        (sum: number, cost: any) => sum + (parseFloat(String(cost)) || 0),
-        0,
-      );
-    }
+    // Record payment based on request type
+    await recordPayment({
+      isExternal: setupResult.isExternal || false,
+      x402ExternalRecord,
+      userId,
+      conversationId,
+      messageId: createdMessage.id,
+      paymentSettlement,
+      paymentHeader,
+      paymentRequirement,
+      providers: providers ?? [],
+      responseTime,
+    });
 
-    if (x402Config.enabled && paymentSettlement?.txHash && totalCostUSD > 0) {
-      const amountUsdString = totalCostUSD.toFixed(2);
-      const amountUsdNumber = totalCostUSD;
-
-      try {
-        // TODO: capture payer address once facilitator response supports it for downstream receipts.
-        await createPayment({
-          user_id: userId,
-          conversation_id: conversationId,
-          message_id: createdMessage.id,
-          amount_usd: amountUsdNumber,
-          amount_wei: usdToBaseUnits(amountUsdString),
-          asset: x402Config.asset,
-          network: x402Config.network,
-          tools_used: planningResult.providers ?? [],
-          tx_hash: paymentSettlement.txHash,
-          network_id: paymentSettlement.networkId,
-          payment_status: "settled",
-          payment_header: paymentHeader ? { raw: paymentHeader } : null,
-          payment_requirements: paymentRequirement ?? null,
-        });
-      } catch (err) {
-        if (logger) {
-          logger.error({ err }, "x402_payment_record_failed");
-        }
-      }
-    }
-
-    return actionResult;
-  },
-  {
-    // Note: Body validation removed to support FormData from frontend
-    response: t.Union([
-      t.Object({
-        text: t.String(),
-        files: t.Optional(
-          t.Array(
-            t.Object({
-              filename: t.String(),
-              mimeType: t.String(),
-              size: t.Optional(t.Number()),
-            }),
-          ),
-        ),
-      }),
-      t.Object({ ok: t.Literal(false), error: t.String() }),
-    ]),
+    return response;
   },
 );

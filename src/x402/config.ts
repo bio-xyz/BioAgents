@@ -24,15 +24,18 @@ const NETWORK_CONFIG = {
     chainId: 84532,
     rpcUrl: "https://sepolia.base.org",
     explorer: "https://sepolia.basescan.org",
+    useCdpFacilitator: false,
   },
   mainnet: {
     network: "base",
-    // Using x402.org facilitator (open-source, no auth required)
-    facilitatorUrl: "https://x402.org/facilitator",
+    // Recommended: Use CDP facilitator for production (set X402_FACILITATOR_URL in .env)
+    // CDP: https://api.cdp.coinbase.com/platform/v2/x402 (requires CDP_API_KEY_ID/SECRET)
+    facilitatorUrl: "https://api.cdp.coinbase.com/platform/v2/x402",
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
     explorer: "https://basescan.org",
+    useCdpFacilitator: true, // Default: CDP facilitator (override with X402_FACILITATOR_URL)
   },
 } as const;
 

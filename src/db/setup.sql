@@ -185,11 +185,35 @@ FROM x402_payments
 WHERE user_id IS NOT NULL
 GROUP BY user_id;
 
+-- x402 External Requests table (for external API consumers)
+DROP TABLE IF EXISTS x402_external CASCADE;
+
+CREATE TABLE x402_external (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  request_path TEXT NOT NULL,
+  tx_hash TEXT,
+  amount_usd NUMERIC,
+  amount_wei TEXT,
+  asset TEXT DEFAULT 'USDC',
+  network TEXT,
+  network_id TEXT,
+  payment_status TEXT CHECK (payment_status IN ('pending', 'verified', 'settled', 'failed')),
+  payment_header JSONB,
+  payment_requirements JSONB,
+  request_metadata JSONB,
+  response_time INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+
 COMMENT ON TABLE users IS 'User accounts and profile information';
 COMMENT ON TABLE conversations IS 'Conversation threads between users and the agent';
 COMMENT ON TABLE conversation_states IS 'Persistent state for each conversation (summarized context, key takeaways, etc.)';
 COMMENT ON TABLE messages IS 'Individual messages within conversations';
 COMMENT ON TABLE states IS 'Processing state for each message (papers cited, knowledge used, etc.)';
 COMMENT ON TABLE x402_payments IS 'Payment records for x402 protocol transactions';
+COMMENT ON TABLE x402_external IS 'External API requests authenticated via x402 payment (no user/conversation records)';
 COMMENT ON VIEW user_payment_stats IS 'Aggregated payment statistics per user';
 COMMENT ON FUNCTION cleanup_old_states IS 'Removes orphaned states older than specified days to prevent database bloat';

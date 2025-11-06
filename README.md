@@ -38,6 +38,8 @@ The knowledge tool includes vector database and embedding support in [embeddings
 
 To process documents for the knowledge tool's vector database, place them in the [docs directory](docs). Documents are processed on each run but never processed twice for the same document name.
 
+**Docker Deployment Note**: When deploying with Docker, agent-specific documentation in `docs/` and branding images in `client/public/images/` are persisted using Docker volumes. These directories are excluded from git (see `.gitignore`) but automatically mounted in your Docker containers via volume mounts defined in `docker-compose.yml`. This allows you to customize your agent with private documentation without committing it to the repository.
+
 ### Character File
 
 The [character file](src/character.ts) defines your agent's persona, behavior, and response templates. Customize it to configure:
@@ -72,94 +74,95 @@ The UI includes integrated support for x402 micropayments using Coinbase embedde
 
 ## x402 Payment Protocol
 
-BioAgents AgentKit supports USDC micropayments for API access using the x402 payment protocol with Coinbase's embedded wallet infrastructure.
+BioAgents AgentKit supports **USDC micropayments** for API access using the x402 payment protocol. The system implements a **three-tier access control model**:
+
+| Access Tier | Authentication | Payment Required |
+|------------|----------------|------------------|
+| **Next.js Frontend** | Privy JWT | ❌ FREE (bypasses x402) |
+| **Internal Dev UI** | CDP Wallet | ✅ Requires x402 |
+| **External Agents** | None | ✅ Requires x402 |
+
+### Quick Start
+
+#### Testnet Setup (Development)
+
+1. **Enable x402 on testnet**:
+```bash
+X402_ENABLED=true
+X402_ENVIRONMENT=testnet
+X402_PAYMENT_ADDRESS=0xYourBaseSepoliaAddress
+```
+
+2. **Configure Authentication** (optional - for Privy bypass):
+```bash
+# Optional: Only needed if using Privy authentication
+PRIVY_APP_ID=your_app_id
+PRIVY_VERIFICATION_KEY="your_public_key"
+```
+
+3. **Get CDP Credentials** from [Coinbase Portal](https://portal.cdp.coinbase.com) (for embedded wallets):
+```bash
+CDP_PROJECT_ID=your_project
+```
+
+#### Mainnet Setup (Production)
+
+1. **Enable x402 on mainnet**:
+```bash
+X402_ENABLED=true
+X402_ENVIRONMENT=mainnet
+X402_PAYMENT_ADDRESS=0xYourBaseMainnetAddress
+```
+
+2. **REQUIRED: Get CDP API Credentials** from [CDP API Portal](https://portal.cdp.coinbase.com/access/api):
+```bash
+CDP_API_KEY_ID=your_key_id
+CDP_API_KEY_SECRET=your_key_secret
+```
+
+Note: Mainnet requires CDP API credentials. The system automatically uses the CDP facilitator object for mainnet (not URL-based).
 
 ### Features
 
-- **Gasless Transfers**: Uses EIP-3009 for fee-free USDC transfers on Base
-- **Embedded Wallets**: Email-based wallet creation via Coinbase Developer Platform
-- **HTTP 402 Flow**: Standard "Payment Required" protocol for API monetization
-- **Base Network**: Supports both Base Sepolia (testnet) and Base (mainnet)
+- **Three-Tier Access Control**: Privy bypass, CDP auth, or pay-per-request
+- **Gasless Transfers**: EIP-3009 for fee-free USDC payments on Base
+- **Persistent Conversations**: External agents can maintain multi-turn chats
+- **Route-Based Pricing**: Simple flat pricing ($0.01/request default)
+- **Embedded Wallets**: Email-based wallet creation
 
-### Configuration
-
-1. Set up your payment receiver address:
-```bash
-X402_ENABLED=true
-X402_PAYMENT_ADDRESS=0xYourWalletAddress
-```
-
-2. Get Coinbase CDP credentials from [Coinbase Developer Portal](https://portal.cdp.coinbase.com):
-```bash
-# API credentials for backend
-CDP_API_KEY_ID=your_key_id
-CDP_API_KEY_SECRET=your_key_secret
-
-# Project ID for embedded wallets (frontend)
-CDP_PROJECT_ID=your_project_id
-```
-
-3. Configure network (see `.env.example` for all options):
-```bash
-X402_NETWORK=base-sepolia  # or 'base' for mainnet
-X402_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e  # Base Sepolia USDC
-```
-
-### How It Works (User Perspective)
-
-1. **Create Wallet**: User signs up with their email through Coinbase's embedded wallet system - a wallet is created automatically
-2. **Deposit USDC**: User deposits USDC to their wallet address on Base network (or Base Sepolia for testnet)
-3. **Make Requests**: Each API request costs a small amount of USDC (e.g., $0.01-$0.10 depending on complexity)
-4. **Auto-Payment**: When the user sends a message, they see a payment confirmation modal showing the cost
-5. **Confirm & Pay**: After confirmation, USDC is deducted from their wallet balance using gasless transfers (no network fees)
-6. **Get Response**: The AI processes the request and returns the response
-
-### Technical Payment Flow
-
-1. User connects wallet via email (embedded wallet created automatically)
-2. User makes a request to `/api/chat`
-3. Server responds with 402 Payment Required + payment details
-4. Client shows payment confirmation modal
-5. Client signs payment authorization (gasless EIP-3009 transfer)
-6. Client retries request with payment proof
-7. Server verifies and processes the request
-
-### Database Schema
-
-Payment records are stored in the `x402_payments` table (see `scripts/db/setup.sql`):
-
-```sql
-CREATE TABLE x402_payments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id TEXT NOT NULL,
-  user_id TEXT,
-  transaction_hash TEXT NOT NULL,
-  amount NUMERIC NOT NULL,
-  currency TEXT NOT NULL,
-  network TEXT NOT NULL,
-  status TEXT NOT NULL,
-  metadata JSONB,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-```
-
-For more details on x402 implementation, see:
-- Backend: `src/x402/` directory
-- Frontend: `client/src/hooks/useX402Payment.ts` and `client/src/hooks/useEmbeddedWallet.ts`
+**📖 For complete documentation, configuration, and implementation details, see [x402.md](x402.md)**
 
 ## Project Structure
 
 ```
-├── src/                    # Backend source
-│   ├── tools/             # Agent tools
-│   ├── llm/               # LLM providers
-│   └── types/             # TypeScript types
-├── client/                # Frontend UI
+├── src/                      # Backend source
+│   ├── routes/              # HTTP route handlers
+│   │   └── chat.ts          # Main chat endpoint (orchestrates services)
+│   ├── services/            # Business logic layer
+│   │   └── chat/            # Chat-related services
+│   │       ├── setup.ts     # User/conversation setup
+│   │       ├── payment.ts   # Payment recording
+│   │       └── tools.ts     # Tool execution logic
+│   ├── middleware/          # Request/response middleware
+│   │   ├── smartAuth.ts     # Multi-method authentication
+│   │   └── x402.ts          # Payment enforcement
+│   ├── tools/               # Agent tools (PLANNING, REPLY, etc.)
+│   ├── llm/                 # LLM providers & interfaces
+│   ├── db/                  # Database operations
+│   │   ├── operations.ts    # Core DB operations
+│   │   └── x402Operations.ts # Payment tracking
+│   ├── x402/                # x402 payment protocol
+│   │   ├── config.ts        # Network & payment config
+│   │   ├── pricing.ts       # Route-based pricing
+│   │   └── service.ts       # Payment verification
+│   ├── utils/               # Shared utilities
+│   └── types/               # TypeScript types
+├── client/                  # Frontend UI
 │   ├── src/
-│   │   ├── components/   # React components
-│   │   ├── hooks/        # Custom hooks
-│   │   └── styles/       # CSS files
-│   └── public/           # Static assets
+│   │   ├── components/     # React components
+│   │   ├── hooks/          # Custom hooks
+│   │   └── styles/         # CSS files
+│   └── public/             # Static assets
 └── package.json
 ```
 
