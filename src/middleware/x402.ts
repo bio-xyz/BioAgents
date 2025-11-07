@@ -92,6 +92,15 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     // - Validate payment amount matches or exceeds expected cost
     // - Store payment hash in cache with TTL to prevent replay attacks
 
+    // Debug: Log payment header details
+    if (logger) {
+      logger.info({
+        path,
+        paymentHeaderLength: paymentHeader.length,
+        paymentHeaderPrefix: paymentHeader.substring(0, 50),
+      }, "x402_payment_header_received");
+    }
+
     // For verification/settlement, outputSchema not needed (simpler payload)
     const requirement = x402Service.generatePaymentRequirement(
       resourceUrl,

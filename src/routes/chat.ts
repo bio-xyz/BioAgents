@@ -55,22 +55,41 @@ export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
   async (ctx) => {
-    const {
-      body,
-      set,
-      request,
-      paymentSettlement,
-      paymentRequirement,
-      paymentHeader,
-    } = ctx as any;
-    const startTime = Date.now();
+    try {
+      const {
+        body,
+        set,
+        request,
+        paymentSettlement,
+        paymentRequirement,
+        paymentHeader,
+      } = ctx as any;
+      const startTime = Date.now();
 
-    const parsedBody = body as any;
-    const authenticatedUser = (request as any).authenticatedUser;
+      const parsedBody = body as any;
+      const authenticatedUser = (request as any).authenticatedUser;
+
+      // Debug: Log request details for MetaMask/Phantom debugging
+      if (logger) {
+        logger.info({
+          contentType: request.headers.get("content-type"),
+          hasPaymentHeader: !!paymentHeader,
+          hasPaymentSettlement: !!paymentSettlement,
+          paymentSettlementSuccess: paymentSettlement?.success,
+          paymentSettlementNetwork: paymentSettlement?.network,
+          paymentSettlementPayer: paymentSettlement?.payer,
+          authMethod: authenticatedUser?.authMethod,
+          bodyType: typeof body,
+          bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
+        }, "chat_route_entry_debug");
+      }
 
     // Extract message (REQUIRED)
     const message = parsedBody.message;
     if (!message) {
+      if (logger) {
+        logger.warn({ bodyKeys: Object.keys(parsedBody) }, "missing_message_field");
+      }
       set.status = 400;
       return {
         ok: false,
@@ -294,6 +313,34 @@ export const chatRoute = chatRoutePlugin.post(
       responseTime,
     });
 
-    return response;
+      // Debug: Log response being returned
+      if (logger) {
+        logger.info({
+          responseTextLength: response.text?.length || 0,
+          hasFiles: !!response.files,
+          fileCount: response.files?.length || 0,
+          responseTime,
+          paidViaX402: !!paymentSettlement,
+        }, "chat_route_returning_response");
+      }
+
+      return response;
+    } catch (error: any) {
+      // Catch any unhandled errors and log them
+      if (logger) {
+        logger.error({
+          error: error.message,
+          stack: error.stack,
+          name: error.name,
+        }, "chat_route_unhandled_error");
+      }
+
+      const { set } = ctx as any;
+      set.status = 500;
+      return {
+        ok: false,
+        error: error.message || "Internal server error",
+      };
+    }
   },
 );
