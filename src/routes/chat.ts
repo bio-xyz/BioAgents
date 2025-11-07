@@ -324,7 +324,15 @@ export const chatRoute = chatRoutePlugin.post(
         }, "chat_route_returning_response");
       }
 
-      return response;
+      // Return explicit Response object to ensure proper JSON encoding
+      // and prevent automatic compression that x402scan can't handle
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     } catch (error: any) {
       // Catch any unhandled errors and log them
       if (logger) {
