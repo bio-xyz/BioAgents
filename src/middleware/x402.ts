@@ -77,7 +77,6 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
       return {
         x402Version: 1,
@@ -112,7 +111,6 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
       return {
         x402Version: 1,
@@ -134,7 +132,6 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
       return {
         x402Version: 1,
