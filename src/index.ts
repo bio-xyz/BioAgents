@@ -7,10 +7,12 @@ import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
 const app = new Elysia()
-  // Enable CORS for frontend access
+  // Enable CORS for frontend access + x402 headers
   .use(cors({
     origin: true, // Allow all origins (Coolify handles domain routing)
     credentials: true, // Important: allow cookies
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-PAYMENT', 'X-Requested-With'],
+    exposeHeaders: ['X-PAYMENT-RESPONSE', 'Content-Type'],
   }))
 
   // Apply x402 payment gating (only active when enabled via config)
