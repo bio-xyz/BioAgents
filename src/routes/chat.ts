@@ -46,10 +46,18 @@ const chatRoutePlugin = new Elysia()
 export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
   // This should never be reached if x402 is enabled
   // The middleware should intercept and return 402 Payment Required
-  return {
+  const responseData = {
     message: "This endpoint requires POST method with payment.",
     apiDocumentation: "https://your-docs-url.com/api",
   };
+
+  return new Response(JSON.stringify(responseData), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Encoding": "identity", // Explicitly disable compression
+    },
+  });
 });
 
 export const chatRoute = chatRoutePlugin.post(

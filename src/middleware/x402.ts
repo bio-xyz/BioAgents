@@ -78,11 +78,20 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: "Payment required",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     // Payment header provided, verify it
@@ -121,11 +130,20 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: verification.invalidReason ?? "Invalid payment",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     // Settle the payment
@@ -142,11 +160,20 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: settlement.errorReason ?? "Payment settlement failed",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     if (logger) {
