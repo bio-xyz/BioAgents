@@ -27,7 +27,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
-  plugin.onBeforeHandle({ as: 'scoped' }, async ({ request, path, set }: any) => {
+  plugin.onBeforeHandle({ as: 'global' }, async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;
@@ -73,14 +73,6 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
         pricing.priceUSD,
         {
           includeOutputSchema: true, // External consumer needs full schema
-          metadata: {
-            title: "BioAgents Chat API",
-            description: "API for BioAgents chatbot",
-            image: "https://bioagents.xyz/logo.png",
-            tags: ["ai", "biology", "research", "longevity"],
-            documentation: "https://bioagents.xyz/docs",
-            apiVersion: "1.0.0",
-          },
         }
       );
 
