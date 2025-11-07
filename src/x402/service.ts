@@ -107,7 +107,7 @@ function createExactPaymentRequirements(
       input: {
         type: "http",
         method: "POST",
-        bodyType: "multipart-form-data",  // Changed from "json" to support file uploads
+        bodyType: "json",  // Use JSON for x402scan compatibility (no files for now)
         bodyFields: {
           message: {
             type: "string",
@@ -124,11 +124,6 @@ function createExactPaymentRequirements(
             type: "string",
             required: false,
             description: "Optional user ID for tracking. Auto-generated if not provided.",
-          },
-          files: {
-            type: "array",
-            required: false,
-            description: "Optional array of files to upload and process (PDFs, images, etc.)",
           },
         },
       },
