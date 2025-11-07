@@ -107,7 +107,7 @@ function createExactPaymentRequirements(
       input: {
         type: "http",
         method: "POST",
-        bodyType: "json",
+        bodyType: "multipart-form-data",  // Changed from "json" to support file uploads
         bodyFields: {
           message: {
             type: "string",
