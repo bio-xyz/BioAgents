@@ -41,19 +41,16 @@ const chatRoutePlugin = new Elysia()
 
 // GET endpoint for x402scan discovery
 // Returns 402 with payment requirements and outputSchema
-// The x402Middleware will handle this and return 402
-export const chatRouteGet = chatRoutePlugin.get(
-  "/api/chat",
-  async () => {
-    // This endpoint exists only for x402 discovery
-    // If a GET request reaches here (not intercepted by x402 middleware),
-    // it means x402 is disabled or bypassed
-    return {
-      message: "This endpoint requires POST method with payment.",
-      apiDocumentation: "https://your-docs-url.com/api",
-    };
-  },
-);
+// The x402Middleware should intercept this and return 402
+// If this handler runs, x402 is disabled
+export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
+  // This should never be reached if x402 is enabled
+  // The middleware should intercept and return 402 Payment Required
+  return {
+    message: "This endpoint requires POST method with payment.",
+    apiDocumentation: "https://your-docs-url.com/api",
+  };
+});
 
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
