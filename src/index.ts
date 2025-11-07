@@ -45,10 +45,14 @@ const app = new Elysia()
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
     const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
+    const ogImageUrl = process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
-      .replace("{{SEO_TITLE}}", seoTitle)
-      .replace("{{SEO_DESCRIPTION}}", seoDescription);
+      .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
+      .replace(/\{\{SEO_DESCRIPTION\}\}/g, seoDescription)
+      .replace(/\{\{FAVICON_URL\}\}/g, faviconUrl)
+      .replace(/\{\{OG_IMAGE_URL\}\}/g, ogImageUrl);
 
     return new Response(htmlContent, {
       headers: {
