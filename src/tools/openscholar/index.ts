@@ -1,9 +1,5 @@
 import axios from "axios";
-import {
-  getMessagesByConversation,
-  updateMessage,
-  updateState,
-} from "../../db/operations";
+import { getMessagesByConversation, updateState } from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import { type Message, type State } from "../../types/core";
 import { SimpleCache } from "../../utils/cache";
@@ -11,9 +7,9 @@ import logger from "../../utils/logger";
 import { REFORMULATE_QUESTION_LONGEVITY_PROMPT } from "../../utils/longevity";
 import {
   addVariablesToState,
+  endStep,
   getStandaloneMessage,
   startStep,
-  endStep,
 } from "../../utils/state";
 
 // Cache for OpenScholar results (30 minutes TTL)
@@ -101,7 +97,7 @@ export const openscholarTool = {
   name: "OPENSCHOLAR",
   description:
     "OpenScholar plugin that retrieves, reranks the most relevant passages from thousands of scientific papers to generate citation grounded answers to research queries.",
-  enabled: true,
+  enabled: false,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 
@@ -129,6 +125,17 @@ export const openscholarTool = {
       });
 
       // Update state in DB with cached state
+      if (state.id) {
+        try {
+          await updateState(state.id, state.values);
+        } catch (err) {
+          console.error("Failed to update state in DB:", err);
+        }
+      }
+
+      endStep(state, "OPENSCHOLAR");
+
+      // Update state in DB after endStep
       if (state.id) {
         try {
           await updateState(state.id, state.values);
