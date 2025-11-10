@@ -1,6 +1,8 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { chatRoute, chatRouteGet } from "./routes/chat";
+import { deepResearchStartRoute, deepResearchStartGet } from "./routes/deep-research/start";
+import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { authRoute } from "./routes/auth";
 import { x402Middleware } from "./middleware/x402";
 import { x402Route } from "./routes/x402";
@@ -97,7 +99,10 @@ const app = new Elysia()
 
   // API routes (not protected by UI auth)
   .use(chatRouteGet) // GET /api/chat for x402scan discovery
-  .use(chatRoute);   // POST /api/chat for actual chat
+  .use(chatRoute)    // POST /api/chat for actual chat
+  .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
+  .use(deepResearchStartRoute)   // POST /api/deep-research/start to start deep research
+  .use(deepResearchStatusRoute); // GET /api/deep-research/status/:messageId to check status
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify

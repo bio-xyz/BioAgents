@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 class ToolRegistry {
   private tools: Map<string, Tool>;
+  private filterDeepResearch: boolean;
 
-  constructor() {
+  constructor(filterDeepResearch: boolean = false) {
     this.tools = new Map();
+    this.filterDeepResearch = filterDeepResearch;
   }
 
   async registerTools() {
@@ -34,11 +36,23 @@ class ToolRegistry {
           const envValue = process.env[envKey];
           const isEnabledByEnv = envValue === undefined ? isEnabledInTool : envValue === "true";
 
-          if (isEnabledByEnv) {
-            this.tools.set(tool.name, tool as Tool);
-            console.log(`Registered tool: ${tool.name}`);
+          // For deep research registry, check deepResearchEnabled flag
+          if (this.filterDeepResearch) {
+            const isDeepResearchEnabled = tool.deepResearchEnabled !== false;
+            if (isEnabledByEnv && isDeepResearchEnabled) {
+              this.tools.set(tool.name, tool as Tool);
+              console.log(`Registered deep research tool: ${tool.name}`);
+            } else {
+              console.log(`Skipped tool for deep research: ${tool.name} (enabled: ${isEnabledByEnv}, deepResearch: ${isDeepResearchEnabled})`);
+            }
           } else {
-            console.log(`Skipped disabled tool: ${tool.name}`);
+            // Standard registry
+            if (isEnabledByEnv) {
+              this.tools.set(tool.name, tool as Tool);
+              console.log(`Registered tool: ${tool.name}`);
+            } else {
+              console.log(`Skipped disabled tool: ${tool.name}`);
+            }
           }
         }
       } catch (error) {
@@ -64,7 +78,7 @@ class ToolRegistry {
   }
 }
 
-// Create singleton instance
+// Create singleton instance for standard tools
 const registry = new ToolRegistry();
 
 // Initialize the registry
@@ -78,3 +92,18 @@ export const getTool = (name: string) => toolRegistry.getTool(name);
 export const getAllTools = () => toolRegistry.getAllTools();
 export const getToolNames = () => toolRegistry.getToolNames();
 export const hasTool = (name: string) => toolRegistry.hasTool(name);
+
+// Create singleton instance for deep research tools
+const deepResearchRegistry = new ToolRegistry(true);
+
+// Initialize the deep research registry
+await deepResearchRegistry.registerTools();
+
+// Export the initialized deep research registry
+export const deepResearchToolRegistry = deepResearchRegistry;
+
+// Export deep research convenience methods
+export const getDeepResearchTool = (name: string) => deepResearchToolRegistry.getTool(name);
+export const getAllDeepResearchTools = () => deepResearchToolRegistry.getAllTools();
+export const getDeepResearchToolNames = () => deepResearchToolRegistry.getToolNames();
+export const hasDeepResearchTool = (name: string) => deepResearchToolRegistry.hasTool(name);

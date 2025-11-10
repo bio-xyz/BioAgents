@@ -107,6 +107,7 @@ export type Tool = {
     [key: string]: any;
   }) => Promise<any>;
   enabled?: boolean; // Tools are enabled by default
+  deepResearchEnabled?: boolean; // Tools are enabled for deep research by default
   payment?: {
     required: boolean;
     priceUSD: string;
