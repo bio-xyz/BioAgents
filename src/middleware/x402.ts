@@ -27,7 +27,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
-  plugin.onBeforeHandle({ as: 'scoped' }, async ({ request, path, set }: any) => {
+  plugin.onBeforeHandle({ as: 'global' }, async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;
@@ -73,25 +73,25 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
         pricing.priceUSD,
         {
           includeOutputSchema: true, // External consumer needs full schema
-          metadata: {
-            title: "BioAgents Chat API",
-            description: "API for BioAgents chatbot",
-            image: "https://bioagents.xyz/logo.png",
-            tags: ["ai", "biology", "research", "longevity"],
-            documentation: "https://bioagents.xyz/docs",
-            apiVersion: "1.0.0",
-          },
         }
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: "Payment required",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     // Payment header provided, verify it
@@ -100,6 +100,15 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     // - Check if tx_hash already exists in x402_external or x402_payments (prevent duplicate payments)
     // - Validate payment amount matches or exceeds expected cost
     // - Store payment hash in cache with TTL to prevent replay attacks
+
+    // Debug: Log payment header details
+    if (logger) {
+      logger.info({
+        path,
+        paymentHeaderLength: paymentHeader.length,
+        paymentHeaderPrefix: paymentHeader.substring(0, 50),
+      }, "x402_payment_header_received");
+    }
 
     // For verification/settlement, outputSchema not needed (simpler payload)
     const requirement = x402Service.generatePaymentRequirement(
@@ -120,13 +129,21 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: verification.invalidReason ?? "Invalid payment",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     // Settle the payment
@@ -142,13 +159,21 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       );
 
       set.status = 402;
-      set.headers["Content-Type"] = "application/json";
 
-      return {
+      const responseData = {
         x402Version: 1,
         accepts: [requirement],
         error: settlement.errorReason ?? "Payment settlement failed",
       };
+
+      // Return explicit Response to prevent compression
+      return new Response(JSON.stringify(responseData), {
+        status: 402,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
     }
 
     if (logger) {
