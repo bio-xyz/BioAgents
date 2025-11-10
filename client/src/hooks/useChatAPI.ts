@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { useX402Payment, type UseX402PaymentReturn } from "./useX402Payment";
 import { useToast } from "./useToast";
+import type { WalletClient } from "viem";
 
 export interface SendMessageParams {
   message: string;
@@ -8,6 +9,7 @@ export interface SendMessageParams {
   userId: string;
   file?: File | null;
   files?: File[];
+  walletClient?: WalletClient | null;
 }
 
 export interface ChatResponse {
@@ -59,13 +61,34 @@ export function useChatAPI(
    * Internal function to actually send the message (after confirmation if needed)
    */
   const sendMessageInternal = async (params: SendMessageParams, skipPaymentCheck = false): Promise<ChatResponse> => {
-    const { message, conversationId, userId, file, files } = params;
+    const { message, conversationId, userId, file, files, walletClient } = params;
 
     try {
       const formData = new FormData();
       formData.append("message", message || "");
       formData.append("conversationId", conversationId);
       formData.append("userId", userId);
+
+      // Add CDP wallet authentication if wallet client is available
+      if (walletClient && userId.startsWith("0x")) {
+        try {
+          const timestamp = Date.now();
+          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${userId}`;
+
+          const signature = await walletClient.signMessage({
+            account: userId as `0x${string}`,
+            message: authMessage,
+          });
+
+          formData.append("authSignature", signature);
+          formData.append("authTimestamp", timestamp.toString());
+
+          console.log('[useChatAPI] Added CDP authentication signature');
+        } catch (err) {
+          console.warn('[useChatAPI] Failed to sign auth message:', err);
+          // Continue without authentication - will be treated as unauthenticated request
+        }
+      }
 
       // Support both single file (legacy) and multiple files
       if (files && files.length > 0) {

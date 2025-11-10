@@ -97,11 +97,21 @@ export const chatRoute = chatRoutePlugin.post(
         source = authenticatedUser.authMethod; // Fallback to auth method
       }
     } else {
-      // Unauthenticated (AI agent) - use system user for persistence
-      // Store the provided/generated agent ID in x402_external metadata
+      // Unauthenticated request
       const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
-      userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
-      source = "x402_agent"; // All external agents
+
+      // Check if this is from dev UI or an external agent
+      // Dev UI sends userId directly, x402 agents pay for access
+      if (parsedBody.userId && !paymentSettlement) {
+        // Dev UI without x402 - treat as authenticated dev user
+        userId = providedUserId;
+        source = "dev_ui";
+      } else {
+        // External AI agent with x402 payment - use system user for persistence
+        // Store the provided/generated agent ID in x402_external metadata
+        userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
+        source = "x402_agent"; // All external agents
+      }
     }
 
     // Auto-generate conversationId if not provided (UUID v4 format)

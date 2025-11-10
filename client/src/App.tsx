@@ -11,6 +11,7 @@ import { ToastContainer } from "./components/Toast";
 import { EmbeddedWalletAuth } from "./components/EmbeddedWalletAuth";
 import { Modal } from "./components/ui/Modal";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
+import { ThinkingSteps } from "./components/ThinkingSteps";
 
 // Custom hooks
 import {
@@ -23,7 +24,11 @@ import {
   useX402Payment,
   useToast,
   useEmbeddedWallet,
+  useStates,
 } from "./hooks";
+
+// Utils
+import { generateConversationId } from "./utils/helpers";
 
 export function App() {
   // Toast notifications
@@ -32,23 +37,7 @@ export function App() {
   // Auth management
   const { isAuthenticated, isAuthRequired, isChecking, login } = useAuth();
 
-  // Session management
-  const {
-    sessions,
-    currentSession,
-    currentSessionId,
-    userId,
-    isLoading: isLoadingSessions,
-    addMessage,
-    removeMessage,
-    updateSessionMessages,
-    updateSessionTitle,
-    createNewSession,
-    deleteSession,
-    switchSession,
-  } = useSessions();
-
-  // x402 payment state
+  // x402 payment state (only if enabled)
   const x402 = useX402Payment();
   const {
     enabled: x402Enabled,
@@ -67,6 +56,55 @@ export function App() {
     evmAddress: embeddedWalletAddress,
     walletClient: embeddedWalletClient,
   } = embeddedWallet || { isSignedIn: false, evmAddress: null, walletClient: null };
+
+  // Get or create dev user ID (only used when x402 is disabled)
+  const getDevUserId = () => {
+    if (x402Enabled) return null; // Don't use dev user ID when x402 is enabled
+
+    const stored = localStorage.getItem('dev_user_id');
+
+    // Migration: If stored ID is old format (dev_user_*), clear it and generate new UUID
+    if (stored && stored.startsWith('dev_user_')) {
+      console.log('[App] Migrating old dev user ID to UUID format:', stored);
+      localStorage.removeItem('dev_user_id');
+      // Fall through to create new UUID
+    } else if (stored) {
+      return stored; // Valid UUID, use it
+    }
+
+    // Create a proper UUID for dev user (enables Supabase persistence)
+    const newId = generateConversationId();
+    localStorage.setItem('dev_user_id', newId);
+    console.log('[App] Created new dev user ID (UUID):', newId);
+    return newId;
+  };
+
+  const devUserId = getDevUserId();
+
+  // Determine which user ID to use: embedded wallet (x402) or dev user ID
+  const actualUserId = x402Enabled ? embeddedWalletAddress : devUserId;
+
+  // Session management (pass the appropriate user ID)
+  const {
+    sessions,
+    currentSession,
+    currentSessionId,
+    userId,
+    isLoading: isLoadingSessions,
+    addMessage,
+    removeMessage,
+    updateSessionMessages,
+    updateSessionTitle,
+    createNewSession,
+    deleteSession,
+    switchSession,
+  } = useSessions(actualUserId || undefined);
+
+  // Real-time states for thinking visualization
+  const {
+    currentState,
+    isLoading: isLoadingStates,
+  } = useStates(userId, currentSessionId);
 
   // Chat API
   const {
@@ -107,7 +145,20 @@ export function App() {
     fileMetadata?: Array<{ name: string; size: number }>;
   } | null>(null);
 
+  // Track which conversation is currently loading
+  const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null);
+
   const messages = currentSession.messages;
+
+  // Check if the current conversation is the one that's loading
+  const isCurrentConversationLoading = isLoading && loadingConversationId === currentSessionId;
+
+  // Clear loading conversation ID when loading completes
+  useEffect(() => {
+    if (!isLoading && loadingConversationId) {
+      setLoadingConversationId(null);
+    }
+  }, [isLoading, loadingConversationId]);
 
   // Integrate embedded wallet with x402 payments (only if x402 is enabled)
   useEffect(() => {
@@ -115,6 +166,61 @@ export function App() {
       x402.setEmbeddedWalletClient(embeddedWalletClient, embeddedWalletAddress);
     }
   }, [x402Enabled, isEmbeddedWalletConnected, embeddedWalletAddress, embeddedWalletClient]);
+
+  // Fetch and attach all states to messages when conversation loads
+  useEffect(() => {
+    if (!currentSessionId || !userId) return;
+    if (messages.length === 0) return;
+
+    // Check if any assistant messages are missing thinking states
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    const messagesNeedingStates = assistantMessages.filter(m => !m.thinkingState);
+
+    if (messagesNeedingStates.length === 0) return;
+
+    console.log('[App] Fetching states for', messagesNeedingStates.length, 'messages');
+
+    // Fetch all states for this conversation
+    async function fetchAndAttachStates() {
+      try {
+        const { getStatesByConversation } = await import('./lib/supabase');
+        const states = await getStatesByConversation(currentSessionId);
+
+        if (!states || states.length === 0) return;
+
+        console.log('[App] Fetched', states.length, 'states for conversation');
+
+        // Match states to messages (each state corresponds to one assistant response)
+        // States are in chronological order, matching the order of assistant messages
+        let stateIndex = 0;
+        updateSessionMessages(currentSessionId, (prev) =>
+          prev.map((msg) => {
+            if (msg.role === 'assistant' && !msg.thinkingState && stateIndex < states.length) {
+              const state = states[stateIndex];
+              stateIndex++;
+
+              if (state.values && state.values.steps) {
+                console.log('[App] Attaching state to message:', msg.id);
+                return {
+                  ...msg,
+                  thinkingState: {
+                    steps: state.values.steps,
+                    source: state.values.source,
+                    thought: state.values.thought,
+                  }
+                };
+              }
+            }
+            return msg;
+          }),
+        );
+      } catch (err) {
+        console.error('[App] Error fetching states:', err);
+      }
+    }
+
+    fetchAndAttachStates();
+  }, [currentSessionId, userId, messages.length]);
 
   /**
    * Handle sending a message
@@ -177,6 +283,9 @@ export function App() {
 
     scrollToBottom();
 
+    // Track which conversation is loading
+    setLoadingConversationId(currentSessionId);
+
     try {
       // Send message to API - this will trigger payment confirmation modal if needed
       const response = await sendMessage({
@@ -184,11 +293,12 @@ export function App() {
         conversationId: currentSessionId,
         userId: userId,
         files: filesToSend,
+        walletClient: x402Enabled ? embeddedWalletClient : null, // Only use wallet client if x402 is enabled
       });
 
       // Only continue if we got a response (not empty from payment confirmation)
       if (response.text) {
-        // Create temp message for typing animation
+        // Create temp message for typing animation first
         const tempId = Date.now();
         addMessage({
           id: tempId,
@@ -199,6 +309,20 @@ export function App() {
 
         scrollToBottom();
 
+        // Give a small delay for state to be fully updated via subscription
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Capture the current thinking state after delay
+        const capturedState = currentState && currentState.values && currentState.values.steps
+          ? {
+              steps: currentState.values.steps,
+              source: currentState.values.source,
+              thought: currentState.values.thought,
+            }
+          : undefined;
+
+        console.log('[App] Captured thinking state for message:', capturedState);
+
         // Animate the response
         await animateText(
           response.text,
@@ -206,13 +330,22 @@ export function App() {
             updateSessionMessages(currentSessionId, (prev) =>
               prev.map((msg) =>
                 msg.id === tempId
-                  ? { ...msg, content: currentText, files: response.files }
+                  ? { ...msg, content: currentText, files: response.files, thinkingState: capturedState }
                   : msg,
               ),
             );
             scrollToBottom();
           },
           () => {
+            // Animation complete - ensure thinking state is attached to final message
+            updateSessionMessages(currentSessionId, (prev) =>
+              prev.map((msg) =>
+                msg.id === tempId
+                  ? { ...msg, thinkingState: capturedState }
+                  : msg,
+              ),
+            );
+            console.log('[App] Animation complete, attached thinking state to message:', tempId);
             scrollToBottom();
           },
         );
@@ -507,15 +640,23 @@ export function App() {
             </div>
           ) : (
             <>
-              {messages.length === 0 && (
-                <WelcomeScreen onExampleClick={(text) => setInputValue(text)} />
+              {messages.length === 0 && !isCurrentConversationLoading && (
+                <WelcomeScreen onExampleClick={(text) => {
+                  // Just set the input value, let user send manually
+                  setInputValue(text);
+                }} />
               )}
 
               {messages.map((msg) => (
                 <Message key={msg.id} message={msg} />
               ))}
 
-              {isLoading && !isTyping && <TypingIndicator />}
+              {/* Show live thinking steps only for current loading message */}
+              {isCurrentConversationLoading && currentState && currentState.values && currentState.values.steps && Object.keys(currentState.values.steps).length > 0 && (
+                <ThinkingSteps state={currentState.values} />
+              )}
+
+              {isCurrentConversationLoading && !isTyping && <TypingIndicator />}
             </>
           )}
         </div>
@@ -524,7 +665,7 @@ export function App() {
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
-          disabled={isLoading}
+          disabled={isCurrentConversationLoading}
           placeholder="Type your message..."
           selectedFile={selectedFile}
           selectedFiles={selectedFiles}
@@ -588,7 +729,7 @@ export function App() {
           const response = await confirmPayment();
 
           if (response && response.text) {
-            // Create temp message for typing animation
+            // Create temp message for typing animation first
             const tempId = Date.now();
             addMessage({
               id: tempId,
@@ -600,6 +741,20 @@ export function App() {
             // Scroll to show assistant response
             setTimeout(() => scrollToBottom(), 50);
 
+            // Give a small delay for state to be fully updated via subscription
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            // Capture the current thinking state after delay
+            const capturedState = currentState && currentState.values && currentState.values.steps
+              ? {
+                  steps: currentState.values.steps,
+                  source: currentState.values.source,
+                  thought: currentState.values.thought,
+                }
+              : undefined;
+
+            console.log('[App] Captured thinking state for payment message:', capturedState);
+
             // Animate the response
             await animateText(
               response.text,
@@ -607,13 +762,22 @@ export function App() {
                 updateSessionMessages(currentSessionId, (prev) =>
                   prev.map((msg) =>
                     msg.id === tempId
-                      ? { ...msg, content: currentText, files: response.files }
+                      ? { ...msg, content: currentText, files: response.files, thinkingState: capturedState }
                       : msg,
                   ),
                 );
                 scrollToBottom();
               },
               () => {
+                // Animation complete - ensure thinking state is attached to final message
+                updateSessionMessages(currentSessionId, (prev) =>
+                  prev.map((msg) =>
+                    msg.id === tempId
+                      ? { ...msg, thinkingState: capturedState }
+                      : msg,
+                  ),
+                );
+                console.log('[App] Animation complete (payment), attached thinking state to message:', tempId);
                 scrollToBottom();
               },
             );

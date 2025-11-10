@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Icon } from './icons';
 import { Button } from './ui';
+import { ThinkingSteps } from './ThinkingSteps';
 
 export function Message({ message }) {
   const isUser = message.role === 'user';
@@ -62,6 +63,12 @@ export function Message({ message }) {
             className="message-content"
             dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
+          {/* Show thinking steps for assistant messages that have them */}
+          {message.thinkingState && message.thinkingState.steps && Object.keys(message.thinkingState.steps).length > 0 && (
+            <div className="message-thinking-steps">
+              <ThinkingSteps state={message.thinkingState} />
+            </div>
+          )}
           <div className="message-actions">
             <button
               onClick={handleCopy}
@@ -111,12 +118,21 @@ export function Message({ message }) {
     }
   };
 
+  // Debug: log message to see if thinkingState is present
+  if (!isUser && message.thinkingState) {
+    console.log('[Message] Rendering with thinkingState:', message.thinkingState);
+  } else if (!isUser) {
+    console.log('[Message] No thinkingState for assistant message:', message.id);
+  }
+
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}`}>
       <div className={`avatar ${isUser ? 'user' : 'assistant'}`}>
         <Icon name={isUser ? 'user' : 'bot'} size={16} />
       </div>
-      {renderContent()}
+      <div className="message-content-container">
+        {renderContent()}
+      </div>
     </div>
   );
 }

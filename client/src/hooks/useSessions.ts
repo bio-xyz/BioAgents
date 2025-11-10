@@ -21,6 +21,11 @@ export interface Message {
     size?: number;
     mimeType?: string;
   }>;
+  thinkingState?: {
+    steps: Record<string, { start: number; end?: number }>;
+    source?: string;
+    thought?: string;
+  };
 }
 
 export interface Session {
@@ -42,16 +47,6 @@ export interface UseSessionsReturn {
   createNewSession: () => Session;
   deleteSession: (sessionId: string) => void;
   switchSession: (sessionId: string) => void;
-}
-
-// Generate or retrieve mock user ID from localStorage
-function getMockUserId(): string {
-  const stored = localStorage.getItem('mock_user_id');
-  if (stored) return stored;
-
-  const newId = generateConversationId();
-  localStorage.setItem('mock_user_id', newId);
-  return newId;
 }
 
 // Convert DB messages to UI messages
@@ -94,12 +89,16 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
  * Custom hook for managing chat sessions with Supabase integration
  * Handles session creation, deletion, switching, and message updates
  * Syncs with Supabase database and subscribes to real-time updates
+ *
+ * @param walletUserId - The actual user ID (wallet address or Privy ID) to load conversations for
  */
-export function useSessions(): UseSessionsReturn {
-  const [userId] = useState<string>(getMockUserId());
+export function useSessions(walletUserId?: string): UseSessionsReturn {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Use provided wallet user ID, or generate a temporary one if not available
+  const userId = walletUserId || generateConversationId();
 
   // Provide a default session to prevent undefined errors during initial load
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0] || {
@@ -110,16 +109,37 @@ export function useSessions(): UseSessionsReturn {
 
   /**
    * Load conversations and messages from Supabase on mount
+   * Only load if we have a valid wallet user ID
    */
   useEffect(() => {
+    // Don't load if we don't have a wallet user ID yet
+    if (!walletUserId) {
+      setIsLoading(false);
+      // Create a temporary session for immediate use
+      const tempSession = {
+        id: generateConversationId(),
+        title: 'New conversation',
+        messages: [],
+      };
+      setSessions([tempSession]);
+      setCurrentSessionId(tempSession.id);
+      return;
+    }
+
     let mounted = true;
 
     async function loadConversations() {
+      // Preserve the current session's messages (in case wallet connected after sending message)
+      // Define this OUTSIDE try block so it's accessible in catch block
+      const currentSessionBeforeLoad = sessions.find(s => s.id === currentSessionId);
+      const hasMessagesInCurrentSession = currentSessionBeforeLoad && currentSessionBeforeLoad.messages.length > 0;
+
       try {
         setIsLoading(true);
 
         // Fetch all conversations for this user
         const conversations = await getConversationsByUser(userId);
+        console.log('[useSessions] Fetched conversations for userId:', userId, 'count:', conversations?.length || 0);
 
         if (!mounted) return;
 
@@ -155,12 +175,50 @@ export function useSessions(): UseSessionsReturn {
           );
 
           if (mounted) {
-            setSessions(sessionsWithMessages);
-            setCurrentSessionId(sessionsWithMessages[0].id);
+            // If we had messages in a temporary session, preserve them by keeping that session
+            if (hasMessagesInCurrentSession) {
+              console.log('[useSessions] Preserving temporary session with messages');
+              console.log('[useSessions] Loaded sessions count:', sessionsWithMessages.length);
+              console.log('[useSessions] Total sessions (with temp):', sessionsWithMessages.length + 1);
+              setSessions([currentSessionBeforeLoad!, ...sessionsWithMessages]);
+              // Keep the current session ID (don't switch to loaded session)
+            } else {
+              console.log('[useSessions] Loading sessions without temp:', sessionsWithMessages.length);
+              console.log('[useSessions] Sessions:', sessionsWithMessages.map(s => ({ id: s.id, title: s.title, messageCount: s.messages.length })));
+              setSessions(sessionsWithMessages);
+              setCurrentSessionId(sessionsWithMessages[0].id);
+            }
           }
         } else {
-          // No conversations found, create a new one
+          // No conversations found
           if (mounted) {
+            // If we had messages in a temporary session, preserve it
+            if (hasMessagesInCurrentSession) {
+              console.log('[useSessions] No conversations found, preserving temporary session with messages');
+              setSessions([currentSessionBeforeLoad!]);
+              // Keep the current session ID
+            } else {
+              // Create a new session
+              const newSession = {
+                id: generateConversationId(),
+                title: 'New conversation',
+                messages: [],
+              };
+              setSessions([newSession]);
+              setCurrentSessionId(newSession.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading conversations:', err);
+        // Fallback to local session
+        if (mounted) {
+          // If we had messages in a temporary session, preserve it
+          if (hasMessagesInCurrentSession) {
+            console.log('[useSessions] Error loading, preserving temporary session with messages');
+            setSessions([currentSessionBeforeLoad!]);
+            // Keep the current session ID
+          } else {
             const newSession = {
               id: generateConversationId(),
               title: 'New conversation',
@@ -169,18 +227,6 @@ export function useSessions(): UseSessionsReturn {
             setSessions([newSession]);
             setCurrentSessionId(newSession.id);
           }
-        }
-      } catch (err) {
-        console.error('Error loading conversations:', err);
-        // Fallback to local session
-        if (mounted) {
-          const newSession = {
-            id: generateConversationId(),
-            title: 'New conversation',
-            messages: [],
-          };
-          setSessions([newSession]);
-          setCurrentSessionId(newSession.id);
         }
       } finally {
         if (mounted) {
@@ -194,7 +240,7 @@ export function useSessions(): UseSessionsReturn {
     return () => {
       mounted = false;
     };
-  }, [userId]);
+  }, [userId, walletUserId]);
 
   /**
    * Subscribe to real-time message updates for current conversation
@@ -398,7 +444,12 @@ export function useSessions(): UseSessionsReturn {
    * Add a message to the current session
    */
   const addMessage = (message: Message) => {
-    updateSessionMessages(currentSessionId, prev => [...prev, message]);
+    console.log('[useSessions.addMessage] Adding message to session:', currentSessionId, 'message:', message);
+    console.log('[useSessions.addMessage] Current sessions:', sessions.map(s => ({ id: s.id, messageCount: s.messages.length })));
+    updateSessionMessages(currentSessionId, prev => {
+      console.log('[useSessions.addMessage] Previous messages:', prev.length, 'new count:', prev.length + 1);
+      return [...prev, message];
+    });
   };
 
   /**

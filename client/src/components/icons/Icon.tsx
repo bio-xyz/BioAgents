@@ -33,6 +33,14 @@ import {
   Syringe,
   Pill,
   FlaskConical,
+  Target,
+  BookOpen,
+  GraduationCap,
+  MessageSquare,
+  BrainCircuit,
+  Settings,
+  BarChart3,
+  GitMerge,
 } from 'lucide-preact';
 
 export interface IconProps {
@@ -72,6 +80,14 @@ const iconMap: Record<string, any> = {
   syringe: Syringe,
   pill: Pill,
   flask: FlaskConical,
+  target: Target,
+  bookOpen: BookOpen,
+  graduationCap: GraduationCap,
+  messageSquare: MessageSquare,
+  brainCircuit: BrainCircuit,
+  settings: Settings,
+  barChart: BarChart3,
+  gitMerge: GitMerge,
 };
 
 /**
