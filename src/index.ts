@@ -7,10 +7,12 @@ import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
 const app = new Elysia()
-  // Enable CORS for frontend access
+  // Enable CORS for frontend access + x402 headers
   .use(cors({
     origin: true, // Allow all origins (Coolify handles domain routing)
     credentials: true, // Important: allow cookies
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-PAYMENT', 'X-Requested-With'],
+    exposeHeaders: ['X-PAYMENT-RESPONSE', 'Content-Type'],
   }))
 
   // Apply x402 payment gating (only active when enabled via config)
@@ -45,10 +47,14 @@ const app = new Elysia()
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
     const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
+    const ogImageUrl = process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
-      .replace("{{SEO_TITLE}}", seoTitle)
-      .replace("{{SEO_DESCRIPTION}}", seoDescription);
+      .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
+      .replace(/\{\{SEO_DESCRIPTION\}\}/g, seoDescription)
+      .replace(/\{\{FAVICON_URL\}\}/g, faviconUrl)
+      .replace(/\{\{OG_IMAGE_URL\}\}/g, ogImageUrl);
 
     return new Response(htmlContent, {
       headers: {
@@ -95,9 +101,39 @@ const app = new Elysia()
     return { status: "ok", timestamp: new Date().toISOString() };
   })
 
+  // Suppress Chrome DevTools 404 error
+  .get("/.well-known/appspecific/com.chrome.devtools.json", () => {
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  })
+
   // API routes (not protected by UI auth)
   .use(chatRouteGet) // GET /api/chat for x402scan discovery
-  .use(chatRoute);   // POST /api/chat for actual chat
+  .use(chatRoute)    // POST /api/chat for actual chat
+
+  // Catch-all route for SPA client-side routing
+  // This handles routes like /chat, /settings, etc. and serves the main UI
+  // The client-side router will handle the actual routing
+  .get("*", async () => {
+    const htmlFile = Bun.file("client/dist/index.html");
+    let htmlContent = await htmlFile.text();
+
+    // Inject SEO metadata from environment variables
+    const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
+    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+
+    htmlContent = htmlContent
+      .replace("{{SEO_TITLE}}", seoTitle)
+      .replace("{{SEO_DESCRIPTION}}", seoDescription);
+
+    return new Response(htmlContent, {
+      headers: {
+        "Content-Type": "text/html",
+      },
+    });
+  });
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify

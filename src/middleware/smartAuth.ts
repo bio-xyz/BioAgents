@@ -47,7 +47,7 @@ export function smartAuthMiddleware(options: SmartAuthOptions = {}) {
   return new Elysia({ name: "smart-auth" }).onBeforeHandle(
     async ({ request, body, set }) => {
       const authHeader = request.headers.get("Authorization");
-      const parsedBody = body as any;
+      const contentType = request.headers.get("Content-Type");
 
       // Priority 1: Check for Privy JWT (Next.js frontend)
       if (authHeader?.startsWith("Bearer ")) {
@@ -67,20 +67,25 @@ export function smartAuthMiddleware(options: SmartAuthOptions = {}) {
       }
 
       // Priority 2: Check for CDP signature (Dev UI)
-      if (allowCdpSignatures && parsedBody?.authSignature) {
-        const result = await verifyCdpSignature(
-          parsedBody,
-          request,
-          set,
-          signatureTTL,
-        );
+      // Only check body for CDP signatures if it's JSON (not multipart/form-data)
+      if (allowCdpSignatures && contentType?.includes("application/json")) {
+        const parsedBody = body as any;
 
-        if (result === true) {
-          // CDP auth successful - will still require x402
-          return;
+        if (parsedBody?.authSignature) {
+          const result = await verifyCdpSignature(
+            parsedBody,
+            request,
+            set,
+            signatureTTL,
+          );
+
+          if (result === true) {
+            // CDP auth successful - will still require x402
+            return;
+          }
+
+          if (result !== null) return result;
         }
-
-        if (result !== null) return result;
       }
 
       // Priority 3: No authentication (AI Agents)

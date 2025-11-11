@@ -577,9 +577,7 @@ body {
 .message-actions {
     display: flex;
     gap: 4px;
-    margin-top: 12px;
     align-items: center;
-    padding-top: 8px;
 }
 
 .message-action-icon-btn {
@@ -683,6 +681,13 @@ body {
 }
 
 /* Message content wrapper */
+.message-content-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
+}
+
 .message-content-wrapper {
     display: flex;
     flex-direction: column;
@@ -1605,5 +1610,427 @@ textarea::placeholder {
     .example-prompts {
         grid-template-columns: 1fr;
         gap: 12px;
+    }
+}
+
+/* Thinking Steps - Real-time tool execution visualization */
+.thinking-steps {
+    max-width: 900px;
+    margin: 0 auto 16px auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    animation: fadeIn 0.3s ease-out;
+    overflow: hidden;
+}
+
+.thinking-steps-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-family: inherit;
+}
+
+.thinking-steps-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.thinking-steps-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.thinking-steps-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.thinking-steps-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    color: var(--accent-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thinking-steps-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.thinking-steps-source {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    padding: 3px 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.thinking-steps-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.thinking-steps-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.thinking-steps-badge.in-progress {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.thinking-steps-badge.complete {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.thinking-steps-time {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-weight: 500;
+}
+
+.thinking-steps-chevron {
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.thinking-steps-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+.thinking-steps-thought {
+    margin: 0 20px 16px 20px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--accent-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    font-style: italic;
+    animation: slideDown 0.3s ease-out;
+}
+
+.thinking-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 20px 16px 20px;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.thinking-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.thinking-step.complete {
+    background: rgba(16, 185, 129, 0.04);
+    border-color: rgba(16, 185, 129, 0.15);
+}
+
+.thinking-step.in-progress {
+    background: rgba(59, 130, 246, 0.04);
+    border-color: rgba(59, 130, 246, 0.15);
+    animation: pulseStep 2s ease-in-out infinite;
+}
+
+@keyframes pulseStep {
+    0%, 100% {
+        border-color: rgba(59, 130, 246, 0.15);
+    }
+    50% {
+        border-color: rgba(59, 130, 246, 0.3);
+    }
+}
+
+.thinking-step-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    color: var(--text-secondary);
+}
+
+.thinking-step-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.thinking-step-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.thinking-step-duration {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.thinking-step-status {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thinking-step-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Mobile responsiveness for thinking steps */
+@media (max-width: 768px) {
+    .thinking-steps {
+        margin: 0 16px 16px 16px;
+    }
+
+    .thinking-steps-header {
+        padding: 14px 16px;
+    }
+
+    .thinking-steps-header-left {
+        gap: 8px;
+    }
+
+    .thinking-steps-header-right {
+        gap: 8px;
+    }
+
+    .thinking-steps-icon {
+        font-size: 16px;
+    }
+
+    .thinking-steps-title {
+        font-size: 13px;
+    }
+
+    .thinking-steps-source {
+        display: none;
+    }
+
+    .thinking-steps-summary {
+        gap: 6px;
+    }
+
+    .thinking-steps-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+    }
+
+    .thinking-steps-time {
+        font-size: 10px;
+    }
+
+    .thinking-steps-thought {
+        margin: 0 16px 12px 16px;
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+
+    .thinking-steps-list {
+        padding: 0 16px 12px 16px;
+        gap: 6px;
+    }
+
+    .thinking-step {
+        padding: 8px 10px;
+        gap: 8px;
+    }
+
+    .thinking-step-icon {
+        font-size: 16px;
+        width: 24px;
+        height: 24px;
+    }
+
+    .thinking-step-name {
+        font-size: 12px;
+    }
+
+    .thinking-step-duration {
+        font-size: 10px;
+    }
+}
+
+/* Inline Thinking Steps - Per-message collapsible thinking steps */
+.thinking-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    margin: 8px 0 4px 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.thinking-toggle-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--accent-color);
+    color: var(--text-primary);
+}
+
+.thinking-toggle-text {
+    font-weight: 500;
+    font-size: 11px;
+}
+
+.message-thinking-steps {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.message-thinking-steps .thinking-steps {
+    background: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.thinking-step-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.thinking-step-icon-inline {
+    width: 16px;
+    text-align: center;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.thinking-step-inline.complete .thinking-step-icon-inline {
+    color: #10b981;
+}
+
+.thinking-step-inline.in-progress .thinking-step-icon-inline {
+    color: #3b82f6;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.thinking-step-name-inline {
+    flex: 1;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.thinking-step-duration-inline {
+    color: var(--text-tertiary);
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Mobile styles for inline thinking steps */
+@media (max-width: 768px) {
+    .thinking-toggle-btn {
+        padding: 3px 8px;
+        font-size: 11px;
+        gap: 4px;
+    }
+
+    .thinking-toggle-text {
+        font-size: 10px;
+    }
+
+    .message-thinking-steps {
+        padding: 6px;
+        gap: 3px;
+    }
+
+    .thinking-step-name-inline {
+        font-size: 11px;
+    }
+
+    .thinking-step-duration-inline {
+        font-size: 10px;
     }
 }
