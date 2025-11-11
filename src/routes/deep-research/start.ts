@@ -19,12 +19,106 @@ import {
 import type { State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
+import { LLM } from "../../llm/provider";
 
 type DeepResearchStartResponse = {
-  messageId: string;
+  messageId: string | null;
   conversationId: string;
-  status: "processing";
+  status: "processing" | "rejected";
+  error?: string;
 };
+
+const VALIDATION_PROMPT = `You are a strict validator for deep research requests. A well-formatted deep research request MUST include ALL of the following sections:
+
+1. **Goals** - What the research aims to achieve
+2. **Requirements** - Specific criteria or constraints
+3. **Datasets** - Data sources to use (or explicitly state "No datasets" if none)
+4. **Prior Works** - Existing research or papers to reference (or explicitly state "No prior works" if none)
+5. **Experiment Ideas** - Proposed experiments or methodologies to test (or explicitly state "No experiment ideas" if none)
+6. **Desired Outputs** - Expected format and content of results
+
+Analyze the following user message and determine if it contains ALL six sections with meaningful content.
+
+IMPORTANT:
+- If a section explicitly says "No datasets", "No prior works", or "No experiment ideas", that counts as valid
+- Each section should have at least one sentence of meaningful content
+- The sections don't need specific headers, but the content must be clearly present
+
+Respond with ONLY "YES" if the message is properly formatted, or "NO" if it's missing any required sections.
+
+User message:
+{{message}}
+
+Response (YES or NO):`;
+
+const REJECTION_MESSAGE = `Deep research request rejected. Your message must include ALL of the following sections:
+
+**Required Format:**
+
+1. **Goals**: What you want to achieve with this research
+   Example: "Identify the most promising senolytic compounds for human trials"
+
+2. **Requirements**: Specific criteria or constraints
+   Example: "Focus on compounds tested in mammalian models, published in last 5 years"
+
+3. **Datasets**: Data sources to analyze
+   Example: "PubMed, bioRxiv preprints" OR "No datasets" if none needed
+
+4. **Prior Works**: Existing research to reference
+   Example: "Build on Unity Biotechnology's senolytic trials" OR "No prior works" if starting fresh
+
+5. **Experiment Ideas**: Proposed experiments or methodologies to validate findings
+   Example: "Test top 3 compounds in aged mouse models, measure p16 expression" OR "No experiment ideas" if none
+
+6. **Desired Outputs**: What format you want the results in
+   Example: "Comprehensive report with ranked compounds, mechanisms, and trial readiness assessment"
+
+**Tip**: If you don't need a particular section, explicitly write "No datasets", "No prior works", or "No experiment ideas" instead of omitting it.
+
+Please reformat your message to include all sections and try again.`;
+
+/**
+ * Validate deep research message format using LLM
+ */
+async function validateDeepResearchMessage(message: string): Promise<boolean> {
+  const VALIDATION_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
+  const validationApiKey =
+    process.env[`${VALIDATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!validationApiKey) {
+    logger.warn("Validation API key not configured, skipping validation");
+    return true; // Skip validation if not configured
+  }
+
+  const llmProvider = new LLM({
+    // @ts-ignore
+    name: VALIDATION_LLM_PROVIDER,
+    apiKey: validationApiKey,
+  });
+
+  const validationPrompt = VALIDATION_PROMPT.replace("{{message}}", message);
+
+  try {
+    const response = await llmProvider.createChatCompletion({
+      model: process.env.PLANNING_LLM_MODEL || "gemini-2.0-flash-exp",
+      messages: [
+        {
+          role: "user" as const,
+          content: validationPrompt,
+        },
+      ],
+      maxTokens: 10,
+    });
+
+    const answer = response.content.trim().toUpperCase();
+    logger.info({ answer, messageLength: message.length }, "validation_result");
+
+    return answer === "YES";
+  } catch (err) {
+    logger.error({ err }, "validation_failed");
+    return true; // On error, allow request to proceed
+  }
+}
 
 /**
  * Deep Research Start Route - Returns immediately with messageId
@@ -72,6 +166,29 @@ export const deepResearchStartRoute = deepResearchStartPlugin.post(
         ok: false,
         error: "Missing required field: message",
       };
+    }
+
+    // Validate message format
+    const isValid = await validateDeepResearchMessage(message);
+    if (!isValid) {
+      logger.info(
+        { messageLength: message.length },
+        "deep_research_request_rejected_invalid_format",
+      );
+
+      // Auto-generate conversationId for the rejection response
+      let conversationId = parsedBody.conversationId;
+      if (!conversationId) {
+        conversationId = generateUUID();
+      }
+
+      set.status = 400;
+      return {
+        messageId: null,
+        conversationId,
+        status: "rejected",
+        error: REJECTION_MESSAGE,
+      } as DeepResearchStartResponse;
     }
 
     // Determine userId and source
