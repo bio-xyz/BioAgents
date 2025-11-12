@@ -109,7 +109,7 @@ export const hypothesisTool = {
       );
     } else {
       logger.info(
-        `Using hyp docs: ${hypDocs.map((doc) => `${doc.title} - ${doc.text.slice(0, 100)}...`).join(", ")}`,
+        `Using hyp docs: ${hypDocs.map((doc) => `${doc.title} - ${doc.text?.slice(0, 100)}...`).join(", ")}`,
       );
     }
 

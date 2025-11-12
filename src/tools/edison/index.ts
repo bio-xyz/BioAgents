@@ -26,17 +26,6 @@ export const edisonTool = {
   }) => {
     const { state, conversationState, message, question, jobType } = input;
 
-    startStep(state, "EDISON");
-
-    // Update state in DB after startStep
-    if (state.id) {
-      try {
-        await updateState(state.id, state.values);
-      } catch (err) {
-        logger.error({ err }, "failed_to_update_state");
-      }
-    }
-
     const EDISON_API_URL = process.env.EDISON_API_URL;
     if (!EDISON_API_URL) {
       logger.error("EDISON_API_URL not configured");
@@ -46,6 +35,17 @@ export const edisonTool = {
     // Get job type from input, environment, or default to LITERATURE
     const selectedJobType: EdisonJobType =
       jobType || (process.env.EDISON_JOB_TYPE as EdisonJobType) || "LITERATURE";
+
+    startStep(state, "EDISON_" + selectedJobType);
+
+    // Update state in DB after startStep
+    if (state.id) {
+      try {
+        await updateState(state.id, state.values);
+      } catch (err) {
+        logger.error({ err }, "failed_to_update_state");
+      }
+    }
 
     logger.info({ jobType: selectedJobType, question }, "starting_edison_task");
 
@@ -100,7 +100,7 @@ export const edisonTool = {
       const existingResults = state.values.edisonResults || [];
       state.values.edisonResults = [...existingResults, edisonResult];
 
-      endStep(state, "EDISON");
+      endStep(state, "EDISON_" + selectedJobType);
 
       if (state.id) {
         await updateState(state.id, state.values);
@@ -117,7 +117,7 @@ export const edisonTool = {
     } catch (err) {
       logger.error({ err }, "edison_execution_failed");
 
-      endStep(state, "EDISON");
+      endStep(state, "EDISON_" + selectedJobType);
 
       if (state.id) {
         await updateState(state.id, state.values);

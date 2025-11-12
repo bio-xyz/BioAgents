@@ -12,6 +12,7 @@ import { EmbeddedWalletAuth } from "./components/EmbeddedWalletAuth";
 import { Modal } from "./components/ui/Modal";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
 import { ThinkingSteps } from "./components/ThinkingSteps";
+import { StreamingResponse } from "./components/StreamingResponse";
 
 // Custom hooks
 import {
@@ -19,7 +20,6 @@ import {
   useChatAPI,
   useFileUpload,
   useSessions,
-  useTypingAnimation,
   useAuth,
   useX402Payment,
   useToast,
@@ -121,13 +121,9 @@ export function App() {
   // File upload
   const { selectedFile, selectedFiles, selectFile, selectFiles, removeFile, clearFile } = useFileUpload();
 
-  // Typing animation
-  const { isTyping, animateText } = useTypingAnimation();
-
   // Auto-scroll
   const { containerRef, scrollToBottom } = useAutoScroll([
     currentSession.messages,
-    isTyping,
   ]);
 
   // Input state
@@ -298,17 +294,6 @@ export function App() {
 
       // Only continue if we got a response (not empty from payment confirmation)
       if (response.text) {
-        // Create temp message for typing animation first
-        const tempId = Date.now();
-        addMessage({
-          id: tempId,
-          role: "assistant" as const,
-          content: "",
-          files: response.files,
-        });
-
-        scrollToBottom();
-
         // Give a small delay for state to be fully updated via subscription
         await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -323,32 +308,19 @@ export function App() {
 
         console.log('[App] Captured thinking state for message:', capturedState);
 
-        // Animate the response
-        await animateText(
-          response.text,
-          (currentText) => {
-            updateSessionMessages(currentSessionId, (prev) =>
-              prev.map((msg) =>
-                msg.id === tempId
-                  ? { ...msg, content: currentText, files: response.files, thinkingState: capturedState }
-                  : msg,
-              ),
-            );
-            scrollToBottom();
-          },
-          () => {
-            // Animation complete - ensure thinking state is attached to final message
-            updateSessionMessages(currentSessionId, (prev) =>
-              prev.map((msg) =>
-                msg.id === tempId
-                  ? { ...msg, thinkingState: capturedState }
-                  : msg,
-              ),
-            );
-            console.log('[App] Animation complete, attached thinking state to message:', tempId);
-            scrollToBottom();
-          },
-        );
+        // Use the streamed finalResponse if available, otherwise fall back to response.text
+        const finalText = currentState?.values?.finalResponse || response.text;
+
+        // Create final message directly (no animation needed since we showed it in real-time)
+        addMessage({
+          id: Date.now(),
+          role: "assistant" as const,
+          content: finalText,
+          files: response.files,
+          thinkingState: capturedState,
+        });
+
+        scrollToBottom();
 
         // Clear pending message data after successful send
         setPendingMessageData(null);
@@ -656,7 +628,12 @@ export function App() {
                 <ThinkingSteps state={currentState.values} />
               )}
 
-              {isCurrentConversationLoading && !isTyping && <TypingIndicator />}
+              {/* Show streaming response in real-time */}
+              {isCurrentConversationLoading && currentState && currentState.values && currentState.values.finalResponse && (
+                <StreamingResponse finalResponse={currentState.values.finalResponse} />
+              )}
+
+              {isCurrentConversationLoading && !currentState?.values?.finalResponse && <TypingIndicator />}
             </>
           )}
         </div>
@@ -729,18 +706,6 @@ export function App() {
           const response = await confirmPayment();
 
           if (response && response.text) {
-            // Create temp message for typing animation first
-            const tempId = Date.now();
-            addMessage({
-              id: tempId,
-              role: "assistant" as const,
-              content: "",
-              files: response.files,
-            });
-
-            // Scroll to show assistant response
-            setTimeout(() => scrollToBottom(), 50);
-
             // Give a small delay for state to be fully updated via subscription
             await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -755,32 +720,19 @@ export function App() {
 
             console.log('[App] Captured thinking state for payment message:', capturedState);
 
-            // Animate the response
-            await animateText(
-              response.text,
-              (currentText) => {
-                updateSessionMessages(currentSessionId, (prev) =>
-                  prev.map((msg) =>
-                    msg.id === tempId
-                      ? { ...msg, content: currentText, files: response.files, thinkingState: capturedState }
-                      : msg,
-                  ),
-                );
-                scrollToBottom();
-              },
-              () => {
-                // Animation complete - ensure thinking state is attached to final message
-                updateSessionMessages(currentSessionId, (prev) =>
-                  prev.map((msg) =>
-                    msg.id === tempId
-                      ? { ...msg, thinkingState: capturedState }
-                      : msg,
-                  ),
-                );
-                console.log('[App] Animation complete (payment), attached thinking state to message:', tempId);
-                scrollToBottom();
-              },
-            );
+            // Use the streamed finalResponse if available, otherwise fall back to response.text
+            const finalText = currentState?.values?.finalResponse || response.text;
+
+            // Create final message directly (no animation needed since we showed it in real-time)
+            addMessage({
+              id: Date.now(),
+              role: "assistant" as const,
+              content: finalText,
+              files: response.files,
+              thinkingState: capturedState,
+            });
+
+            scrollToBottom();
 
             // Clear pending message data after successful send
             setPendingMessageData(null);

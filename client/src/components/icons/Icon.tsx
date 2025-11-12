@@ -4,44 +4,45 @@
  */
 
 import {
-  User,
+  Activity,
+  BarChart3,
+  BookOpen,
   Bot,
-  Send,
-  Paperclip,
-  Copy,
+  BrainCircuit,
   Check,
-  X,
-  Trash2,
-  Plus,
-  Search,
-  LogOut,
   ChevronLeft,
   ChevronRight,
-  File,
-  MoreHorizontal,
-  Mic,
-  Image,
-  Globe,
-  Lightbulb,
-  ThumbsUp,
-  ThumbsDown,
-  Share2,
-  RefreshCw,
+  Copy,
   Dna,
-  Microscope,
-  Activity,
-  Syringe,
-  Pill,
+  File,
   FlaskConical,
-  Target,
-  BookOpen,
-  GraduationCap,
-  MessageSquare,
-  BrainCircuit,
-  Settings,
-  BarChart3,
   GitMerge,
-} from 'lucide-preact';
+  Globe,
+  GraduationCap,
+  Image,
+  Lightbulb,
+  LogOut,
+  MessageSquare,
+  Mic,
+  Microscope,
+  MoreHorizontal,
+  Paperclip,
+  Pill,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Settings,
+  Share2,
+  Syringe,
+  Target,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  User,
+  X,
+  Zap,
+} from "lucide-preact";
 
 export interface IconProps {
   name: string;
@@ -88,13 +89,19 @@ const iconMap: Record<string, any> = {
   settings: Settings,
   barChart: BarChart3,
   gitMerge: GitMerge,
+  zap: Zap,
 };
 
 /**
  * Icon component wrapper for Lucide icons
  * Provides consistent sizing and styling
  */
-export function Icon({ name, size = 16, className = '', strokeWidth = 2 }: IconProps) {
+export function Icon({
+  name,
+  size = 16,
+  className = "",
+  strokeWidth = 2,
+}: IconProps) {
   const IconComponent = iconMap[name];
 
   if (!IconComponent) {

@@ -12,6 +12,7 @@ export interface StateValues {
   userId: string;
   conversationId: string;
   thought?: string;
+  finalResponse?: string;
 }
 
 export interface State {
