@@ -1,21 +1,40 @@
-import { useRef } from 'preact/hooks';
-import { Icon } from './icons';
-import { IconButton } from './ui';
-import { useAutoResize } from '../hooks';
+import { useRef, useState } from "preact/hooks";
+import { useAutoResize } from "../hooks";
+import { Icon } from "./icons";
 
-export function ChatInput({ value, onChange, onSend, disabled, placeholder, selectedFile, selectedFiles, onFileSelect, onFileRemove }) {
+export function ChatInput({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  placeholder,
+  selectedFile,
+  selectedFiles,
+  onFileSelect,
+  onFileRemove,
+  onModeChange,
+}) {
   const fileInputRef = useRef(null);
   const textareaRef = useAutoResize(value, 1, 8);
+  const [mode, setMode] = useState("normal"); // 'normal' or 'deep'
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      onSend();
+      onSend(mode);
     }
   };
 
   const handleFileClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const toggleDeepSearch = () => {
+    const newMode = mode === "deep" ? "normal" : "deep";
+    setMode(newMode);
+    if (onModeChange) {
+      onModeChange(newMode);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -30,10 +49,15 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder, sele
       }
     }
     // Reset file input to allow selecting the same file again
-    e.target.value = '';
+    e.target.value = "";
   };
 
-  const filesToDisplay = selectedFiles && selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+  const filesToDisplay =
+    selectedFiles && selectedFiles.length > 0
+      ? selectedFiles
+      : selectedFile
+        ? [selectedFile]
+        : [];
   const hasFiles = filesToDisplay.length > 0;
 
   return (
@@ -56,7 +80,9 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder, sele
                 <div key={`${file.name}-${index}`} className="file-chip">
                   <Icon name="file" size={14} />
                   <span className="file-name" title={file.name}>
-                    {file.name.length > 20 ? file.name.substring(0, 17) + '...' : file.name}
+                    {file.name.length > 20
+                      ? file.name.substring(0, 17) + "..."
+                      : file.name}
                   </span>
                   <button
                     onClick={() => onFileRemove(index)}
@@ -81,12 +107,13 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder, sele
               <span>Add file</span>
             </button>
             <button
-              disabled={true}
-              className="input-action-btn input-action-btn-disabled"
-              title="Deep search"
+              onClick={toggleDeepSearch}
+              disabled={disabled}
+              className={`input-action-btn ${mode === "deep" ? "input-action-btn-active" : ""}`}
+              title="Deep research - Comprehensive research with literature gathering and hypothesis generation"
             >
               <Icon name="globe" size={16} />
-              <span>Deep search</span>
+              <span>Deep research</span>
             </button>
             <button
               disabled={true}
@@ -97,13 +124,13 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder, sele
               <span>Think</span>
             </button>
             <button
-              onClick={onSend}
+              onClick={() => onSend(mode)}
               disabled={disabled || (!value.trim() && !hasFiles)}
               className="input-send-btn"
               title="Send message"
             >
               <Icon name="send" size={16} />
-              <span>Send</span>
+              <span>{mode === "deep" ? "Start Research" : "Send"}</span>
             </button>
           </div>
         </div>
@@ -112,7 +139,7 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder, sele
           ref={fileInputRef}
           type="file"
           multiple
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
           onChange={handleFileChange}
           accept=".xlsx,.xls,.csv,.md,.json,.txt,.pdf,.png,.jpg,.jpeg,.webp"
         />

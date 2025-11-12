@@ -27,10 +27,18 @@ export interface PaymentConfirmationRequest {
   network: string;
 }
 
+export interface DeepResearchResponse {
+  messageId: string | null;
+  conversationId: string;
+  status: 'processing' | 'rejected';
+  error?: string;
+}
+
 export interface UseChatAPIReturn {
   isLoading: boolean;
   error: string;
   sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
+  sendDeepResearchMessage: (params: SendMessageParams) => Promise<DeepResearchResponse>;
   clearError: () => void;
   paymentTxHash: string | null;
   pendingPayment: PaymentConfirmationRequest | null;
@@ -280,6 +288,101 @@ export function useChatAPI(
   };
 
   /**
+   * Send deep research message - returns immediately with messageId
+   * The actual research runs in the background
+   */
+  const sendDeepResearchMessage = async (params: SendMessageParams): Promise<DeepResearchResponse> => {
+    const { message, conversationId, userId, file, files, walletClient } = params;
+
+    setIsLoading(true);
+    setError("");
+    setPaymentTxHash(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("message", message || "");
+      formData.append("conversationId", conversationId);
+      formData.append("userId", userId);
+
+      // Add CDP wallet authentication if wallet client is available
+      if (walletClient && userId.startsWith("0x")) {
+        try {
+          const timestamp = Date.now();
+          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${userId}`;
+
+          const signature = await walletClient.signMessage({
+            account: userId as `0x${string}`,
+            message: authMessage,
+          });
+
+          formData.append("authSignature", signature);
+          formData.append("authTimestamp", timestamp.toString());
+
+          console.log('[useChatAPI] Added CDP authentication signature for deep research');
+        } catch (err) {
+          console.warn('[useChatAPI] Failed to sign auth message:', err);
+        }
+      }
+
+      // Support both single file (legacy) and multiple files
+      if (files && files.length > 0) {
+        files.forEach((f) => {
+          formData.append("files", f);
+        });
+      } else if (file) {
+        formData.append("files", file);
+      }
+
+      const response = await fetch("/api/deep-research/start", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      // Handle 401 Unauthorized
+      if (response.status === 401) {
+        window.location.reload();
+        throw new Error("Session expired. Please log in again.");
+      }
+
+      const data = await response.json();
+
+      // If validation failed (status 400 with rejected status), return the error
+      if (response.status === 400 && data.status === 'rejected') {
+        return {
+          messageId: null,
+          conversationId: data.conversationId,
+          status: 'rejected',
+          error: data.error,
+        };
+      }
+
+      // Handle other errors
+      if (!response.ok) {
+        const errorMsg = data.error || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMsg);
+      }
+
+      // Success - research is processing
+      // DON'T set isLoading to false - keep loading state active while research runs in background
+      return {
+        messageId: data.messageId,
+        conversationId: data.conversationId,
+        status: 'processing',
+      };
+    } catch (err: any) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Failed to start deep research. Please try again.";
+      setError(errorMessage);
+      toast.error(`❌ Error: ${errorMessage}`, 6000);
+      setIsLoading(false); // Only set to false on error
+      throw err;
+    }
+  };
+
+  /**
    * Clear error message
    */
   const clearError = () => {
@@ -290,6 +393,7 @@ export function useChatAPI(
     isLoading,
     error,
     sendMessage,
+    sendDeepResearchMessage,
     clearError,
     paymentTxHash,
     pendingPayment,

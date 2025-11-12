@@ -112,6 +112,7 @@ export function App() {
     error,
     paymentTxHash,
     sendMessage,
+    sendDeepResearchMessage,
     clearError,
     pendingPayment,
     confirmPayment,
@@ -144,17 +145,78 @@ export function App() {
   // Track which conversation is currently loading
   const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null);
 
+  // Track which message is currently loading (for matching with state updates)
+  const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
+
   const messages = currentSession.messages;
 
   // Check if the current conversation is the one that's loading
   const isCurrentConversationLoading = isLoading && loadingConversationId === currentSessionId;
 
-  // Clear loading conversation ID when loading completes
+  // Clear loading state when loading completes or conversation changes
   useEffect(() => {
     if (!isLoading && loadingConversationId) {
       setLoadingConversationId(null);
+      setLoadingMessageId(null);
     }
   }, [isLoading, loadingConversationId]);
+
+  // Clear loading message ID when switching conversations
+  useEffect(() => {
+    setLoadingMessageId(null);
+  }, [currentSessionId]);
+
+  // Watch for deep research completion
+  useEffect(() => {
+    if (!isCurrentConversationLoading || !currentState?.values) return;
+
+    const { finalResponse, steps, isDeepResearch, messageId } = currentState.values;
+
+    // Only handle deep research completions
+    if (!isDeepResearch) return;
+
+    // Only handle if this state matches the message we're waiting for
+    if (messageId !== loadingMessageId) return;
+
+    // Check if deep research is complete:
+    // 1. finalResponse exists
+    // 2. All steps are complete (have end timestamps)
+    if (finalResponse && steps) {
+      const allStepsComplete = Object.values(steps).every((step: any) => step.end);
+
+      if (allStepsComplete) {
+        console.log('[App] Deep research complete, finalizing message');
+
+        // Check if we've already added this message
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage?.role === 'assistant' && lastMessage?.content === finalResponse) {
+          console.log('[App] Message already added, skipping');
+          return;
+        }
+
+        // Capture thinking state
+        const capturedState = {
+          steps: currentState.values.steps,
+          source: currentState.values.source,
+          thought: currentState.values.thought,
+        };
+
+        // Add final message
+        addMessage({
+          id: Date.now(),
+          role: "assistant" as const,
+          content: finalResponse,
+          thinkingState: capturedState,
+        });
+
+        scrollToBottom();
+
+        // Clear loading state
+        setLoadingConversationId(null);
+        setLoadingMessageId(null);
+      }
+    }
+  }, [currentState, isCurrentConversationLoading, messages, loadingMessageId]);
 
   // Integrate embedded wallet with x402 payments (only if x402 is enabled)
   useEffect(() => {
@@ -221,13 +283,14 @@ export function App() {
   /**
    * Handle sending a message
    */
-  const handleSend = async () => {
+  const handleSend = async (mode: string = 'normal') => {
     const trimmedInput = inputValue.trim();
     const hasFiles = selectedFiles.length > 0;
 
     console.log('[App.handleSend] Input:', trimmedInput);
     console.log('[App.handleSend] Selected files:', selectedFiles);
     console.log('[App.handleSend] Has files:', hasFiles);
+    console.log('[App.handleSend] Mode:', mode);
 
     if ((!trimmedInput && !hasFiles) || isLoading) return;
 
@@ -283,51 +346,91 @@ export function App() {
     setLoadingConversationId(currentSessionId);
 
     try {
-      // Send message to API - this will trigger payment confirmation modal if needed
-      const response = await sendMessage({
-        message: trimmedInput,
-        conversationId: currentSessionId,
-        userId: userId,
-        files: filesToSend,
-        walletClient: x402Enabled ? embeddedWalletClient : null, // Only use wallet client if x402 is enabled
-      });
-
-      // Only continue if we got a response (not empty from payment confirmation)
-      if (response.text) {
-        // Give a small delay for state to be fully updated via subscription
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        // Capture the current thinking state after delay
-        const capturedState = currentState && currentState.values && currentState.values.steps
-          ? {
-              steps: currentState.values.steps,
-              source: currentState.values.source,
-              thought: currentState.values.thought,
-            }
-          : undefined;
-
-        console.log('[App] Captured thinking state for message:', capturedState);
-
-        // Use the streamed finalResponse if available, otherwise fall back to response.text
-        const finalText = currentState?.values?.finalResponse || response.text;
-
-        // Create final message directly (no animation needed since we showed it in real-time)
-        addMessage({
-          id: Date.now(),
-          role: "assistant" as const,
-          content: finalText,
-          files: response.files,
-          thinkingState: capturedState,
+      // Route based on mode
+      if (mode === 'deep') {
+        // Deep research mode - call deep research endpoint
+        const response = await sendDeepResearchMessage({
+          message: trimmedInput,
+          conversationId: currentSessionId,
+          userId: userId,
+          files: filesToSend,
+          walletClient: x402Enabled ? embeddedWalletClient : null,
         });
 
-        scrollToBottom();
+        if (response.status === 'rejected') {
+          // Validation failed - show error message from assistant
+          addMessage({
+            id: Date.now(),
+            role: "assistant" as const,
+            content: response.error || "Deep research request was rejected. Please check the format.",
+          });
+          scrollToBottom();
+          // Clear loading state since we're done
+          setLoadingConversationId(null);
+          setLoadingMessageId(null);
+        } else if (response.status === 'processing') {
+          // Research started - the state will update in real-time via subscription
+          // The StreamingResponse component will show the finalResponse as it streams
+          // Keep loading state active - don't clear it yet
+          console.log('[App] Deep research started, messageId:', response.messageId);
 
-        // Clear pending message data after successful send
+          // Store the message ID so we can match state updates to this specific message
+          setLoadingMessageId(response.messageId);
+        }
+
+        // Clear pending message data
         setPendingMessageData(null);
       } else {
-        // If payment confirmation is needed, remove the user message we just added
-        // since it will be added again after payment confirmation
-        removeMessage(userMessage.id);
+        // Normal mode - use regular sendMessage
+        const response = await sendMessage({
+          message: trimmedInput,
+          conversationId: currentSessionId,
+          userId: userId,
+          files: filesToSend,
+          walletClient: x402Enabled ? embeddedWalletClient : null,
+        });
+
+        // Only continue if we got a response (not empty from payment confirmation)
+        if (response.text) {
+          // Give a small delay for state to be fully updated via subscription
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+          // Capture the current thinking state after delay
+          const capturedState = currentState && currentState.values && currentState.values.steps
+            ? {
+                steps: currentState.values.steps,
+                source: currentState.values.source,
+                thought: currentState.values.thought,
+              }
+            : undefined;
+
+          console.log('[App] Captured thinking state for message:', capturedState);
+
+          // Use the streamed finalResponse if available, otherwise fall back to response.text
+          const finalText = currentState?.values?.finalResponse || response.text;
+
+          // Create final message directly (no animation needed since we showed it in real-time)
+          addMessage({
+            id: Date.now(),
+            role: "assistant" as const,
+            content: finalText,
+            files: response.files,
+            thinkingState: capturedState,
+          });
+
+          scrollToBottom();
+
+          // Clear loading state to hide streaming component
+          setLoadingConversationId(null);
+          setLoadingMessageId(null);
+
+          // Clear pending message data after successful send
+          setPendingMessageData(null);
+        } else {
+          // If payment confirmation is needed, remove the user message we just added
+          // since it will be added again after payment confirmation
+          removeMessage(userMessage.id);
+        }
       }
     } catch (err: any) {
       console.error("Chat error:", err);
@@ -341,6 +444,10 @@ export function App() {
       removeMessage(userMessage.id);
       setInputValue(trimmedInput);
       setPendingMessageData(null);
+
+      // Clear loading state on error
+      setLoadingConversationId(null);
+      setLoadingMessageId(null);
     }
   };
 
@@ -624,16 +731,27 @@ export function App() {
               ))}
 
               {/* Show live thinking steps only for current loading message */}
-              {isCurrentConversationLoading && currentState && currentState.values && currentState.values.steps && Object.keys(currentState.values.steps).length > 0 && (
+              {isCurrentConversationLoading &&
+               currentState?.values?.conversationId === currentSessionId &&
+               (loadingMessageId === null || currentState?.values?.messageId === loadingMessageId) &&
+               currentState?.values?.steps &&
+               Object.keys(currentState.values.steps).length > 0 && (
                 <ThinkingSteps state={currentState.values} />
               )}
 
               {/* Show streaming response in real-time */}
-              {isCurrentConversationLoading && currentState && currentState.values && currentState.values.finalResponse && (
+              {isCurrentConversationLoading &&
+               currentState?.values?.conversationId === currentSessionId &&
+               (loadingMessageId === null || currentState?.values?.messageId === loadingMessageId) &&
+               currentState.values.finalResponse && (
                 <StreamingResponse finalResponse={currentState.values.finalResponse} />
               )}
 
-              {isCurrentConversationLoading && !currentState?.values?.finalResponse && <TypingIndicator />}
+              {isCurrentConversationLoading &&
+               (!currentState?.values?.finalResponse ||
+                currentState?.values?.conversationId !== currentSessionId ||
+                (loadingMessageId !== null && currentState?.values?.messageId !== loadingMessageId)) &&
+               <TypingIndicator />}
             </>
           )}
         </div>
@@ -733,6 +851,10 @@ export function App() {
             });
 
             scrollToBottom();
+
+            // Clear loading state to hide streaming component
+            setLoadingConversationId(null);
+            setLoadingMessageId(null);
 
             // Clear pending message data after successful send
             setPendingMessageData(null);

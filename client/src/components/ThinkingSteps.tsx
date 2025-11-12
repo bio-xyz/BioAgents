@@ -34,10 +34,22 @@ export function ThinkingSteps({ state }: ThinkingStepsProps) {
 
   // Get icon for each tool
   const getToolIcon = (toolName: string) => {
+    // Check for Edison tasks (all use zap icon)
+    if (toolName.startsWith('EDISON_')) {
+      return 'zap';
+    }
+
+    // Check for Hypothesis tasks (all use lightbulb icon)
+    if (toolName.startsWith('HYPOTHESIS')) {
+      return 'lightbulb';
+    }
+
     const icons: Record<string, string> = {
       'PLANNING': 'target',
+      'PLANNING_DEEP_RESEARCH': 'target',
       'KNOWLEDGE': 'bookOpen',
       'OPENSCHOLAR': 'graduationCap',
+      'SEMANTIC_SCHOLAR': 'graduationCap',
       'REPLY': 'messageSquare',
       'REFLECTION': 'brainCircuit',
       'SEARCH': 'search',
