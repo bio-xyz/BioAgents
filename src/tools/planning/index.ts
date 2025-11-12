@@ -27,11 +27,15 @@ export const planningTool: Tool = {
     // Update state in DB after startStep
     if (state.id) {
       try {
+        console.log('[planning] Updating state after startStep, state.id:', state.id, 'steps:', state.values.steps);
         const { updateState } = await import("../../db/operations");
         await updateState(state.id, state.values);
+        console.log('[planning] State updated successfully');
       } catch (err) {
         console.error("Failed to update state in DB:", err);
       }
+    } else {
+      console.warn('[planning] No state.id available, skipping state update');
     }
 
     // TODO: idea - instead of providers/actions use a less structured approach, outline steps in 'levels'

@@ -41,39 +41,63 @@ const chatRoutePlugin = new Elysia()
 
 // GET endpoint for x402scan discovery
 // Returns 402 with payment requirements and outputSchema
-// The x402Middleware will handle this and return 402
-export const chatRouteGet = chatRoutePlugin.get(
-  "/api/chat",
-  async () => {
-    // This endpoint exists only for x402 discovery
-    // If a GET request reaches here (not intercepted by x402 middleware),
-    // it means x402 is disabled or bypassed
-    return {
-      message: "This endpoint requires POST method with payment.",
-      apiDocumentation: "https://your-docs-url.com/api",
-    };
-  },
-);
+// The x402Middleware should intercept this and return 402
+// If this handler runs, x402 is disabled
+export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
+  // This should never be reached if x402 is enabled
+  // The middleware should intercept and return 402 Payment Required
+  const responseData = {
+    message: "This endpoint requires POST method with payment.",
+    apiDocumentation: "https://your-docs-url.com/api",
+  };
+
+  return new Response(JSON.stringify(responseData), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Encoding": "identity", // Explicitly disable compression
+    },
+  });
+});
 
 export const chatRoute = chatRoutePlugin.post(
   "/api/chat",
   async (ctx) => {
-    const {
-      body,
-      set,
-      request,
-      paymentSettlement,
-      paymentRequirement,
-      paymentHeader,
-    } = ctx as any;
-    const startTime = Date.now();
+    try {
+      const {
+        body,
+        set,
+        request,
+        paymentSettlement,
+        paymentRequirement,
+        paymentHeader,
+      } = ctx as any;
+      const startTime = Date.now();
 
-    const parsedBody = body as any;
-    const authenticatedUser = (request as any).authenticatedUser;
+      const parsedBody = body as any;
+      const authenticatedUser = (request as any).authenticatedUser;
+
+      // Debug: Log request details for MetaMask/Phantom debugging
+      if (logger) {
+        logger.info({
+          contentType: request.headers.get("content-type"),
+          hasPaymentHeader: !!paymentHeader,
+          hasPaymentSettlement: !!paymentSettlement,
+          paymentSettlementSuccess: paymentSettlement?.success,
+          paymentSettlementNetwork: paymentSettlement?.network,
+          paymentSettlementPayer: paymentSettlement?.payer,
+          authMethod: authenticatedUser?.authMethod,
+          bodyType: typeof body,
+          bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
+        }, "chat_route_entry_debug");
+      }
 
     // Extract message (REQUIRED)
     const message = parsedBody.message;
     if (!message) {
+      if (logger) {
+        logger.warn({ bodyKeys: Object.keys(parsedBody) }, "missing_message_field");
+      }
       set.status = 400;
       return {
         ok: false,
@@ -97,11 +121,21 @@ export const chatRoute = chatRoutePlugin.post(
         source = authenticatedUser.authMethod; // Fallback to auth method
       }
     } else {
-      // Unauthenticated (AI agent) - use system user for persistence
-      // Store the provided/generated agent ID in x402_external metadata
+      // Unauthenticated request
       const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
-      userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
-      source = "x402_agent"; // All external agents
+
+      // Check if this is from dev UI or an external agent
+      // Dev UI sends userId directly, x402 agents pay for access
+      if (parsedBody.userId && !paymentSettlement) {
+        // Dev UI without x402 - treat as authenticated dev user
+        userId = providedUserId;
+        source = "dev_ui";
+      } else {
+        // External AI agent with x402 payment - use system user for persistence
+        // Store the provided/generated agent ID in x402_external metadata
+        userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
+        source = "x402_agent"; // All external agents
+      }
     }
 
     // Auto-generate conversationId if not provided (UUID v4 format)
@@ -297,6 +331,42 @@ export const chatRoute = chatRoutePlugin.post(
       responseTime,
     });
 
-    return response;
+      // Debug: Log response being returned
+      if (logger) {
+        logger.info({
+          responseTextLength: response.text?.length || 0,
+          hasFiles: !!response.files,
+          fileCount: response.files?.length || 0,
+          responseTime,
+          paidViaX402: !!paymentSettlement,
+        }, "chat_route_returning_response");
+      }
+
+      // Return explicit Response object to ensure proper JSON encoding
+      // and prevent automatic compression that x402scan can't handle
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Encoding": "identity", // Explicitly disable compression
+        },
+      });
+    } catch (error: any) {
+      // Catch any unhandled errors and log them
+      if (logger) {
+        logger.error({
+          error: error.message,
+          stack: error.stack,
+          name: error.name,
+        }, "chat_route_unhandled_error");
+      }
+
+      const { set } = ctx as any;
+      set.status = 500;
+      return {
+        ok: false,
+        error: error.message || "Internal server error",
+      };
+    }
   },
 );

@@ -100,3 +100,14 @@ export async function createMessage(messageData: Message) {
   if (error) throw error;
   return data;
 }
+
+export async function getStatesByConversation(conversationId: string) {
+  const { data, error } = await supabase
+    .from("states")
+    .select("*")
+    .eq("values->>conversationId", conversationId)
+    .order("created_at", { ascending: true }); // Get all states in chronological order
+
+  if (error) throw error;
+  return data;
+}

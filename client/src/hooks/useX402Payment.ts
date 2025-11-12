@@ -295,6 +295,12 @@ export function useX402Payment(): UseX402PaymentReturn {
       // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
       wrappedFetchRef.current = wrapFetchWithPayment(fetch, walletClient as any);
 
+      console.log("[useX402Payment] MetaMask wrapped fetch created:", {
+        hasWrappedFetch: !!wrappedFetchRef.current,
+        walletAddress: account,
+        chain: chain.name,
+      });
+
       // Show success toast
       toast.success(
         `✅ Wallet Connected!\n\nAddress: ${account.slice(0, 6)}...${account.slice(-4)}`,
@@ -393,6 +399,15 @@ export function useX402Payment(): UseX402PaymentReturn {
   const fetchWithPayment = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const actualFetch = canSign ? wrappedFetchRef.current : fetch;
+
+      console.log("[useX402Payment] fetchWithPayment called:", {
+        canSign,
+        hasWrappedFetch: !!wrappedFetchRef.current,
+        walletAddress,
+        usingWrappedFetch: canSign && !!wrappedFetchRef.current,
+        url: typeof input === "string" ? input : input instanceof URL ? input.toString() : "Request object",
+      });
+
       return actualFetch(input, init) as Promise<Response>;
     },
     [canSign, walletAddress]
