@@ -1,4 +1,3 @@
-import character from "../../character";
 import {
   updateMessage,
   updateState,
@@ -6,17 +5,9 @@ import {
 } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
+import { addVariablesToState, endStep, startStep } from "../../utils/state";
 import {
-  addVariablesToState,
-  composePromptFromState,
-  endStep,
-  startStep,
-} from "../../utils/state";
-import type { THypothesisZod } from "./types";
-import {
-  generateFinalResponse,
   generateHypothesis,
-  structured,
   type HypothesisDoc,
   type WebSearchResults,
 } from "./utils";
@@ -31,7 +22,7 @@ export const hypothesisTool = {
     message: Message;
   }) => {
     const { state, conversationState, message } = input;
-    let hypothesisStructured: THypothesisZod | null = null;
+    // let hypothesisStructured: THypothesisZod | null = null;
 
     startStep(state, "HYPOTHESIS");
 
@@ -116,8 +107,12 @@ export const hypothesisTool = {
     const useWebSearch = hypDocs.length == 0;
     const question = message.question!;
     let webSearchResults: WebSearchResults[] = [];
+
+    // Initialize finalResponse in state
+    state.values.finalResponse = "";
+
     try {
-      logger.info(`Generating hypothesis`);
+      logger.info(`Generating hypothesis with streaming`);
       const {
         text,
         thought,
@@ -127,68 +122,56 @@ export const hypothesisTool = {
         thinking: true,
         thinkingBudget: 2500,
         useWebSearch,
+        stream: true,
+        onStreamChunk: async (_chunk: string, fullText: string) => {
+          // Update state with the full text as hypothesis streams
+          state.values.finalResponse = fullText;
+          state.values.hypothesis = fullText;
+
+          // Update state in DB
+          if (state.id) {
+            await updateState(state.id, state.values);
+          }
+        },
       });
+
       webSearchResults = hypWebSearchResults;
       logger.info(`Web search results: ${JSON.stringify(webSearchResults)}`);
       state.values.hypothesis = text;
       state.values.hypothesisThought = thought;
-      logger.info(`Converting hypothesis to structured format`);
-      hypothesisStructured = await structured(state.values.hypothesis);
-      logger.info(`Hyp: ${JSON.stringify(hypothesisStructured, null, 2)}`);
+      state.values.finalResponse = text;
+
+      // logger.info(`Converting hypothesis to structured format`);
+      // hypothesisStructured = await structured(state.values.hypothesis);
+      // logger.info(`Hyp: ${JSON.stringify(hypothesisStructured, null, 2)}`);
       // TODO: logger.info(`Inserting hypothesis into KG`);
       // insert hypothesis into KG
     } catch (err) {
       console.error("Error running hypothesis generation", err);
     }
 
-    let prompt = "";
-
-    // TODO: if source is twitter, add twitter thread to prompt
-    // otherwise just compose the prompt
-    prompt = composePromptFromState(
-      state,
-      character.templates.hypothesisActionTemplate,
-    );
-
-    prompt += `\n\nYou need to reply to the following question:\n${message.question}`;
-
-    logger.info(`Final prompt: ${prompt}`);
-
-    // Initialize finalResponse in state
-    state.values.finalResponse = "";
-
-    logger.info(`Generating final response to sent to chat/twittter`);
-    let finalText = await generateFinalResponse(
-      prompt,
+    const finalText = {
+      finalText: state.values.hypothesis || "",
+      thought: state.values.hypothesisThought as string,
       webSearchResults,
-      async (chunk: string, fullText: string) => {
-        // Update state with the full text (not just the chunk)
-        state.values.finalResponse = fullText;
-
-        // Update state in DB
-        if (state.id) {
-          await updateState(state.id, state.values);
-        }
-      },
-    );
-    logger.info(`Generated final response to sent to chat/twittter`);
+    };
 
     // TODO: if source is twitter, create a POI
 
-    if (
-      hypothesisStructured?.supportingPapers &&
-      hypothesisStructured?.supportingPapers.length &&
-      !useWebSearch
-    ) {
-      finalText.finalText += `\n\n\n\nScience papers:\n${hypothesisStructured?.supportingPapers.join("\n")}`; // use only supporting papers
-    }
-    if (
-      hypothesisStructured?.webSearchResults &&
-      hypothesisStructured?.webSearchResults.length &&
-      useWebSearch
-    ) {
-      // TODO: if source is twitter, include Additional sources
-    }
+    // if (
+    //   hypothesisStructured?.supportingPapers &&
+    //   hypothesisStructured?.supportingPapers.length &&
+    //   !useWebSearch
+    // ) {
+    //   finalText.finalText += `\n\n\n\nScience papers:\n${hypothesisStructured?.supportingPapers.join("\n")}`; // use only supporting papers
+    // }
+    // if (
+    //   hypothesisStructured?.webSearchResults &&
+    //   hypothesisStructured?.webSearchResults.length &&
+    //   useWebSearch
+    // ) {
+    //   // TODO: if source is twitter, include Additional sources
+    // }
 
     // Clean up web search result titles - if title is a URL, extract just the domain
     const cleanedWebSearchResults = webSearchResults.map((result) => {
@@ -223,18 +206,37 @@ export const hypothesisTool = {
       };
     });
 
-    // Filter papers to only include those that were actually used in supporting papers
-    const supportingPapers = hypothesisStructured?.supportingPapers ?? [];
-    const usedPapers = allPapers.filter((paper) => {
-      // Extract DOI from the URL (paper.doi is like "https://doi.org/10.1234/value")
-      const doiMatch = paper.doi.match(/10\.\d+\/[^\s]+/);
-      const doi = doiMatch ? doiMatch[0] : paper.doi;
+    // Extract DOI URLs and Semantic Scholar URLs from the raw hypothesis text
+    const hypothesisText = state.values.hypothesis || "";
 
-      // Check if any supporting paper string includes this DOI
-      return supportingPapers.some((supportingPaper) =>
-        supportingPaper.includes(doi),
+    // Match DOI URLs: https://doi.org/10.xxxx/xxxxx
+    const doiRegex = /https?:\/\/doi\.org\/10\.\d+\/[^\s\)]+/gi;
+    const extractedDOIs = [...hypothesisText.matchAll(doiRegex)].map(
+      (match) => match[0],
+    );
+
+    // Match Semantic Scholar URLs: https://www.semanticscholar.org/paper/...
+    const semanticScholarRegex =
+      /https?:\/\/(?:www\.)?semanticscholar\.org\/paper\/[a-f0-9]+/gi;
+    const extractedSemanticScholar = [
+      ...hypothesisText.matchAll(semanticScholarRegex),
+    ].map((match) => match[0]);
+
+    const allExtractedURLs = [...extractedDOIs, ...extractedSemanticScholar];
+
+    logger.info(
+      `Extracted paper URLs from hypothesis: ${JSON.stringify(allExtractedURLs)}`,
+    );
+
+    // Filter papers to only include those that were actually referenced in the hypothesis
+    const usedPapers = allPapers.filter((paper) => {
+      // Check if paper.doi is in the extracted URLs
+      return allExtractedURLs.some(
+        (url) => paper.doi.includes(url) || url.includes(paper.doi),
       );
     });
+
+    logger.info(`Used papers: ${JSON.stringify(usedPapers)}`);
 
     addVariablesToState(state, {
       finalResponse: finalText.finalText,

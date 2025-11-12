@@ -3,7 +3,11 @@ import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMProvider } from "../../types/core";
 import logger from "../../utils/logger";
-import { hypGenPrompt, hypGenWebPrompt, hypGenDeepResearchPrompt } from "./prompts";
+import {
+  hypGenDeepResearchPrompt,
+  hypGenPrompt,
+  hypGenWebPrompt,
+} from "./prompts";
 import type { THypothesisZod } from "./types";
 import { HypothesisZodSchema } from "./types";
 
@@ -38,6 +42,7 @@ export type HypothesisOptions = {
   useWebSearch?: boolean;
   isDeepResearch?: boolean;
   noveltyImprovement?: string;
+  onStreamChunk?: (chunk: string, fullText: string) => Promise<void>;
 };
 
 export type WebSearchResults = {
@@ -72,7 +77,10 @@ export async function generateHypothesis(
   // Select prompt based on mode
   let hypGenInstruction: string;
   if (isDeepResearch) {
-    hypGenInstruction = hypGenDeepResearchPrompt.replace("{{question}}", question);
+    hypGenInstruction = hypGenDeepResearchPrompt.replace(
+      "{{question}}",
+      question,
+    );
 
     // Append novelty improvement guidelines if available
     if (noveltyImprovement) {
@@ -118,7 +126,8 @@ export async function generateHypothesis(
       ? (options.thinkingBudget ?? 1024)
       : undefined,
     tools: useWebSearch ? [{ type: "webSearch" as const }] : undefined,
-    stream: HYP_LLM_PROVIDER === "anthropic" ? true : false, // to ensure no error
+    stream: options.stream ?? false,
+    onStreamChunk: options.onStreamChunk,
   };
 
   try {
@@ -130,13 +139,13 @@ export async function generateHypothesis(
       const webSearchResults = response.webSearchResults ?? [];
 
       // Append sources if available
-      if (webSearchResults.length > 0) {
-        const sourcesHeader = "\n\nAdditional sources:";
-        const sourcesList = webSearchResults
-          .map((result) => result.url)
-          .join("\n");
-        finalText += `${sourcesHeader}\n${sourcesList}`;
-      }
+      // if (webSearchResults.length > 0) {
+      //   const sourcesHeader = "\n\nAdditional sources:";
+      //   const sourcesList = webSearchResults
+      //     .map((result) => result.url)
+      //     .join("\n");
+      //   finalText += `${sourcesHeader}\n${sourcesList}`;
+      // }
 
       return {
         text: finalText,
