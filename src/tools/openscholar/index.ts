@@ -97,7 +97,7 @@ export const openscholarTool = {
   name: "OPENSCHOLAR",
   description:
     "OpenScholar plugin that retrieves, reranks the most relevant passages from thousands of scientific papers to generate citation grounded answers to research queries.",
-  enabled: false,
+  enabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 

@@ -43,6 +43,7 @@ function selectTemplateKey(
       finalPapers?: unknown[] | null;
       openScholarPapers?: unknown[] | null;
       semanticScholarPapers?: unknown[] | null;
+      isDeepResearch?: boolean;
     };
   },
   source: string,
@@ -50,7 +51,8 @@ function selectTemplateKey(
   | "twitterReplyTemplateWeb"
   | "replyTemplateWeb"
   | "twitterReplyTemplate"
-  | "replyTemplate" {
+  | "replyTemplate"
+  | "replyTemplateDeepResearch" {
   const hasPapers =
     Boolean(state.values.finalPapers?.length) ||
     Boolean(state.values.openScholarPapers?.length) ||
@@ -59,6 +61,7 @@ function selectTemplateKey(
   const isTwitter = source === "twitter";
 
   // Four-case matrix per your rules
+  if (state.values.isDeepResearch) return "replyTemplateDeepResearch";
   if (!hasPapers && isTwitter) return "twitterReplyTemplateWeb";
   if (!hasPapers && !isTwitter) return "replyTemplateWeb";
   if (hasPapers && isTwitter) return "twitterReplyTemplate";
@@ -100,48 +103,64 @@ export const replyTool = {
     let providerString =
       "You have access to the following chunks from your different knowledge bases. You should use these to answer the user's question if they are relevant to the user's question:\n";
 
-    if (state.values.knowledge?.length) {
-      // Create a concatenated string of knowledge for prompts
-      const knowledgeString = state.values.knowledge
-        .map(
-          (doc: any, index: number) =>
-            `[${index + 1}] ${doc.title} - ${doc.content}`,
+    if (state.values.isDeepResearch) {
+      // we should use the hypothesis and Edison ANALYSIS/MOLECULES results to answer the user's question
+      const hypothesis = `Hypothesis: ${state.values.hypothesis}`;
+      const edisonResults = state.values.edisonResults
+        ?.filter(
+          (result: any) =>
+            result.jobType === "ANALYSIS" || result.jobType === "MOLECULES",
         )
-        .join("\n\n");
+        .map(
+          (result: any) =>
+            `Scientific research job ran based on the hypothesis '${result.jobType}': ${result.answer}`,
+        );
 
-      providerString += `Knowledge chunks (from Aubrey De Grey's knowledge base): ${knowledgeString}\n`;
-    }
+      providerString += `${hypothesis}\n\n\n${(edisonResults ?? []).join("\n\n")}`;
+    } else {
+      if (state.values.knowledge?.length) {
+        // Create a concatenated string of knowledge for prompts
+        const knowledgeString = state.values.knowledge
+          .map(
+            (doc: any, index: number) =>
+              `[${index + 1}] ${doc.title} - ${doc.content}`,
+          )
+          .join("\n\n");
 
-    if (state.values.openScholarRaw?.length) {
-      // each paper is of type {doi: string, title: string, chunkText: string}
-      providerString += `Science papers (from OpenScholar Scientific RAG system): ${state.values.openScholarRaw.map((paper: Paper) => `${paper.doi} - ${paper.title} - Abstract/Chunk: ${paper.chunkText}`).join("\n\n")}`;
-    }
+        providerString += `Knowledge chunks (from Aubrey De Grey's knowledge base): ${knowledgeString}\n`;
+      }
 
-    if (state.values.semanticScholarSynthesis) {
-      // Semantic Scholar synthesis is a text string with synthesized research findings (papers extracted separately)
-      providerString += `\n\nResearch synthesis (from Semantic Scholar via Claude Skill):\n${state.values.semanticScholarSynthesis}\n`;
-    }
+      if (state.values.openScholarRaw?.length) {
+        // each paper is of type {doi: string, title: string, chunkText: string}
+        providerString += `Science papers (from OpenScholar Scientific RAG system): ${state.values.openScholarRaw.map((paper: Paper) => `${paper.doi} - ${paper.title} - Abstract/Chunk: ${paper.chunkText}`).join("\n\n")}`;
+      }
 
-    if (state.values.semanticScholarPapers?.length) {
-      // each paper is of type {doi: string (URL), title: string, abstract: string (empty)}
-      providerString += `\n\nScience papers (from Semantic Scholar): ${state.values.semanticScholarPapers.map((paper: Paper) => `${paper.doi} - ${paper.title}`).join("\n")}`;
-    }
+      if (state.values.semanticScholarSynthesis) {
+        // Semantic Scholar synthesis is a text string with synthesized research findings (papers extracted separately)
+        providerString += `\n\nResearch synthesis (from Semantic Scholar via Claude Skill):\n${state.values.semanticScholarSynthesis}\n`;
+      }
 
-    if (state.values.finalPapers?.length) {
-      // each paper is of type {doi: string, title: string, abstract: string}
-      providerString += `\n\nScience papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
-    }
+      if (state.values.semanticScholarPapers?.length) {
+        // each paper is of type {doi: string (URL), title: string, abstract: string (empty)}
+        providerString += `\n\nScience papers (from Semantic Scholar): ${state.values.semanticScholarPapers.map((paper: Paper) => `${paper.doi} - ${paper.title}`).join("\n")}`;
+      }
 
-    if (conversationState?.values.papers?.length) {
-      providerString += `\n\nMost important science papers (from the current conversation history): ${conversationState.values.papers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
-    }
+      if (state.values.finalPapers?.length) {
+        // each paper is of type {doi: string, title: string, abstract: string}
+        providerString += `\n\nScience papers (from Knowledge Graph): ${state.values.finalPapers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
+      }
 
-    if (conversationState?.values.keyInsights?.length) {
-      providerString += `\n\nKey insights (from the current conversation history): ${conversationState.values.keyInsights.map((insight: string) => `${insight}`).join("\n")}`;
-    }
+      if (conversationState?.values.papers?.length) {
+        providerString += `\n\nMost important science papers (from the current conversation history): ${conversationState.values.papers.map((paper: Paper) => `${paper.doi} - ${paper.title} - ${paper.abstract}`).join("\n")}`;
+      }
 
-    if (conversationState?.values.methodology) {
-      providerString += `\n\nMethodology (from the current conversation history): ${conversationState.values.methodology}`;
+      if (conversationState?.values.keyInsights?.length) {
+        providerString += `\n\nKey insights (from the current conversation history): ${conversationState.values.keyInsights.map((insight: string) => `${insight}`).join("\n")}`;
+      }
+
+      if (conversationState?.values.methodology) {
+        providerString += `\n\nMethodology (from the current conversation history): ${conversationState.values.methodology}`;
+      }
     }
 
     // For non-Google providers, add parsed text to context now

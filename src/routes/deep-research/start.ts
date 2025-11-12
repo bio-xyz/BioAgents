@@ -1,4 +1,6 @@
 import { Elysia } from "elysia";
+import { updateMessage } from "../../db/operations";
+import { LLM } from "../../llm/provider";
 import { smartAuthMiddleware } from "../../middleware/smartAuth";
 import { x402Middleware } from "../../middleware/x402";
 import { recordPayment } from "../../services/chat/payment";
@@ -9,17 +11,12 @@ import {
 } from "../../services/chat/setup";
 import {
   createMessageRecord,
-  executeActionTool,
   executeFileUpload,
-  executePlanning,
-  executeProviderTools,
-  executeReflection,
   updateMessageResponseTime,
 } from "../../services/chat/tools";
 import type { State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
-import { LLM } from "../../llm/provider";
 
 type DeepResearchStartResponse = {
   messageId: string | null;
@@ -62,7 +59,7 @@ const REJECTION_MESSAGE = `Deep research request rejected. Your message must inc
    Example: "Focus on compounds tested in mammalian models, published in last 5 years"
 
 3. **Datasets**: Data sources to analyze
-   Example: "PubMed, bioRxiv preprints" OR "No datasets" if none needed
+   Example: "Uploaded files or datasets from your knowledge base" OR "No datasets" if none needed
 
 4. **Prior Works**: Existing research to reference
    Example: "Build on Unity Biotechnology's senolytic trials" OR "No prior works" if starting fresh
@@ -375,6 +372,7 @@ async function runDeepResearch(params: {
         conversationId: createdMessage.conversation_id,
         userId: createdMessage.user_id,
         source: createdMessage.source,
+        isDeepResearch: true, // Flag indicating deep research mode
       },
     };
 
@@ -384,40 +382,44 @@ async function runDeepResearch(params: {
       values: conversationStateRecord.values,
     };
 
-    const toolContext = {
+    // Step 1: Process files if any
+    if (files.length > 0) {
+      await executeFileUpload({
+        state,
+        conversationState,
+        message: createdMessage,
+        files,
+      });
+    }
+
+    // Step 2: Execute deep research planning tool
+    // This tool handles:
+    // - Literature gathering (KNOWLEDGE, OPENSCHOLAR, SEMANTIC_SCHOLAR)
+    // - Hypothesis generation
+    // - Precedent check with Edison
+    // - Analysis jobs (MOLECULES/ANALYSIS) if needed
+    // - Final response generation (TODO)
+    const { getDeepResearchTool } = await import("../../tools");
+    const deepResearchPlanningTool = getDeepResearchTool(
+      "PLANNING_DEEP_RESEARCH",
+    );
+
+    if (!deepResearchPlanningTool) {
+      throw new Error("Deep research planning tool not found");
+    }
+
+    const deepResearchPlanningResult = await deepResearchPlanningTool.execute({
       state,
       conversationState,
       message: createdMessage,
-      files,
-    };
+    });
 
-    // Step 1: Process files
-    await executeFileUpload(toolContext);
-
-    // Step 2: Execute planning
-    const planningResult = await executePlanning(toolContext);
-    if (!planningResult.success) {
-      throw new Error(planningResult.error || "Planning failed");
+    // Update message with final response from state
+    if (deepResearchPlanningResult.text) {
+      await updateMessage(createdMessage.id, {
+        content: deepResearchPlanningResult.text,
+      });
     }
-
-    const { providers, actions } = planningResult.result!;
-
-    // Step 3: Execute provider tools in parallel
-    await executeProviderTools(providers, toolContext);
-
-    // Step 4: Execute primary action
-    const action = actions?.[0];
-    if (!action) {
-      throw new Error("No action specified by planning tool");
-    }
-
-    const actionResult = await executeActionTool(action, toolContext);
-    if (!actionResult.success) {
-      throw new Error(actionResult.error || "Action execution failed");
-    }
-
-    // Step 5: Execute reflection
-    await executeReflection(toolContext);
 
     // Calculate and update response time
     const responseTime = Date.now() - startTime;
@@ -437,7 +439,7 @@ async function runDeepResearch(params: {
       paymentSettlement,
       paymentHeader,
       paymentRequirement,
-      providers: providers ?? [],
+      providers: [], // Planning tool handles all providers internally
       responseTime,
     });
 

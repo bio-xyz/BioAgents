@@ -88,6 +88,21 @@ export const hypothesisTool = {
       });
     }
 
+    // Add Edison LITERATURE results if available
+    if (state.values.edisonResults?.length) {
+      state.values.edisonResults
+        .filter((result: any) => result.jobType === "LITERATURE")
+        .forEach((result: any) => {
+          if (result.answer) {
+            hypDocs.push({
+              title: `Edison Literature`,
+              text: result.answer,
+              context: "Edison AI literature search result",
+            });
+          }
+        });
+    }
+
     if (hypDocs.length == 0) {
       logger.info(
         "No relevant docs found in both KG and openscholar for hyp gen, falling back to web search",
