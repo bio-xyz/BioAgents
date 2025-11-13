@@ -231,7 +231,10 @@ export const planningDeepResearchTool: Tool = {
           break;
         }
       } catch (err) {
-        logger.error({ err, attempt: hypothesisAttempts }, "precedent_check_failed");
+        logger.error(
+          { err, attempt: hypothesisAttempts },
+          "precedent_check_failed",
+        );
         // Continue with workflow even if precedent check fails
         break;
       }
@@ -329,8 +332,8 @@ export const planningDeepResearchTool: Tool = {
         try {
           const jobQuestion =
             jobType === "MOLECULES"
-              ? `Based on this hypothesis, suggest molecular designs, chemical compounds, or drug candidates that could be investigated: ${state.values.hypothesis}`
-              : `Analyze the computational and data analysis approaches needed to test this hypothesis: ${state.values.hypothesis}`;
+              ? `Based on this hypothesis, suggest molecular designs, chemical compounds, or drug candidates that could be investigated: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`
+              : `Analyze the computational and data analysis approaches needed to test this hypothesis: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`;
 
           await edisonTool.execute({
             state,
