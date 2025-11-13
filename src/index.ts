@@ -1,19 +1,31 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
-import { chatRoute, chatRouteGet } from "./routes/chat";
-import { authRoute } from "./routes/auth";
 import { x402Middleware } from "./middleware/x402";
+import { authRoute } from "./routes/auth";
+import { chatRoute, chatRouteGet } from "./routes/chat";
+import {
+  deepResearchStartGet,
+  deepResearchStartRoute,
+} from "./routes/deep-research/start";
+import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
 const app = new Elysia()
   // Enable CORS for frontend access + x402 headers
-  .use(cors({
-    origin: true, // Allow all origins (Coolify handles domain routing)
-    credentials: true, // Important: allow cookies
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-PAYMENT', 'X-Requested-With'],
-    exposeHeaders: ['X-PAYMENT-RESPONSE', 'Content-Type'],
-  }))
+  .use(
+    cors({
+      origin: true, // Allow all origins (Coolify handles domain routing)
+      credentials: true, // Important: allow cookies
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-PAYMENT",
+        "X-Requested-With",
+      ],
+      exposeHeaders: ["X-PAYMENT-RESPONSE", "Content-Type"],
+    }),
+  )
 
   // Apply x402 payment gating (only active when enabled via config)
   .use(x402Middleware())
@@ -46,9 +58,11 @@ const app = new Elysia()
 
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
-    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const seoDescription =
+      process.env.SEO_DESCRIPTION || "AI-powered chat interface";
     const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
-    const ogImageUrl = process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
+    const ogImageUrl =
+      process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
       .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
@@ -105,13 +119,16 @@ const app = new Elysia()
   .get("/.well-known/appspecific/com.chrome.devtools.json", () => {
     return new Response(JSON.stringify({}), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   })
 
   // API routes (not protected by UI auth)
   .use(chatRouteGet) // GET /api/chat for x402scan discovery
-  .use(chatRoute)    // POST /api/chat for actual chat
+  .use(chatRoute) // POST /api/chat for actual chat
+  .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
+  .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
+  .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
 
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI
@@ -122,11 +139,17 @@ const app = new Elysia()
 
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
-    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const seoDescription =
+      process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
+    const ogImageUrl =
+      process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
-      .replace("{{SEO_TITLE}}", seoTitle)
-      .replace("{{SEO_DESCRIPTION}}", seoDescription);
+      .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
+      .replace(/\{\{SEO_DESCRIPTION\}\}/g, seoDescription)
+      .replace(/\{\{FAVICON_URL\}\}/g, faviconUrl)
+      .replace(/\{\{OG_IMAGE_URL\}\}/g, ogImageUrl);
 
     return new Response(htmlContent, {
       headers: {
@@ -138,11 +161,14 @@ const app = new Elysia()
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify
 
-app.listen({
-  port,
-  hostname,
-}, () => {
-  if (logger)
-    logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
-  else console.log(`Server listening on http://${hostname}:${port}`);
-});
+app.listen(
+  {
+    port,
+    hostname,
+  },
+  () => {
+    if (logger)
+      logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
+    else console.log(`Server listening on http://${hostname}:${port}`);
+  },
+);

@@ -133,6 +133,17 @@ export const openscholarTool = {
         }
       }
 
+      endStep(state, "OPENSCHOLAR");
+
+      // Update state in DB after endStep
+      if (state.id) {
+        try {
+          await updateState(state.id, state.values);
+        } catch (err) {
+          console.error("Failed to update state in DB:", err);
+        }
+      }
+
       return cachedResult;
     }
 

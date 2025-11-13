@@ -4,7 +4,9 @@ import type { State } from "../../types/core";
 import logger from "../../utils/logger";
 import { calculateRequestPrice } from "../../x402/pricing";
 
-export type ToolResult = { ok: true; data?: unknown } | { ok: false; error: string };
+export type ToolResult =
+  | { ok: true; data?: unknown }
+  | { ok: false; error: string };
 
 export interface ToolExecutionContext {
   state: State;
@@ -30,7 +32,15 @@ export interface MessageCreationParams {
 export async function createMessageRecord(
   params: MessageCreationParams,
 ): Promise<{ success: boolean; message?: any; error?: string }> {
-  const { conversationId, userId, message, source, stateId, files, isExternal } = params;
+  const {
+    conversationId,
+    userId,
+    message,
+    source,
+    stateId,
+    files,
+    isExternal,
+  } = params;
 
   try {
     const fileMetadata =
@@ -53,7 +63,10 @@ export async function createMessageRecord(
     });
 
     if (logger) {
-      logger.info({ messageId: createdMessage.id, isExternal }, "message_created");
+      logger.info(
+        { messageId: createdMessage.id, isExternal },
+        "message_created",
+      );
     }
 
     return { success: true, message: createdMessage };
@@ -82,7 +95,9 @@ export async function executeFileUpload(
 
   try {
     if (logger) {
-      logger.info(`Processing ${files.length} uploaded file(s) before planning`);
+      logger.info(
+        `Processing ${files.length} uploaded file(s) before planning`,
+      );
     }
     await fileUploadTool.execute({
       state,
@@ -100,9 +115,7 @@ export async function executeFileUpload(
 /**
  * Execute planning tool
  */
-export async function executePlanning(
-  context: ToolExecutionContext,
-): Promise<{
+export async function executePlanning(context: ToolExecutionContext): Promise<{
   success: boolean;
   result?: { providers: string[]; actions: string[] };
   error?: string;

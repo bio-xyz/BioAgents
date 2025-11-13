@@ -3,7 +3,11 @@ import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMProvider } from "../../types/core";
 import logger from "../../utils/logger";
-import { hypGenPrompt, hypGenWebPrompt } from "./prompts";
+import {
+  hypGenDeepResearchPrompt,
+  hypGenPrompt,
+  hypGenWebPrompt,
+} from "./prompts";
 import type { THypothesisZod } from "./types";
 import { HypothesisZodSchema } from "./types";
 
@@ -36,6 +40,8 @@ export type HypothesisOptions = {
   thinking?: boolean;
   thinkingBudget?: number;
   useWebSearch?: boolean;
+  isDeepResearch?: boolean;
+  noveltyImprovement?: string;
   onStreamChunk?: (chunk: string, fullText: string) => Promise<void>;
 };
 
@@ -60,15 +66,31 @@ export async function generateHypothesis(
 ): Promise<HypothesisResult> {
   const model = process.env.HYP_LLM_MODEL || "gemini-2.5-pro";
   const useWebSearch = options.useWebSearch;
+  const isDeepResearch = options.isDeepResearch;
+  const noveltyImprovement = options.noveltyImprovement;
 
   // Build document content
   const documentText = documents
     .map((d) => `Title: ${d.title}\n\n${d.text}`)
     .join("\n\n\n");
 
-  const hypGenInstruction = useWebSearch
-    ? hypGenWebPrompt.replace("{{question}}", question)
-    : hypGenPrompt.replace("{{question}}", question);
+  // Select prompt based on mode
+  let hypGenInstruction: string;
+  if (isDeepResearch) {
+    hypGenInstruction = hypGenDeepResearchPrompt.replace(
+      "{{question}}",
+      question,
+    );
+
+    // Append novelty improvement guidelines if available
+    if (noveltyImprovement) {
+      hypGenInstruction += `\n\nTo make sure the hypothesis is novel, follow these guidelines: ${noveltyImprovement}`;
+    }
+  } else if (useWebSearch) {
+    hypGenInstruction = hypGenWebPrompt.replace("{{question}}", question);
+  } else {
+    hypGenInstruction = hypGenPrompt.replace("{{question}}", question);
+  }
 
   const HYP_LLM_PROVIDER: LLMProvider =
     (process.env.HYP_LLM_PROVIDER as LLMProvider) || "google";

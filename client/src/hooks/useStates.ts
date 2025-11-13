@@ -11,7 +11,10 @@ export interface StateValues {
   source: string;
   userId: string;
   conversationId: string;
+  messageId?: string;
   thought?: string;
+  finalResponse?: string;
+  isDeepResearch?: boolean;
 }
 
 export interface State {

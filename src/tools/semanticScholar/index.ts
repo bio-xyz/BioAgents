@@ -1,16 +1,13 @@
-import {
-  getMessagesByConversation,
-  updateState,
-} from "../../db/operations";
+import { getMessagesByConversation, updateState } from "../../db/operations";
 import { callAnthropicWithSkills } from "../../llm/skills/skills";
 import { type Message, type State } from "../../types/core";
 import { SimpleCache } from "../../utils/cache";
 import logger from "../../utils/logger";
 import {
   addVariablesToState,
+  endStep,
   getStandaloneMessage,
   startStep,
-  endStep,
 } from "../../utils/state";
 
 // Cache for Semantic Scholar results (4 hours TTL)
@@ -47,6 +44,8 @@ export const semanticScholarTool = {
         semanticScholarSynthesis: cachedResult.values.semanticScholarSynthesis,
         semanticScholarPapers: cachedResult.values.semanticScholarPapers,
       });
+
+      endStep(state, "SEMANTIC_SCHOLAR");
 
       // Update state in DB with cached state
       if (state.id) {
@@ -87,17 +86,26 @@ export const semanticScholarTool = {
       throw new Error("Semantic Scholar skill failed or returned no result");
     }
 
-    logger.info(`Semantic Scholar skill completed in ${skillResult.duration_ms}ms`);
+    logger.info(
+      `Semantic Scholar skill completed in ${skillResult.duration_ms}ms`,
+    );
     logger.info(`Cost: $${skillResult.total_cost_usd.toFixed(4)}`);
-    logger.info(`Tokens - Input: ${skillResult.usage.input_tokens}, Output: ${skillResult.usage.output_tokens}`);
+    logger.info(
+      `Tokens - Input: ${skillResult.usage.input_tokens}, Output: ${skillResult.usage.output_tokens}`,
+    );
 
     // Extract the text synthesis from the result
     const fullResult = skillResult.result;
 
     // Parse papers from the result
     // Papers are in format: "1. [Title] - URL: [url], Citations: [count], Abstract: [abstract]"
-    const paperRegex = /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)(?:,\s+Citations:\s+\d+)?(?:,\s+Abstract:\s+(.+?))?$/gm;
-    const semanticScholarPapers: Array<{doi: string, title: string, abstract: string}> = [];
+    const paperRegex =
+      /^\d+\.\s+(.+?)\s+-\s+URL:\s+(https?:\/\/[^\s,]+)(?:,\s+Citations:\s+\d+)?(?:,\s+Abstract:\s+(.+?))?$/gm;
+    const semanticScholarPapers: Array<{
+      doi: string;
+      title: string;
+      abstract: string;
+    }> = [];
 
     let match;
     while ((match = paperRegex.exec(fullResult)) !== null) {
@@ -114,10 +122,14 @@ export const semanticScholarTool = {
       }
     }
 
-    logger.info(`Extracted ${semanticScholarPapers.length} papers from Semantic Scholar synthesis`);
+    logger.info(
+      `Extracted ${semanticScholarPapers.length} papers from Semantic Scholar synthesis`,
+    );
 
     // Remove the "Science papers:" section and everything after it from the synthesis
-    const sciencePapersMatch = fullResult.match(/\n\n(?:\*\*)?[Ss]cience [Pp]apers:?(?:\*\*)?/);
+    const sciencePapersMatch = fullResult.match(
+      /\n\n(?:\*\*)?[Ss]cience [Pp]apers:?(?:\*\*)?/,
+    );
     const semanticScholarSynthesis = sciencePapersMatch
       ? fullResult.substring(0, sciencePapersMatch.index).trim()
       : fullResult;

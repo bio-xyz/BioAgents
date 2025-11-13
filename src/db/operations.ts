@@ -95,6 +95,17 @@ export async function updateMessage(id: string, updates: Partial<Message>) {
   return data;
 }
 
+export async function getMessage(id: string) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*, state:states(*)")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function getMessagesByConversation(
   conversationId: string,
   limit?: number,

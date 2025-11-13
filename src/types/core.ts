@@ -21,6 +21,7 @@ export interface StateValues {
   conversationId?: string;
   userId?: string;
   source?: string;
+  isDeepResearch?: boolean;
 
   // Cost tracking
   estimatedCostsUSD?: Record<string, number>;
@@ -56,6 +57,22 @@ export interface StateValues {
   // Hypothesis action
   hypothesis?: string;
   hypothesisThought?: string;
+  noveltyImprovement?: string; // Improvement suggestion from precedent check
+
+  // Edison provider
+  edisonTasks?: Array<{
+    taskId: string;
+    jobType: string;
+    question: string;
+    status: string;
+  }>;
+  edisonResults?: Array<{
+    taskId: string;
+    jobType: string;
+    question: string;
+    answer?: string;
+    error?: string;
+  }>;
 
   // Action responses
   finalResponse?: string; // Final text response from REPLY or HYPOTHESIS
@@ -107,6 +124,7 @@ export type Tool = {
     [key: string]: any;
   }) => Promise<any>;
   enabled?: boolean; // Tools are enabled by default
+  deepResearchEnabled?: boolean; // Tools are enabled for deep research by default
   payment?: {
     required: boolean;
     priceUSD: string;

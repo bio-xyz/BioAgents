@@ -1260,6 +1260,16 @@ textarea::placeholder {
     color: var(--text-tertiary) !important;
 }
 
+.input-action-btn-active {
+    background: var(--accent-light);
+    color: var(--accent-color);
+}
+
+.input-action-btn-active:hover:not(:disabled) {
+    background: var(--accent-color);
+    color: var(--bg-primary);
+}
+
 .input-send-btn {
     display: flex;
     align-items: center;
@@ -1760,9 +1770,7 @@ textarea::placeholder {
 
 .thinking-step {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    flex-direction: column;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -1772,6 +1780,14 @@ textarea::placeholder {
 .thinking-step.complete {
     background: rgba(16, 185, 129, 0.04);
     border-color: rgba(16, 185, 129, 0.15);
+}
+
+.thinking-step-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    transition: all 0.2s ease;
 }
 
 .thinking-step.in-progress {
@@ -2033,4 +2049,69 @@ textarea::placeholder {
     .thinking-step-duration-inline {
         font-size: 10px;
     }
+}
+
+/* Streaming response indicator */
+.message.streaming {
+    position: relative;
+}
+
+.streaming-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 4px 0;
+}
+
+.streaming-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    animation: streaming-pulse 1.4s ease-in-out infinite;
+}
+
+.streaming-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.streaming-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes streaming-pulse {
+    0%, 60%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    30% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+/* Thinking step collapsible chevron and details */
+.thinking-step-chevron {
+    transition: transform 0.2s ease;
+    color: var(--text-secondary);
+}
+
+.thinking-step-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+.thinking-step-details {
+    margin: 0 14px 10px 14px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 2px solid var(--accent-color);
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
 }
