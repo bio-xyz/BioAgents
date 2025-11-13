@@ -125,9 +125,9 @@ export const hypothesisDeepResearchTool = {
       logger.info("Generating hypothesis for deep research");
 
       const { text, thought } = await generateHypothesis(question, hypDocs, {
-        maxTokens: 8000,
+        maxTokens: 4000,
         thinking: true,
-        thinkingBudget: 5000,
+        thinkingBudget: 2048,
         useWebSearch: false, // Deep research uses gathered literature, not web search
         isDeepResearch: true, // Use deep research prompt
         noveltyImprovement: state.values.noveltyImprovement, // Pass novelty improvement if available

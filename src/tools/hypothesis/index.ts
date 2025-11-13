@@ -118,9 +118,9 @@ export const hypothesisTool = {
         thought,
         webSearchResults: hypWebSearchResults,
       } = await generateHypothesis(question, hypDocs, {
-        maxTokens: 5500,
+        maxTokens: 4000,
         thinking: true,
-        thinkingBudget: 2500,
+        thinkingBudget: 2048,
         useWebSearch,
         stream: true,
         onStreamChunk: async (_chunk: string, fullText: string) => {
