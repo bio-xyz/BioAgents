@@ -27,7 +27,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
-  plugin.onBeforeHandle({ as: 'global' }, async ({ request, path, set }: any) => {
+  plugin.onBeforeHandle(async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;

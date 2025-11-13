@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import { Icon } from './icons';
 import { Button } from './ui';
 import { ThinkingSteps } from './ThinkingSteps';
+import { InlineCitationText } from './InlineCitationText';
 
 export function Message({ message }) {
   const isUser = message.role === 'user';
@@ -55,14 +56,10 @@ export function Message({ message }) {
         </div>
       );
     } else {
-      const rawHtml = marked(message.content);
-      const sanitizedHtml = DOMPurify.sanitize(rawHtml);
       return (
         <div className="message-content-wrapper">
-          <div
-            className="message-content"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-          />
+          {/* Use InlineCitationText component for citation support */}
+          <InlineCitationText content={message.content} />
           {/* Show thinking steps for assistant messages that have them */}
           {message.thinkingState && message.thinkingState.steps && Object.keys(message.thinkingState.steps).length > 0 && (
             <div className="message-thinking-steps">
