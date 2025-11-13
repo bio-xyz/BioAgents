@@ -46,27 +46,35 @@ export function useStates(userId: string, conversationId: string): UseStatesRetu
     }
 
     let mounted = true;
+    let fetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
     // Fetch the latest state for this conversation
     async function fetchLatestState() {
       try {
         setIsLoading(true);
+
+        // Fetch all states and filter in-memory to avoid JSONB query issues
         const { data, error: fetchError } = await supabase
           .from('states')
           .select('*')
-          .eq('values->>conversationId', conversationId)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
+          .limit(100); // Fetch recent states and filter client-side
 
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        if (fetchError) {
           throw fetchError;
         }
 
-        if (mounted && data) {
-          console.log('[useStates] Fetched state:', data);
-          setCurrentState(data as State);
+        // Filter for matching conversationId in the values JSONB field
+        const matchingState = data?.find(
+          (state: State) => state.values?.conversationId === conversationId
+        );
+
+        if (mounted && matchingState) {
+          console.log('[useStates] Fetched state:', matchingState);
+          setCurrentState(matchingState as State);
           setError(null);
+        } else if (mounted) {
+          console.log('[useStates] No state found for conversation:', conversationId);
         }
       } catch (err) {
         console.error('[useStates] Error fetching state:', err);
@@ -80,7 +88,11 @@ export function useStates(userId: string, conversationId: string): UseStatesRetu
       }
     }
 
-    fetchLatestState();
+    // Debounce the fetch to prevent rapid re-fetches
+    fetchTimeout = setTimeout(() => {
+      fetchLatestState();
+    }, 300);
+
 
     // Subscribe to real-time updates
     const channel = supabase
@@ -131,6 +143,9 @@ export function useStates(userId: string, conversationId: string): UseStatesRetu
 
     return () => {
       mounted = false;
+      if (fetchTimeout) {
+        clearTimeout(fetchTimeout);
+      }
       supabase.removeChannel(channel);
     };
   }, [userId, conversationId]);

@@ -10,6 +10,7 @@ import {
 import { createX402External } from "../../db/x402Operations";
 import type { X402ExternalRecord } from "../../db/x402Operations";
 import logger from "../../utils/logger";
+import { walletAddressToUUID } from "../../utils/uuid";
 
 // System user ID for x402 external agent conversations
 export const X402_SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
@@ -68,18 +69,21 @@ export async function ensureUserAndConversation(
 
   // Privy users (external_ui): Skip user creation (managed in Next.js UI)
   // CDP users (dev_ui): Create user if not exists
+  // Convert wallet addresses to UUIDs for database storage
+  const dbUserId = userId.startsWith("0x") ? walletAddressToUUID(userId) : userId;
+
   if (authMethod !== "privy") {
     try {
       await createUser({
-        id: userId,
+        id: dbUserId,
         username: `user_${userId.slice(0, 8)}`,
         email: `${userId}@temp.local`,
       });
-      if (logger) logger.info({ userId, authMethod }, "user_created");
+      if (logger) logger.info({ userId, dbUserId, authMethod }, "user_created");
     } catch (err: any) {
       // Ignore duplicate key errors (user already exists)
       if (err.code !== "23505") {
-        if (logger) logger.error({ err, userId }, "create_user_failed");
+        if (logger) logger.error({ err, userId, dbUserId }, "create_user_failed");
         return { success: false, error: "Failed to create user" };
       }
     }
@@ -93,9 +97,9 @@ export async function ensureUserAndConversation(
   try {
     await createConversation({
       id: conversationId,
-      user_id: userId,
+      user_id: dbUserId,
     });
-    if (logger) logger.info({ conversationId, userId }, "conversation_created");
+    if (logger) logger.info({ conversationId, userId, dbUserId }, "conversation_created");
   } catch (err: any) {
     // Ignore duplicate key errors (conversation already exists)
     if (err.code !== "23505") {

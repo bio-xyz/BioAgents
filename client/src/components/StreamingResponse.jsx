@@ -5,13 +5,20 @@ import { Icon } from './icons';
 /**
  * Component to display real-time streaming response
  * Shows the finalResponse as it updates in the state
+ * Uses simple markdown rendering during streaming to avoid glitching
+ * The final message will use InlineCitationText for beautiful citation cards
  */
 export function StreamingResponse({ finalResponse }) {
   if (!finalResponse) {
     return null;
   }
 
-  const rawHtml = marked(finalResponse);
+  // During streaming, just show plain markdown without citation processing
+  // This avoids glitching/flickering as content updates
+  // Remove citation syntax [text]{urls} for cleaner streaming display
+  const cleanedContent = finalResponse.replace(/\[([^\]]*)\]\{[^\}]*\}/g, '$1');
+
+  const rawHtml = marked(cleanedContent);
   const sanitizedHtml = DOMPurify.sanitize(rawHtml);
 
   return (

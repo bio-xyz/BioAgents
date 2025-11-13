@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useCallback } from "preact/hooks";
 
 import { ChatInput } from "./components/ChatInput";
 import { ErrorMessage } from "./components/ErrorMessage";
@@ -13,6 +13,7 @@ import { Modal } from "./components/ui/Modal";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
 import { ThinkingSteps } from "./components/ThinkingSteps";
 import { StreamingResponse } from "./components/StreamingResponse";
+import { Header } from "./components/Header";
 
 // Custom hooks
 import {
@@ -149,6 +150,11 @@ export function App() {
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
 
   const messages = currentSession.messages;
+
+  // Memoized callback to prevent re-renders
+  const handleConnectWallet = useCallback(() => {
+    setIsWalletModalOpen(true);
+  }, []);
 
   // Check if the current conversation is the one that's loading
   const isCurrentConversationLoading = isLoading && loadingConversationId === currentSessionId;
@@ -393,7 +399,7 @@ export function App() {
         // Only continue if we got a response (not empty from payment confirmation)
         if (response.text) {
           // Give a small delay for state to be fully updated via subscription
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 400));
 
           // Capture the current thinking state after delay
           const capturedState = currentState && currentState.values && currentState.values.steps
@@ -409,20 +415,47 @@ export function App() {
           // Use the streamed finalResponse if available, otherwise fall back to response.text
           const finalText = currentState?.values?.finalResponse || response.text;
 
-          // Create final message directly (no animation needed since we showed it in real-time)
-          addMessage({
-            id: Date.now(),
-            role: "assistant" as const,
-            content: finalText,
-            files: response.files,
-            thinkingState: capturedState,
+          // Always clear loading state first to hide the streaming component
+          setLoadingConversationId(null);
+          setLoadingMessageId(null);
+
+          // Check if the message was already added by real-time subscription
+          // Need to get the latest messages via the session to avoid stale closure
+          updateSessionMessages(currentSessionId, (currentMessages) => {
+            const lastMessage = currentMessages[currentMessages.length - 1];
+            const messageAlreadyAdded = lastMessage?.role === 'assistant' &&
+              (lastMessage.content === finalText || lastMessage.content === response.text);
+
+            console.log('[App] Message already added by subscription?', messageAlreadyAdded);
+            console.log('[App] Last message:', lastMessage?.role, lastMessage?.content?.slice(0, 50));
+
+            if (messageAlreadyAdded) {
+              console.log('[App] Message already added by subscription, updating with thinking state if needed');
+              // Update the existing message with thinking state if missing
+              if (capturedState && !lastMessage.thinkingState) {
+                console.log('[App] Adding thinking state to existing message');
+                return currentMessages.map((msg, idx) =>
+                  idx === currentMessages.length - 1 && msg.role === 'assistant'
+                    ? { ...msg, thinkingState: capturedState }
+                    : msg
+                );
+              }
+              // Return unchanged if thinking state already exists
+              return currentMessages;
+            } else {
+              console.log('[App] Adding assistant message manually (subscription didn\'t add it)');
+              // Add the message since subscription didn't add it
+              return [...currentMessages, {
+                id: Date.now(),
+                role: "assistant" as const,
+                content: finalText,
+                files: response.files,
+                thinkingState: capturedState,
+              }];
+            }
           });
 
           scrollToBottom();
-
-          // Clear loading state to hide streaming component
-          setLoadingConversationId(null);
-          setLoadingMessageId(null);
 
           // Clear pending message data after successful send
           setPendingMessageData(null);
@@ -502,6 +535,15 @@ export function App() {
       />
 
       <div className="main-content">
+        {/* Header with wallet connection */}
+        <Header
+          x402Enabled={x402Enabled}
+          isEmbeddedWalletConnected={isEmbeddedWalletConnected}
+          embeddedWalletAddress={embeddedWalletAddress}
+          usdcBalance={usdcBalance}
+          onConnectWallet={handleConnectWallet}
+        />
+
         {/* Mobile menu button */}
         <button
           className="mobile-menu-btn"
@@ -521,63 +563,6 @@ export function App() {
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
-
-        {x402Enabled && !isEmbeddedWalletConnected && (
-          <div style={{ margin: "0.75rem 0", padding: "0 2rem" }}>
-            <div style={{ padding: "0.75rem 1rem", background: "#0a0a0a", borderRadius: "12px", border: "1px solid #262626" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 600, color: "#ffffff" }}>
-                    Connect Your Wallet
-                  </p>
-                  <p style={{ margin: 0, fontSize: "13px", color: "#a1a1a1" }}>
-                    Create a secure wallet to access paid features
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsWalletModalOpen(true)}
-                  style={{
-                    background: "#10b981",
-                    border: "none",
-                    color: "#000000",
-                    padding: "10px 20px",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    transition: "all 0.2s ease",
-                    boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    whiteSpace: "nowrap",
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                    e.currentTarget.style.boxShadow = "0 6px 16px rgba(16, 185, 129, 0.4)";
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.3)";
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                  Connect Wallet
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && (
-          <div style={{ margin: "0.75rem 0", padding: "0 2rem" }}>
-            <EmbeddedWalletAuth usdcBalance={usdcBalance} />
-          </div>
-        )}
 
         {x402Enabled && x402Error && (
           <div

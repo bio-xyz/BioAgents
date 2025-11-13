@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { walletAddressToUUID } from "../utils/uuid";
 
 // These are injected at build time via Bun.build's define option
 // They come from the .env file: SUPABASE_URL and SUPABASE_ANON_KEY
@@ -43,10 +44,13 @@ export interface Message {
 
 // Client-side database operations
 export async function getConversationsByUser(userId: string) {
+  // Convert wallet addresses to UUIDs to match backend storage
+  const dbUserId = userId.startsWith("0x") ? await walletAddressToUUID(userId) : userId;
+
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
-    .eq("user_id", userId)
+    .eq("user_id", dbUserId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;

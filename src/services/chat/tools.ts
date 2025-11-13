@@ -3,6 +3,7 @@ import { getTool } from "../../tools";
 import type { State } from "../../types/core";
 import logger from "../../utils/logger";
 import { calculateRequestPrice } from "../../x402/pricing";
+import { walletAddressToUUID } from "../../utils/uuid";
 
 export type ToolResult =
   | { ok: true; data?: unknown }
@@ -52,9 +53,12 @@ export async function createMessageRecord(
           }))
         : undefined;
 
+    // Convert wallet addresses to UUIDs for database storage
+    const dbUserId = userId.startsWith("0x") ? walletAddressToUUID(userId) : userId;
+
     const createdMessage = await createMessage({
       conversation_id: conversationId,
-      user_id: userId,
+      user_id: dbUserId,
       question: message,
       content: "",
       source,

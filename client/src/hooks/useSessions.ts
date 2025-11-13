@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { generateConversationId } from '../utils/helpers';
 import {
   supabase,
@@ -97,8 +97,11 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Use provided wallet user ID, or generate a temporary one if not available
-  const userId = walletUserId || generateConversationId();
+  // Use provided wallet user ID, or generate a stable temporary one if not available
+  // useMemo ensures the generated ID doesn't change on every render
+  const userId = useMemo(() => {
+    return walletUserId || generateConversationId();
+  }, [walletUserId]);
 
   // Provide a default session to prevent undefined errors during initial load
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0] || {
