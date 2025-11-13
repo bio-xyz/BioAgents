@@ -32,6 +32,12 @@ export const edisonTool = {
       throw new Error("EDISON_API_URL is not configured");
     }
 
+    const EDISON_API_KEY = process.env.EDISON_API_KEY;
+    if (!EDISON_API_KEY) {
+      logger.error("EDISON_API_KEY not configured");
+      throw new Error("EDISON_API_KEY is not configured");
+    }
+
     // Get job type from input, environment, or default to LITERATURE
     const selectedJobType: EdisonJobType =
       jobType || (process.env.EDISON_JOB_TYPE as EdisonJobType) || "LITERATURE";
@@ -53,6 +59,7 @@ export const edisonTool = {
       // Start single Edison task
       const taskResponse = await startEdisonTask(
         EDISON_API_URL,
+        EDISON_API_KEY,
         selectedJobType,
         question,
       );
@@ -66,7 +73,7 @@ export const edisonTool = {
       );
 
       // Await this specific task to complete
-      const results = await awaitEdisonTasks(EDISON_API_URL, [
+      const results = await awaitEdisonTasks(EDISON_API_URL, EDISON_API_KEY, [
         {
           taskId: taskResponse.task_id,
           jobType: taskResponse.job_type,
@@ -133,6 +140,7 @@ export const edisonTool = {
  */
 async function startEdisonTask(
   apiUrl: string,
+  apiKey: string,
   jobType: EdisonJobType,
   query: string,
 ): Promise<EdisonTaskResponse> {
@@ -142,6 +150,7 @@ async function startEdisonTask(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       name: jobType,
@@ -163,6 +172,7 @@ async function startEdisonTask(
  */
 export async function awaitEdisonTasks(
   apiUrl: string,
+  apiKey: string,
   tasks: Array<{
     taskId: string;
     jobType: string;
@@ -203,6 +213,7 @@ export async function awaitEdisonTasks(
               method: "GET",
               headers: {
                 "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`,
               },
             },
           );
