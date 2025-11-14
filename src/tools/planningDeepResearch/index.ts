@@ -1,5 +1,6 @@
 import type { WebSearchResult } from "../../llm/types";
 import {
+  type ConversationState,
   type Message,
   type Paper,
   type State,
@@ -14,6 +15,7 @@ export const planningDeepResearchTool: Tool = {
   deepResearchEnabled: true,
   execute: async (input: {
     state: State;
+    conversationState?: ConversationState;
     message: Message;
   }): Promise<{
     thought: string;
@@ -22,7 +24,7 @@ export const planningDeepResearchTool: Tool = {
     papers: Paper[];
     webSearchResults: WebSearchResult[];
   }> => {
-    const { state, message } = input;
+    const { state, conversationState, message } = input;
 
     // in paralel we will kick off KNOWLEDGE, KNOWLEDGE_GRAPH_QUERY, OPENSCHOLAR, SEMANTIC_SCHOLAR
     // SEMANTIC SCHOLAR could be replaced with Edison LITERATURE job
@@ -372,6 +374,26 @@ export const planningDeepResearchTool: Tool = {
     } catch (err) {
       logger.error({ err }, "final_response_generation_failed");
       // Continue - response generation failure shouldn't block completion
+    }
+
+    // Execute reflection to update conversation state
+    logger.info("Starting reflection for deep research");
+
+    const { reflectionTool } = await import("../reflection");
+
+    try {
+      if (conversationState) {
+        await reflectionTool.execute({
+          state,
+          conversationState,
+          message,
+        });
+      }
+
+      logger.info("Completed reflection for deep research");
+    } catch (err) {
+      logger.error({ err }, "reflection_failed");
+      // Continue - reflection failure shouldn't block completion
     }
 
     // obsolete providers/actions
