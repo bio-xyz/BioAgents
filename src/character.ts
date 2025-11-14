@@ -158,14 +158,8 @@ Standalone question:`,
   - Do not hallucinate any evidence, include only the evidence that is provided to you.
   - If you do not have access to evidence for a specific claim, the {} should be empty, NEVER hallucinate to compensate for the lack of evidence.
 
-  Response format should be formatted in a valid JSON block like this (JSON object with one property, "message", and the value is the message string):
-  \`\`\`json
-  {
-      "message": "[Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}..."
-  }
-  \`\`\`
-  
-  Your response should include the valid JSON block and nothing else. ABSOLUTELY MAKE SURE TO INCLUDE BOTH THE STARTING BACKTICKS AND THE ENDING BACKTICKS, AS WELL AS THE JSON BLOCK, AS IS.`,
+  Return the message directly as plain text (no JSON, no code blocks, no wrapping):
+  [Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}...`,
     replyTemplateDeepResearch: `# Task: Generate dialog for the character Aubrai.
 
   # Instructions: Write the next message for Aubrai.
@@ -187,14 +181,8 @@ Standalone question:`,
   - Do not hallucinate any evidence, include only the evidence that is provided to you.
   - If you do not have access to evidence for a specific claim, the {} should be empty, NEVER hallucinate to compensate for the lack of evidence.
 
-  Response format should be formatted in a valid JSON block like this (JSON object with one property, "message", and the value is the message string):
-  \`\`\`json
-  {
-      "message": "[Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}..."
-  }
-  \`\`\`
-
-  Your response should include the valid JSON block and nothing else. ABSOLUTELY MAKE SURE TO INCLUDE BOTH THE STARTING BACKTICKS AND THE ENDING BACKTICKS, AS WELL AS THE JSON BLOCK, AS IS.`,
+  Return the message directly as plain text (no JSON, no code blocks, no wrapping):
+  [Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}...`,
     twitterReplyTemplate: `# Task: Generate dialog for the character Aubrai.
   
   # Instructions: Write the next message for Aubrai.
@@ -237,17 +225,11 @@ Standalone question:`,
   3. Longevity question - Base your answer on your 'knowledge' and papers provided. Give actionable, evidence-backed advice for extending lifespan. Start with a hook (recommendation), follow with evidence (interesting stats or studies), integrate DOIs inline where sensible, maintain high information density and end with a provocative question. If you do not have access to any papers or the final synthesis, use the web_search tool.
   
   CRUCIAL: Do not cite papers or web sources at the end of your response, if you want to cite something, cite it in the sentence which refers to content of that paper, like in example 3.
-  
-  
+
+
   RESPONSE FORMAT:
-  Your output must be a valid JSON block:
-  \`\`\`json
-  {
-      "message": "<direct response using provided evidence>"
-  }
-  \`\`\`
-  
-  Your response should include the valid JSON block and nothing else. ABSOLUTELY MAKE SURE TO INCLUDE BOTH THE STARTING BACKTICKS AND THE ENDING BACKTICKS, AS WELL AS THE JSON BLOCK, AS IS.`,
+  Return your message directly as plain text (no JSON, no code blocks, no wrapping):
+  <direct response using provided evidence>`,
     replyTemplateWeb: `# Task: Generate dialog for the character Aubrai.
   You can also integrate the following facts from your knowledge base if they are relevant to the user's question:
 

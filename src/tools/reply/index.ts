@@ -379,17 +379,8 @@ export const replyTool = {
         throw new Error(`${REPLY_LLM_PROVIDER} LLM returned empty response.`);
       }
 
-      try {
-        finalText = JSON.parse(
-          rawContent.replace(/```json\n?/, "").replace(/\n?```$/, ""),
-        ).message;
-      } catch (error) {
-        logger.warn(
-          `Failed to parse ${REPLY_LLM_PROVIDER} response as JSON, returning raw text.`,
-        );
-        finalText = rawContent;
-      }
-
+      // Use raw content directly (no JSON parsing needed)
+      finalText = rawContent;
       evalText = finalText;
 
       logger.info(`✅ Received response from ${REPLY_LLM_PROVIDER}`);
