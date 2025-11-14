@@ -154,6 +154,10 @@ Standalone question:`,
   - For claims combining multiple sources, cite all relevant DOIs/links in the same group.
   - You must use both [] and {} in the answer, do not skip them.
 
+  CRUCIAL:
+  - Do not hallucinate any evidence, include only the evidence that is provided to you.
+  - If you do not have access to evidence for a specific claim, the {} should be empty, NEVER hallucinate to compensate for the lack of evidence.
+
   Response format should be formatted in a valid JSON block like this (JSON object with one property, "message", and the value is the message string):
   \`\`\`json
   {
@@ -178,7 +182,10 @@ Standalone question:`,
   - You must use both [] and {} in the answer, do not skip them.
   - You must cite only DOIs/links provided to you in this conversation, do not cite any external DOIs or links.
   - If you do not have evidence to back up a claim, you do not have to back the claim up with a DOI or a link.
+  
+  CRUCIAL:
   - Do not hallucinate any evidence, include only the evidence that is provided to you.
+  - If you do not have access to evidence for a specific claim, the {} should be empty, NEVER hallucinate to compensate for the lack of evidence.
 
   Response format should be formatted in a valid JSON block like this (JSON object with one property, "message", and the value is the message string):
   \`\`\`json
@@ -352,7 +359,7 @@ Standalone question:`,
   
   IMPORTANT PROVIDER SELECTION RULES:
   - You should include "KNOWLEDGE" in your providers list if you think you can enhance the answer by querying Aubrey De Grey's knowledge base (collection of Aubrey De Grey's scientific papers, notes, tweets, thoughts, takeaways etc.) or the user's knowledge base (which can include any information the user has provided to you)
-  - You should include "KNOWLEDGE_GRAPH_QUERY" and "OPENSCHOLAR" in your providers list if you think you can enhance the answer by querying the science papers which are in the knowledge graph.
+  - You should include "KNOWLEDGE_GRAPH_QUERY" and "OPENSCHOLAR" in your providers list for most questions related to science - more detailed explanation of when to use is below.
   - Whenever you're including "KNOWLEDGE_GRAPH_QUERY" in your providers list, you should also include "KNOWLEDGE" and "OPENSCHOLAR" in your providers list.
   - Only use "SEMANTIC_SCHOLAR" in your providers list if the user's question is explicitly about science papers, research, or academic literature.
     - Trigger phrases: "find papers on", "latest research about", "most cited studies on", or "academic literature about" in the context of longevity (example: "find papers from last 2 weeks that tested their findings on mice")
@@ -374,7 +381,9 @@ Standalone question:`,
   9. When the user asks about correlations, associations, or links between scientific variables, conditions, or phenomena.
   10. When the user’s question could plausibly be answered with peer-reviewed evidence, mechanisms, or quantitative data — even if no explicit keywords like “study” or “paper” are used.
   
-  You should NOT include "KNOWLEDGE_GRAPH_QUERY" in your providers list in the following situations:
+  IMPORTANT: Lean YES to including "KNOWLEDGE_GRAPH_QUERY" NOR "OPENSCHOLAR" in your providers list for questions related to science.
+
+  You should NOT include "KNOWLEDGE_GRAPH_QUERY" NOR "OPENSCHOLAR" in your providers list in the following situations:
   
     1. When the user asks for Aubrey de Grey's personal opinions, perspectives, or predictions.
        - Example: "What does Aubrey de Grey think about the future of anti-aging therapies?"
