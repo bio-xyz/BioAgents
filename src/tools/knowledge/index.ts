@@ -1,15 +1,12 @@
-import {
-  getMessagesByConversation,
-  updateState,
-} from "../../db/operations";
+import { getMessagesByConversation, updateState } from "../../db/operations";
 import { VectorSearchWithDocuments } from "../../embeddings/vectorSearchWithDocs";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
 import {
   addVariablesToState,
+  endStep,
   getStandaloneMessage,
   startStep,
-  endStep,
 } from "../../utils/state";
 
 // Initialize vector search with documents
@@ -29,6 +26,7 @@ export const knowledgeTool = {
   description:
     "Knowledge base RAG plugin that retrieves the most relevant chunks from the vector database to answer user queries.",
   enabled: true,
+  deepResearchEnabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 

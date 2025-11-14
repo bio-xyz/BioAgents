@@ -18,6 +18,7 @@ export const semanticScholarTool = {
   description:
     "Semantic Scholar plugin that queries the Anthropic Semantic Scholar skill to find relevant longevity papers based on the question and synthesizes them into a natural language response.",
   enabled: true,
+  deepResearchEnabled: true,
   execute: async (input: { state: State; message: Message }) => {
     const { state, message } = input;
 

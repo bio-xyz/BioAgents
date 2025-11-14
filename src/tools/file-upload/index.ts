@@ -1,17 +1,22 @@
 import { updateState } from "../../db/operations";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
-import { addVariablesToState, startStep, endStep } from "../../utils/state";
-import { parseFile } from "./parsers";
+import { addVariablesToState, endStep, startStep } from "../../utils/state";
 import { MAX_FILE_SIZE_MB } from "./config";
-import { mbToBytes, formatFileSize } from "./utils";
+import { parseFile } from "./parsers";
+import { formatFileSize, mbToBytes } from "./utils";
 
 const fileUploadTool = {
   name: "FILE-UPLOAD",
   description:
     "File upload provider that parses uploaded files (PDF, Excel, CSV, MD, JSON, TXT) and makes their content available to the LLM.",
   enabled: true,
-  execute: async (input: { state: State; message: Message; files?: File[] }) => {
+  deepResearchEnabled: true,
+  execute: async (input: {
+    state: State;
+    message: Message;
+    files?: File[];
+  }) => {
     const { state, files } = input;
 
     startStep(state, "FILE_UPLOAD");
@@ -54,8 +59,13 @@ const fileUploadTool = {
         // Check file size limit
         const maxSize = mbToBytes(MAX_FILE_SIZE_MB);
         if (buffer.length > maxSize) {
-          errors.push(`${file.name}: File too large (${formatFileSize(buffer.length)}, max ${MAX_FILE_SIZE_MB}MB)`);
-          if (logger) logger.warn(`File ${file.name} exceeds size limit: ${formatFileSize(buffer.length)}`);
+          errors.push(
+            `${file.name}: File too large (${formatFileSize(buffer.length)}, max ${MAX_FILE_SIZE_MB}MB)`,
+          );
+          if (logger)
+            logger.warn(
+              `File ${file.name} exceeds size limit: ${formatFileSize(buffer.length)}`,
+            );
           continue;
         }
 
@@ -77,7 +87,8 @@ const fileUploadTool = {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         errors.push(`${file.name}: ${errorMsg}`);
-        if (logger) logger.error(`Failed to parse file ${file.name}:`, error as any);
+        if (logger)
+          logger.error(`Failed to parse file ${file.name}:`, error as any);
       }
     }
 
