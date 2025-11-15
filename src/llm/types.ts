@@ -1,5 +1,5 @@
 export interface LLMProvider {
-  name: 'openai' | 'google' | 'anthropic' | 'openrouter';
+  name: 'openai' | 'google' | 'anthropic' | 'openrouter' | 'featherless';
   apiKey: string;
   baseUrl?: string;
   reasoningEffort?: 'low' | 'medium' | 'high';

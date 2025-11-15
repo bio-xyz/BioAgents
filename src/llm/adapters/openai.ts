@@ -40,6 +40,12 @@ export class OpenAIAdapter extends LLMAdapter {
       clientOptions.baseURL = provider.baseUrl;
     }
 
+    console.log(`[OpenAIAdapter] Initializing with:`, {
+      providerName: provider.name,
+      baseUrl: clientOptions.baseURL || "default (api.openai.com)",
+      hasApiKey: !!clientOptions.apiKey,
+    });
+
     this.client = new OpenAI(clientOptions);
   }
 
@@ -60,10 +66,29 @@ export class OpenAIAdapter extends LLMAdapter {
     }
 
     try {
+      console.log(`[OpenAIAdapter] Making chat completion request:`, {
+        model: transformedRequest.model,
+        baseUrl: this.client.baseURL,
+        messageCount: transformedRequest.messages?.length || 0,
+        maxTokens: transformedRequest.max_completion_tokens,
+      });
+
       const completion =
         await this.client.chat.completions.create(transformedRequest);
+
+      console.log(`[OpenAIAdapter] Chat completion successful:`, {
+        model: completion.model,
+        usage: completion.usage,
+      });
+
       return this.transformResponse(completion);
     } catch (error) {
+      console.error(`[OpenAIAdapter] Chat completion failed:`, {
+        model: transformedRequest.model,
+        baseUrl: this.client.baseURL,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       if (error instanceof Error) {
         throw new Error(`OpenAI chat completion failed: ${error.message}`);
       }
@@ -179,7 +204,10 @@ export class OpenAIAdapter extends LLMAdapter {
         }
 
         // Capture final response for web search results
-        if (eventType === "response.completed" || eventType === "response.incomplete") {
+        if (
+          eventType === "response.completed" ||
+          eventType === "response.incomplete"
+        ) {
           finalResponse = (event as any).response;
         }
       }

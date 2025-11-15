@@ -10,9 +10,28 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private client: OpenAI;
 
   constructor() {
-    this.client = new OpenAI({
-      apiKey: CONFIG.OPENAI_API_KEY,
-    });
+    // Use Featherless if configured, otherwise fall back to OpenAI
+    const apiKey = CONFIG.EMBEDDING_PROVIDER === "featherless"
+      ? CONFIG.FEATHERLESS_API_KEY
+      : CONFIG.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      const keyName = CONFIG.EMBEDDING_PROVIDER === "featherless"
+        ? "FEATHERLESS_API_KEY"
+        : "OPENAI_API_KEY";
+      throw new Error(`${keyName} is not configured for embeddings.`);
+    }
+
+    const clientOptions: ConstructorParameters<typeof OpenAI>[0] = {
+      apiKey,
+    };
+
+    // Set baseUrl for Featherless
+    if (CONFIG.EMBEDDING_PROVIDER === "featherless") {
+      clientOptions.baseURL = "https://api.featherless.ai/v1";
+    }
+
+    this.client = new OpenAI(clientOptions);
   }
 
   async generateEmbedding(text: string): Promise<number[]> {

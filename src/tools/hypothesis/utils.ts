@@ -1,6 +1,6 @@
 import { zodTextFormat } from "openai/helpers/zod";
 import character from "../../character";
-import { LLM } from "../../llm/provider";
+import { LLM, createLLMProvider } from "../../llm/provider";
 import type { LLMProvider } from "../../types/core";
 import logger from "../../utils/logger";
 import {
@@ -64,7 +64,8 @@ export async function generateHypothesis(
   documents: HypothesisDoc[],
   options: HypothesisOptions = {},
 ): Promise<HypothesisResult> {
-  const model = process.env.HYP_LLM_MODEL || "gemini-2.5-pro";
+  const model =
+    process.env.HYP_LLM_MODEL || "meta-llama/Meta-Llama-3.1-8B-Instruct";
   const useWebSearch = options.useWebSearch;
   const isDeepResearch = options.isDeepResearch;
   const noveltyImprovement = options.noveltyImprovement;
@@ -93,19 +94,9 @@ export async function generateHypothesis(
   }
 
   const HYP_LLM_PROVIDER: LLMProvider =
-    (process.env.HYP_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey = process.env[`${HYP_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!llmApiKey) {
-    throw new Error(
-      `${HYP_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
-  }
-
-  const llmProvider = new LLM({
-    name: HYP_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
+    (process.env.HYP_LLM_PROVIDER as LLMProvider) || "featherless";
+  // Use helper function to create provider (handles Featherless baseUrl automatically)
+  const llmProvider = new LLM(createLLMProvider(HYP_LLM_PROVIDER));
 
   const llmRequest = {
     model,
@@ -183,22 +174,13 @@ export async function generateFinalResponse(
   onStreamChunk?: (chunk: string, fullText: string) => Promise<void>,
 ) {
   const FINAL_LLM_PROVIDER: LLMProvider =
-    (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey = process.env[`${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!llmApiKey) {
-    throw new Error(
-      `${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
-  }
-
-  const llmProvider = new LLM({
-    name: FINAL_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
+    (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "featherless";
+  // Use helper function to create provider (handles Featherless baseUrl automatically)
+  const llmProvider = new LLM(createLLMProvider(FINAL_LLM_PROVIDER));
 
   const llmRequest = {
-    model: process.env.REPLY_LLM_MODEL || "gemini-2.5-pro",
+    model:
+      process.env.REPLY_LLM_MODEL || "meta-llama/Meta-Llama-3.1-8B-Instruct",
     systemInstruction: character.system,
     messages: [
       {
@@ -247,23 +229,14 @@ export async function structured(
   ].join("\n");
 
   const STRUCTURED_LLM_PROVIDER: LLMProvider =
-    (process.env.STRUCTURED_LLM_PROVIDER as LLMProvider) || "openai";
-  const llmApiKey =
-    process.env[`${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!llmApiKey) {
-    throw new Error(
-      `${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
-  }
-
-  const llmProvider = new LLM({
-    name: STRUCTURED_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
+    (process.env.STRUCTURED_LLM_PROVIDER as LLMProvider) || "featherless";
+  // Use helper function to create provider (handles Featherless baseUrl automatically)
+  const llmProvider = new LLM(createLLMProvider(STRUCTURED_LLM_PROVIDER));
 
   const llmRequest = {
-    model: process.env.STRUCTURED_LLM_MODEL || "gpt-5",
+    model:
+      process.env.STRUCTURED_LLM_MODEL ||
+      "meta-llama/Meta-Llama-3.1-8B-Instruct",
     systemInstruction: developerPrompt,
     messages: [
       {

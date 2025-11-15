@@ -1,5 +1,5 @@
 import character from "../../character";
-import { LLM } from "../../llm/provider";
+import { LLM, createLLMProvider } from "../../llm/provider";
 import { type Message, type State, type Tool } from "../../types/core";
 import logger from "../../utils/logger";
 import {
@@ -44,23 +44,46 @@ export const planningTool: Tool = {
       character.templates.planningTemplate,
     );
 
-    const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-    const planningApiKey =
-      process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-    if (!planningApiKey) {
-      throw new Error(
-        `${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-      );
-    }
-
-    const planningLlmProvider = new LLM({
-      // @ts-ignore
-      name: PLANNING_LLM_PROVIDER,
-      apiKey: planningApiKey,
+    const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "featherless";
+    
+    // Debug: Log environment variables (including all LLM-related env vars)
+    console.log(`[PLANNING] Environment variables:`, {
+      PLANNING_LLM_PROVIDER: process.env.PLANNING_LLM_PROVIDER,
+      PLANNING_LLM_MODEL: process.env.PLANNING_LLM_MODEL,
+      REPLY_LLM_MODEL: process.env.REPLY_LLM_MODEL,
+      HYP_LLM_MODEL: process.env.HYP_LLM_MODEL,
+      STRUCTURED_LLM_MODEL: process.env.STRUCTURED_LLM_MODEL,
+      FEATHERLESS_API_KEY: process.env.FEATHERLESS_API_KEY ? "***SET***" : "NOT SET",
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "***SET***" : "NOT SET",
     });
+    
+    logger.info({
+      PLANNING_LLM_PROVIDER: PLANNING_LLM_PROVIDER,
+      PLANNING_LLM_PROVIDER_ENV: process.env.PLANNING_LLM_PROVIDER,
+      PLANNING_LLM_MODEL_ENV: process.env.PLANNING_LLM_MODEL,
+    }, "[PLANNING] Environment configuration");
+    
+    // Use helper function to create provider (handles Featherless baseUrl automatically)
+    const providerConfig = createLLMProvider(PLANNING_LLM_PROVIDER);
+    
+    // Debug: Log provider configuration
+    logger.info({
+      providerName: providerConfig.name,
+      baseUrl: providerConfig.baseUrl,
+      hasApiKey: !!providerConfig.apiKey,
+    }, "[PLANNING] Provider configuration");
+    
+    const planningLlmProvider = new LLM(providerConfig);
 
-    const planningModel = process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro";
+    const planningModel = process.env.PLANNING_LLM_MODEL || "meta-llama/Meta-Llama-3.1-8B-Instruct";
+    
+    // Debug: Log model configuration
+    logger.info({
+      planningModel,
+      PLANNING_LLM_MODEL_ENV: process.env.PLANNING_LLM_MODEL,
+      usingDefault: !process.env.PLANNING_LLM_MODEL,
+    }, "[PLANNING] Model configuration");
+    
     // planning is the most important part, so we'll make sure to try 3 times to get it right
     const MAX_RETRIES = 3;
 
@@ -101,9 +124,25 @@ export const planningTool: Tool = {
       maxTokens: 1024,
     };
 
+    // Debug: Log the actual request being made
+    logger.info({
+      model: llmRequest.model,
+      provider: PLANNING_LLM_PROVIDER,
+      baseUrl: providerConfig.baseUrl,
+      messageCount: llmRequest.messages.length,
+      maxTokens: llmRequest.maxTokens,
+    }, "[PLANNING] LLM request details");
+
     let lastError: Error | null = null;
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
+        // Debug: Log attempt
+        logger.info({
+          attempt: i + 1,
+          maxRetries: MAX_RETRIES,
+          model: llmRequest.model,
+        }, "[PLANNING] Attempting LLM call");
+        
         const completion =
           await planningLlmProvider.createChatCompletion(llmRequest);
         const xmlResponseText = completion.content;

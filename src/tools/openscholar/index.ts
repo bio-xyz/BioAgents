@@ -1,6 +1,6 @@
 import axios from "axios";
 import { getMessagesByConversation, updateState } from "../../db/operations";
-import { LLM } from "../../llm/provider";
+import { LLM, createLLMProvider } from "../../llm/provider";
 import { type Message, type State } from "../../types/core";
 import { SimpleCache } from "../../utils/cache";
 import logger from "../../utils/logger";
@@ -72,13 +72,14 @@ async function getReformulatedHallmarkQuestion(
   question: string,
 ): Promise<string> {
   const reformulationPrompt = `${REFORMULATE_QUESTION_LONGEVITY_PROMPT}\n\nQuestion: ${question}`;
-  const llmProvider = new LLM({
-    name: "openai",
-    apiKey: process.env.OPENAI_API_KEY!,
-  });
+  // Use structured LLM provider for reformulation, fallback to featherless
+  const providerName = process.env.STRUCTURED_LLM_PROVIDER || "featherless";
+  const llmProvider = new LLM(createLLMProvider(providerName));
 
   const llmRequest = {
-    model: "gpt-5",
+    model:
+      process.env.STRUCTURED_LLM_MODEL ||
+      "meta-llama/Meta-Llama-3.1-8B-Instruct",
     messages: [
       {
         role: "user" as const,

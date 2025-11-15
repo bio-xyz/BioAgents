@@ -1,5 +1,5 @@
 export const CONFIG = {
-  EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || "openai",
+  EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || "featherless",
   TEXT_EMBEDDING_MODEL:
     process.env.TEXT_EMBEDDING_MODEL || "text-embedding-3-small",
   EMBEDDING_DIMENSIONS: 1536, // text-embedding-3-small
@@ -16,6 +16,8 @@ export const CONFIG = {
   ),
   SUPABASE_URL: process.env.SUPABASE_URL!,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
+  // Support both Featherless and OpenAI API keys
+  FEATHERLESS_API_KEY: process.env.FEATHERLESS_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   COHERE_API_KEY: process.env.COHERE_API_KEY!,
 } as const;

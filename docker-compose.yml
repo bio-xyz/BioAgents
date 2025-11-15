@@ -13,7 +13,8 @@ services:
       - "3000:3000"
     environment:
       # Required: LLM API Keys
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - FEATHERLESS_API_KEY=${FEATHERLESS_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -21,17 +22,17 @@ services:
 
       # Agent LLM Configuration
       - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
-      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-openai}
-      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gpt-5}
-      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-openai}
-      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gpt-5}
-      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-openai}
-      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gpt-5}
-      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-openai}
-      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gpt-5}
+      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-featherless}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-meta-llama/Meta-Llama-3.1-8B-Instruct}
+      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-featherless}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-meta-llama/Meta-Llama-3.1-8B-Instruct}
+      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-featherless}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-meta-llama/Meta-Llama-3.1-8B-Instruct}
+      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-featherless}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-meta-llama/Meta-Llama-3.1-8B-Instruct}
 
       # Embedding Configuration
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-featherless}
       - TEXT_EMBEDDING_MODEL=${TEXT_EMBEDDING_MODEL:-text-embedding-3-large}
 
       # Vector Search & RAG Configuration

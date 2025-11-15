@@ -4,7 +4,7 @@ import {
   updateMessage,
   updateState,
 } from "../../db/operations";
-import { LLM } from "../../llm/provider";
+import { LLM, createLLMProvider } from "../../llm/provider";
 import type { LLMResponse, LLMTool, WebSearchResponse } from "../../llm/types";
 import {
   type ConversationState,
@@ -207,8 +207,30 @@ export const replyTool = {
       prompt += fileAnalysisPrompt;
     }
 
-    const REPLY_LLM_PROVIDER = process.env.REPLY_LLM_PROVIDER!;
-    const REPLY_LLM_MODEL = process.env.REPLY_LLM_MODEL!;
+    const REPLY_LLM_PROVIDER = process.env.REPLY_LLM_PROVIDER || "featherless";
+    const REPLY_LLM_MODEL =
+      process.env.REPLY_LLM_MODEL || "meta-llama/Meta-Llama-3.1-8B-Instruct";
+
+    // Debug: Log environment variables
+    console.log(`[REPLY] Environment variables:`, {
+      REPLY_LLM_PROVIDER: process.env.REPLY_LLM_PROVIDER,
+      REPLY_LLM_MODEL: process.env.REPLY_LLM_MODEL,
+      usingDefaultProvider: !process.env.REPLY_LLM_PROVIDER,
+      usingDefaultModel: !process.env.REPLY_LLM_MODEL,
+      FEATHERLESS_API_KEY: process.env.FEATHERLESS_API_KEY
+        ? "***SET***"
+        : "NOT SET",
+    });
+
+    logger.info(
+      {
+        REPLY_LLM_PROVIDER,
+        REPLY_LLM_MODEL,
+        REPLY_LLM_PROVIDER_ENV: process.env.REPLY_LLM_PROVIDER,
+        REPLY_LLM_MODEL_ENV: process.env.REPLY_LLM_MODEL,
+      },
+      "[REPLY] Environment configuration",
+    );
 
     // Configure tools based on file types and provider
     const toolConfig = configureToolsForFiles(
@@ -220,26 +242,32 @@ export const replyTool = {
     tools.push(...toolConfig.tools);
     const useWebSearch = toolConfig.useWebSearch;
 
-    const llmApiKey =
-      process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-    if (!llmApiKey) {
-      throw new Error(
-        `${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-      );
-    }
+    // Use helper function to create provider (handles Featherless baseUrl automatically)
+    const providerConfig = createLLMProvider(REPLY_LLM_PROVIDER);
 
-    const llmProvider = new LLM({
-      // @ts-ignore
-      name: REPLY_LLM_PROVIDER,
-      apiKey: llmApiKey,
-    });
-    let googleLLMProvider: LLM;
+    // Debug: Log provider configuration
+    logger.info(
+      {
+        providerName: providerConfig.name,
+        baseUrl: providerConfig.baseUrl,
+        hasApiKey: !!providerConfig.apiKey,
+      },
+      "[REPLY] Provider configuration",
+    );
+
+    const llmProvider = new LLM(providerConfig);
+    let googleLLMProvider: LLM | undefined;
     // default to google in case of error
     if (process.env.GOOGLE_API_KEY) {
       googleLLMProvider = new LLM({
         name: "google",
         apiKey: process.env.GOOGLE_API_KEY,
       });
+      console.log(`[REPLY] Google fallback provider initialized`);
+    } else {
+      console.log(
+        `[REPLY] Google fallback provider not available (GOOGLE_API_KEY not set)`,
+      );
     }
     let systemInstruction: string | undefined = undefined;
     if (character.system) {
@@ -296,6 +324,20 @@ export const replyTool = {
       },
     };
 
+    // Debug: Log the actual request being made
+    logger.info(
+      {
+        model: llmRequest.model,
+        provider: REPLY_LLM_PROVIDER,
+        baseUrl: providerConfig.baseUrl,
+        messageCount: llmRequest.messages.length,
+        maxTokens: llmRequest.maxTokens,
+        hasTools: !!llmRequest.tools && llmRequest.tools.length > 0,
+        useWebSearch,
+      },
+      "[REPLY] LLM request details",
+    );
+
     const contextLength = providerString.length + prompt.length;
     logger.info(`📊 LLM Context Stats:`);
     logger.info(`   - Provider context: ${providerString.length} characters`);
@@ -314,13 +356,42 @@ export const replyTool = {
     if (useWebSearch) {
       let webResponse: WebSearchResponse;
       try {
+        console.log(
+          `[REPLY] Attempting web search with ${REPLY_LLM_PROVIDER}...`,
+        );
         webResponse =
           await llmProvider.createChatCompletionWebSearch(llmRequest);
+        console.log(`[REPLY] Web search successful with ${REPLY_LLM_PROVIDER}`);
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorDetails =
+          error instanceof Error ? error.stack : String(error);
+
+        console.error(`[REPLY] Web search failed with ${REPLY_LLM_PROVIDER}:`, {
+          error: errorMessage,
+          details: errorDetails,
+          provider: REPLY_LLM_PROVIDER,
+          model: REPLY_LLM_MODEL,
+        });
+
         logger.error(
-          `Failed to create chat completion web search with ${REPLY_LLM_PROVIDER}, defaulting to google:`,
-          error as any,
+          {
+            error: errorMessage,
+            provider: REPLY_LLM_PROVIDER,
+            model: REPLY_LLM_MODEL,
+          },
+          `Failed to create chat completion web search with ${REPLY_LLM_PROVIDER}`,
         );
+
+        // Only fallback to Google if it's available
+        if (!googleLLMProvider) {
+          throw new Error(
+            `Web search failed with ${REPLY_LLM_PROVIDER} and Google fallback is not available (GOOGLE_API_KEY not set). Error: ${errorMessage}`,
+          );
+        }
+
+        console.log(`[REPLY] Falling back to Google for web search...`);
         const googleLLMRequest = {
           model: "gemini-2.5-pro",
           systemInstruction,
@@ -330,9 +401,10 @@ export const replyTool = {
           tools: tools.length > 0 ? tools : undefined,
         };
         webResponse =
-          await googleLLMProvider!.createChatCompletionWebSearch(
+          await googleLLMProvider.createChatCompletionWebSearch(
             googleLLMRequest,
           );
+        console.log(`[REPLY] Google fallback web search successful`);
       }
 
       evalText = webResponse.llmOutput;
@@ -355,12 +427,46 @@ export const replyTool = {
     } else {
       let completion: LLMResponse;
       try {
-        completion = await llmProvider.createChatCompletion(llmRequest);
-      } catch (error) {
-        console.error(
-          `Failed to create chat completion with ${REPLY_LLM_PROVIDER}, defaulting to google:`,
-          error,
+        console.log(
+          `[REPLY] Attempting regular chat completion with ${REPLY_LLM_PROVIDER}...`,
         );
+        completion = await llmProvider.createChatCompletion(llmRequest);
+        console.log(
+          `[REPLY] Chat completion successful with ${REPLY_LLM_PROVIDER}`,
+        );
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorDetails =
+          error instanceof Error ? error.stack : String(error);
+
+        console.error(
+          `[REPLY] Chat completion failed with ${REPLY_LLM_PROVIDER}:`,
+          {
+            error: errorMessage,
+            details: errorDetails,
+            provider: REPLY_LLM_PROVIDER,
+            model: REPLY_LLM_MODEL,
+          },
+        );
+
+        logger.error(
+          {
+            error: errorMessage,
+            provider: REPLY_LLM_PROVIDER,
+            model: REPLY_LLM_MODEL,
+          },
+          `Failed to create chat completion with ${REPLY_LLM_PROVIDER}`,
+        );
+
+        // Only fallback to Google if it's available
+        if (!googleLLMProvider) {
+          throw new Error(
+            `Chat completion failed with ${REPLY_LLM_PROVIDER} and Google fallback is not available (GOOGLE_API_KEY not set). Error: ${errorMessage}`,
+          );
+        }
+
+        console.log(`[REPLY] Falling back to Google for chat completion...`);
         const googleLLMRequest = {
           model: "gemini-2.5-pro",
           systemInstruction,
@@ -370,7 +476,8 @@ export const replyTool = {
           tools: tools.length > 0 ? tools : undefined,
         };
         completion =
-          await googleLLMProvider!.createChatCompletion(googleLLMRequest);
+          await googleLLMProvider.createChatCompletion(googleLLMRequest);
+        console.log(`[REPLY] Google fallback chat completion successful`);
       }
 
       const rawContent = completion.content?.trim();
