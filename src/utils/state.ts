@@ -38,7 +38,10 @@ export function endStep(state: State, stepName: string) {
 export function composePromptFromState(state: State, prompt: string): string {
   // for each key in state.values, replace the {{key}} with the value of the key
   for (const key in state.values) {
-    prompt = prompt.replace(`{{${key}}}`, state.values[key]);
+    const value = state.values[key];
+    // Handle undefined, null, and other falsy values gracefully
+    const replacement = value != null ? String(value) : "";
+    prompt = prompt.replace(`{{${key}}}`, replacement);
   }
   return prompt;
 }

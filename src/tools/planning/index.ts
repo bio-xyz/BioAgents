@@ -101,6 +101,7 @@ export const planningTool: Tool = {
       maxTokens: 1024,
     };
 
+    let lastError: Error | null = null;
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
         const completion =
@@ -111,7 +112,7 @@ export const planningTool: Tool = {
 
         const parsedXmlResponse = parseKeyValueXml(xmlResponseText);
         if (!parsedXmlResponse) {
-          throw new Error("Failed to parse XML response");
+          throw new Error("Failed to parse XML response from planning LLM");
         }
 
         const providersRaw = parsedXmlResponse.providers;
@@ -160,14 +161,26 @@ export const planningTool: Tool = {
           actions: actionList,
         };
       } catch (error) {
-        console.error(
-          `Failed to create chat completion with ${PLANNING_LLM_PROVIDER}, retrying...`,
-          error,
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const attemptNum = i + 1;
+        logger.warn(
+          {
+            attempt: attemptNum,
+            maxRetries: MAX_RETRIES,
+            provider: PLANNING_LLM_PROVIDER,
+            error: lastError.message,
+          },
+          `Planning LLM call failed (attempt ${attemptNum}/${MAX_RETRIES})`,
         );
+        
+        // If this is the last attempt, don't continue the loop
+        if (i === MAX_RETRIES - 1) {
+          break;
+        }
       }
     }
 
-    // planning LLM failed, return empty arrays
+    // All retries failed - throw a descriptive error
     endStep(state, "PLANNING");
 
     // Update state in DB after endStep
@@ -180,9 +193,9 @@ export const planningTool: Tool = {
       }
     }
 
-    return {
-      providers: [],
-      actions: [],
-    };
+    const errorMessage = lastError
+      ? `Planning LLM failed after ${MAX_RETRIES} attempts: ${lastError.message}`
+      : `Planning LLM failed after ${MAX_RETRIES} attempts: Unknown error`;
+    throw new Error(errorMessage);
   },
 };

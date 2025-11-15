@@ -146,8 +146,33 @@ export async function executePlanning(context: ToolExecutionContext): Promise<{
 
     return { success: true, result: planningResult };
   } catch (err) {
-    if (logger) logger.error({ err }, "planning_tool_failed");
-    return { success: false, error: "Planning tool execution failed" };
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (logger) {
+      logger.error(
+        { err, errorMessage, stack: err instanceof Error ? err.stack : undefined },
+        "planning_tool_failed",
+      );
+    }
+    
+    // Provide more specific error messages
+    if (errorMessage.includes("API_KEY") || errorMessage.includes("not configured")) {
+      return {
+        success: false,
+        error: `Planning tool configuration error: ${errorMessage}`,
+      };
+    }
+    
+    if (errorMessage.includes("parse") || errorMessage.includes("XML")) {
+      return {
+        success: false,
+        error: `Planning tool response parsing failed: ${errorMessage}`,
+      };
+    }
+    
+    return {
+      success: false,
+      error: `Planning tool execution failed: ${errorMessage}`,
+    };
   }
 }
 
