@@ -24,6 +24,24 @@ const formatPapers = (papers: Paper[]) => {
     .join("\n\n");
 };
 
+const formatEdisonResults = (edisonResults: any[]) => {
+  if (!edisonResults || edisonResults.length === 0) return "No Edison analysis results";
+
+  // Filter to only MOLECULES and ANALYSIS job types
+  const analysisResults = edisonResults.filter(
+    (result) => result.jobType === "MOLECULES" || result.jobType === "ANALYSIS"
+  );
+
+  if (analysisResults.length === 0) return "No Edison analysis results";
+
+  return analysisResults
+    .map((result, i) => {
+      const answer = result.answer || result.error || "No answer";
+      return `${i + 1}. ${result.jobType}:\n   Question: ${result.question}\n   Answer: ${answer}`;
+    })
+    .join("\n\n");
+};
+
 export async function getReflectionPrompt(
   state: State,
   conversationState: ConversationState,
@@ -62,6 +80,8 @@ You are reflecting on a scientific research conversation to maintain accurate co
 **Hypothesis:** ${state.values.hypothesis || "No hypothesis formed"}
 **Papers from this interaction:**
 ${formatPapers(allPapersFromState)}
+**Edison Analysis Results (MOLECULES/ANALYSIS):**
+${formatEdisonResults(state.values.edisonResults || [])}
 
 ## Conversation State (Whole Conversation Summary)
 **Title:** ${conversationState.values.conversationTitle || "Not set"}

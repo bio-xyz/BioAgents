@@ -1,5 +1,3 @@
-import { zodTextFormat } from "openai/helpers/zod";
-import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMProvider } from "../../types/core";
 import logger from "../../utils/logger";
@@ -8,8 +6,6 @@ import {
   hypGenPrompt,
   hypGenWebPrompt,
 } from "./prompts";
-import type { THypothesisZod } from "./types";
-import { HypothesisZodSchema } from "./types";
 
 export type DocumentBlock = {
   type: "document";
@@ -177,109 +173,109 @@ export async function generateHypothesis(
   }
 }
 
-export async function generateFinalResponse(
-  prompt: string,
-  webSearchResults?: WebSearchResults[],
-  onStreamChunk?: (chunk: string, fullText: string) => Promise<void>,
-) {
-  const FINAL_LLM_PROVIDER: LLMProvider =
-    (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey = process.env[`${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+// export async function generateFinalResponse(
+//   prompt: string,
+//   webSearchResults?: WebSearchResults[],
+//   onStreamChunk?: (chunk: string, fullText: string) => Promise<void>,
+// ) {
+//   const FINAL_LLM_PROVIDER: LLMProvider =
+//     (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
+//   const llmApiKey = process.env[`${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
-  if (!llmApiKey) {
-    throw new Error(
-      `${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
-  }
+//   if (!llmApiKey) {
+//     throw new Error(
+//       `${FINAL_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
+//     );
+//   }
 
-  const llmProvider = new LLM({
-    name: FINAL_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
+//   const llmProvider = new LLM({
+//     name: FINAL_LLM_PROVIDER,
+//     apiKey: llmApiKey,
+//   });
 
-  const llmRequest = {
-    model: process.env.REPLY_LLM_MODEL || "gemini-2.5-pro",
-    systemInstruction: character.system,
-    messages: [
-      {
-        role: "user" as const,
-        content: prompt,
-      },
-    ],
-    maxTokens: 5000,
-    thinkingBudget: 1024,
-    stream: !!onStreamChunk,
-    onStreamChunk,
-  };
+//   const llmRequest = {
+//     model: process.env.REPLY_LLM_MODEL || "gemini-2.5-pro",
+//     systemInstruction: character.system,
+//     messages: [
+//       {
+//         role: "user" as const,
+//         content: prompt,
+//       },
+//     ],
+//     maxTokens: 5000,
+//     thinkingBudget: 1024,
+//     stream: !!onStreamChunk,
+//     onStreamChunk,
+//   };
 
-  const response = await llmProvider.createChatCompletion(llmRequest);
+//   const response = await llmProvider.createChatCompletion(llmRequest);
 
-  // Parse JSON from response
-  let finalText = "";
-  try {
-    finalText = JSON.parse(
-      response.content.replace(/```json\n?/, "").replace(/\n?```$/, ""),
-    ).message;
-  } catch (error) {
-    logger.warn("Failed to parse response as JSON, using raw text");
-    finalText = response.content;
-  }
+//   // Parse JSON from response
+//   let finalText = "";
+//   try {
+//     finalText = JSON.parse(
+//       response.content.replace(/```json\n?/, "").replace(/\n?```$/, ""),
+//     ).message;
+//   } catch (error) {
+//     logger.warn("Failed to parse response as JSON, using raw text");
+//     finalText = response.content;
+//   }
 
-  return {
-    finalText,
-    thought: undefined,
-    webSearchResults: webSearchResults ?? [],
-  };
-}
+//   return {
+//     finalText,
+//     thought: undefined,
+//     webSearchResults: webSearchResults ?? [],
+//   };
+// }
 
-export async function structured(
-  prompt: string,
-): Promise<THypothesisZod | null> {
-  const developerPrompt = [
-    "You are a strict JSON transformer.",
-    'Return a JSON object that VALIDATES against the provided Zod schema named "output_zod_schema".',
-    "Output ONLY the JSON — no prose, no markdown, no backticks.",
-    "",
-    "Constraints:",
-    "- Do not add extra properties.",
-    "- No citations or DOIs beyond those present in the input.",
-    "- Keep text plain (no markdown).",
-  ].join("\n");
+// export async function structured(
+//   prompt: string,
+// ): Promise<THypothesisZod | null> {
+//   const developerPrompt = [
+//     "You are a strict JSON transformer.",
+//     'Return a JSON object that VALIDATES against the provided Zod schema named "output_zod_schema".',
+//     "Output ONLY the JSON — no prose, no markdown, no backticks.",
+//     "",
+//     "Constraints:",
+//     "- Do not add extra properties.",
+//     "- No citations or DOIs beyond those present in the input.",
+//     "- Keep text plain (no markdown).",
+//   ].join("\n");
 
-  const STRUCTURED_LLM_PROVIDER: LLMProvider =
-    (process.env.STRUCTURED_LLM_PROVIDER as LLMProvider) || "openai";
-  const llmApiKey =
-    process.env[`${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+//   const STRUCTURED_LLM_PROVIDER: LLMProvider =
+//     (process.env.STRUCTURED_LLM_PROVIDER as LLMProvider) || "openai";
+//   const llmApiKey =
+//     process.env[`${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
-  if (!llmApiKey) {
-    throw new Error(
-      `${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
-  }
+//   if (!llmApiKey) {
+//     throw new Error(
+//       `${STRUCTURED_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
+//     );
+//   }
 
-  const llmProvider = new LLM({
-    name: STRUCTURED_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
+//   const llmProvider = new LLM({
+//     name: STRUCTURED_LLM_PROVIDER,
+//     apiKey: llmApiKey,
+//   });
 
-  const llmRequest = {
-    model: process.env.STRUCTURED_LLM_MODEL || "gpt-5",
-    systemInstruction: developerPrompt,
-    messages: [
-      {
-        role: "user" as const,
-        content: prompt,
-      },
-    ],
-    format: zodTextFormat(HypothesisZodSchema, "output_zod_schema"),
-  };
+//   const llmRequest = {
+//     model: process.env.STRUCTURED_LLM_MODEL || "gpt-5",
+//     systemInstruction: developerPrompt,
+//     messages: [
+//       {
+//         role: "user" as const,
+//         content: prompt,
+//       },
+//     ],
+//     format: zodTextFormat(HypothesisZodSchema, "output_zod_schema"),
+//   };
 
-  const response = await llmProvider.createChatCompletion(llmRequest);
+//   const response = await llmProvider.createChatCompletion(llmRequest);
 
-  try {
-    return JSON.parse(response.content) as THypothesisZod;
-  } catch (error) {
-    logger.error("Failed to parse structured response:", error as any);
-    return null;
-  }
-}
+//   try {
+//     return JSON.parse(response.content) as THypothesisZod;
+//   } catch (error) {
+//     logger.error("Failed to parse structured response:", error as any);
+//     return null;
+//   }
+// }
