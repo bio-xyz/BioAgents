@@ -113,27 +113,130 @@ export const openscholarTool = {
       }
     }
 
-    const cacheKey = `openscholar:data:${message.question}:${message.conversation_id}`;
+    try {
+      const cacheKey = `openscholar:data:${message.question}:${message.conversation_id}`;
 
-    // Check cache first
-    const cachedResult = openScholarCache.get(cacheKey);
-    if (cachedResult) {
-      // Restore state from cached result
+      // Check cache first
+      const cachedResult = openScholarCache.get(cacheKey);
+      if (cachedResult) {
+        // Restore state from cached result
+        addVariablesToState(state, {
+          openScholarPapers: cachedResult.values.openScholarPapers,
+          openScholarRaw: cachedResult.values.openScholarRaw,
+          openScholarPaperDois: cachedResult.values.openScholarPaperDois,
+        });
+
+        // Update state in DB with cached state
+        if (state.id) {
+          try {
+            await updateState(state.id, state.values);
+          } catch (err) {
+            console.error("Failed to update state in DB:", err);
+          }
+        }
+
+        endStep(state, "OPENSCHOLAR");
+
+        // Update state in DB after endStep
+        if (state.id) {
+          try {
+            await updateState(state.id, state.values);
+          } catch (err) {
+            console.error("Failed to update state in DB:", err);
+          }
+        }
+
+        return cachedResult;
+      }
+
+      // Get conversation thread (last 3 DB messages = 6 actual messages)
+      const allMessages = await getMessagesByConversation(
+        message.conversation_id,
+        3,
+      );
+      // Reverse to get chronological order (oldest first)
+      const thread = allMessages.reverse();
+
+      // Generate standalone message based on thread
+      const standaloneMessage = await getStandaloneMessage(
+        thread,
+        message.question || "",
+      );
+      const question = standaloneMessage;
+
+      const topChunks = await fetchOpenScholarChunks(question);
+
+      const reformulatedHallmarkQuestion =
+        await getReformulatedHallmarkQuestion(question);
+
+      const hallmarkChunks = reformulatedHallmarkQuestion?.length
+        ? await fetchOpenScholarChunks(reformulatedHallmarkQuestion, 3)
+        : [];
+
+      const seen = new Set(topChunks.map((c: OpenScholarChunk) => c.chunk_id));
+      const allChunks = [
+        ...topChunks,
+        ...hallmarkChunks.filter(
+          (c) => !seen.has(c.chunk_id) && seen.add(c.chunk_id),
+        ),
+      ];
+
+      const openScholarPapers = allChunks.map((chunk) => ({
+        title: chunk.title,
+        doi: `https://doi.org/${chunk.paper_id}`,
+      }));
+      const openScholarRaw = allChunks.map((chunk) => ({
+        title: chunk.title,
+        doi: `https://doi.org/${chunk.paper_id}`,
+        chunkText: chunk.text,
+      }));
+      const openScholarPaperDois = openScholarPapers.map((p) => p.doi);
+
+      // TODO: shortened papers for Twitter
+      const shortenedPapers: string[] = [];
+
+      logger.info(`OpenScholar dois: ${openScholarPaperDois.join(", ")}`);
+
       addVariablesToState(state, {
-        openScholarPapers: cachedResult.values.openScholarPapers,
-        openScholarRaw: cachedResult.values.openScholarRaw,
-        openScholarPaperDois: cachedResult.values.openScholarPaperDois,
+        openScholarPapers,
+        openScholarRaw,
+        openScholarPaperDois,
+        // shortenedPapers,
       });
 
-      // Update state in DB with cached state
+      const result = {
+        text: "OpenScholar papers",
+        values: {
+          openScholarRaw,
+          openScholarSynthesis: allChunks
+            .map((chunk) => `${chunk.paper_id}: ${chunk.text}`)
+            .join("\n\n"),
+          openScholarPapers,
+          openScholarPaperDois,
+          openScholarShortenedPapers: shortenedPapers,
+        },
+      };
+
+      // Cache the result for 30 minutes
+      openScholarCache.set(cacheKey, result, 30 * 60 * 1000);
+
+      endStep(state, "OPENSCHOLAR");
+
+      // Update state in DB after endStep
       if (state.id) {
         try {
           await updateState(state.id, state.values);
         } catch (err) {
+          // Log error but don't fail the tool execution
           console.error("Failed to update state in DB:", err);
         }
       }
 
+      return result;
+    } catch (error) {
+      logger.error({ err: error }, "openscholar_tool_failed");
+
+      // Make sure to end step even on error
       endStep(state, "OPENSCHOLAR");
 
       // Update state in DB after endStep
@@ -145,92 +248,8 @@ export const openscholarTool = {
         }
       }
 
-      return cachedResult;
+      // Re-throw the error so the caller knows it failed
+      throw error;
     }
-
-    // Get conversation thread (last 3 DB messages = 6 actual messages)
-    const allMessages = await getMessagesByConversation(
-      message.conversation_id,
-      3,
-    );
-    // Reverse to get chronological order (oldest first)
-    const thread = allMessages.reverse();
-
-    // Generate standalone message based on thread
-    const standaloneMessage = await getStandaloneMessage(
-      thread,
-      message.question || "",
-    );
-    const question = standaloneMessage;
-
-    const topChunks = await fetchOpenScholarChunks(question);
-
-    const reformulatedHallmarkQuestion =
-      await getReformulatedHallmarkQuestion(question);
-
-    const hallmarkChunks = reformulatedHallmarkQuestion?.length
-      ? await fetchOpenScholarChunks(reformulatedHallmarkQuestion, 3)
-      : [];
-
-    const seen = new Set(topChunks.map((c: OpenScholarChunk) => c.chunk_id));
-    const allChunks = [
-      ...topChunks,
-      ...hallmarkChunks.filter(
-        (c) => !seen.has(c.chunk_id) && seen.add(c.chunk_id),
-      ),
-    ];
-
-    const openScholarPapers = allChunks.map((chunk) => ({
-      title: chunk.title,
-      doi: `https://doi.org/${chunk.paper_id}`,
-    }));
-    const openScholarRaw = allChunks.map((chunk) => ({
-      title: chunk.title,
-      doi: `https://doi.org/${chunk.paper_id}`,
-      chunkText: chunk.text,
-    }));
-    const openScholarPaperDois = openScholarPapers.map((p) => p.doi);
-
-    // TODO: shortened papers for Twitter
-    const shortenedPapers: string[] = [];
-
-    logger.info(`OpenScholar dois: ${openScholarPaperDois.join(", ")}`);
-
-    addVariablesToState(state, {
-      openScholarPapers,
-      openScholarRaw,
-      openScholarPaperDois,
-      // shortenedPapers,
-    });
-
-    const result = {
-      text: "OpenScholar papers",
-      values: {
-        openScholarRaw,
-        openScholarSynthesis: allChunks
-          .map((chunk) => `${chunk.paper_id}: ${chunk.text}`)
-          .join("\n\n"),
-        openScholarPapers,
-        openScholarPaperDois,
-        openScholarShortenedPapers: shortenedPapers,
-      },
-    };
-
-    // Cache the result for 30 minutes
-    openScholarCache.set(cacheKey, result, 30 * 60 * 1000);
-
-    endStep(state, "OPENSCHOLAR");
-
-    // Update state in DB after endStep
-    if (state.id) {
-      try {
-        await updateState(state.id, state.values);
-      } catch (err) {
-        // Log error but don't fail the tool execution
-        console.error("Failed to update state in DB:", err);
-      }
-    }
-
-    return result;
   },
 };
