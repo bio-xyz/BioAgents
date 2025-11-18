@@ -197,26 +197,32 @@ export const replyTool = {
     prompt += `\n\nYou need to reply to the following question:\n${message.question}`;
 
     // Detect file types and add appropriate analysis instructions
-    const fileTypes = detectFileTypes(state.values.rawFiles);
-    const fileAnalysisPrompt = getFileAnalysisPrompt(
-      fileTypes.hasPDF,
-      fileTypes.hasDataFile,
-      fileTypes.hasImage,
-    );
-    if (fileAnalysisPrompt) {
-      prompt += fileAnalysisPrompt;
+    // Skip for deep research since files are handled via Edison ANALYSIS jobs
+    if (!state.values.isDeepResearch) {
+      const fileTypes = detectFileTypes(state.values.rawFiles);
+      const fileAnalysisPrompt = getFileAnalysisPrompt(
+        fileTypes.hasPDF,
+        fileTypes.hasDataFile,
+        fileTypes.hasImage,
+      );
+      if (fileAnalysisPrompt) {
+        prompt += fileAnalysisPrompt;
+      }
     }
 
     const REPLY_LLM_PROVIDER = process.env.REPLY_LLM_PROVIDER!;
     const REPLY_LLM_MODEL = process.env.REPLY_LLM_MODEL!;
 
     // Configure tools based on file types and provider
-    const toolConfig = configureToolsForFiles(
-      templateKey,
-      REPLY_LLM_PROVIDER,
-      REPLY_LLM_MODEL,
-      state,
-    );
+    // Skip for deep research since files are handled via Edison
+    const toolConfig = state.values.isDeepResearch
+      ? { tools: [], useWebSearch: false }
+      : configureToolsForFiles(
+          templateKey,
+          REPLY_LLM_PROVIDER,
+          REPLY_LLM_MODEL,
+          state,
+        );
     tools.push(...toolConfig.tools);
     const useWebSearch = toolConfig.useWebSearch;
 
@@ -250,15 +256,27 @@ export const replyTool = {
     // Currently only Google Gemini supports native file upload via File API
     // TODO: Support file upload for other LLM providers
     // For now, other providers receive parsed text content as fallback
+    //
+    // IMPORTANT: Skip file handling for deep research requests since files were
+    // already processed and included in Edison ANALYSIS jobs
     let geminiFileUris: Array<{ fileUri: string; mimeType: string }> = [];
 
-    if (state.values.rawFiles?.length && REPLY_LLM_PROVIDER === "google") {
+    if (
+      !state.values.isDeepResearch &&
+      state.values.rawFiles?.length &&
+      REPLY_LLM_PROVIDER === "google"
+    ) {
       const googleAdapter = (llmProvider as any).adapter as any;
       geminiFileUris = await uploadFilesToGemini(state, googleAdapter);
     }
 
     // For non-Google providers or as fallback, add parsed text to context
-    if (state.values.rawFiles?.length && geminiFileUris.length === 0) {
+    // Skip for deep research since files are handled via Edison
+    if (
+      !state.values.isDeepResearch &&
+      state.values.rawFiles?.length &&
+      geminiFileUris.length === 0
+    ) {
       providerString = addParsedFilesToContext(state, providerString);
     }
 

@@ -55,13 +55,43 @@ export const edisonTool = {
 
     logger.info({ jobType: selectedJobType, question }, "starting_edison_task");
 
+    // For ANALYSIS jobs, append dataset information from uploaded files
+    let finalQuestion = question;
+    if (
+      selectedJobType === "ANALYSIS" &&
+      state.values.rawFiles &&
+      state.values.rawFiles.length > 0
+    ) {
+      const datasetInfo = state.values.rawFiles
+        .map((file: any, index: number) => {
+          return `Dataset ${index + 1}: ${file.filename}
+MIME Type: ${file.mimeType}
+Content:
+${file.parsedText}`;
+        })
+        .join("\n\n");
+
+      finalQuestion = `${question}
+
+Available Datasets:
+${datasetInfo}`;
+
+      logger.info(
+        {
+          jobType: selectedJobType,
+          fileCount: state.values.rawFiles.length,
+        },
+        "appended_datasets_to_analysis_question",
+      );
+    }
+
     try {
       // Start single Edison task
       const taskResponse = await startEdisonTask(
         EDISON_API_URL,
         EDISON_API_KEY,
         selectedJobType,
-        question,
+        finalQuestion,
       );
 
       logger.info(
@@ -77,7 +107,7 @@ export const edisonTool = {
         {
           taskId: taskResponse.task_id,
           jobType: taskResponse.job_type,
-          question: question,
+          question: finalQuestion,
           status: taskResponse.status,
         },
       ]);
@@ -98,7 +128,7 @@ export const edisonTool = {
       const edisonResult = {
         taskId: taskResponse.task_id,
         jobType: selectedJobType,
-        question: question,
+        question: finalQuestion,
         answer: result?.answer,
         error: result?.error,
       };
@@ -114,7 +144,7 @@ export const edisonTool = {
       }
 
       return {
-        question: question,
+        question: finalQuestion,
         answer: result?.answer,
         error: result?.error,
         message: result?.answer
@@ -150,7 +180,7 @@ async function startEdisonTask(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       name: jobType,
@@ -213,7 +243,7 @@ export async function awaitEdisonTasks(
               method: "GET",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`,
+                Authorization: `Bearer ${apiKey}`,
               },
             },
           );
