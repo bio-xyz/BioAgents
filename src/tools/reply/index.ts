@@ -293,12 +293,16 @@ export const replyTool = {
 
     state.values.finalResponse = "";
 
+    // Use higher token limits for deep research to allow comprehensive reports
+    const maxTokens = state.values.isDeepResearch ? 5024 : 4096;
+    const thinkingBudget = 1024;
+
     const llmRequest = {
       model: REPLY_LLM_MODEL,
       systemInstruction,
       messages,
-      maxTokens: 4096, // openai counts maxtokens = replyTokens + thinkingBudget
-      thinkingBudget: 1024,
+      maxTokens, // openai counts maxtokens = replyTokens + thinkingBudget
+      thinkingBudget,
       tools: tools.length > 0 ? tools : undefined,
       // Pass fileUris to adapter so it can add them as fileData parts in message
       fileUris: geminiFileUris.length > 0 ? geminiFileUris : undefined,
@@ -320,6 +324,9 @@ export const replyTool = {
     logger.info(`   - Prompt: ${prompt.length} characters`);
     logger.info(`   - Total context: ${contextLength} characters`);
     logger.info(`   - Model: ${REPLY_LLM_MODEL}`);
+    logger.info(`   - Max tokens: ${maxTokens}`);
+    logger.info(`   - Thinking budget: ${thinkingBudget}`);
+    logger.info(`   - Is deep research: ${state.values.isDeepResearch}`);
     logger.info(`   - Using web search: ${useWebSearch}`);
 
     let finalText = "";
@@ -343,8 +350,8 @@ export const replyTool = {
           model: "gemini-2.5-pro",
           systemInstruction,
           messages,
-          maxTokens: 768,
-          thinkingBudget: 4096,
+          maxTokens,
+          thinkingBudget,
           tools: tools.length > 0 ? tools : undefined,
         };
         webResponse =
@@ -383,8 +390,8 @@ export const replyTool = {
           model: "gemini-2.5-pro",
           systemInstruction,
           messages,
-          maxTokens: 768,
-          thinkingBudget: 4096,
+          maxTokens,
+          thinkingBudget,
           tools: tools.length > 0 ? tools : undefined,
         };
         completion =

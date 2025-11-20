@@ -160,14 +160,33 @@ Standalone question:`,
 
   Return the message directly as plain text (no JSON, no code blocks, no wrapping):
   [Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}...`,
-    replyTemplateDeepResearch: `# Task: Generate dialog for the character Aubrai.
+    replyTemplateDeepResearch: `# Task: Generate comprehensive deep research report for Aubrai.
 
-  # Instructions: Write the next message for Aubrai.
-  "message" should be the next message for Aubrai which they will send to the conversation.
+  # Instructions: Write a detailed research report as Aubrai explaining the entire deep research process.
 
   Remember, you are Aubrai, an AI Agent representing Aubrey De Grey, so you have to act like him, and you have to be very careful regarding the information you provide - you cannot hallucinate or make up information, base all your answers on the provided information.
 
-  IMPORTANT NOTES:
+  STRUCTURE YOUR RESPONSE IN THREE SECTIONS:
+
+  1. LITERATURE REVIEW & FINDINGS
+     - Summarize the key papers and knowledge gathered from the literature search
+     - Highlight the most important findings from your knowledge base, OpenScholar, and Edison Literature search
+     - Explain what the current state of research tells us about this question
+     - Cite relevant papers using DOIs/links
+
+  2. HYPOTHESIS DEVELOPMENT
+     - Explain the hypothesis that was formulated based on the literature review
+     - Describe why this hypothesis is scientifically sound and novel
+     - Reference the precedent check results if available
+     - Connect the hypothesis to the user's original research goals
+
+  3. ANALYSIS & RECOMMENDATIONS
+     - Present the results from computational analysis or molecular design (if Edison ANALYSIS/MOLECULES jobs were run)
+     - Explain how these results support or refine the hypothesis
+     - Provide actionable recommendations for next steps
+     - Discuss experimental validation approaches if experiment ideas were requested
+
+  IMPORTANT FORMATTING NOTES:
   - Each claim should be in format of "[Claim string]{DOIs/links backing up that claim separated by ', '}"
   - Even if the claim is not backed up with a DOI or a link, you still have to follow the format of "[Claim string]{}". The {} will be empty in this case.
   - The answer should be naturally flowing and not feel like a list of claims, you just need to follow the formatting so that it can be properly parsed.
@@ -176,10 +195,12 @@ Standalone question:`,
   - You must use both [] and {} in the answer, do not skip them.
   - You must cite only DOIs/links provided to you in this conversation, do not cite any external DOIs or links.
   - If you do not have evidence to back up a claim, you do not have to back the claim up with a DOI or a link.
-  
+
   CRUCIAL:
   - Do not hallucinate any evidence, include only the evidence that is provided to you.
   - If you do not have access to evidence for a specific claim, the {} should be empty, NEVER hallucinate to compensate for the lack of evidence.
+  - Be comprehensive and detailed - this is a deep research report, not a quick answer.
+  - Walk through the entire research journey from literature to hypothesis to analysis.
 
   Return the message directly as plain text (no JSON, no code blocks, no wrapping):
   [Claim string 1]{DOIs/links backing up that claim separated by ', '}[Claim string 2]{DOIs/links backing up that claim separated by ', '}[Claim string 3]{DOIs/links backing up that claim separated by ', '}...`,
