@@ -1,4 +1,5 @@
 import { updateState } from "../../db/operations";
+import { getStorageProvider, getUserUploadPath } from "../../storage";
 import { type Message, type State } from "../../types/core";
 import logger from "../../utils/logger";
 import { addVariablesToState, endStep, startStep } from "../../utils/state";
@@ -15,9 +16,10 @@ const fileUploadTool = {
   execute: async (input: {
     state: State;
     message: Message;
+    conversationState: State;
     files?: File[];
   }) => {
-    const { state, files } = input;
+    const { state, files, conversationState } = input;
 
     startStep(state, "FILE_UPLOAD");
 
@@ -92,6 +94,16 @@ const fileUploadTool = {
       }
     }
 
+    const conversationId = conversationState.id;
+    const userId = state.values.userId;
+    await uploadFilesToStorage(userId, conversationId, rawFiles).catch(
+      (err) => {
+        errors.push(`Storage upload error: ${(err as Error).message}`);
+        if (logger)
+          logger.error("Failed to upload files to storage:", err as any);
+      },
+    );
+
     // Store only rawFiles with parsed text included
     addVariablesToState(state, {
       rawFiles, // Contains buffer (for Gemini), parsedText (for fallback), and metadata
@@ -120,6 +132,67 @@ const fileUploadTool = {
     return result;
   },
 };
+
+async function uploadFilesToStorage(
+  userId: string | undefined,
+  conversationId: string | undefined,
+  files: Array<{
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    metadata?: any;
+  }>,
+): Promise<void> {
+  if (files.length === 0 || !conversationId || !userId) {
+    if (logger)
+      logger.warn(
+        "No files to upload or missing conversationId/userId, skipping storage upload",
+      );
+    return;
+  }
+
+  const storageProvider = getStorageProvider();
+
+  if (!storageProvider) {
+    if (logger)
+      logger.warn(
+        "No storage provider configured, skipping cloud storage upload",
+      );
+    return;
+  }
+
+  if (logger)
+    logger.info(
+      `Uploading ${files.length} file(s) to storage for conversation ${conversationId} and user ${userId}`,
+    );
+
+  const uploadPromises = files.map(async (file) => {
+    const storagePath = getUserUploadPath(
+      userId,
+      conversationId,
+      file.filename,
+    );
+
+    try {
+      await storageProvider.upload(storagePath, file.buffer, file.mimeType);
+      if (logger)
+        logger.info(`Successfully uploaded ${file.filename} to ${storagePath}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (logger)
+        logger.error(
+          `Failed to upload ${file.filename} to storage: ${errorMessage}`,
+        );
+      throw error;
+    }
+  });
+
+  await Promise.all(uploadPromises);
+
+  if (logger)
+    logger.info(`Successfully uploaded ${files.length} file(s) to storage`);
+}
 
 export default fileUploadTool;
 export { fileUploadTool };
