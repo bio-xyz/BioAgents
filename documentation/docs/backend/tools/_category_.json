@@ -1,0 +1,9 @@
+{
+  "label": "Tools",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "Agent tools and capabilities"
+  }
+}
+

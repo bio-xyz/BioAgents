@@ -1,0 +1,9 @@
+{
+  "label": "Core Concepts",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Understanding the architecture of BioAgents AgentKit"
+  }
+}
+

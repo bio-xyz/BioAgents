@@ -1,0 +1,9 @@
+{
+  "label": "Agent Framework",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Core agent framework architecture and components"
+  }
+}
+

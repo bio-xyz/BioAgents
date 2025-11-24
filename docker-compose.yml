@@ -11,6 +11,7 @@ services:
 
     ports:
       - "3000:3000"
+
     environment:
       # Required: LLM API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -76,6 +77,19 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+  
+  docs:
+    build: ./documentation
+    container_name: bioagents-docs
+    ports:
+      - "3001:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "run", "-e", "fetch('http://localhost:8080/docs/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 # Named volumes for persistent storage
 # These volumes store agent-specific documentation and branding

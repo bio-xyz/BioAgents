@@ -1,0 +1,266 @@
+/**
+ * BioAgents Documentation - Professional Theme
+ * Optimized for readability and modern design
+ */
+
+/* Import professional fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Light Mode - Enterprise Professional Color Scheme */
+:root {
+  /* Primary Colors - Enterprise Slate-Teal */
+  --ifm-color-primary: #0f766e;
+  --ifm-color-primary-dark: #115e59;
+  --ifm-color-primary-darker: #134e4a;
+  --ifm-color-primary-darkest: #042f2e;
+  --ifm-color-primary-light: #14b8a6;
+  --ifm-color-primary-lighter: #2dd4bf;
+  --ifm-color-primary-lightest: #5eead4;
+
+  /* Background Colors */
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #f8f9fa;
+  
+  /* Typography */
+  --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Consolas', Monaco, 'Courier New', monospace;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.65;
+  --ifm-heading-font-weight: 600;
+  
+  /* Code blocks */
+  --ifm-code-font-size: 14px;
+  --ifm-code-background: #f6f8fa;
+  --ifm-code-border-radius: 6px;
+  --docusaurus-highlighted-code-line-bg: rgba(15, 118, 110, 0.08);
+  
+  /* Sidebar */
+  --ifm-menu-color: #1c1e21;
+  --ifm-menu-color-background-active: rgba(15, 118, 110, 0.08);
+  --ifm-menu-color-background-hover: rgba(15, 118, 110, 0.05);
+  
+  /* TOC */
+  --ifm-toc-border-color: #e8eaed;
+  
+  /* Navbar */
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ifm-navbar-height: 60px;
+  
+  /* Spacing */
+  --ifm-spacing-horizontal: 1.5rem;
+  --ifm-global-spacing: 1.5rem;
+}
+
+/* Dark Mode - Enterprise Professional */
+[data-theme='dark'] {
+  /* Primary Colors - Muted Teal for dark mode */
+  --ifm-color-primary: #5eead4;
+  --ifm-color-primary-dark: #2dd4bf;
+  --ifm-color-primary-darker: #14b8a6;
+  --ifm-color-primary-darkest: #0d9488;
+  --ifm-color-primary-light: #7dd3fc;
+  --ifm-color-primary-lighter: #99f6e4;
+  --ifm-color-primary-lightest: #ccfbf1;
+  
+  /* Background Colors - True professional dark */
+  --ifm-background-color: #0d1117;
+  --ifm-background-surface-color: #161b22;
+  
+  /* Text Colors */
+  --ifm-font-color-base: #e6edf3;
+  --ifm-font-color-secondary: #8b949e;
+  
+  /* Code blocks - GitHub-inspired */
+  --ifm-code-background: #161b22;
+  --docusaurus-highlighted-code-line-bg: rgba(94, 234, 212, 0.12);
+  
+  /* Sidebar */
+  --ifm-menu-color: #e6edf3;
+  --ifm-menu-color-background-active: rgba(94, 234, 212, 0.12);
+  --ifm-menu-color-background-hover: rgba(94, 234, 212, 0.06);
+  
+  /* Borders */
+  --ifm-toc-border-color: #30363d;
+  --ifm-color-emphasis-300: #30363d;
+  --ifm-hr-border-color: #30363d;
+  
+  /* Navbar */
+  --ifm-navbar-background-color: #0d1117;
+  --ifm-navbar-shadow: 0 1px 0 0 rgba(48, 54, 61, 0.5);
+  
+  /* Cards & Surfaces */
+  --ifm-card-background-color: #161b22;
+}
+
+/* Enhanced Typography */
+html {
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  font-size: 1.875rem;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+
+h3 {
+  font-size: 1.5rem;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Inline code */
+code {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875em;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* Code blocks */
+pre code {
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 0;
+  background: transparent;
+}
+
+/* Improved spacing for content */
+.markdown > * {
+  margin-bottom: 1rem;
+}
+
+.markdown p {
+  margin-bottom: 1.25rem;
+  line-height: 1.75;
+}
+
+/* Better list styling */
+.markdown ul, .markdown ol {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+
+.markdown li {
+  margin-bottom: 0.5rem;
+}
+
+/* Sidebar improvements */
+.menu__link {
+  border-radius: 6px;
+  font-size: 0.9375rem;
+}
+
+.menu__list-item-collapsible {
+  border-radius: 6px;
+}
+
+/* TOC improvements */
+.table-of-contents__link {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.table-of-contents__link--active {
+  font-weight: 600;
+  color: var(--ifm-color-primary);
+}
+
+/* Navbar improvements */
+.navbar {
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+
+.navbar__title {
+  font-weight: 700;
+  font-size: 1.125rem;
+}
+
+/* Search bar styling */
+.navbar__search-input {
+  border-radius: 8px;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-toc-border-color);
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 4px solid var(--ifm-color-primary);
+  padding-left: 1rem;
+  margin-left: 0;
+  color: var(--ifm-font-color-secondary);
+  font-style: normal;
+}
+
+/* Tables */
+table {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* Admonitions */
+.admonition {
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+/* Pagination */
+.pagination-nav__link {
+  border-radius: 8px;
+  border: 1px solid var(--ifm-toc-border-color);
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+/* Footer - Hidden */
+.footer {
+  display: none;
+}
+
+/* Scrollbar styling (webkit browsers) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ifm-color-emphasis-300);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ifm-color-emphasis-400);
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: #30363d;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}

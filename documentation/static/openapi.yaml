@@ -1,0 +1,338 @@
+openapi: 3.0.0
+info:
+  title: BioAgents API
+  version: 1.0.0
+  description: |
+    BioAgents is an AI-powered agent framework for scientific research and data analysis.
+    This API provides endpoints for chat interactions, deep research, code execution, and knowledge management.
+  contact:
+    name: BioAgents
+    url: https://github.com/bio-xyz/BioAgents
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.bioagents.io
+    description: Production server (example)
+
+tags:
+  - name: Chat
+    description: Chat and conversation endpoints
+  - name: Deep Research
+    description: Scientific research and paper analysis
+  - name: Authentication
+    description: User authentication and session management
+  - name: x402 Payments
+    description: Payment verification and management
+
+paths:
+  /api/chat:
+    post:
+      tags:
+        - Chat
+      summary: Send a chat message
+      description: Send a message to the AI agent and receive a streaming response
+      operationId: sendChatMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The user's message
+                  example: "Analyze this scientific paper about protein folding"
+                sessionId:
+                  type: string
+                  description: Session ID for conversation continuity
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                context:
+                  type: object
+                  description: Additional context for the conversation
+                  properties:
+                    fileIds:
+                      type: array
+                      items:
+                        type: string
+                      description: IDs of uploaded files
+                tools:
+                  type: array
+                  items:
+                    type: string
+                  description: Specific tools to enable for this request
+                  example: ["semanticScholar", "deepResearch", "codeExecution"]
+      responses:
+        '200':
+          description: Streaming response with AI-generated content
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [content, tool_call, thinking, complete]
+                  content:
+                    type: string
+                  toolName:
+                    type: string
+                  toolArgs:
+                    type: object
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/deep-research/start:
+    post:
+      tags:
+        - Deep Research
+      summary: Start a deep research task
+      description: Initiate a comprehensive research task on a scientific topic
+      operationId: startDeepResearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: The research question or topic
+                  example: "What are the latest developments in CRISPR gene editing for cancer treatment?"
+                sessionId:
+                  type: string
+                  description: Session ID for tracking the research task
+                depth:
+                  type: string
+                  enum: [basic, intermediate, comprehensive]
+                  default: intermediate
+                  description: Depth of research to perform
+      responses:
+        '200':
+          description: Research task started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                    description: Unique identifier for the research task
+                  status:
+                    type: string
+                    enum: [started, in_progress]
+                  estimatedDuration:
+                    type: integer
+                    description: Estimated duration in seconds
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/deep-research/status/{taskId}:
+    get:
+      tags:
+        - Deep Research
+      summary: Check research task status
+      description: Get the current status and progress of a deep research task
+      operationId: getResearchStatus
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The research task ID
+      responses:
+        '200':
+          description: Task status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [started, in_progress, completed, failed]
+                  progress:
+                    type: integer
+                    description: Progress percentage (0-100)
+                  currentStep:
+                    type: string
+                    description: Current step description
+                  results:
+                    type: object
+                    description: Research results (only when completed)
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login user
+      description: Authenticate user and create a session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "securePassword123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT authentication token
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/x402/verify:
+    post:
+      tags:
+        - x402 Payments
+      summary: Verify x402 payment
+      description: Verify a payment made through the x402 protocol
+      operationId: verifyPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paymentId
+                - transactionHash
+              properties:
+                paymentId:
+                  type: string
+                  description: Payment identifier
+                transactionHash:
+                  type: string
+                  description: Blockchain transaction hash
+      responses:
+        '200':
+          description: Payment verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  amount:
+                    type: string
+                    description: Amount paid
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        details:
+          type: object
+          description: Additional error details
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User ID
+        email:
+          type: string
+          format: email
+          description: User email
+        name:
+          type: string
+          description: User name
+        createdAt:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT authentication token
+
+security:
+  - bearerAuth: []
+

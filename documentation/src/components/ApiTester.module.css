@@ -1,0 +1,164 @@
+.apiTester {
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+  background: var(--ifm-background-surface-color);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.method {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #0f766e;
+  color: white;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  font-family: var(--ifm-font-family-monospace);
+}
+
+.endpoint {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--ifm-font-color-base);
+}
+
+.description {
+  margin: 0 0 1.5rem 0;
+  color: var(--ifm-font-color-secondary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ifm-font-color-base);
+}
+
+.field input,
+.field textarea {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 6px;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--ifm-color-primary);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.testButton,
+.copyButton {
+  padding: 0.625rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.testButton {
+  background: var(--ifm-color-primary);
+  color: white;
+  flex: 1;
+}
+
+.testButton:hover:not(:disabled) {
+  background: var(--ifm-color-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.2);
+}
+
+.testButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.copyButton {
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-toc-border-color);
+  color: var(--ifm-font-color-base);
+}
+
+.copyButton:hover {
+  background: var(--ifm-background-color);
+  border-color: var(--ifm-color-primary);
+}
+
+.response {
+  margin-top: 1rem;
+}
+
+.response label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ifm-font-color-base);
+}
+
+.response pre {
+  margin: 0;
+  padding: 1rem;
+  background: var(--ifm-code-background);
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+[data-theme='dark'] .method {
+  background: #14b8a6;
+}
+
+@media (max-width: 768px) {
+  .actions {
+    flex-direction: column;
+  }
+  
+  .testButton,
+  .copyButton {
+    width: 100%;
+  }
+}
+

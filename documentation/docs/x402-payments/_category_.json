@@ -1,0 +1,9 @@
+{
+  "label": "x402 Payment System",
+  "position": 7,
+  "link": {
+    "type": "generated-index",
+    "description": "USDC micropayments integration"
+  }
+}
+
