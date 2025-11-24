@@ -23,57 +23,6 @@ export interface StateValues {
   source?: string;
   isDeepResearch?: boolean;
 
-  // Cost tracking
-  estimatedCostsUSD?: Record<string, number>;
-
-  // File upload
-  rawFiles?: Array<{
-    buffer: Buffer;
-    filename: string;
-    mimeType: string;
-    parsedText: string;
-    metadata?: any;
-  }>;
-  fileUploadErrors?: string[];
-
-  // OpenScholar provider
-  openScholarPapers?: Array<{ title: string; doi: string }>;
-  openScholarRaw?: Array<{ title: string; doi: string; chunkText: string }>;
-  openScholarPaperDois?: string[];
-  openScholarShortenedPapers?: string[];
-  openScholarSynthesis?: string;
-
-  // Semantic Scholar provider
-  semanticScholarSynthesis?: string;
-  semanticScholarPapers?: Paper[];
-
-  // Knowledge provider
-  knowledge?: Array<{ title: string; content: string }>;
-
-  // Knowledge Graph provider
-  kgPapers?: any[];
-  finalPapers?: Paper[];
-
-  // Hypothesis action
-  hypothesis?: string;
-  hypothesisThought?: string;
-  noveltyImprovement?: string; // Improvement suggestion from precedent check
-
-  // Edison provider
-  edisonTasks?: Array<{
-    taskId: string;
-    jobType: string;
-    question: string;
-    status: string;
-  }>;
-  edisonResults?: Array<{
-    taskId: string;
-    jobType: string;
-    question: string;
-    answer?: string;
-    error?: string;
-  }>;
-
   // Action responses
   finalResponse?: string; // Final text response from REPLY or HYPOTHESIS
   webSearchResults?: Array<{
@@ -82,6 +31,7 @@ export interface StateValues {
     originalUrl: string;
     index: number;
   }>;
+  papers: Paper[];
   thought?: string;
 
   // Step tracking
@@ -91,11 +41,27 @@ export interface StateValues {
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
-  conversationTitle?: string; // Title of the conversation
-  papers?: Paper[]; // All papers referenced in conversation
-  conversationGoal?: string;
+  objective: string;
+  currentGoal?: string;
+  currentObjective?: string;
   keyInsights?: string[];
-  methodology?: string;
+  methodology?: string; // Methodology for the current goal
+  currentHypothesis?: string;
+  discoveries?: string[];
+  plan?: Array<{
+    objective: string;
+    datasets: Array<{
+      filename: string;
+      id: string;
+      description: string;
+    }>;
+    type: "LITERATURE" | "ANALYSIS";
+  }>;
+  uploadedDatasets?: Array<{
+    filename: string;
+    id: string;
+    description: string;
+  }>;
 }
 
 // TODO: add expiry to state rows in DB
