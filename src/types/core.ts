@@ -31,7 +31,7 @@ export interface StateValues {
     originalUrl: string;
     index: number;
   }>;
-  papers: Paper[];
+  papers?: Paper[];
   thought?: string;
 
   // Step tracking
@@ -56,6 +56,7 @@ export interface ConversationStateValues extends StateValues {
       description: string;
     }>;
     type: "LITERATURE" | "ANALYSIS";
+    level: number;
   }>;
   uploadedDatasets?: Array<{
     filename: string;
