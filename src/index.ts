@@ -1,6 +1,7 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
-import { x402Middleware } from "./middleware/x402";
+import { x402Hook } from "./middleware/x402";
+import { x402Config } from "./x402/config";
 import { authRoute } from "./routes/auth";
 import { chatRoute, chatRouteGet } from "./routes/chat";
 import {
@@ -9,6 +10,9 @@ import {
 } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { x402Route } from "./routes/x402";
+import { x402ChatRoute } from "./routes/x402/chat";
+import { x402ResearchRoute } from "./routes/x402/research";
+import { x402ResearchStatusRoute } from "./routes/x402/status";
 import logger from "./utils/logger";
 
 const app = new Elysia()
@@ -26,9 +30,6 @@ const app = new Elysia()
       exposeHeaders: ["X-PAYMENT-RESPONSE", "Content-Type"],
     }),
   )
-
-  // Apply x402 payment gating (only active when enabled via config)
-  .use(x402Middleware())
 
   // Basic request logging (optional)
   .onRequest(({ request }) => {
@@ -129,6 +130,24 @@ const app = new Elysia()
   .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
   .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
+
+  // Separated x402 routes (dedicated endpoints for x402 consumers)
+  // Use .guard() to apply x402Hook to these routes (ensures hook propagation)
+  .guard(
+    x402Config.enabled ? { beforeHandle: x402Hook } : {},
+    (app) => {
+      if (logger) {
+        logger.info(
+          { x402Enabled: x402Config.enabled },
+          "x402_guard_applied_to_routes"
+        );
+      }
+      return app
+        .use(x402ChatRoute) // GET and POST /api/x402/chat for x402 chat
+        .use(x402ResearchRoute) // GET and POST /api/x402/research for x402 deep research
+        .use(x402ResearchStatusRoute); // GET /api/x402/research/status/:messageId to check status
+    }
+  )
 
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI

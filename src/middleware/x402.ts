@@ -16,18 +16,19 @@ export interface X402MiddlewareOptions {
   enabled?: boolean;
 }
 
-export function x402Middleware(options: X402MiddlewareOptions = {}) {
-  const enabled = options.enabled ?? x402Config.enabled;
-  const plugin = new Elysia({ name: "x402-middleware" });
+/**
+ * x402 Hook Function
+ *
+ * This is the core payment verification logic that can be used with .guard()
+ * or other Elysia lifecycle hooks.
+ */
+export async function x402Hook({ request, path, set }: any) {
+    // Skip GET requests - they're discovery endpoints that don't require payment
+    if (request.method === "GET") {
+      if (logger) logger.info({ path, method: "GET" }, "x402_skipping_get_request");
+      return;
+    }
 
-  if (!enabled) {
-    if (logger) logger.info("x402_middleware_disabled");
-    return plugin;
-  }
-
-  if (logger) logger.info("x402_middleware_enabled_and_active");
-
-  plugin.onBeforeHandle(async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;
@@ -208,7 +209,26 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     }
 
     return; // Continue to route handler
-  });
+}
+
+/**
+ * x402 Middleware (deprecated - use x402Hook with .guard() instead)
+ *
+ * This wrapper is kept for backward compatibility but is not recommended.
+ * Use x402Hook directly with .guard() for proper hook propagation.
+ */
+export function x402Middleware(options: X402MiddlewareOptions = {}) {
+  const enabled = options.enabled ?? x402Config.enabled;
+  const plugin = new Elysia({ name: "x402-middleware" });
+
+  if (!enabled) {
+    if (logger) logger.info("x402_middleware_disabled");
+    return plugin;
+  }
+
+  if (logger) logger.info("x402_middleware_enabled_and_active");
+
+  plugin.onBeforeHandle(x402Hook);
 
   return plugin;
 }

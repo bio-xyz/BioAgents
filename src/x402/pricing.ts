@@ -119,6 +119,16 @@ export const routePricing: RoutePricing[] = [
     priceUSD: "0.01", // Simple flat rate: $0.01 per chat request
     description: "Chat API access (includes all tools)",
   },
+  {
+    route: "/api/x402/chat",
+    priceUSD: "0.01", // Same price as regular chat
+    description: "x402 Chat API access (payment required)",
+  },
+  {
+    route: "/api/x402/research",
+    priceUSD: "0.05", // Higher price for deep research
+    description: "x402 Deep Research API (comprehensive analysis)",
+  },
 ];
 
 /**
