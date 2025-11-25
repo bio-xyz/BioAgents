@@ -11,7 +11,7 @@ import {
   createMessageRecord,
   executeFileUpload,
 } from "../../services/chat/tools";
-import type { State } from "../../types/core";
+import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
@@ -259,7 +259,7 @@ async function runDeepResearch(params: {
     };
 
     // Initialize conversation state
-    const conversationState: State = {
+    const conversationState: ConversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
@@ -274,17 +274,9 @@ async function runDeepResearch(params: {
       });
     }
 
-    // Step 2: Execute deep research planning tool
-    const { getDeepResearchTool } = await import("../../tools");
-    const deepResearchPlanningTool = getDeepResearchTool(
-      "PLANNING_DEEP_RESEARCH",
-    );
-
-    if (!deepResearchPlanningTool) {
-      throw new Error("Deep research planning tool not found");
-    }
-
-    const deepResearchPlanningResult = await deepResearchPlanningTool.execute({
+    // Step 2: Execute deep research planning agent (v2)
+    const { planningAgent } = await import("../../agents/planning");
+    const deepResearchPlanningResult = await planningAgent({
       state,
       conversationState,
       message: createdMessage,
@@ -295,6 +287,123 @@ async function runDeepResearch(params: {
 
     if (!plan || !currentObjective) {
       throw new Error("Plan or current objective not found");
+    }
+
+    // Update conversation state with plan and objective
+    const { updateConversationState } = await import("../../db/operations");
+    const { literatureAgent } = await import("../../agents/literature");
+
+    // Get current plan or initialize empty
+    const currentPlan = conversationState.values.plan || [];
+
+    // Find max level in current plan, default to -1 if empty
+    const maxLevel =
+      currentPlan?.length > 0
+        ? Math.max(...currentPlan.map((t) => t.level || 0))
+        : -1;
+
+    // Add new tasks with appropriate level
+    const newLevel = maxLevel + 1;
+    const newTasks = plan.map((task: PlanTask) => ({
+      ...task,
+      level: newLevel,
+      start: undefined,
+      end: undefined,
+      output: undefined,
+    }));
+
+    // Append to existing plan and update objective
+    conversationState.values.plan = [...currentPlan, ...newTasks];
+    conversationState.values.currentObjective = currentObjective;
+
+    // Update state in DB
+    if (conversationState.id) {
+      await updateConversationState(conversationState.id, conversationState.values);
+      logger.info(
+        { newLevel, taskCount: newTasks.length },
+        "state_updated_with_plan",
+      );
+    }
+
+    // Execute only tasks from the new level (max level)
+    const tasksToExecute = conversationState.values.plan.filter(
+      (t) => t.level === newLevel,
+    );
+
+    for (const task of tasksToExecute) {
+      if (task.type === "LITERATURE") {
+        // Set start timestamp
+        task.start = new Date().toISOString();
+        task.output = "";
+
+        if (conversationState.id) {
+          await updateConversationState(conversationState.id, conversationState.values);
+          logger.info("task_started");
+        }
+
+        logger.info(
+          { taskObjective: task.objective },
+          "executing_literature_task",
+        );
+
+        // Run OpenScholar and update state when done
+        const openScholarPromise = literatureAgent({
+          objective: task.objective,
+          type: "OPENSCHOLAR",
+        }).then(async (result) => {
+          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+          if (conversationState.id) {
+            await updateConversationState(conversationState.id, conversationState.values);
+            logger.info("openscholar_completed");
+          }
+          logger.info(
+            { outputLength: result.output.length },
+            "openscholar_result_received",
+          );
+        });
+
+        // Run Edison and update state when done
+        const edisonPromise = literatureAgent({
+          objective: task.objective,
+          type: "EDISON",
+        }).then(async (result) => {
+          task.output += `Edison literature results:\n${result.output}\n\n`;
+          if (conversationState.id) {
+            await updateConversationState(conversationState.id, conversationState.values);
+            logger.info("edison_completed");
+          }
+          logger.info(
+            { outputLength: result.output.length },
+            "edison_result_received",
+          );
+        });
+
+        // const knowledgePromise = literatureAgent({
+        //   objective: task.objective,
+        //   type: "KNOWLEDGE",
+        // }).then(async (result) => {
+        //   task.output += `Knowledge literature results:\n${result.output}\n\n`;
+        //   if (conversationState.id) {
+        //     await updateState(conversationState.id, conversationState.values);
+        //     logger.info("knowledge_completed");
+        //   }
+        //   logger.info({ outputLength: result.output.length }, "knowledge_result_received");
+        // });
+
+        // Wait for all to complete
+        await Promise.all([
+          openScholarPromise,
+          edisonPromise,
+          // knowledgePromise,
+        ]);
+
+        // Set end timestamp after all are done
+        task.end = new Date().toISOString();
+        if (conversationState.id) {
+          await updateConversationState(conversationState.id, conversationState.values);
+          logger.info("task_completed");
+        }
+      }
     }
 
     // TODO: Rest of deep research workflow

@@ -38,6 +38,16 @@ export interface StateValues {
   steps?: Record<string, { start: number; end?: number }>;
 }
 
+export type PlanTask = {
+  objective: string;
+  datasets: Array<{ filename: string; id: string; description: string }>;
+  type: "LITERATURE" | "ANALYSIS";
+  level?: number;
+  start?: string;
+  end?: string;
+  output?: string;
+};
+
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
@@ -48,16 +58,7 @@ export interface ConversationStateValues extends StateValues {
   methodology?: string; // Methodology for the current goal
   currentHypothesis?: string;
   discoveries?: string[];
-  plan?: Array<{
-    objective: string;
-    datasets: Array<{
-      filename: string;
-      id: string;
-      description: string;
-    }>;
-    type: "LITERATURE" | "ANALYSIS";
-    level: number;
-  }>;
+  plan?: Array<PlanTask>;
   uploadedDatasets?: Array<{
     filename: string;
     id: string;

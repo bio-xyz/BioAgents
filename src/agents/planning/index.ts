@@ -1,17 +1,16 @@
 import { getMessagesByConversation } from "../../db/operations";
 import { LLM } from "../../llm/provider";
-import type { ConversationState, Message, State } from "../../types/core";
+import type {
+  ConversationState,
+  Message,
+  PlanTask,
+  State,
+} from "../../types/core";
 import logger from "../../utils/logger";
 
-type PlanTask = {
-  objective: string;
-  datasets: Array<{ filename: string; id: string; description: string }>;
-  type: "LITERATURE" | "ANALYSIS";
-};
-
-type PlanningResult = {
+export type PlanningResult = {
   currentObjective: string;
-  plan: PlanTask[];
+  plan: Array<PlanTask>;
 };
 
 /**
