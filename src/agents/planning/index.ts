@@ -33,13 +33,16 @@ export async function planningAgent(input: {
   if (isFirstMessage) {
     logger.info("First message in conversation, planning literature search");
 
+    // Use LLM to create a 'search scientific literature' objective for the question
+    const specificObjectiveForQuestion =
+      await generateSpecificObjectiveForQuestion(message.question);
+
     return {
       currentObjective:
         "Gather comprehensive literature to understand the current state of research on the deep research topic and inform the next steps.",
       plan: [
         {
-          objective:
-            "Search scientific literature from multiple sources to build a comprehensive knowledge base",
+          objective: specificObjectiveForQuestion,
           datasets: [],
           type: "LITERATURE",
         },
@@ -164,6 +167,62 @@ NOTES:
   );
 
   return result;
+}
+
+/**
+ * Generate a specific objective for literature search based on the user's question
+ */
+async function generateSpecificObjectiveForQuestion(
+  question: string,
+): Promise<string> {
+  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
+  const planningApiKey =
+    process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!planningApiKey) {
+    throw new Error(
+      `${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
+    );
+  }
+
+  const llmProvider = new LLM({
+    // @ts-ignore
+    name: PLANNING_LLM_PROVIDER,
+    apiKey: planningApiKey,
+  });
+
+  const prompt = `Given this research question, create a specific, focused objective for searching scientific literature.
+
+Research Question: ${question}
+
+Create a clear, actionable objective (1-2 sentences) that describes what literature to search for and what information to gather.
+
+Focus on:
+- Key topics and concepts to search
+- Relevant scientific domains
+- What insights or information are needed
+
+Respond with ONLY the objective text, no additional explanation.`;
+
+  const response = await llmProvider.createChatCompletion({
+    model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
+    messages: [
+      {
+        role: "user" as const,
+        content: prompt,
+      },
+    ],
+    maxTokens: 256,
+  });
+
+  const objective = response.content.trim();
+
+  logger.info(
+    { objective, questionLength: question.length },
+    "specific_literature_objective_generated",
+  );
+
+  return objective;
 }
 
 /**

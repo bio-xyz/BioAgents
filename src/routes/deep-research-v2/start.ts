@@ -406,8 +406,32 @@ async function runDeepResearch(params: {
       }
     }
 
-    // TODO: Rest of deep research workflow
-    // after the whole workflow
+    // Step 3: Generate/update hypothesis based on completed tasks
+    logger.info("generating_hypothesis_from_completed_tasks");
+
+    const { hypothesisAgent } = await import("../../agents/hypothesis");
+
+    const hypothesisResult = await hypothesisAgent({
+      objective: currentObjective,
+      message: createdMessage,
+      conversationState,
+      completedTasks: tasksToExecute, // All tasks from current level
+    });
+
+    // Update conversation state with new hypothesis
+    conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
+    if (conversationState.id) {
+      await updateConversationState(conversationState.id, conversationState.values);
+      logger.info(
+        {
+          mode: hypothesisResult.mode,
+          hypothesisLength: hypothesisResult.hypothesis.length,
+        },
+        "hypothesis_updated_in_state",
+      );
+    }
+
+    // TODO: Rest of deep research workflow (novelty check, analysis, final response)
 
     const responseTime = 0; // TODO: Calculate response time
 
