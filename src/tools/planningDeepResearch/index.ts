@@ -37,6 +37,7 @@ export const planningDeepResearchTool: Tool = {
     // const { knowledgeGraphQueryTool } = await import("../knowledgeGraph");
     const { openscholarTool } = await import("../openscholar");
     const { edisonTool } = await import("../edison");
+    const { dataAnalysisTool } = await import("../data-analysis");
 
     // Execute providers in parallel
     const literaturePromises = [
@@ -326,35 +327,63 @@ export const planningDeepResearchTool: Tool = {
       logger.error({ err }, "analysis_jobs_evaluation_failed");
     }
 
-    // Execute needed Edison jobs in parallel
+    // Execute needed jobs in parallel
     if (neededJobs.length > 0) {
-      logger.info({ neededJobs }, "starting_analysis_edison_jobs");
+      logger.info({ neededJobs }, "starting_analysis_jobs");
+
+      // Check for PRIMARY_ANALYSIS_AGENT override
+      const analysisIndex = neededJobs.indexOf("ANALYSIS");
+      if (
+        analysisIndex !== -1 &&
+        process.env.PRIMARY_ANALYSIS_AGENT === "bio"
+      ) {
+        logger.info(
+          "Bio Data Analysis Agent selected - replacing ANALYSIS with DATA_ANALYSIS job as per configuration",
+        );
+        neededJobs[analysisIndex] = "DATA_ANALYSIS";
+      }
+
+      const jobQuestions: { [key: string]: string } = {
+        MOLECULES: `Based on this hypothesis, suggest molecular designs, chemical compounds, or drug candidates that could be investigated: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`,
+        ANALYSIS: `Analyze the computational and data analysis approaches needed to test this hypothesis: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`,
+        DATA_ANALYSIS: `Initial user question: ${message.question}. You have been provided datasets by the user. Suggest data cleaning, processing, or visualization approaches that could help analyze the data in relation to this hypothesis: ${state.values.hypothesis}.`,
+      };
+
+      const tools: {
+        [key: string]: {
+          execute: (...args: any[]) => any;
+        };
+      } = {
+        MOLECULES: edisonTool,
+        ANALYSIS: edisonTool,
+        DATA_ANALYSIS: dataAnalysisTool,
+      };
 
       const analysisPromises = neededJobs.map(async (jobType) => {
         try {
-          const jobQuestion =
-            jobType === "MOLECULES"
-              ? `Based on this hypothesis, suggest molecular designs, chemical compounds, or drug candidates that could be investigated: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`
-              : `Analyze the computational and data analysis approaches needed to test this hypothesis: ${state.values.hypothesis}. Cite DOIs or links to papers that are evidence inline in your answer wherever possible.`;
+          const question = jobQuestions[jobType];
+          const tool = tools[jobType];
+          if (!question || !tool) return;
 
-          await edisonTool.execute({
+          await tool.execute({
             state,
+            conversationState,
             message,
-            question: jobQuestion,
-            jobType: jobType as "MOLECULES" | "ANALYSIS",
+            question,
+            jobType,
           });
 
-          logger.info({ jobType }, "analysis_edison_job_completed");
+          logger.info({ jobType }, "analysis_job_completed");
         } catch (err) {
-          logger.error({ err, jobType }, "analysis_edison_job_failed");
+          logger.error({ err, jobType }, "analysis_job_failed");
         }
       });
 
       await Promise.all(analysisPromises);
 
-      logger.info("Completed all analysis Edison jobs");
+      logger.info("Completed all analysis jobs");
     } else {
-      logger.info("No analysis Edison jobs needed");
+      logger.info("No analysis jobs needed");
     }
 
     // last thing - call REPLY tool for the final response

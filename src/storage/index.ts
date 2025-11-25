@@ -56,12 +56,15 @@ export function getStorageProvider(): StorageProvider | null {
 }
 
 /**
- * Default storage path template for uploaded files
- * Format: user/{userId}/conversation/{conversationId}/uploads/{filename}
+ * Default base storage path for a conversation
  */
-export const getUserUploadPath = (
+export const getConversationBasePath = (
   userId: string,
   conversationId: string,
-  filename: string,
-): string =>
-  `user/${userId}/conversation/${conversationId}/uploads/${filename}`;
+): string => `user/${userId}/conversation/${conversationId}`;
+
+/**
+ * Default storage path template for uploaded files
+ */
+export const getUploadPath = (filename: string): string =>
+  `uploads/${filename}`;

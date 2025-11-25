@@ -106,17 +106,25 @@ export const replyTool = {
     if (state.values.isDeepResearch) {
       // we should use the hypothesis and Edison ANALYSIS/MOLECULES results to answer the user's question
       const hypothesis = `Hypothesis: ${state.values.hypothesis}`;
-      const edisonResults = state.values.edisonResults
-        ?.filter(
-          (result: any) =>
-            result.jobType === "ANALYSIS" || result.jobType === "MOLECULES",
-        )
-        .map(
-          (result: any) =>
-            `Scientific research job ran based on the hypothesis '${result.jobType}': ${result.answer}`,
-        );
+      const edisonResults =
+        state.values.edisonResults
+          ?.filter(
+            (result: any) =>
+              result.jobType === "ANALYSIS" || result.jobType === "MOLECULES",
+          )
+          .map(
+            (result: any) =>
+              `Scientific research job ran based on the hypothesis '${result.jobType}': ${result.answer}`,
+          )
+          .join("\n\n") || "";
 
-      providerString += `${hypothesis}\n\n\n${(edisonResults ?? []).join("\n\n")}`;
+      // Include Data Analysis Agent results
+      const dataAnalysisResults =
+        state.values.dataAnalysisResults
+          ?.map((result: any) => `Data Analysis Agent result: ${result.answer}`)
+          .join("\n\n") || "";
+
+      providerString += `${hypothesis}\n\n\n${edisonResults}\n\n\n${dataAnalysisResults}\n\n\n`;
     } else {
       if (state.values.knowledge?.length) {
         // Create a concatenated string of knowledge for prompts

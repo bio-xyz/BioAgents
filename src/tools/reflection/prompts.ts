@@ -1,10 +1,11 @@
+import { getMessagesByConversation } from "../../db/operations";
 import {
   type ConversationState,
+  type DataAnalysisResult,
   type Message,
   type Paper,
   type State,
 } from "../../types/core";
-import { getMessagesByConversation } from "../../db/operations";
 import { formatConversationHistory } from "../../utils/state";
 
 const formatWebSearchResults = (results: any) => {
@@ -25,11 +26,12 @@ const formatPapers = (papers: Paper[]) => {
 };
 
 const formatEdisonResults = (edisonResults: any[]) => {
-  if (!edisonResults || edisonResults.length === 0) return "No Edison analysis results";
+  if (!edisonResults || edisonResults.length === 0)
+    return "No Edison analysis results";
 
   // Filter to only MOLECULES and ANALYSIS job types
   const analysisResults = edisonResults.filter(
-    (result) => result.jobType === "MOLECULES" || result.jobType === "ANALYSIS"
+    (result) => result.jobType === "MOLECULES" || result.jobType === "ANALYSIS",
   );
 
   if (analysisResults.length === 0) return "No Edison analysis results";
@@ -38,6 +40,17 @@ const formatEdisonResults = (edisonResults: any[]) => {
     .map((result, i) => {
       const answer = result.answer || result.error || "No answer";
       return `${i + 1}. ${result.jobType}:\n   Question: ${result.question}\n   Answer: ${answer}`;
+    })
+    .join("\n\n");
+};
+
+const formatdataAnalysisResults = (results: DataAnalysisResult[]) => {
+  if (!results || results.length === 0) return "No Data Analysis Agent results";
+
+  return results
+    .map((result, i) => {
+      const answer = result.answer || "No answer";
+      return `${i + 1}. DATA_ANALYSIS:\n   Question: ${result.question}\n   Answer: ${answer}`;
     })
     .join("\n\n");
 };
@@ -82,6 +95,8 @@ You are reflecting on a scientific research conversation to maintain accurate co
 ${formatPapers(allPapersFromState)}
 **Edison Analysis Results (MOLECULES/ANALYSIS):**
 ${formatEdisonResults(state.values.edisonResults || [])}
+**Data Analysis Agent Results (DATA_ANALYSIS):**
+${formatdataAnalysisResults(state.values.dataAnalysisResults || [])}
 
 ## Conversation State (Whole Conversation Summary)
 **Title:** ${conversationState.values.conversationTitle || "Not set"}

@@ -221,6 +221,8 @@ export function App() {
           steps: currentState.values.steps,
           source: currentState.values.source,
           thought: currentState.values.thought,
+          edisonResults: currentState.values.edisonResults,
+          dataAnalysisResults: currentState.values.dataAnalysisResults,
         };
 
         // Add final message
@@ -307,6 +309,8 @@ export function App() {
                     steps: state.values.steps,
                     source: state.values.source,
                     thought: state.values.thought,
+                    edisonResults: state.values.edisonResults,
+                    dataAnalysisResults: state.values.dataAnalysisResults,
                   },
                 };
               }
@@ -454,6 +458,8 @@ export function App() {
                   steps: currentState.values.steps,
                   source: currentState.values.source,
                   thought: currentState.values.thought,
+                  edisonResults: currentState.values.edisonResults,
+                  dataAnalysisResults: currentState.values.dataAnalysisResults,
                 }
               : undefined;
 
