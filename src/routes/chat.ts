@@ -1,20 +1,24 @@
 import { Elysia } from "elysia";
-import type { State } from "../types/core";
-import logger from "../utils/logger";
-import { generateUUID } from "../utils/uuid";
 import { smartAuthMiddleware } from "../middleware/smartAuth";
 import { x402Middleware } from "../middleware/x402";
-import { ensureUserAndConversation, setupConversationData, X402_SYSTEM_USER_ID } from "../services/chat/setup";
 import { recordPayment } from "../services/chat/payment";
 import {
+  ensureUserAndConversation,
+  setupConversationData,
+  X402_SYSTEM_USER_ID,
+} from "../services/chat/setup";
+import {
   createMessageRecord,
+  executeActionTool,
   executeFileUpload,
   executePlanning,
   executeProviderTools,
-  executeActionTool,
   executeReflection,
   updateMessageResponseTime,
 } from "../services/chat/tools";
+import type { ConversationState, State } from "../types/core";
+import logger from "../utils/logger";
+import { generateUUID } from "../utils/uuid";
 
 type ChatResponse = {
   text: string;
@@ -60,26 +64,25 @@ export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
   });
 });
 
-export const chatRoute = chatRoutePlugin.post(
-  "/api/chat",
-  async (ctx) => {
-    try {
-      const {
-        body,
-        set,
-        request,
-        paymentSettlement,
-        paymentRequirement,
-        paymentHeader,
-      } = ctx as any;
-      const startTime = Date.now();
+export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
+  try {
+    const {
+      body,
+      set,
+      request,
+      paymentSettlement,
+      paymentRequirement,
+      paymentHeader,
+    } = ctx as any;
+    const startTime = Date.now();
 
-      const parsedBody = body as any;
-      const authenticatedUser = (request as any).authenticatedUser;
+    const parsedBody = body as any;
+    const authenticatedUser = (request as any).authenticatedUser;
 
-      // Debug: Log request details for MetaMask/Phantom debugging
-      if (logger) {
-        logger.info({
+    // Debug: Log request details for MetaMask/Phantom debugging
+    if (logger) {
+      logger.info(
+        {
           contentType: request.headers.get("content-type"),
           hasPaymentHeader: !!paymentHeader,
           hasPaymentSettlement: !!paymentSettlement,
@@ -89,14 +92,19 @@ export const chatRoute = chatRoutePlugin.post(
           authMethod: authenticatedUser?.authMethod,
           bodyType: typeof body,
           bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
-        }, "chat_route_entry_debug");
-      }
+        },
+        "chat_route_entry_debug",
+      );
+    }
 
     // Extract message (REQUIRED)
     const message = parsedBody.message;
     if (!message) {
       if (logger) {
-        logger.warn({ bodyKeys: Object.keys(parsedBody) }, "missing_message_field");
+        logger.warn(
+          { bodyKeys: Object.keys(parsedBody) },
+          "missing_message_field",
+        );
       }
       set.status = 400;
       return {
@@ -202,7 +210,9 @@ export const chatRoute = chatRoutePlugin.post(
       setupResult.isExternal || false,
       message,
       files.length,
-      setupResult.isExternal ? (parsedBody.userId || `agent_${Date.now()}`) : undefined,
+      setupResult.isExternal
+        ? parsedBody.userId || `agent_${Date.now()}`
+        : undefined,
     );
     if (!dataSetup.success) {
       set.status = 500;
@@ -224,7 +234,10 @@ export const chatRoute = chatRoutePlugin.post(
     });
     if (!messageResult.success) {
       set.status = 500;
-      return { ok: false, error: messageResult.error || "Message creation failed" };
+      return {
+        ok: false,
+        error: messageResult.error || "Message creation failed",
+      };
     }
 
     const createdMessage = messageResult.message!;
@@ -241,7 +254,7 @@ export const chatRoute = chatRoutePlugin.post(
     };
 
     // Initialize conversation state (persistent across messages)
-    const conversationState: State = {
+    const conversationState: ConversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
@@ -285,7 +298,10 @@ export const chatRoute = chatRoutePlugin.post(
     const actionResult = await executeActionTool(action, toolContext);
     if (!actionResult.success) {
       set.status = 500;
-      return { ok: false, error: actionResult.error || "Action execution failed" };
+      return {
+        ok: false,
+        error: actionResult.error || "Action execution failed",
+      };
     }
 
     const primaryActionResult = actionResult.result;
@@ -331,42 +347,47 @@ export const chatRoute = chatRoutePlugin.post(
       responseTime,
     });
 
-      // Debug: Log response being returned
-      if (logger) {
-        logger.info({
+    // Debug: Log response being returned
+    if (logger) {
+      logger.info(
+        {
           responseTextLength: response.text?.length || 0,
           hasFiles: !!response.files,
           fileCount: response.files?.length || 0,
           responseTime,
           paidViaX402: !!paymentSettlement,
-        }, "chat_route_returning_response");
-      }
-
-      // Return explicit Response object to ensure proper JSON encoding
-      // and prevent automatic compression that x402scan can't handle
-      return new Response(JSON.stringify(response), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Content-Encoding": "identity", // Explicitly disable compression
         },
-      });
-    } catch (error: any) {
-      // Catch any unhandled errors and log them
-      if (logger) {
-        logger.error({
+        "chat_route_returning_response",
+      );
+    }
+
+    // Return explicit Response object to ensure proper JSON encoding
+    // and prevent automatic compression that x402scan can't handle
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Encoding": "identity", // Explicitly disable compression
+      },
+    });
+  } catch (error: any) {
+    // Catch any unhandled errors and log them
+    if (logger) {
+      logger.error(
+        {
           error: error.message,
           stack: error.stack,
           name: error.name,
-        }, "chat_route_unhandled_error");
-      }
-
-      const { set } = ctx as any;
-      set.status = 500;
-      return {
-        ok: false,
-        error: error.message || "Internal server error",
-      };
+        },
+        "chat_route_unhandled_error",
+      );
     }
-  },
-);
+
+    const { set } = ctx as any;
+    set.status = 500;
+    return {
+      ok: false,
+      error: error.message || "Internal server error",
+    };
+  }
+});

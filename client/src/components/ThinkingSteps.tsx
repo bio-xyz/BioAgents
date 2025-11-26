@@ -95,6 +95,19 @@ export function ThinkingSteps({ state }: ThinkingStepsProps) {
       return "Processing Edison task...";
     }
 
+    // Data Analysis Agent
+    if (upperTool === "DATA_ANALYSIS") {
+      const results = (state as any).dataAnalysisResults;
+      if (results && Array.isArray(results) && results.length > 0) {
+        const lastResult = results[results.length - 1];
+        return lastResult.answer || lastResult.error || "Processing...";
+      }
+
+      if (isStepComplete((state as StateValues).steps[toolName]?.end)) {
+        return "No results from Data Analysis Agent.";
+      }
+    }
+
     return null;
   };
 

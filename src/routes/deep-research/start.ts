@@ -14,7 +14,7 @@ import {
   executeFileUpload,
   updateMessageResponseTime,
 } from "../../services/chat/tools";
-import type { State } from "../../types/core";
+import type { ConversationState, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
@@ -377,7 +377,7 @@ async function runDeepResearch(params: {
     };
 
     // Initialize conversation state
-    const conversationState: State = {
+    const conversationState: ConversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
@@ -397,7 +397,7 @@ async function runDeepResearch(params: {
     // - Literature gathering (KNOWLEDGE, OPENSCHOLAR, SEMANTIC_SCHOLAR)
     // - Hypothesis generation
     // - Precedent check with Edison
-    // - Analysis jobs (MOLECULES/ANALYSIS) if needed
+    // - Analysis jobs (MOLECULES/ANALYSIS/DATA_ANALYSIS) if needed
     // - Final response generation (TODO)
     const { getDeepResearchTool } = await import("../../tools");
     const deepResearchPlanningTool = getDeepResearchTool(

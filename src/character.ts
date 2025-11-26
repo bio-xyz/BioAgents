@@ -182,7 +182,7 @@ Standalone question:`,
      - Connect the hypothesis to the user's original research goals
 
   3. ANALYSIS & RECOMMENDATIONS
-     - Present the results from computational analysis or molecular design (if Edison ANALYSIS/MOLECULES jobs were run)
+     - Present the results from computational analysis or molecular design (if Edison ANALYSIS/MOLECULES/DATA_ANALYSIS jobs were run)
      - Explain how these results support or refine the hypothesis
      - Provide actionable recommendations for next steps
      - Discuss experimental validation approaches if experiment ideas were requested
@@ -321,6 +321,7 @@ Standalone question:`,
   OPENSCHOLAR
   KNOWLEDGE_GRAPH_QUERY
   SEMANTIC_SCHOLAR
+  DATA_ANALYSIS
   </providers>
   
   These are the available valid actions:
@@ -364,6 +365,7 @@ Standalone question:`,
   IMPORTANT PROVIDER SELECTION RULES:
   - You should include "KNOWLEDGE" in your providers list if you think you can enhance the answer by querying Aubrey De Grey's knowledge base (collection of Aubrey De Grey's scientific papers, notes, tweets, thoughts, takeaways etc.) or the user's knowledge base (which can include any information the user has provided to you)
   - You should include "KNOWLEDGE_GRAPH_QUERY" and "OPENSCHOLAR" in your providers list for most questions related to science - more detailed explanation of when to use is below.
+  - You should include "DATA_ANALYSIS" in your providers list if the user is requesting data analysis, calculations, visualization or code generation.
   - Whenever you're including "KNOWLEDGE_GRAPH_QUERY" in your providers list, you should also include "KNOWLEDGE" and "OPENSCHOLAR" in your providers list.
   - Only use "SEMANTIC_SCHOLAR" in your providers list if the user's question is explicitly about science papers, research, or academic literature.
     - Trigger phrases: "find papers on", "latest research about", "most cited studies on", or "academic literature about" in the context of longevity (example: "find papers from last 2 weeks that tested their findings on mice")

@@ -1,6 +1,6 @@
 import { createMessage, updateMessage } from "../../db/operations";
 import { getTool } from "../../tools";
-import type { State } from "../../types/core";
+import type { ConversationState, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { calculateRequestPrice } from "../../x402/pricing";
 
@@ -10,7 +10,7 @@ export type ToolResult =
 
 export interface ToolExecutionContext {
   state: State;
-  conversationState: State;
+  conversationState: ConversationState;
   message: any;
   files?: File[];
 }
