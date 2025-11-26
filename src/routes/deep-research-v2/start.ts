@@ -541,6 +541,30 @@ async function runDeepResearch(params: {
       );
     }
 
+    // Step 6: Generate reply to user
+    logger.info("generating_reply_to_user");
+
+    const { replyAgent } = await import("../../agents/reply");
+
+    const replyResult = await replyAgent({
+      conversationState,
+      message: createdMessage,
+      completedMaxTasks: tasksToExecute,
+      hypothesis: hypothesisResult.hypothesis,
+      nextPlan: nextPlanningResult.plan,
+    });
+
+    logger.info(
+      {
+        replyLength: replyResult.reply.length,
+      },
+      "reply_generated",
+    );
+
+    // TODO: Send reply to user (via response streaming, websocket, or store in DB)
+    // For now, log it
+    logger.info({ reply: replyResult.reply }, "user_reply");
+
     // TODO: Rest of deep research workflow (novelty check, analysis, final response)
 
     const responseTime = 0; // TODO: Calculate response time
