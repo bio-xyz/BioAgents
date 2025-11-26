@@ -483,6 +483,64 @@ async function runDeepResearch(params: {
       );
     }
 
+    // Step 5: Run planning agent in "next" mode to plan next iteration
+    logger.info("running_next_planning_for_future_iteration");
+
+    const nextPlanningResult = await planningAgent({
+      state,
+      conversationState,
+      message: createdMessage,
+      mode: "next",
+    });
+
+    // Only update if there's a plan (planner may return empty if research is complete)
+    if (nextPlanningResult.plan.length > 0) {
+      // Find max level in current plan
+      const currentPlan = conversationState.values.plan || [];
+      const maxLevel =
+        currentPlan.length > 0
+          ? Math.max(...currentPlan.map((t) => t.level || 0))
+          : -1;
+
+      // Add next iteration tasks with new level
+      const nextLevel = maxLevel + 1;
+      const nextTasks = nextPlanningResult.plan.map((task: PlanTask) => ({
+        ...task,
+        level: nextLevel,
+        start: undefined,
+        end: undefined,
+        output: undefined,
+      }));
+
+      // Append to plan
+      conversationState.values.plan = [...currentPlan, ...nextTasks];
+
+      // Update objective if provided
+      if (nextPlanningResult.currentObjective) {
+        conversationState.values.currentObjective =
+          nextPlanningResult.currentObjective;
+      }
+
+      if (conversationState.id) {
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
+        logger.info(
+          {
+            nextLevel,
+            nextTaskCount: nextTasks.length,
+            nextObjective: nextPlanningResult.currentObjective,
+          },
+          "next_iteration_plan_added",
+        );
+      }
+    } else {
+      logger.info(
+        "no_next_iteration_tasks_planned_research_complete_or_awaiting_feedback",
+      );
+    }
+
     // TODO: Rest of deep research workflow (novelty check, analysis, final response)
 
     const responseTime = 0; // TODO: Calculate response time

@@ -13,16 +13,23 @@ export type PlanningResult = {
   plan: Array<PlanTask>;
 };
 
+export type PlanningMode = "initial" | "next";
+
 /**
  * Planning agent for deep research
  * Plans next steps based on conversation state and previous results
+ *
+ * Two modes:
+ * - "initial": Creates tasks for the current iteration (default, used at start of each message)
+ * - "next": Updates plan for next iteration after reflection (used after hypothesis + reflection)
  */
 export async function planningAgent(input: {
   state: State;
   conversationState: ConversationState;
   message: Message;
+  mode?: PlanningMode;
 }): Promise<PlanningResult> {
-  const { state, conversationState, message } = input;
+  const { state, conversationState, message, mode = "initial" } = input;
 
   // Check if this is the first message in conversation
   const isFirstMessage = await isFirstMessageInConversation(
@@ -51,7 +58,7 @@ export async function planningAgent(input: {
   }
 
   // Otherwise, use LLM to plan based on current state
-  return await generatePlan(state, conversationState, message);
+  return await generatePlan(state, conversationState, message, mode);
 }
 
 /**
@@ -76,6 +83,7 @@ async function generatePlan(
   state: State,
   conversationState: ConversationState,
   message: Message,
+  mode: PlanningMode = "initial",
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const planningApiKey =
@@ -96,7 +104,24 @@ async function generatePlan(
   // Build context from latest results
   const context = buildContextFromState(conversationState);
 
+  // Mode-specific instructions
+  const modeInstructions =
+    mode === "initial"
+      ? `PLANNING MODE: INITIAL
+You are planning tasks for the CURRENT iteration based on the user's request.
+- Create tasks that will address the user's immediate question
+- These tasks will be executed NOW, then a hypothesis will be generated, then the world state will be reflected upon
+- Focus on gathering information or performing analysis needed to answer the current question`
+      : `PLANNING MODE: NEXT
+You are planning tasks for the NEXT iteration based on completed work (hypothesis + reflection).
+- The current iteration has completed (tasks executed, hypothesis generated, world reflected)
+- Now plan what should happen NEXT to advance the research
+- Consider what gaps remain, what follow-up questions emerged, or what deeper analysis is needed
+- Return an EMPTY plan only if you believe with 100% certainty that the main objective has been achieved and the research is complete`;
+
   const planningPrompt = `You are a research planning agent. Your job is to plan the NEXT immediate steps based on the current research state.
+
+${modeInstructions}
 
 IMPORTANT INSTRUCTIONS:
 - Focus on planning the NEXT steps
@@ -160,6 +185,7 @@ NOTES:
 
   logger.info(
     {
+      mode,
       currentObjective: result.currentObjective,
       planLength: result.plan.length,
     },
