@@ -28,11 +28,12 @@ export interface StateValues {
 
   // File upload
   rawFiles?: Array<{
-    buffer: Buffer;
+    buffer?: Buffer; // Optional - present during processing, removed before DB write
     filename: string;
     mimeType: string;
-    parsedText: string;
+    parsedText?: string; // Optional - present during processing, removed before DB write
     metadata?: any;
+    size?: number; // File size in bytes
   }>;
   fileUploadErrors?: string[];
 

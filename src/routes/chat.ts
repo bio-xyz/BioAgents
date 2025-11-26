@@ -316,7 +316,7 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
         ? rawFiles?.map((f: any) => ({
             filename: f.filename,
             mimeType: f.mimeType,
-            size: f.metadata?.size,
+            size: f.size || f.buffer?.length || f.metadata?.size,
           }))
         : undefined;
 
