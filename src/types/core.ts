@@ -52,7 +52,6 @@ export type PlanTask = {
 export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
   objective: string;
-  currentGoal?: string;
   currentObjective?: string;
   keyInsights?: string[];
   methodology?: string; // Methodology for the current goal

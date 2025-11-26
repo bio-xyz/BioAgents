@@ -318,7 +318,10 @@ async function runDeepResearch(params: {
 
     // Update state in DB
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
       logger.info(
         { newLevel, taskCount: newTasks.length },
         "state_updated_with_plan",
@@ -337,7 +340,10 @@ async function runDeepResearch(params: {
         task.output = "";
 
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
           logger.info("task_started");
         }
 
@@ -353,7 +359,10 @@ async function runDeepResearch(params: {
         }).then(async (result) => {
           task.output += `OpenScholar literature results:\n${result.output}\n\n`;
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
             logger.info("openscholar_completed");
           }
           logger.info(
@@ -369,7 +378,10 @@ async function runDeepResearch(params: {
         }).then(async (result) => {
           task.output += `Edison literature results:\n${result.output}\n\n`;
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
             logger.info("edison_completed");
           }
           logger.info(
@@ -400,7 +412,10 @@ async function runDeepResearch(params: {
         // Set end timestamp after all are done
         task.end = new Date().toISOString();
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
           logger.info("task_completed");
         }
       }
@@ -421,13 +436,50 @@ async function runDeepResearch(params: {
     // Update conversation state with new hypothesis
     conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
       logger.info(
         {
           mode: hypothesisResult.mode,
           hypothesisLength: hypothesisResult.hypothesis.length,
         },
         "hypothesis_updated_in_state",
+      );
+    }
+
+    // Step 4: Run reflection agent to update world state
+    logger.info("running_reflection_agent_to_update_world");
+
+    const { reflectionAgent } = await import("../../agents/reflection");
+
+    const reflectionResult = await reflectionAgent({
+      conversationState,
+      message: createdMessage,
+      completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
+      hypothesis: hypothesisResult.hypothesis,
+    });
+
+    // Update conversation state with reflection results
+    conversationState.values.currentObjective =
+      reflectionResult.currentObjective;
+    conversationState.values.keyInsights = reflectionResult.keyInsights;
+    conversationState.values.discoveries = reflectionResult.discoveries;
+    conversationState.values.methodology = reflectionResult.methodology;
+
+    if (conversationState.id) {
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
+      logger.info(
+        {
+          insightsCount: reflectionResult.keyInsights.length,
+          discoveriesCount: reflectionResult.discoveries.length,
+          hasNewObjective: !!reflectionResult.currentObjective,
+        },
+        "world_state_updated_via_reflection",
       );
     }
 

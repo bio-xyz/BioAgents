@@ -1,0 +1,131 @@
+import { LLM } from "../../llm/provider";
+import type { LLMProvider } from "../../types/core";
+import logger from "../../utils/logger";
+import { reflectionPrompt } from "./prompts";
+
+export type ReflectionDoc = {
+  title: string;
+  text: string;
+  context: string;
+};
+
+export type ReflectionOptions = {
+  model?: string;
+  maxTokens?: number;
+  thinking?: boolean;
+  thinkingBudget?: number;
+};
+
+export type ReflectionResult = {
+  text: {
+    currentObjective?: string;
+    keyInsights: string[];
+    discoveries: string[];
+    methodology?: string;
+  };
+  thought?: string;
+};
+
+/**
+ * Reflect on world state based on completed MAX level tasks
+ * Updates: currentObjective, keyInsights, discoveries, methodology
+ */
+export async function reflectOnWorld(
+  question: string,
+  documents: ReflectionDoc[],
+  options: ReflectionOptions = {},
+): Promise<ReflectionResult> {
+  const model = process.env.REFLECTION_LLM_MODEL || "gemini-2.5-pro";
+
+  // Build document content
+  const documentText = documents
+    .map((d) => `Title: ${d.title}\nContext: ${d.context}\n\n${d.text}`)
+    .join("\n\n---\n\n");
+
+  // Use reflection prompt
+  const reflectionInstruction = reflectionPrompt
+    .replace("{{question}}", question)
+    .replace("{{documents}}", documentText);
+
+  const REFLECTION_LLM_PROVIDER: LLMProvider =
+    (process.env.REFLECTION_LLM_PROVIDER as LLMProvider) || "google";
+  const llmApiKey =
+    process.env[`${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!llmApiKey) {
+    throw new Error(
+      `${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
+    );
+  }
+
+  const llmProvider = new LLM({
+    name: REFLECTION_LLM_PROVIDER,
+    apiKey: llmApiKey,
+  });
+
+  const llmRequest = {
+    model,
+    messages: [
+      {
+        role: "user" as const,
+        content: reflectionInstruction,
+      },
+    ],
+    maxTokens: options.maxTokens ?? 4000,
+    thinkingBudget: options.thinking
+      ? (options.thinkingBudget ?? 2048)
+      : undefined,
+  };
+
+  try {
+    const response = await llmProvider.createChatCompletion(llmRequest);
+
+    // Parse JSON response
+    let parsedResponse;
+    try {
+      const cleaned = response.content
+        .replace(/```json\n?/, "")
+        .replace(/\n?```$/, "")
+        .trim();
+      parsedResponse = JSON.parse(cleaned);
+    } catch (parseError) {
+      logger.error(
+        { parseError, rawContent: response.content },
+        "failed_to_parse_reflection_response",
+      );
+      throw new Error("Failed to parse reflection response as JSON");
+    }
+
+    // Validate required fields
+    if (!Array.isArray(parsedResponse.keyInsights)) {
+      parsedResponse.keyInsights = [];
+    }
+    if (!Array.isArray(parsedResponse.discoveries)) {
+      parsedResponse.discoveries = [];
+    }
+
+    logger.info(
+      {
+        insightsCount: parsedResponse.keyInsights.length,
+        discoveriesCount: parsedResponse.discoveries.length,
+        hasObjective: !!parsedResponse.currentObjective,
+        hasMethodology: !!parsedResponse.methodology,
+        docCount: documents.length,
+      },
+      "reflection_completed",
+    );
+
+    return {
+      text: {
+        currentObjective: parsedResponse.currentObjective,
+        keyInsights: parsedResponse.keyInsights,
+        discoveries: parsedResponse.discoveries,
+        methodology: parsedResponse.methodology,
+      },
+      thought: undefined, // TODO: Extract thinking if available from response
+    };
+  } catch (error) {
+    logger.error({ error }, "reflection_failed");
+    throw error;
+  }
+}
