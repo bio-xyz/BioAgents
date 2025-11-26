@@ -84,6 +84,18 @@ export const planningTool: Tool = {
       historyText = `\n\nPrevious conversation:\n${formattedHistory}\n`;
     }
 
+    // Check if files were uploaded and include in context
+    let filesContext = "";
+    if (state.values.rawFiles?.length) {
+      const fileList = state.values.rawFiles.map((f: any) => 
+        `- ${f.filename} (${f.mimeType})`
+      ).join("\n");
+      filesContext = `\n\n[ATTACHED FILES - The user has uploaded the following files with this message]\n${fileList}\n`;
+      logger.info(`📎 Planning sees ${state.values.rawFiles.length} uploaded file(s): ${fileList}`);
+    } else {
+      logger.info(`📎 Planning sees NO uploaded files (rawFiles: ${JSON.stringify(state.values.rawFiles)})`);
+    }
+
     const messages = [
       {
         role: "assistant" as const,
@@ -91,7 +103,7 @@ export const planningTool: Tool = {
       },
       {
         role: "user" as const,
-        content: `${historyText}\n\nUser message to evaluate: ${message.question}`,
+        content: `${historyText}${filesContext}\n\nUser message to evaluate: ${message.question}`,
       },
     ];
 
