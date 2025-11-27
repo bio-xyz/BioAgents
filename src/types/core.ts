@@ -51,7 +51,8 @@ export interface ConversationStateValues extends StateValues {
   methodology?: string; // Methodology for the current goal
   currentHypothesis?: string;
   discoveries?: string[];
-  plan?: Array<PlanTask>;
+  plan?: Array<PlanTask>; // Actual plan being executed or already executed
+  suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
   uploadedDatasets?: Array<{
     filename: string;
     id: string;

@@ -280,6 +280,7 @@ async function runDeepResearch(params: {
       state,
       conversationState,
       message: createdMessage,
+      mode: "initial",
     });
 
     const plan = deepResearchPlanningResult.plan;
@@ -292,6 +293,9 @@ async function runDeepResearch(params: {
     // Update conversation state with plan and objective
     const { updateConversationState } = await import("../../db/operations");
     const { literatureAgent } = await import("../../agents/literature");
+
+    // Clear previous suggestions since we're starting a new iteration
+    conversationState.values.suggestedNextSteps = [];
 
     // Get current plan or initialize empty
     const currentPlan = conversationState.values.plan || [];
@@ -494,27 +498,10 @@ async function runDeepResearch(params: {
       mode: "next",
     });
 
-    // Only update if there's a plan (planner may return empty if research is complete)
+    // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
     if (nextPlanningResult.plan.length > 0) {
-      // Find max level in current plan
-      const currentPlan = conversationState.values.plan || [];
-      const maxLevel =
-        currentPlan.length > 0
-          ? Math.max(...currentPlan.map((t) => t.level || 0))
-          : -1;
-
-      // Add next iteration tasks with new level
-      const nextLevel = maxLevel + 1;
-      const nextTasks = nextPlanningResult.plan.map((task: PlanTask) => ({
-        ...task,
-        level: nextLevel,
-        start: undefined,
-        end: undefined,
-        output: undefined,
-      }));
-
-      // Append to plan
-      conversationState.values.plan = [...currentPlan, ...nextTasks];
+      // Store as suggestions (without level - will be assigned when user confirms)
+      conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
 
       // Update objective if provided
       if (nextPlanningResult.currentObjective) {
@@ -529,16 +516,15 @@ async function runDeepResearch(params: {
         );
         logger.info(
           {
-            nextLevel,
-            nextTaskCount: nextTasks.length,
+            suggestedStepsCount: nextPlanningResult.plan.length,
             nextObjective: nextPlanningResult.currentObjective,
           },
-          "next_iteration_plan_added",
+          "next_iteration_suggestions_saved",
         );
       }
     } else {
       logger.info(
-        "no_next_iteration_tasks_planned_research_complete_or_awaiting_feedback",
+        "no_next_iteration_tasks_suggested_research_complete_or_awaiting_feedback",
       );
     }
 
@@ -552,7 +538,7 @@ async function runDeepResearch(params: {
       message: createdMessage,
       completedMaxTasks: tasksToExecute,
       hypothesis: hypothesisResult.hypothesis,
-      nextPlan: nextPlanningResult.plan,
+      nextPlan: conversationState.values.suggestedNextSteps || [],
     });
 
     logger.info(
@@ -571,6 +557,7 @@ async function runDeepResearch(params: {
       content: replyResult.reply,
       source: createdMessage.source,
       question: createdMessage.question,
+      state_id: stateRecord.id,
     });
 
     logger.info(

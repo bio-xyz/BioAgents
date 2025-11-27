@@ -21,6 +21,7 @@ export type PlanningMode = "initial" | "next";
  *
  * Two modes:
  * - "initial": Creates tasks for the current iteration (default, used at start of each message)
+ *              If no plan exists yet, creates an initial literature search plan
  * - "next": Updates plan for next iteration after reflection (used after hypothesis + reflection)
  */
 export async function planningAgent(input: {
@@ -31,14 +32,13 @@ export async function planningAgent(input: {
 }): Promise<PlanningResult> {
   const { state, conversationState, message, mode = "initial" } = input;
 
-  // Check if this is the first message in conversation
-  const isFirstMessage = await isFirstMessageInConversation(
-    message.conversation_id,
-  );
+  // Check if plan is empty (indicates first planning or fresh start)
+  const hasPlan =
+    conversationState.values.plan && conversationState.values.plan.length > 0;
 
-  // If first message, hardcode literature search plan
-  if (isFirstMessage) {
-    logger.info("First message in conversation, planning literature search");
+  // If no existing plan and initial mode, create initial literature search plan
+  if (!hasPlan && mode === "initial") {
+    logger.info("No existing plan found, planning initial literature search");
 
     // Use LLM to create a 'search scientific literature' objective for the question
     const specificObjectiveForQuestion =
@@ -59,21 +59,6 @@ export async function planningAgent(input: {
 
   // Otherwise, use LLM to plan based on current state
   return await generatePlan(state, conversationState, message, mode);
-}
-
-/**
- * Check if this is the first message in the conversation
- */
-async function isFirstMessageInConversation(
-  conversationId: string,
-): Promise<boolean> {
-  try {
-    const messages = await getMessagesByConversation(conversationId, 1);
-    return messages.length <= 1;
-  } catch (err) {
-    logger.error({ err }, "failed_to_check_conversation_history");
-    return true; // Default to first message on error
-  }
 }
 
 /**
@@ -134,12 +119,25 @@ IMPORTANT INSTRUCTIONS:
 CURRENT RESEARCH STATE:
 ${context}
 
-USER'S LATEST REQUEST:
+USER'S LATEST MESSAGE:
 ${message.question}
 
 AVAILABLE TASK TYPES (only these two):
-- LITERATURE: Search and gather scientific papers and knowledge from literature databases
-- ANALYSIS: Perform computational/data analysis on datasets (can include uploaded files as datasets)
+- LITERATURE: Search and gather scientific papers and knowledge from literature databases. Use it to:
+  - Find recent research
+  - Gather mechanistic evidence
+  - Compare interventions
+  - Find dosing protocols
+  - Find clinical trial data
+  - Search for molecular mechanisms
+  - And other similar tasks
+- ANALYSIS: Perform computational/data analysis on datasets (can include uploaded files as datasets). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
+  - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" → Load RNA-seq data and perform differential expression analysis
+  - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" → Cluster analysis on transcriptomic datasets comparing multiple interventions
+  - "What's the optimal dose range based on our dose-response survival data?" → Fit curves to uploaded lifespan datasets and find optimal parameters
+  - "How do the gene expression signatures compare between our rapamycin and metformin datasets?" → Gene set enrichment analysis comparing two uploaded transcriptome studies
+  - "Are the survival differences significant in our treatment groups dataset?" → Statistical analysis of uploaded lifespan/healthspan data
+  - "How do aging biomarkers change over time in our longitudinal study?" → Time-series analysis of uploaded longitudinal datasets
 
 OUTPUT FORMAT (respond with ONLY valid JSON):
 {
@@ -154,6 +152,8 @@ OUTPUT FORMAT (respond with ONLY valid JSON):
 }
 
 NOTES:
+- Choose LITERATURE if: You need to find, read, or synthesize information from scientific papers
+- Choose ANALYSIS if: You have datasets that need coding, statistics, visualization, or any computational processing
 - For LITERATURE tasks: datasets array should be EMPTY []
 - For ANALYSIS tasks: SELECT which uploaded datasets (shown in the CURRENT RESEARCH STATE above) are relevant for the analysis task
   - Only include datasets that are directly relevant to the specific analysis objective
@@ -287,6 +287,23 @@ function buildContextFromState(conversationState: ConversationState): string {
       `Uploaded Datasets:\n${conversationState.values.uploadedDatasets
         .map((ds) => `  - ${ds.filename} (ID: ${ds.id}): ${ds.description}`)
         .join("\n")}`,
+    );
+  }
+
+  // Add suggested next steps if available (from previous iteration's "next" planning)
+  if (conversationState.values.suggestedNextSteps?.length) {
+    const suggestionsText = conversationState.values.suggestedNextSteps
+      .map((task, i) => {
+        let taskText = `  ${i + 1}. [${task.type}] ${task.objective}`;
+        if (task.datasets?.length) {
+          taskText += `\n     Datasets: ${task.datasets.map(d => `${d.filename} (${d.id})`).join(", ")}`;
+        }
+        return taskText;
+      })
+      .join("\n");
+
+    contextParts.push(
+      `Suggested Next Steps (from previous iteration):\n${suggestionsText}\n\nNOTE: The user's message may indicate approval ("okay", "yes", "proceed") or request changes. Consider these suggestions as a starting point but adapt based on user feedback.`,
     );
   }
 
