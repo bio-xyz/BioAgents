@@ -25,13 +25,6 @@ export interface StateValues {
 
   // Action responses
   finalResponse?: string; // Final text response from REPLY or HYPOTHESIS
-  webSearchResults?: Array<{
-    title: string;
-    url: string;
-    originalUrl: string;
-    index: number;
-  }>;
-  papers?: Paper[];
   thought?: string;
 
   // Step tracking
@@ -53,6 +46,7 @@ export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
   objective: string;
   currentObjective?: string;
+  currentLevel?: number; // Current level of tasks being executed (for UI visualization)
   keyInsights?: string[];
   methodology?: string; // Methodology for the current goal
   currentHypothesis?: string;

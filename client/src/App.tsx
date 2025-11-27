@@ -7,8 +7,6 @@ import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
 import { Sidebar } from "./components/Sidebar";
-import { StreamingResponse } from "./components/StreamingResponse";
-import { ThinkingSteps } from "./components/ThinkingSteps";
 import { ToastContainer } from "./components/Toast";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { Modal } from "./components/ui/Modal";
@@ -120,6 +118,7 @@ export function App() {
     sendMessage,
     sendDeepResearchMessage,
     clearError,
+    clearLoading,
     pendingPayment,
     confirmPayment,
     cancelPayment,
@@ -163,6 +162,9 @@ export function App() {
   // Track which message is currently loading (for matching with state updates)
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
 
+  // Track if we're in deep research mode (simplified - just shows typing indicator)
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
+
   const messages = currentSession.messages;
 
   // Check if the current conversation is the one that's loading
@@ -180,7 +182,28 @@ export function App() {
   // Clear loading message ID when switching conversations
   useEffect(() => {
     setLoadingMessageId(null);
+    setIsDeepResearch(false);
   }, [currentSessionId]);
+
+  // Detect when deep research completes via real-time message updates
+  useEffect(() => {
+    if (!isDeepResearch || !isCurrentConversationLoading) return;
+
+    // Check if a new assistant message appeared (via real-time subscription)
+    // The last message should be an assistant message when research completes
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage && lastMessage.role === "assistant") {
+      console.log("[App] Deep research completed - assistant message detected");
+
+      // Clear all loading states
+      setIsDeepResearch(false);
+      setLoadingConversationId(null);
+      setLoadingMessageId(null);
+      clearLoading(); // Clear the loading state in useChatAPI
+      scrollToBottom();
+    }
+  }, [messages, isDeepResearch, isCurrentConversationLoading]);
 
   // Watch for deep research completion
   useEffect(() => {
@@ -417,7 +440,6 @@ export function App() {
           setLoadingMessageId(null);
         } else if (response.status === "processing") {
           // Research started - the state will update in real-time via subscription
-          // The StreamingResponse component will show the finalResponse as it streams
           // Keep loading state active - don't clear it yet
           console.log(
             "[App] Deep research started, messageId:",
@@ -426,6 +448,7 @@ export function App() {
 
           // Store the message ID so we can match state updates to this specific message
           setLoadingMessageId(response.messageId);
+          setIsDeepResearch(true);
         }
 
         // Clear pending message data
@@ -890,33 +913,8 @@ export function App() {
                   <Message key={msg.id} message={msg} />
                 ))}
 
-                {/* Show live thinking steps only for current loading message */}
-                {isCurrentConversationLoading &&
-                  currentState?.values?.conversationId === currentSessionId &&
-                  (loadingMessageId === null ||
-                    currentState?.values?.messageId === loadingMessageId) &&
-                  currentState?.values?.steps &&
-                  Object.keys(currentState.values.steps).length > 0 && (
-                    <ThinkingSteps state={currentState.values} />
-                  )}
-
-                {/* Show streaming response in real-time */}
-                {isCurrentConversationLoading &&
-                  currentState?.values?.conversationId === currentSessionId &&
-                  (loadingMessageId === null ||
-                    currentState?.values?.messageId === loadingMessageId) &&
-                  currentState.values.finalResponse && (
-                    <StreamingResponse
-                      finalResponse={currentState.values.finalResponse}
-                    />
-                  )}
-
-                {isCurrentConversationLoading &&
-                  (!currentState?.values?.finalResponse ||
-                    currentState?.values?.conversationId !== currentSessionId ||
-                    (loadingMessageId !== null &&
-                      currentState?.values?.messageId !==
-                        loadingMessageId)) && <TypingIndicator />}
+                {/* Show typing indicator when loading */}
+                {isCurrentConversationLoading && <TypingIndicator />}
               </>
             )}
           </div>

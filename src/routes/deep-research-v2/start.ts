@@ -315,6 +315,7 @@ async function runDeepResearch(params: {
     // Append to existing plan and update objective
     conversationState.values.plan = [...currentPlan, ...newTasks];
     conversationState.values.currentObjective = currentObjective;
+    conversationState.values.currentLevel = newLevel; // Set current level for UI
 
     // Update state in DB
     if (conversationState.id) {
@@ -324,7 +325,7 @@ async function runDeepResearch(params: {
       );
       logger.info(
         { newLevel, taskCount: newTasks.length },
-        "state_updated_with_plan",
+        "state_updated_with_plan_and_current_level",
       );
     }
 
@@ -372,23 +373,23 @@ async function runDeepResearch(params: {
         });
 
         // Run Edison and update state when done
-        const edisonPromise = literatureAgent({
-          objective: task.objective,
-          type: "EDISON",
-        }).then(async (result) => {
-          task.output += `Edison literature results:\n${result.output}\n\n`;
-          if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
-            logger.info("edison_completed");
-          }
-          logger.info(
-            { outputLength: result.output.length },
-            "edison_result_received",
-          );
-        });
+        // const edisonPromise = literatureAgent({
+        //   objective: task.objective,
+        //   type: "EDISON",
+        // }).then(async (result) => {
+        //   task.output += `Edison literature results:\n${result.output}\n\n`;
+        //   if (conversationState.id) {
+        //     await updateConversationState(
+        //       conversationState.id,
+        //       conversationState.values,
+        //     );
+        //     logger.info("edison_completed");
+        //   }
+        //   logger.info(
+        //     { outputLength: result.output.length },
+        //     "edison_result_received",
+        //   );
+        // });
 
         // const knowledgePromise = literatureAgent({
         //   objective: task.objective,
@@ -405,7 +406,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          edisonPromise,
+          // edisonPromise,
           // knowledgePromise,
         ]);
 
@@ -561,11 +562,21 @@ async function runDeepResearch(params: {
       "reply_generated",
     );
 
-    // TODO: Send reply to user (via response streaming, websocket, or store in DB)
-    // For now, log it
-    logger.info({ reply: replyResult.reply }, "user_reply");
+    // Step 7: Create assistant message with the reply
+    const { createMessage } = await import("../../db/operations");
 
-    // TODO: Rest of deep research workflow (novelty check, analysis, final response)
+    const assistantMessage = await createMessage({
+      conversation_id: createdMessage.conversation_id,
+      user_id: createdMessage.user_id,
+      content: replyResult.reply,
+      source: createdMessage.source,
+      question: createdMessage.question,
+    });
+
+    logger.info(
+      { assistantMessageId: assistantMessage.id },
+      "assistant_reply_saved",
+    );
 
     const responseTime = 0; // TODO: Calculate response time
 

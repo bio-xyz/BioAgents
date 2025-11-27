@@ -1,13 +1,9 @@
-import { useState } from 'preact/hooks';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import { Icon } from './icons';
-import { Button } from './ui';
-import { ThinkingSteps } from './ThinkingSteps';
-import { InlineCitationText } from './InlineCitationText';
+import { useState } from "preact/hooks";
+import { Icon } from "./icons";
+import { InlineCitationText } from "./InlineCitationText";
 
 export function Message({ message }) {
-  const isUser = message.role === 'user';
+  const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -16,25 +12,30 @@ export function Message({ message }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      console.error("Failed to copy:", err);
     }
   };
 
   const formatFileSize = (bytes) => {
-    if (!bytes) return '';
-    if (bytes === 0) return '0 Bytes';
+    if (!bytes) return "";
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
   };
 
   const getFileIcon = (mimeType) => {
-    if (!mimeType) return 'file';
-    if (mimeType.includes('pdf')) return 'file';
-    if (mimeType.includes('image')) return 'image';
-    if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) return 'file';
-    return 'file';
+    if (!mimeType) return "file";
+    if (mimeType.includes("pdf")) return "file";
+    if (mimeType.includes("image")) return "image";
+    if (
+      mimeType.includes("spreadsheet") ||
+      mimeType.includes("excel") ||
+      mimeType.includes("csv")
+    )
+      return "file";
+    return "file";
   };
 
   const renderContent = () => {
@@ -46,8 +47,14 @@ export function Message({ message }) {
               {message.files.map((file, index) => (
                 <div key={index} className="message-file-badge">
                   <Icon name={getFileIcon(file.mimeType)} size={14} />
-                  <span className="file-name">{file.name || file.filename}</span>
-                  {file.size && <span className="file-size">{formatFileSize(file.size)}</span>}
+                  <span className="file-name">
+                    {file.name || file.filename}
+                  </span>
+                  {file.size && (
+                    <span className="file-size">
+                      {formatFileSize(file.size)}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -60,19 +67,13 @@ export function Message({ message }) {
         <div className="message-content-wrapper">
           {/* Use InlineCitationText component for citation support */}
           <InlineCitationText content={message.content} />
-          {/* Show thinking steps for assistant messages that have them */}
-          {message.thinkingState && message.thinkingState.steps && Object.keys(message.thinkingState.steps).length > 0 && (
-            <div className="message-thinking-steps">
-              <ThinkingSteps state={message.thinkingState} />
-            </div>
-          )}
           <div className="message-actions">
             <button
               onClick={handleCopy}
               className="message-action-icon-btn"
               title="Copy"
             >
-              <Icon name={copied ? 'check' : 'copy'} size={18} />
+              <Icon name={copied ? "check" : "copy"} size={18} />
             </button>
             <button
               disabled
@@ -117,19 +118,23 @@ export function Message({ message }) {
 
   // Debug: log message to see if thinkingState is present
   if (!isUser && message.thinkingState) {
-    console.log('[Message] Rendering with thinkingState:', message.thinkingState);
+    console.log(
+      "[Message] Rendering with thinkingState:",
+      message.thinkingState,
+    );
   } else if (!isUser) {
-    console.log('[Message] No thinkingState for assistant message:', message.id);
+    console.log(
+      "[Message] No thinkingState for assistant message:",
+      message.id,
+    );
   }
 
   return (
-    <div className={`message ${isUser ? 'user' : 'assistant'}`}>
-      <div className={`avatar ${isUser ? 'user' : 'assistant'}`}>
-        <Icon name={isUser ? 'user' : 'bot'} size={16} />
+    <div className={`message ${isUser ? "user" : "assistant"}`}>
+      <div className={`avatar ${isUser ? "user" : "assistant"}`}>
+        <Icon name={isUser ? "user" : "bot"} size={16} />
       </div>
-      <div className="message-content-container">
-        {renderContent()}
-      </div>
+      <div className="message-content-container">{renderContent()}</div>
     </div>
   );
 }
