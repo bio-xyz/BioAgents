@@ -81,7 +81,7 @@ export type Tool = {
   description: string;
   execute: (input: {
     state: State;
-    conversationState?: State;
+    conversationState?: ConversationState;
     message: any;
     [key: string]: any;
   }) => Promise<any>;
@@ -101,4 +101,27 @@ export type Paper = {
   title: string;
   chunkText?: string;
   abstract?: string;
+};
+
+export type UploadedFile = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  path: string;
+  metadata?: any;
+};
+
+export type DataAnalysisResult = {
+  id: string;
+  status: string;
+  success: boolean;
+  answer: string;
+  artifacts: Array<{
+    id: string;
+    description: string;
+    content: string;
+    filename: string;
+    path?: string;
+  }>;
+  question?: string;
 };

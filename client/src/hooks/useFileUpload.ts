@@ -12,7 +12,7 @@ export interface UseFileUploadReturn {
 }
 
 const MAX_FILES = 5;
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 /**
  * Custom hook for file upload handling

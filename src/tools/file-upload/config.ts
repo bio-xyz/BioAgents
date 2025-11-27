@@ -54,7 +54,7 @@ export const FILE_TYPES: FileTypeConfig[] = [
 /**
  * Maximum file size in MB
  */
-export const MAX_FILE_SIZE_MB = 5;
+export const MAX_FILE_SIZE_MB = 50;
 
 /**
  * Maximum number of files per upload

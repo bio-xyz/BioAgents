@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'preact/hooks';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from "preact/hooks";
+import { supabase } from "../lib/supabase";
 
 export interface ToolState {
   start: number;
@@ -15,6 +15,8 @@ export interface StateValues {
   thought?: string;
   finalResponse?: string;
   isDeepResearch?: boolean;
+  edisonResults?: Array<EdisonResult>;
+  dataAnalysisResults?: Array<DataAnalysisResult>;
 }
 
 export interface State {
@@ -30,11 +32,37 @@ export interface UseStatesReturn {
   error: string | null;
 }
 
+export type EdisonResult = {
+  taskId: string;
+  jobType: string;
+  question: string;
+  answer?: string;
+  error?: string;
+};
+
+export type DataAnalysisResult = {
+  id: string;
+  status: string;
+  success: boolean;
+  answer: string;
+  artifacts: Array<{
+    id: string;
+    description: string;
+    content: string;
+    filename: string;
+    path?: string;
+  }>;
+  question?: string;
+};
+
 /**
  * Custom hook for subscribing to real-time state updates from Supabase
  * Listens to the states table for tool execution progress
  */
-export function useStates(userId: string, conversationId: string): UseStatesReturn {
+export function useStates(
+  userId: string,
+  conversationId: string,
+): UseStatesReturn {
   const [currentState, setCurrentState] = useState<State | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,26 +80,29 @@ export function useStates(userId: string, conversationId: string): UseStatesRetu
       try {
         setIsLoading(true);
         const { data, error: fetchError } = await supabase
-          .from('states')
-          .select('*')
-          .eq('values->>conversationId', conversationId)
-          .order('created_at', { ascending: false })
+          .from("states")
+          .select("*")
+          .eq("values->>conversationId", conversationId)
+          .order("created_at", { ascending: false })
           .limit(1)
           .single();
 
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        if (fetchError && fetchError.code !== "PGRST116") {
+          // PGRST116 = no rows returned
           throw fetchError;
         }
 
         if (mounted && data) {
-          console.log('[useStates] Fetched state:', data);
+          console.log("[useStates] Fetched state:", data);
           setCurrentState(data as State);
           setError(null);
         }
       } catch (err) {
-        console.error('[useStates] Error fetching state:', err);
+        console.error("[useStates] Error fetching state:", err);
         if (mounted) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch state');
+          setError(
+            err instanceof Error ? err.message : "Failed to fetch state",
+          );
         }
       } finally {
         if (mounted) {
@@ -86,46 +117,46 @@ export function useStates(userId: string, conversationId: string): UseStatesRetu
     const channel = supabase
       .channel(`states:${userId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'states',
+          event: "INSERT",
+          schema: "public",
+          table: "states",
         },
         (payload) => {
-          console.log('[useStates] State INSERT:', payload);
+          console.log("[useStates] State INSERT:", payload);
           const newState = payload.new as State;
 
           // Only update if this state is for the current conversation
           // Note: We don't filter by userId because x402 external agents use a system userId
           if (newState.values?.conversationId === conversationId) {
-            console.log('[useStates] Setting new state from INSERT');
+            console.log("[useStates] Setting new state from INSERT");
             setCurrentState(newState);
             setError(null);
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'states',
+          event: "UPDATE",
+          schema: "public",
+          table: "states",
         },
         (payload) => {
-          console.log('[useStates] State UPDATE:', payload);
+          console.log("[useStates] State UPDATE:", payload);
           const updatedState = payload.new as State;
 
           // Only update if this state is for the current conversation
           // Note: We don't filter by userId because x402 external agents use a system userId
           if (updatedState.values?.conversationId === conversationId) {
-            console.log('[useStates] ✅ Setting updated state from UPDATE');
+            console.log("[useStates] ✅ Setting updated state from UPDATE");
             setCurrentState(updatedState);
             setError(null);
           } else {
-            console.log('[useStates] ❌ Skipping UPDATE - wrong conversation');
+            console.log("[useStates] ❌ Skipping UPDATE - wrong conversation");
           }
-        }
+        },
       )
       .subscribe();
 

@@ -10,10 +10,12 @@ import {
   Bot,
   BrainCircuit,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
   Dna,
+  Download,
   File,
   FlaskConical,
   GitMerge,
@@ -65,6 +67,7 @@ const iconMap: Record<string, any> = {
   logout: LogOut,
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
+  chevronDown: ChevronDown,
   file: File,
   menu: MoreHorizontal,
   mic: Mic,
@@ -90,6 +93,7 @@ const iconMap: Record<string, any> = {
   barChart: BarChart3,
   gitMerge: GitMerge,
   zap: Zap,
+  download: Download,
 };
 
 /**

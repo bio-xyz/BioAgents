@@ -5,6 +5,7 @@ import { InlineCitationText } from "./InlineCitationText";
 export function Message({ message }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  const [artifactsCollapsed, setArtifactsCollapsed] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -38,6 +39,55 @@ export function Message({ message }) {
     return "file";
   };
 
+  const getArtifacts = () => {
+    if (!message.thinkingState?.dataAnalysisResults) return [];
+
+    const artifacts = [];
+    message.thinkingState.dataAnalysisResults.forEach((result) => {
+      if (result.artifacts && Array.isArray(result.artifacts)) {
+        artifacts.push(...result.artifacts);
+      }
+    });
+    return artifacts;
+  };
+
+  const isImageFile = (filename) => {
+    const imageExtensions = [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".bmp",
+      ".webp",
+      ".svg",
+    ];
+    return imageExtensions.some((ext) => filename.toLowerCase().endsWith(ext));
+  };
+
+  const handleDownloadArtifact = (artifact) => {
+    try {
+      // Decode base64 content
+      const binaryString = atob(artifact.content);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Create blob and download
+      const blob = new Blob([bytes]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = artifact.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to download artifact:", err);
+    }
+  };
+
   const renderContent = () => {
     if (isUser) {
       return (
@@ -63,10 +113,78 @@ export function Message({ message }) {
         </div>
       );
     } else {
+      const artifacts = getArtifacts();
+      const hasArtifacts = artifacts.length > 0;
+
       return (
         <div className="message-content-wrapper">
           {/* Use InlineCitationText component for citation support */}
           <InlineCitationText content={message.content} />
+
+          {/* Show artifacts if available */}
+          {hasArtifacts && (
+            <div className="message-artifacts">
+              <button
+                className="artifacts-header"
+                onClick={() => setArtifactsCollapsed(!artifactsCollapsed)}
+              >
+                <Icon name="file" size={16} />
+                <span>Generated Files ({artifacts.length})</span>
+                <Icon
+                  name="chevronDown"
+                  size={16}
+                  className={`artifacts-chevron ${!artifactsCollapsed ? "expanded" : ""}`}
+                />
+              </button>
+              {!artifactsCollapsed && (
+                <div className="artifacts-list">
+                  {artifacts.map((artifact, index) => {
+                    const isImage = isImageFile(artifact.filename);
+                    return (
+                      <div key={artifact.id || index} className="artifact-item">
+                        <div className="artifact-info">
+                          <Icon name={isImage ? "image" : "file"} size={16} />
+                          <div className="artifact-details">
+                            <span className="artifact-filename">
+                              {artifact.filename}
+                            </span>
+                            {artifact.description && (
+                              <span className="artifact-description">
+                                {artifact.description}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDownloadArtifact(artifact)}
+                            className="artifact-download-btn"
+                            title="Download"
+                          >
+                            <Icon name="download" size={16} />
+                          </button>
+                        </div>
+                        {isImage && (
+                          <div className="artifact-preview">
+                            <img
+                              src={`data:image/${artifact.filename.split(".").pop()};base64,${artifact.content}`}
+                              alt={artifact.description || artifact.filename}
+                              onError={(e) => {
+                                console.error(
+                                  "Failed to load image:",
+                                  artifact.filename,
+                                );
+                                e.target.style.display = "none";
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="message-actions">
             <button
               onClick={handleCopy}

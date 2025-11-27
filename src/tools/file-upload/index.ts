@@ -1,8 +1,18 @@
 import { updateState } from "../../db/operations";
-import { getStorageProvider, getUserUploadPath } from "../../storage";
-import { type Message, type State } from "../../types/core";
+import {
+  getConversationBasePath,
+  getStorageProvider,
+  getUploadPath,
+} from "../../storage";
+import type {
+  ConversationState,
+  Message,
+  State,
+  UploadedFile,
+} from "../../types/core";
 import logger from "../../utils/logger";
 import { addVariablesToState, endStep, startStep } from "../../utils/state";
+import { generateUUID } from "../../utils/uuid";
 import { MAX_FILE_SIZE_MB } from "./config";
 import { parseFile } from "./parsers";
 import { formatFileSize, mbToBytes } from "./utils";
@@ -16,7 +26,7 @@ const fileUploadTool = {
   execute: async (input: {
     state: State;
     message: Message;
-    conversationState: State;
+    conversationState: ConversationState;
     files?: File[];
   }) => {
     const { state, files, conversationState } = input;
@@ -96,13 +106,30 @@ const fileUploadTool = {
 
     const conversationId = conversationState.id;
     const userId = state.values.userId;
-    await uploadFilesToStorage(userId, conversationId, rawFiles).catch(
-      (err) => {
-        errors.push(`Storage upload error: ${(err as Error).message}`);
-        if (logger)
-          logger.error("Failed to upload files to storage:", err as any);
-      },
-    );
+    const uploadedFiles = await uploadFilesToStorage(
+      userId,
+      conversationId,
+      rawFiles,
+    ).catch((err) => {
+      errors.push(`Storage upload error: ${(err as Error).message}`);
+      if (logger)
+        logger.error("Failed to upload files to storage:", err as any);
+      return [];
+    });
+
+    // Update conversation state with newly uploaded datasets, replacing duplicates by path
+    const uploadedDatasets: UploadedFile[] = [
+      // keep only old ones whose path is not in the new uploads
+      ...(conversationState.values.uploadedDatasets || []).filter(
+        (f) => !uploadedFiles.some((nf) => nf.path === f.path),
+      ),
+      // then append all new files (they replace by path)
+      ...uploadedFiles,
+    ];
+
+    addVariablesToState(conversationState, {
+      uploadedDatasets,
+    });
 
     // Store only rawFiles with parsed text included
     addVariablesToState(state, {
@@ -142,13 +169,13 @@ async function uploadFilesToStorage(
     mimeType: string;
     metadata?: any;
   }>,
-): Promise<void> {
+): Promise<Array<UploadedFile>> {
   if (files.length === 0 || !conversationId || !userId) {
     if (logger)
       logger.warn(
         "No files to upload or missing conversationId/userId, skipping storage upload",
       );
-    return;
+    return [];
   }
 
   const storageProvider = getStorageProvider();
@@ -158,7 +185,7 @@ async function uploadFilesToStorage(
       logger.warn(
         "No storage provider configured, skipping cloud storage upload",
       );
-    return;
+    return [];
   }
 
   if (logger)
@@ -167,16 +194,20 @@ async function uploadFilesToStorage(
     );
 
   const uploadPromises = files.map(async (file) => {
-    const storagePath = getUserUploadPath(
-      userId,
-      conversationId,
-      file.filename,
-    );
+    const uploadsPath = getUploadPath(file.filename);
+    const fullPath = `${getConversationBasePath(userId, conversationId)}/${uploadsPath}`;
 
     try {
-      await storageProvider.upload(storagePath, file.buffer, file.mimeType);
+      await storageProvider.upload(fullPath, file.buffer, file.mimeType);
       if (logger)
-        logger.info(`Successfully uploaded ${file.filename} to ${storagePath}`);
+        logger.info(`Successfully uploaded ${file.filename} to ${fullPath}`);
+      return {
+        id: generateUUID(),
+        filename: file.filename,
+        mimeType: file.mimeType,
+        path: uploadsPath,
+        metadata: file.metadata,
+      };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -188,10 +219,14 @@ async function uploadFilesToStorage(
     }
   });
 
-  await Promise.all(uploadPromises);
+  const uploadedFiles = await Promise.all(uploadPromises);
 
   if (logger)
-    logger.info(`Successfully uploaded ${files.length} file(s) to storage`);
+    logger.info(
+      `Successfully uploaded ${uploadedFiles.length} file(s) to storage`,
+    );
+
+  return uploadedFiles;
 }
 
 export default fileUploadTool;

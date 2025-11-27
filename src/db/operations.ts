@@ -138,10 +138,31 @@ export async function createState(stateData: { values: any }) {
   return data;
 }
 
+/**
+ * Update state in DB
+ * Automatically strips file buffers and parsedText to prevent Supabase timeout
+ * These large fields are kept in memory for processing but not persisted
+ */
 export async function updateState(id: string, values: any) {
+  // Clone values to avoid mutating the original in-memory state
+  const cleanedValues = { ...values };
+  
+  // Strip buffers and parsedText from rawFiles if present
+  // These can be very large (MBs) and cause Supabase JSONB write timeouts
+  if (cleanedValues.rawFiles?.length) {
+    cleanedValues.rawFiles = cleanedValues.rawFiles.map((f: any) => ({
+      filename: f.filename,
+      mimeType: f.mimeType,
+      metadata: f.metadata,
+      size: f.buffer?.length || f.size,
+      // ❌ buffer: stripped (can be several MB)
+      // ❌ parsedText: stripped (can be hundreds of KB)
+    }));
+  }
+  
   const { data, error } = await supabase
     .from("states")
-    .update({ values })
+    .update({ values: cleanedValues })
     .eq("id", id)
     .select()
     .single();

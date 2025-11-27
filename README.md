@@ -40,6 +40,13 @@ To process documents for the knowledge tool's vector database, place them in the
 
 **Docker Deployment Note**: When deploying with Docker, agent-specific documentation in `docs/` and branding images in `client/public/images/` are persisted using Docker volumes. These directories are excluded from git (see `.gitignore`) but automatically mounted in your Docker containers via volume mounts defined in `docker-compose.yml`. This allows you to customize your agent with private documentation without committing it to the repository.
 
+### Data Analysis tool
+
+The data analysis tool allows the agent to run code execution tasks using secure sandboxed environment.
+
+- Current default setup uses Edison ANALYSIS job API to run analysis operations.
+- You can switch to BioAgents Data Analysis Agent by setting PRIMARY_ANALYSIS_AGENT=bio in your .env file and providing DATA_ANALYSIS_API_URL and DATA_ANALYSIS_API_KEY (see .env.example for details).
+
 ### Character File
 
 The [character file](src/character.ts) defines your agent's persona, behavior, and response templates. Customize it to configure:
@@ -76,17 +83,18 @@ The UI includes integrated support for x402 micropayments using Coinbase embedde
 
 BioAgents AgentKit supports **USDC micropayments** for API access using the x402 payment protocol. The system implements a **three-tier access control model**:
 
-| Access Tier | Authentication | Payment Required |
-|------------|----------------|------------------|
-| **Next.js Frontend** | Privy JWT | ❌ FREE (bypasses x402) |
-| **Internal Dev UI** | CDP Wallet | ✅ Requires x402 |
-| **External Agents** | None | ✅ Requires x402 |
+| Access Tier          | Authentication | Payment Required        |
+| -------------------- | -------------- | ----------------------- |
+| **Next.js Frontend** | Privy JWT      | ❌ FREE (bypasses x402) |
+| **Internal Dev UI**  | CDP Wallet     | ✅ Requires x402        |
+| **External Agents**  | None           | ✅ Requires x402        |
 
 ### Quick Start
 
 #### Testnet Setup (Development)
 
 1. **Enable x402 on testnet**:
+
 ```bash
 X402_ENABLED=true
 X402_ENVIRONMENT=testnet
@@ -94,6 +102,7 @@ X402_PAYMENT_ADDRESS=0xYourBaseSepoliaAddress
 ```
 
 2. **Configure Authentication** (optional - for Privy bypass):
+
 ```bash
 # Optional: Only needed if using Privy authentication
 PRIVY_APP_ID=your_app_id
@@ -101,6 +110,7 @@ PRIVY_VERIFICATION_KEY="your_public_key"
 ```
 
 3. **Get CDP Credentials** from [Coinbase Portal](https://portal.cdp.coinbase.com) (for embedded wallets):
+
 ```bash
 CDP_PROJECT_ID=your_project
 ```
@@ -108,6 +118,7 @@ CDP_PROJECT_ID=your_project
 #### Mainnet Setup (Production)
 
 1. **Enable x402 on mainnet**:
+
 ```bash
 X402_ENABLED=true
 X402_ENVIRONMENT=mainnet
@@ -115,6 +126,7 @@ X402_PAYMENT_ADDRESS=0xYourBaseMainnetAddress
 ```
 
 2. **REQUIRED: Get CDP API Credentials** from [CDP API Portal](https://portal.cdp.coinbase.com/access/api):
+
 ```bash
 CDP_API_KEY_ID=your_key_id
 CDP_API_KEY_SECRET=your_key_secret
