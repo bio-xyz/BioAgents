@@ -40,6 +40,7 @@ export interface UseChatAPIReturn {
   sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
   sendDeepResearchMessage: (params: SendMessageParams) => Promise<DeepResearchResponse>;
   clearError: () => void;
+  clearLoading: () => void;
   paymentTxHash: string | null;
   pendingPayment: PaymentConfirmationRequest | null;
   confirmPayment: () => Promise<ChatResponse | null>;
@@ -333,7 +334,7 @@ export function useChatAPI(
         formData.append("files", file);
       }
 
-      const response = await fetch("/api/deep-research/start", {
+      const response = await fetch("/api/deep-research-v2/start", {
         method: "POST",
         body: formData,
         credentials: "include",
@@ -389,12 +390,20 @@ export function useChatAPI(
     setError("");
   };
 
+  /**
+   * Clear loading state (used when deep research completes externally)
+   */
+  const clearLoading = () => {
+    setIsLoading(false);
+  };
+
   return {
     isLoading,
     error,
     sendMessage,
     sendDeepResearchMessage,
     clearError,
+    clearLoading,
     paymentTxHash,
     pendingPayment,
     confirmPayment,

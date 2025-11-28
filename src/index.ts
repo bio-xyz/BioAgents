@@ -8,6 +8,11 @@ import {
   deepResearchStartRoute,
 } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
+import {
+  deepResearchStartGet as deepResearchStartGetV2,
+  deepResearchStartRoute as deepResearchStartRouteV2,
+} from "./routes/deep-research-v2/start";
+import { deepResearchStatusRoute as deepResearchStatusRouteV2 } from "./routes/deep-research-v2/status";
 import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
@@ -129,6 +134,9 @@ const app = new Elysia()
   .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
   .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
+  .use(deepResearchStartGetV2) // GET /api/deep-research-v2/start for x402scan discovery
+  .use(deepResearchStartRouteV2) // POST /api/deep-research-v2/start to start deep research v2
+  .use(deepResearchStatusRouteV2) // GET /api/deep-research-v2/status/:messageId to check status v2
 
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI
