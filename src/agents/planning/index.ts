@@ -1,4 +1,3 @@
-import { getMessagesByConversation } from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import type {
   ConversationState,
@@ -96,7 +95,8 @@ async function generatePlan(
 You are planning tasks for the CURRENT iteration based on the user's request.
 - Create tasks that will address the user's immediate question
 - These tasks will be executed NOW, then a hypothesis will be generated, then the world state will be reflected upon
-- Focus on gathering information or performing analysis needed to answer the current question`
+- Focus on gathering information or performing analysis needed to answer the current question
+- You might be provided a plan from the previous iteration and the user's latest message. Use these to plan the next steps`
       : `PLANNING MODE: NEXT
 You are planning tasks for the NEXT iteration based on completed work (hypothesis + reflection).
 - The current iteration has completed (tasks executed, hypothesis generated, world reflected)
@@ -131,6 +131,8 @@ AVAILABLE TASK TYPES (only these two):
   - Find clinical trial data
   - Search for molecular mechanisms
   - And other similar tasks
+What LITERATURE cannot do:
+  - Find and download open source datasets
 - ANALYSIS: Perform computational/data analysis on datasets (can include uploaded files as datasets). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
   - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" → Load RNA-seq data and perform differential expression analysis
   - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" → Cluster analysis on transcriptomic datasets comparing multiple interventions
@@ -187,7 +189,10 @@ NOTES:
     {
       mode,
       currentObjective: result.currentObjective,
-      planLength: result.plan.length,
+      plan: result.plan.map(
+        (t) =>
+          `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
+      ),
     },
     "plan_generated",
   );
@@ -296,7 +301,7 @@ function buildContextFromState(conversationState: ConversationState): string {
       .map((task, i) => {
         let taskText = `  ${i + 1}. [${task.type}] ${task.objective}`;
         if (task.datasets?.length) {
-          taskText += `\n     Datasets: ${task.datasets.map(d => `${d.filename} (${d.id})`).join(", ")}`;
+          taskText += `\n     Datasets: ${task.datasets.map((d) => `${d.filename} (${d.id})`).join(", ")}`;
         }
         return taskText;
       })

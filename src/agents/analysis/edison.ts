@@ -1,3 +1,8 @@
+import {
+  getConversationBasePath,
+  getStorageProvider,
+  getUploadPath,
+} from "../../storage";
 import logger from "../../utils/logger";
 
 type Dataset = {
@@ -12,6 +17,8 @@ type Dataset = {
 export async function analyzeWithEdison(
   objective: string,
   datasets: Dataset[],
+  userId: string,
+  conversationStateId: string,
 ): Promise<string> {
   const EDISON_API_URL = process.env.EDISON_API_URL;
   const EDISON_API_KEY = process.env.EDISON_API_KEY;
@@ -26,7 +33,12 @@ export async function analyzeWithEdison(
   );
 
   // Format query with dataset information
-  const finalQuery = await formatQueryWithDatasets(objective, datasets);
+  const finalQuery = await formatQueryWithDatasets(
+    objective,
+    datasets,
+    userId,
+    conversationStateId,
+  );
 
   // Start Edison task with ANALYSIS job type
   const taskResponse = await startEdisonTask(
@@ -52,10 +64,7 @@ export async function analyzeWithEdison(
     throw new Error(`Edison analysis task failed: ${result.error}`);
   }
 
-  logger.info(
-    { taskId: taskResponse.task_id },
-    "edison_analysis_completed",
-  );
+  logger.info({ taskId: taskResponse.task_id }, "edison_analysis_completed");
 
   return result.answer || "No answer received from Edison";
 }
@@ -67,6 +76,8 @@ export async function analyzeWithEdison(
 async function formatQueryWithDatasets(
   objective: string,
   datasets: Dataset[],
+  userId: string,
+  conversationStateId: string,
 ): Promise<string> {
   if (!datasets || datasets.length === 0) {
     return objective;
@@ -82,12 +93,25 @@ async function formatQueryWithDatasets(
 
       parts.push(`ID: ${dataset.id}`);
 
-      // TODO: Fetch file content using dataset.id
-      // const fileContent = await fetchFileContentById(dataset.id);
-      // if (fileContent) {
-      //   parts.push(`MIME Type: ${fileContent.mimeType}`);
-      //   parts.push(`Content:\n${fileContent.parsedText}`);
-      // }
+      // Fetch file content from storage
+      try {
+        const fileContent = await fetchFileFromStorage(
+          dataset.filename,
+          userId,
+          conversationStateId,
+        );
+        if (fileContent) {
+          parts.push(
+            `Content (first 5000 chars):\n${fileContent.slice(0, 5000)}`,
+          );
+        }
+      } catch (error) {
+        logger.warn(
+          { error, filename: dataset.filename },
+          "failed_to_fetch_file_content",
+        );
+        parts.push(`Note: Could not fetch file content`);
+      }
 
       return parts.join("\n");
     }),
@@ -97,6 +121,65 @@ async function formatQueryWithDatasets(
 
 Available Datasets:
 ${datasetInfo.join("\n\n")}`;
+}
+
+/**
+ * Fetch file content from storage bucket
+ */
+async function fetchFileFromStorage(
+  filename: string,
+  userId: string,
+  conversationStateId: string,
+): Promise<string | null> {
+  const storageProvider = getStorageProvider();
+
+  if (!storageProvider) {
+    logger.warn("No storage provider configured, cannot fetch file content");
+    return null;
+  }
+
+  const basePath = getConversationBasePath(userId, conversationStateId);
+  const uploadPath = getUploadPath(filename);
+  const fullPath = `${basePath}/${uploadPath}`;
+
+  logger.info({ filename, fullPath }, "fetching_file_from_storage");
+
+  try {
+    const buffer = await storageProvider.download(fullPath);
+
+    // Parse the file to get text content
+    const { parseFile } = await import("../fileUpload/parsers");
+    const parsed = await parseFile(
+      buffer,
+      filename,
+      getMimeTypeFromFilename(filename),
+    );
+
+    return parsed.text;
+  } catch (error) {
+    logger.error(
+      { error, filename, fullPath },
+      "failed_to_download_file_from_storage",
+    );
+    throw error;
+  }
+}
+
+/**
+ * Simple helper to guess MIME type from filename
+ */
+function getMimeTypeFromFilename(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    pdf: "application/pdf",
+    csv: "text/csv",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    txt: "text/plain",
+    json: "application/json",
+    md: "text/markdown",
+  };
+  return mimeTypes[ext || ""] || "application/octet-stream";
 }
 
 /**

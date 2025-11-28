@@ -106,8 +106,8 @@ export type Paper = {
 export type UploadedFile = {
   id: string;
   filename: string;
-  mimeType: string;
-  path: string;
+  mimeType?: string;
+  path?: string;
   metadata?: any;
 };
 

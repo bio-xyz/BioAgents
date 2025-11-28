@@ -243,8 +243,6 @@ async function runDeepResearch(params: {
     paymentRequirement,
   } = params;
 
-  const startTime = Date.now();
-
   try {
     // Initialize state
     const state: State = {
@@ -423,6 +421,73 @@ async function runDeepResearch(params: {
           );
           logger.info("task_completed");
         }
+      } else if (task.type === "ANALYSIS") {
+        // Set start timestamp
+        task.start = new Date().toISOString();
+        task.output = "";
+
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+          logger.info("task_started");
+        }
+
+        logger.info(
+          {
+            taskObjective: task.objective,
+            datasets: task.datasets.map((d) => `${d.filename} (${d.id})`),
+          },
+          "executing_analysis_task",
+        );
+
+        // Run Edison analysis
+        const { analysisAgent } = await import("../../agents/analysis");
+
+        try {
+          const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
+          const analysisResult = await analysisAgent({
+            objective: task.objective,
+            datasets: task.datasets,
+            type: "EDISON",
+            userId: createdMessage.user_id,
+            conversationStateId: conversationStateId,
+          });
+
+          task.output = `Analysis results:\n${analysisResult.output}\n\n`;
+
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+            logger.info("analysis_completed");
+          }
+
+          logger.info(
+            { outputLength: analysisResult.output.length },
+            "analysis_result_received",
+          );
+        } catch (error) {
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
+          task.output = `Analysis failed: ${errorMsg}`;
+          logger.error(
+            { error, taskObjective: task.objective },
+            "analysis_failed",
+          );
+        }
+
+        // Set end timestamp
+        task.end = new Date().toISOString();
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+          logger.info("task_completed");
+        }
       }
     }
 
@@ -516,7 +581,10 @@ async function runDeepResearch(params: {
         );
         logger.info(
           {
-            suggestedStepsCount: nextPlanningResult.plan.length,
+            nextPlanningSteps: nextPlanningResult.plan.map(
+              (t) =>
+                `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
+            ),
             nextObjective: nextPlanningResult.currentObjective,
           },
           "next_iteration_suggestions_saved",

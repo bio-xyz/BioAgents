@@ -30,12 +30,18 @@ export async function analysisAgent(input: {
   objective: string;
   datasets: Dataset[];
   type: AnalysisType;
+  userId: string;
+  conversationStateId: string;
 }): Promise<AnalysisResult> {
-  const { objective, datasets, type } = input;
+  const { objective, datasets, type, userId, conversationStateId } = input;
   const start = new Date().toISOString();
 
   logger.info(
-    { objective, type, datasetCount: datasets.length },
+    {
+      objective,
+      type,
+      datasets: datasets.map((d) => `${d.filename} (${d.description})`),
+    },
     "analysis_agent_started",
   );
 
@@ -44,7 +50,7 @@ export async function analysisAgent(input: {
   try {
     switch (type) {
       case "EDISON":
-        output = await analyzeWithEdison(objective, datasets);
+        output = await analyzeWithEdison(objective, datasets, userId, conversationStateId);
         break;
       default:
         throw new Error(`Unknown analysis type: ${type}`);
