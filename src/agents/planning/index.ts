@@ -125,15 +125,16 @@ ${message.question}
 AVAILABLE TASK TYPES (only these two):
 - LITERATURE: Search and gather scientific papers and knowledge from literature databases. Use it to:
   - Find recent research
-  - Gather mechanistic evidence
+  - Search Specialized Medical Databases (UniProt, PubChem...)
   - Compare interventions
   - Find dosing protocols
   - Find clinical trial data
   - Search for molecular mechanisms
+  - Search patent databases
+  - Search Regulatory and Safety Databases (FDA, EMA, etc.)
+  - Search for open source datasets (it's enough to find the dataset name/link and later pass it to the ANALYSIS task)
   - And other similar tasks
-What LITERATURE cannot do:
-  - Find and download open source datasets
-- ANALYSIS: Perform computational/data analysis on datasets (can include uploaded files as datasets). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
+- ANALYSIS: Perform computational/data analysis on datasets (which are included in the world state). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
   - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" → Load RNA-seq data and perform differential expression analysis
   - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" → Cluster analysis on transcriptomic datasets comparing multiple interventions
   - "What's the optimal dose range based on our dose-response survival data?" → Fit curves to uploaded lifespan datasets and find optimal parameters
@@ -141,7 +142,11 @@ What LITERATURE cannot do:
   - "Are the survival differences significant in our treatment groups dataset?" → Statistical analysis of uploaded lifespan/healthspan data
   - "How do aging biomarkers change over time in our longitudinal study?" → Time-series analysis of uploaded longitudinal datasets
 
-OUTPUT FORMAT (respond with ONLY valid JSON):
+  ** Type specific objectives **
+  - For LITERATURE tasks: describe the objective simply in 1-2 sentences
+  - For ANALYSIS tasks: Describe the objective in this format "GOAL: <goal> DATASETS: <short dataset descriptions> OUTPUT: <desired output>". Each section should be relatively simple, 1-3 sentences max. Do not overexplain so that you allow the data scientist agent to be creative and come up with the best solution. Focus on the what, not on the how.
+
+  OUTPUT FORMAT (respond with ONLY valid JSON):
 {
   "currentObjective": "Updated objective for the next phase of research (1-2 sentences)",
   "plan": [
@@ -162,8 +167,8 @@ NOTES:
   - Copy the exact dataset objects (filename, id, description) from the "Uploaded Datasets" section above
   - If no datasets are uploaded or none are relevant, use an empty array
 - Plan only 1-3 tasks maximum
-- If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration)
-- Update the objective to reflect what you're currently doing and what comes after these tasks
+- If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration). You can express what you're planning to do next in the currentObjective field.
+- Update the currentObjective to reflect what you're currently doing and what comes after these tasks
 - Be specific and actionable`;
 
   const response = await llmProvider.createChatCompletion({
