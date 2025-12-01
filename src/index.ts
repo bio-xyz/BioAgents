@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 import { x402Middleware } from "./middleware/x402";
 import { authRoute } from "./routes/auth";
 import { chatRoute, chatRouteGet } from "./routes/chat";
+import { chatV2Route, chatV2RouteGet } from "./routes/chatv2";
 import {
   deepResearchStartGet,
   deepResearchStartRoute,
@@ -131,6 +132,8 @@ const app = new Elysia()
   // API routes (not protected by UI auth)
   .use(chatRouteGet) // GET /api/chat for x402scan discovery
   .use(chatRoute) // POST /api/chat for actual chat
+  .use(chatV2RouteGet) // GET /api/chat-v2 for x402scan discovery
+  .use(chatV2Route) // POST /api/chat-v2 for agent-based chat
   .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
   .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status

@@ -1,11 +1,11 @@
 import { LLM } from "../../llm/provider";
 import type { LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { replyPrompt } from "./prompts";
+import { replyPrompt, chatReplyPrompt } from "./prompts";
 
 export type ReplyContext = {
   completedTasks: PlanTask[];
-  hypothesis: string;
+  hypothesis?: string;
   nextPlan: PlanTask[];
   keyInsights: string[];
   discoveries: string[];
@@ -64,7 +64,7 @@ export async function generateReply(
   const replyInstruction = replyPrompt
     .replace("{{question}}", question)
     .replace("{{completedTasks}}", completedTasksText)
-    .replace("{{hypothesis}}", context.hypothesis)
+    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
     .replace("{{nextPlan}}", nextPlanText)
     .replace("{{keyInsights}}", keyInsightsText)
     .replace("{{methodology}}", context.methodology || "Not specified")
@@ -114,6 +114,86 @@ export async function generateReply(
     return response.content;
   } catch (error) {
     logger.error({ error }, "reply_generation_failed");
+    throw error;
+  }
+}
+
+/**
+ * Generate concise chat reply without next steps
+ * For regular chat (not deep research)
+ */
+export async function generateChatReply(
+  question: string,
+  context: ReplyContext,
+  options: ReplyOptions = {},
+): Promise<string> {
+  const model = process.env.REPLY_LLM_MODEL || "gemini-2.5-pro";
+
+  // Format completed tasks with full output (not truncated for chat)
+  const completedTasksText = context.completedTasks
+    .map((task, i) => {
+      const output = task.output || "No output available";
+      return `${i + 1}. ${task.type} Task: ${task.objective}\n   Output: ${output}`;
+    })
+    .join("\n\n");
+
+  // Format key insights
+  const keyInsightsText =
+    context.keyInsights.length > 0
+      ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
+      : "No key insights available.";
+
+  // Build the prompt
+  const replyInstruction = chatReplyPrompt
+    .replace("{{question}}", question)
+    .replace("{{completedTasks}}", completedTasksText)
+    .replace("{{keyInsights}}", keyInsightsText)
+    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated");
+
+  const REPLY_LLM_PROVIDER: LLMProvider =
+    (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
+  const llmApiKey = process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!llmApiKey) {
+    throw new Error(
+      `${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
+    );
+  }
+
+  const llmProvider = new LLM({
+    name: REPLY_LLM_PROVIDER,
+    apiKey: llmApiKey,
+  });
+
+  const llmRequest = {
+    model,
+    messages: [
+      {
+        role: "user" as const,
+        content: replyInstruction,
+      },
+    ],
+    maxTokens: options.maxTokens ?? 1000, // Shorter for chat
+    thinkingBudget: options.thinking
+      ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
+      : undefined,
+  };
+
+  try {
+    const response = await llmProvider.createChatCompletion(llmRequest);
+
+    logger.info(
+      {
+        replyLength: response.content.length,
+        completedTaskCount: context.completedTasks.length,
+        hasHypothesis: !!context.hypothesis,
+      },
+      "chat_reply_generated",
+    );
+
+    return response.content;
+  } catch (error) {
+    logger.error({ error }, "chat_reply_generation_failed");
     throw error;
   }
 }

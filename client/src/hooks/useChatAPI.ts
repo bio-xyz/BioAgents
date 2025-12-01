@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
-import { useX402Payment, type UseX402PaymentReturn } from "./useX402Payment";
-import { useToast } from "./useToast";
 import type { WalletClient } from "viem";
+import { useToast } from "./useToast";
+import { useX402Payment, type UseX402PaymentReturn } from "./useX402Payment";
 
 export interface SendMessageParams {
   message: string;
@@ -30,7 +30,7 @@ export interface PaymentConfirmationRequest {
 export interface DeepResearchResponse {
   messageId: string | null;
   conversationId: string;
-  status: 'processing' | 'rejected';
+  status: "processing" | "rejected";
   error?: string;
 }
 
@@ -38,7 +38,9 @@ export interface UseChatAPIReturn {
   isLoading: boolean;
   error: string;
   sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
-  sendDeepResearchMessage: (params: SendMessageParams) => Promise<DeepResearchResponse>;
+  sendDeepResearchMessage: (
+    params: SendMessageParams,
+  ) => Promise<DeepResearchResponse>;
   clearError: () => void;
   clearLoading: () => void;
   paymentTxHash: string | null;
@@ -58,8 +60,10 @@ export function useChatAPI(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [paymentTxHash, setPaymentTxHash] = useState<string | null>(null);
-  const [pendingPayment, setPendingPayment] = useState<PaymentConfirmationRequest | null>(null);
-  const [pendingMessageParams, setPendingMessageParams] = useState<SendMessageParams | null>(null);
+  const [pendingPayment, setPendingPayment] =
+    useState<PaymentConfirmationRequest | null>(null);
+  const [pendingMessageParams, setPendingMessageParams] =
+    useState<SendMessageParams | null>(null);
   const {
     fetchWithPayment,
     decodePaymentResponse,
@@ -69,8 +73,12 @@ export function useChatAPI(
   /**
    * Internal function to actually send the message (after confirmation if needed)
    */
-  const sendMessageInternal = async (params: SendMessageParams, skipPaymentCheck = false): Promise<ChatResponse> => {
-    const { message, conversationId, userId, file, files, walletClient } = params;
+  const sendMessageInternal = async (
+    params: SendMessageParams,
+    skipPaymentCheck = false,
+  ): Promise<ChatResponse> => {
+    const { message, conversationId, userId, file, files, walletClient } =
+      params;
 
     try {
       const formData = new FormData();
@@ -92,9 +100,9 @@ export function useChatAPI(
           formData.append("authSignature", signature);
           formData.append("authTimestamp", timestamp.toString());
 
-          console.log('[useChatAPI] Added CDP authentication signature');
+          console.log("[useChatAPI] Added CDP authentication signature");
         } catch (err) {
-          console.warn('[useChatAPI] Failed to sign auth message:', err);
+          console.warn("[useChatAPI] Failed to sign auth message:", err);
           // Continue without authentication - will be treated as unauthenticated request
         }
       }
@@ -113,7 +121,7 @@ export function useChatAPI(
 
       if (!skipPaymentCheck) {
         // First try without payment to see if it's required
-        response = await fetch("/api/chat", {
+        response = await fetch("/api/chat-v2", {
           method: "POST",
           body: formData,
           credentials: "include",
@@ -152,7 +160,7 @@ export function useChatAPI(
         }
       } else {
         // User confirmed, use payment-enabled fetch
-        response = await fetchWithPayment("/api/chat", {
+        response = await fetchWithPayment("/api/chat-v2", {
           method: "POST",
           body: formData,
           credentials: "include",
@@ -169,17 +177,19 @@ export function useChatAPI(
       if (response.status === 402) {
         toast.error(
           "💳 Payment failed. Please ensure you have sufficient USDC balance.",
-          8000
+          8000,
         );
-        throw new Error("💳 Payment failed. Please ensure you have sufficient USDC balance.");
+        throw new Error(
+          "💳 Payment failed. Please ensure you have sufficient USDC balance.",
+        );
       }
 
       // x402-fetch automatically handles 402 responses
       // If we get here, either payment succeeded or no payment was needed
-      
+
       // Check for payment response header
       const paymentResponseHeader = response.headers.get("x-payment-response");
-      
+
       if (paymentResponseHeader) {
         try {
           const paymentResponse = decodePaymentResponse(paymentResponseHeader);
@@ -194,10 +204,13 @@ export function useChatAPI(
 
             toast.success(
               `✅ Payment Transaction Approved!\n\nYour payment has been successfully processed.\n\nTx: ${txShort}`,
-              7000
+              7000,
             );
 
-            console.log("[useChatAPI] Payment successful - Transaction:", paymentResponse.transaction);
+            console.log(
+              "[useChatAPI] Payment successful - Transaction:",
+              paymentResponse.transaction,
+            );
 
             // Refresh USDC balance after successful payment
             if (x402Context?.checkBalance) {
@@ -240,7 +253,10 @@ export function useChatAPI(
       setError(errorMessage);
 
       // Show error toast for non-payment errors
-      if (!errorMessage.includes("Payment Required") && !errorMessage.includes("Session expired")) {
+      if (
+        !errorMessage.includes("Payment Required") &&
+        !errorMessage.includes("Session expired")
+      ) {
         toast.error(`❌ Error: ${errorMessage}`, 6000);
       }
 
@@ -253,7 +269,9 @@ export function useChatAPI(
   /**
    * Public sendMessage function - entry point for sending messages
    */
-  const sendMessage = async (params: SendMessageParams): Promise<ChatResponse> => {
+  const sendMessage = async (
+    params: SendMessageParams,
+  ): Promise<ChatResponse> => {
     setIsLoading(true);
     setError("");
     setPaymentTxHash(null);
@@ -292,8 +310,11 @@ export function useChatAPI(
    * Send deep research message - returns immediately with messageId
    * The actual research runs in the background
    */
-  const sendDeepResearchMessage = async (params: SendMessageParams): Promise<DeepResearchResponse> => {
-    const { message, conversationId, userId, file, files, walletClient } = params;
+  const sendDeepResearchMessage = async (
+    params: SendMessageParams,
+  ): Promise<DeepResearchResponse> => {
+    const { message, conversationId, userId, file, files, walletClient } =
+      params;
 
     setIsLoading(true);
     setError("");
@@ -319,9 +340,11 @@ export function useChatAPI(
           formData.append("authSignature", signature);
           formData.append("authTimestamp", timestamp.toString());
 
-          console.log('[useChatAPI] Added CDP authentication signature for deep research');
+          console.log(
+            "[useChatAPI] Added CDP authentication signature for deep research",
+          );
         } catch (err) {
-          console.warn('[useChatAPI] Failed to sign auth message:', err);
+          console.warn("[useChatAPI] Failed to sign auth message:", err);
         }
       }
 
@@ -349,11 +372,11 @@ export function useChatAPI(
       const data = await response.json();
 
       // If validation failed (status 400 with rejected status), return the error
-      if (response.status === 400 && data.status === 'rejected') {
+      if (response.status === 400 && data.status === "rejected") {
         return {
           messageId: null,
           conversationId: data.conversationId,
-          status: 'rejected',
+          status: "rejected",
           error: data.error,
         };
       }
@@ -369,7 +392,7 @@ export function useChatAPI(
       return {
         messageId: data.messageId,
         conversationId: data.conversationId,
-        status: 'processing',
+        status: "processing",
       };
     } catch (err: any) {
       const errorMessage =

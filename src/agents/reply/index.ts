@@ -27,7 +27,7 @@ export async function replyAgent(input: {
   conversationState: ConversationState;
   message: Message;
   completedMaxTasks: PlanTask[];
-  hypothesis: string;
+  hypothesis?: string;
   nextPlan: PlanTask[];
 }): Promise<ReplyResult> {
   const {
