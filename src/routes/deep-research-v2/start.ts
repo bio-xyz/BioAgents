@@ -118,9 +118,7 @@ export const deepResearchStartRoute = deepResearchStartPlugin.post(
           userId,
           conversationId,
           source,
-          authMethod: authenticatedUser?.authMethod,
-          paidViaX402: !!paymentSettlement,
-          messageLength: message.length,
+          message: message,
           fileCount: files.length,
           routeType: "deep-research-v2-start",
         },
@@ -264,16 +262,27 @@ async function runDeepResearch(params: {
 
     // Step 1: Process files if any
     if (files.length > 0) {
-      await executeFileUpload({
+      const fileResult = await executeFileUpload({
         state,
         conversationState,
         message: createdMessage,
         files,
       });
+
+      logger.info(
+        { fileResult, fileCount: files.length },
+        "file_upload_result",
+      );
     }
 
     // Step 2: Execute deep research planning agent (v2)
     const { planningAgent } = await import("../../agents/planning");
+
+    logger.info(
+      { suggestedNextSteps: conversationState.values.suggestedNextSteps },
+      "current_suggested_next_steps",
+    );
+
     const deepResearchPlanningResult = await planningAgent({
       state,
       conversationState,
@@ -325,9 +334,10 @@ async function runDeepResearch(params: {
         conversationState.id,
         conversationState.values,
       );
+
       logger.info(
-        { newLevel, taskCount: newTasks.length },
-        "state_updated_with_plan_and_current_level",
+        { newLevel, newTasks, newObjective: currentObjective },
+        "new_tasks_added_to_plan",
       );
     }
 
@@ -347,7 +357,6 @@ async function runDeepResearch(params: {
             conversationState.id,
             conversationState.values,
           );
-          logger.info("task_started");
         }
 
         logger.info(
@@ -385,7 +394,6 @@ async function runDeepResearch(params: {
               conversationState.id,
               conversationState.values,
             );
-            logger.info("edison_completed");
           }
           logger.info(
             { outputLength: result.output.length },
@@ -431,7 +439,6 @@ async function runDeepResearch(params: {
             conversationState.id,
             conversationState.values,
           );
-          logger.info("task_started");
         }
 
         logger.info(
@@ -565,7 +572,6 @@ These molecular changes align with established longevity pathways (Converging nu
             conversationState.id,
             conversationState.values,
           );
-          logger.info("task_completed");
         }
       }
     }
@@ -592,7 +598,7 @@ These molecular changes align with established longevity pathways (Converging nu
       logger.info(
         {
           mode: hypothesisResult.mode,
-          hypothesisLength: hypothesisResult.hypothesis.length,
+          hypothesis: hypothesisResult.hypothesis,
         },
         "hypothesis_updated_in_state",
       );
@@ -624,9 +630,9 @@ These molecular changes align with established longevity pathways (Converging nu
       );
       logger.info(
         {
-          insightsCount: reflectionResult.keyInsights.length,
-          discoveriesCount: reflectionResult.discoveries.length,
-          hasNewObjective: !!reflectionResult.currentObjective,
+          insights: reflectionResult.keyInsights,
+          discoveries: reflectionResult.discoveries,
+          currentObjective: reflectionResult.currentObjective,
         },
         "world_state_updated_via_reflection",
       );
@@ -690,7 +696,7 @@ These molecular changes align with established longevity pathways (Converging nu
 
     logger.info(
       {
-        replyLength: replyResult.reply.length,
+        reply: replyResult.reply,
       },
       "reply_generated",
     );
