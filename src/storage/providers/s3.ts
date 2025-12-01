@@ -6,9 +6,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import logger from "../../utils/logger";
-import type { StorageProvider } from "../types";
+import { StorageProvider } from "../types";
 
-export class S3StorageProvider implements StorageProvider {
+export class S3StorageProvider extends StorageProvider {
   private client: S3Client;
   private bucket: string;
 
@@ -19,6 +19,7 @@ export class S3StorageProvider implements StorageProvider {
     bucket: string;
     endpoint?: string;
   }) {
+    super();
     this.bucket = config.bucket;
 
     this.client = new S3Client({
@@ -76,13 +77,8 @@ export class S3StorageProvider implements StorageProvider {
         throw new Error("No data received from S3");
       }
 
-      // Convert stream to buffer
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of response.Body as any) {
-        chunks.push(chunk);
-      }
-
-      return Buffer.concat(chunks);
+      const byteArray = await response.Body.transformToByteArray();
+      return Buffer.from(byteArray);
     } catch (error) {
       if (logger) {
         logger.error(`Failed to download file from S3: ${path}`, error as any);
