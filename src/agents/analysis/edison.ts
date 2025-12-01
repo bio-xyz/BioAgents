@@ -1,15 +1,6 @@
-import {
-  getConversationBasePath,
-  getStorageProvider,
-  getUploadPath,
-} from "../../storage";
+import { getMimeTypeFromFilename, getStorageProvider } from "../../storage";
 import logger from "../../utils/logger";
-
-type Dataset = {
-  filename: string;
-  id: string;
-  description: string;
-};
+import type { Dataset } from "./index";
 
 /**
  * Analyze data using Edison AI agent for deep analysis
@@ -138,14 +129,12 @@ async function fetchFileFromStorage(
     return null;
   }
 
-  const basePath = getConversationBasePath(userId, conversationStateId);
-  const uploadPath = getUploadPath(filename);
-  const fullPath = `${basePath}/${uploadPath}`;
-
-  logger.info({ filename, fullPath }, "fetching_file_from_storage");
-
   try {
-    const buffer = await storageProvider.download(fullPath);
+    const buffer = await storageProvider.fetchFileFromUserStorage(
+      userId,
+      conversationStateId,
+      filename,
+    );
 
     // Parse the file to get text content
     const { parseFile } = await import("../fileUpload/parsers");
@@ -158,28 +147,11 @@ async function fetchFileFromStorage(
     return parsed.text;
   } catch (error) {
     logger.error(
-      { error, filename, fullPath },
+      { error, filename, userId, conversationStateId },
       "failed_to_download_file_from_storage",
     );
     throw error;
   }
-}
-
-/**
- * Simple helper to guess MIME type from filename
- */
-function getMimeTypeFromFilename(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    pdf: "application/pdf",
-    csv: "text/csv",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    xls: "application/vnd.ms-excel",
-    txt: "text/plain",
-    json: "application/json",
-    md: "text/markdown",
-  };
-  return mimeTypes[ext || ""] || "application/octet-stream";
 }
 
 /**

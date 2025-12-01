@@ -1,12 +1,14 @@
 import logger from "../../utils/logger";
+import { analyzeWithBio } from "./bio";
 import { analyzeWithEdison } from "./edison";
 
-type AnalysisType = "EDISON";
+type AnalysisType = "EDISON" | "BIO";
 
-type Dataset = {
+export type Dataset = {
   filename: string;
   id: string;
   description: string;
+  content?: Buffer;
 };
 
 type AnalysisResult = {
@@ -24,6 +26,7 @@ type AnalysisResult = {
  * 1. Take objective and datasets (can be multiple)
  * 2. Run analysis based on type:
  *    - EDISON: Deep analysis via Edison AI agent
+ *    - BIO: Basic analysis via Bio Data Analysis agent
  * 3. Return results with timing information
  */
 export async function analysisAgent(input: {
@@ -50,7 +53,20 @@ export async function analysisAgent(input: {
   try {
     switch (type) {
       case "EDISON":
-        output = await analyzeWithEdison(objective, datasets, userId, conversationStateId);
+        output = await analyzeWithEdison(
+          objective,
+          datasets,
+          userId,
+          conversationStateId,
+        );
+        break;
+      case "BIO":
+        output = await analyzeWithBio(
+          objective,
+          datasets,
+          userId,
+          conversationStateId,
+        );
         break;
       default:
         throw new Error(`Unknown analysis type: ${type}`);

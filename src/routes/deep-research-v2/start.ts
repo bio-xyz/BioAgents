@@ -520,11 +520,15 @@ These molecular changes align with established longevity pathways (Converging nu
               end: new Date().toISOString(),
             };
           } else {
+            const type =
+              process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO"
+                ? "BIO"
+                : "EDISON";
             const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
             analysisResult = await analysisAgent({
               objective: task.objective,
               datasets: task.datasets,
-              type: "EDISON",
+              type,
               userId: createdMessage.user_id,
               conversationStateId: conversationStateId,
             });
