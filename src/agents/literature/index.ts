@@ -44,7 +44,10 @@ export async function literatureAgent(input: {
         output = await searchKnowledge(objective);
         break;
       case "EDISON":
-        output = await searchEdison(objective);
+        output = await searchEdison(
+          objective +
+            "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY: Each claim should be in the following format: (claim)[DOI] or (claim)[URL]. If there are general statements, it is alright to not include citations for them.",
+        );
         break;
       default:
         throw new Error(`Unknown literature type: ${type}`);

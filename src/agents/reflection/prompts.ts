@@ -8,6 +8,12 @@ Given the research question, current world state, completed MAX level tasks, and
 - **discoveries**: Significant new findings or breakthroughs discovered in this iteration
 - **methodology**: Current research approach or methodology being employed
 
+CITATION RULES (CRITICAL)
+- ALWAYS preserve inline citations in the format (claim)[DOI or URL]
+- When extracting keyInsights, discoveries, or currentObjective from source documents, KEEP citations
+- You can modify the text, but citations MUST remain in ()[] format
+- Example: "Rapamycin extends lifespan (Rapamycin extends lifespan)[10.1038/nature12345]"
+
 INPUTS
 - Original Research Question: {{question}}
 - Documents: Current world state, completed task outputs, and hypothesis

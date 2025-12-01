@@ -375,23 +375,23 @@ async function runDeepResearch(params: {
         });
 
         // Run Edison and update state when done
-        // const edisonPromise = literatureAgent({
-        //   objective: task.objective,
-        //   type: "EDISON",
-        // }).then(async (result) => {
-        //   task.output += `Edison literature results:\n${result.output}\n\n`;
-        //   if (conversationState.id) {
-        //     await updateConversationState(
-        //       conversationState.id,
-        //       conversationState.values,
-        //     );
-        //     logger.info("edison_completed");
-        //   }
-        //   logger.info(
-        //     { outputLength: result.output.length },
-        //     "edison_result_received",
-        //   );
-        // });
+        const edisonPromise = literatureAgent({
+          objective: task.objective,
+          type: "EDISON",
+        }).then(async (result) => {
+          task.output += `Edison literature results:\n${result.output}\n\n`;
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+            logger.info("edison_completed");
+          }
+          logger.info(
+            { outputLength: result.output.length },
+            "edison_result_received",
+          );
+        });
 
         // const knowledgePromise = literatureAgent({
         //   objective: task.objective,
@@ -408,7 +408,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          // edisonPromise,
+          edisonPromise,
           // knowledgePromise,
         ]);
 
@@ -446,14 +446,89 @@ async function runDeepResearch(params: {
         const { analysisAgent } = await import("../../agents/analysis");
 
         try {
-          const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
-          const analysisResult = await analysisAgent({
-            objective: task.objective,
-            datasets: task.datasets,
-            type: "EDISON",
-            userId: createdMessage.user_id,
-            conversationStateId: conversationStateId,
-          });
+          // MOCK: Uncomment to skip actual analysis for faster testing
+          const MOCK_ANALYSIS = false;
+
+          let analysisResult;
+          if (MOCK_ANALYSIS) {
+            logger.info("using_mock_analysis_for_testing");
+            analysisResult = {
+              objective: task.objective,
+              output: `## Differential Gene Expression Analysis: Caloric Restriction vs Control
+
+**Datasets Analyzed:** ${task.datasets.map((d) => d.filename).join(", ")}
+
+### Analysis Approach
+Performed differential expression analysis comparing caloric restriction (CR) vs control groups using normalized read counts. Statistical significance assessed using t-tests with multiple testing correction (FDR < 0.05).
+
+### Key Findings
+
+**1. Autophagy and Nutrient Sensing Pathways**
+
+The analysis reveals significant modulation of autophagy-related genes under caloric restriction:
+
+- **Atg7** shows 1.52-fold upregulation (p = 0.003) in CR vs control groups (Autophagy gene 7 upregulation promotes longevity)[10.1038/nature24630]
+- **Ulk1** exhibits 1.46-fold increase (p = 0.007), suggesting enhanced autophagy initiation (ULK1 activation extends lifespan in mammals)[10.1016/j.cell.2019.02.013]
+- **Becn1** demonstrates moderate upregulation (1.19-fold, p = 0.021), consistent with autophagosome formation (Beclin 1 is required for CR-mediated longevity)[10.1126/science.aar2814]
+
+**2. mTOR Pathway Suppression**
+
+- **Mtor** shows significant downregulation (0.65-fold, p = 0.001) under CR conditions (mTOR inhibition is sufficient to extend lifespan)[10.1126/science.1215135]
+- **Igf1r** reduced by 0.63-fold (p = 0.002), indicating decreased insulin/IGF-1 signaling (Reduced IGF-1 signaling extends lifespan across species)[10.1038/nature08619]
+
+**3. Transcriptional Regulators**
+
+- **Foxo1** upregulated 1.48-fold (p = 0.004), suggesting enhanced stress resistance (FOXO transcription factors regulate longevity)[10.1038/nrg.2016.4]
+- **Ppara** shows 1.34-fold increase (p = 0.008), indicating metabolic remodeling (PPARα activation promotes healthy aging)[10.1016/j.cmet.2018.05.024]
+- **Tfeb** upregulated 1.56-fold (p = 0.002), consistent with enhanced lysosomal biogenesis (TFEB drives longevity through autophagy-lysosomal pathway)[10.1016/j.celrep.2016.12.063]
+
+**4. Lysosomal Function**
+
+- **Lamp2** increased 1.24-fold (p = 0.015), supporting enhanced autophagy flux (LAMP2 is essential for autophagy-mediated lifespan extension)[10.1080/15548627.2018.1474314]
+
+**5. Sirtuin Activation**
+
+- **Sirt1** shows 1.64-fold upregulation (p = 0.001), the highest fold-change observed (SIRT1 activation extends lifespan via NAD+ metabolism)[10.1016/j.cell.2013.05.041]
+
+### Correlation with Lifespan Extension
+
+Analysis of the lifespan data shows CR treatment resulted in a mean lifespan increase of 25.7% (control: 712 ± 25 days vs CR: 892 ± 23 days, p < 0.001).
+
+**Gene-Lifespan Correlations:**
+- Sirt1 expression strongly correlates with lifespan (r = 0.87, p < 0.001)
+- Atg7 expression correlates with lifespan (r = 0.79, p = 0.002)
+- Mtor expression inversely correlates with lifespan (r = -0.81, p = 0.001)
+
+### Biological Interpretation
+
+The gene expression signature reveals a coordinated response to caloric restriction characterized by:
+
+1. **Enhanced autophagy**: Upregulation of Atg7, Ulk1, Becn1, and Tfeb indicates increased autophagosome formation and lysosomal degradation
+2. **Reduced growth signaling**: Downregulation of mTOR and IGF-1R suggests decreased nutrient sensing and growth promotion
+3. **Metabolic reprogramming**: PPARα upregulation indicates shift toward fatty acid oxidation
+4. **Stress resistance**: FOXO1 and SIRT1 upregulation suggests enhanced cellular stress response
+
+These molecular changes align with established longevity pathways (Converging nutrient sensing pathways regulate lifespan)[10.1016/j.cmet.2017.06.013] and provide mechanistic insight into CR-mediated lifespan extension in this model system.
+
+### Statistical Summary
+- Total genes analyzed: 10
+- Significantly upregulated (FDR < 0.05): 7 genes
+- Significantly downregulated (FDR < 0.05): 2 genes
+- Mean lifespan increase under CR: 25.7% (p < 0.001)
+- Batch effects: Not significant (p = 0.34)`,
+              start: new Date().toISOString(),
+              end: new Date().toISOString(),
+            };
+          } else {
+            const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
+            analysisResult = await analysisAgent({
+              objective: task.objective,
+              datasets: task.datasets,
+              type: "EDISON",
+              userId: createdMessage.user_id,
+              conversationStateId: conversationStateId,
+            });
+          }
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
 

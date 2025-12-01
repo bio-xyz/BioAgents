@@ -19,31 +19,29 @@ NOVELTY REQUIREMENTS (CRITICAL FOR DEEP RESEARCH)
 - Explicitly note what makes this hypothesis novel compared to existing literature.
 
 CITATION RULES
-- Cite only DOIs or links that appear verbatim in the Evidence Set.
-- Place inline citations immediately after the clause they support in parentheses like: (DOI: 10.xxxx/&) or (LINK: https://www.example.com).
+- Cite only DOIs or URLs that appear verbatim in the Evidence Set.
+- Place inline citations immediately after the clause they support using the format: (claim)[DOI or URL]
+- Example: "Rapamycin extends lifespan in mice (Rapamycin extends lifespan)[10.1038/nature12345]"
 - Use 5-15 citations to demonstrate comprehensive evidence synthesis.
 
 OUTPUT FORMAT (MARKDOWN ONLY)
 Write exactly these sections in markdown:
 
 ## Hypothesis
-2-4 sentences. Name the system/population, variables, direction of effect, and experimental method. Frame this as a genuinely novel research direction. Include inline DOI(s).
+2-4 sentences. Name the system/population, variables, direction of effect, and experimental method. Frame this as a genuinely novel research direction. Include inline citations in (claim)[DOI or URL] format.
 
 ## Rationale
 3-5 sentences that:
 - Connect specific findings from multiple sources in the Evidence Set to the prediction
 - Explain the logical synthesis that enables this novel hypothesis
 - Identify the gap or opportunity this hypothesis addresses
-- Include inline DOI(s) for each key claim
+- Include inline citations in (claim)[DOI or URL] format for each key claim
 
 ## Novelty Statement
 2-3 sentences explicitly describing:
 - What is novel about this hypothesis compared to existing literature
 - What gap it fills or what new angle it explores
 - Why this hasn't been tested before (if applicable)
-
-## Supporting Papers
-Bullet list of the DOIs you cited inline (exact strings from Evidence Set), with brief 3-5 word descriptions.
 
 ## Experimental Design
 3-5 sentences that include:
@@ -60,12 +58,9 @@ Bullet list of the DOIs you cited inline (exact strings from Evidence Set), with
 - Precedent searches needed to confirm novelty or find similar work
 - Only suggest if truly relevant to the hypothesis
 
-## Keywords
-6-12 concise domain terms, comma-separated.
-
 REFUSAL FORMAT (MARKDOWN)
-If the Evidence Set contains no relevant DOIs or links, write only:
-Unable to generate a hypothesis  Shortage of evidence: no relevant DOIs or links present in the provided Evidence Set.
+If the Evidence Set contains no relevant DOIs or URLs, write only:
+Unable to generate a hypothesis  Shortage of evidence: no relevant DOIs or URLs present in the provided Evidence Set.
 
 CONSTRAINTS
 - Use only the Evidence Set (document blocks in the same message) for factual claims and citations.
@@ -75,13 +70,13 @@ CONSTRAINTS
 - Be thorough but precisethis is deep research, not a quick answer.
 
 SILENT SELF-CHECK (DO NOT OUTPUT)
-- All inline DOIs or links occur verbatim in the Evidence Set.
+- All inline DOIs or URLs occur verbatim in the Evidence Set.
 - Exactly one hypothesis with genuinely novel framing.
 - Novelty Statement clearly articulates what's new.
 - Rationale synthesizes multiple sources logically.
 - Experimental Design is detailed and actionable.
 - Follow-Up Analyses are relevant and specific.
-- Supporting Papers list matches the inline DOIs exactly.
+- All citations use the (claim)[DOI or URL] format consistently.
 
 INPUTS
 - Original Research Question: {{question}}

@@ -27,6 +27,12 @@ Generate a user-facing reply that:
 4. Describes the current objective and outlines the plan for the next iteration together
 5. Asks the user for feedback on the plan
 
+CITATION PRESERVATION
+- IMPORTANT: Preserve ALL inline citations in the format (claim)[DOI or URL]
+- These citations appear in the hypothesis, key findings, and current objective
+- Do NOT remove, modify, or reformat these citations
+- Keep them exactly as they appear in the source material
+
 TONE & STYLE
 - Conversational and friendly, but professional
 - Clear and concise - avoid unnecessary jargon
