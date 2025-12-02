@@ -84,16 +84,24 @@ export function useChatAPI(
       const formData = new FormData();
       formData.append("message", message || "");
       formData.append("conversationId", conversationId);
-      formData.append("userId", userId);
+      
+      // Ensure we always send a valid userId
+      const validUserId = userId && userId.length > 0 ? userId : null;
+      if (validUserId) {
+        formData.append("userId", validUserId);
+        console.log("[useChatAPI] Sending with userId:", validUserId);
+      } else {
+        console.warn("[useChatAPI] No valid userId provided!");
+      }
 
       // Add CDP wallet authentication if wallet client is available
-      if (walletClient && userId.startsWith("0x")) {
+      if (walletClient && validUserId?.startsWith("0x")) {
         try {
           const timestamp = Date.now();
-          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${userId}`;
+          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${validUserId}`;
 
           const signature = await walletClient.signMessage({
-            account: userId as `0x${string}`,
+            account: validUserId as `0x${string}`,
             message: authMessage,
           });
 
@@ -324,16 +332,24 @@ export function useChatAPI(
       const formData = new FormData();
       formData.append("message", message || "");
       formData.append("conversationId", conversationId);
-      formData.append("userId", userId);
+      
+      // Ensure we always send a valid userId
+      const validUserId = userId && userId.length > 0 ? userId : null;
+      if (validUserId) {
+        formData.append("userId", validUserId);
+        console.log("[useChatAPI] Deep research with userId:", validUserId);
+      } else {
+        console.warn("[useChatAPI] No valid userId for deep research!");
+      }
 
       // Add CDP wallet authentication if wallet client is available
-      if (walletClient && userId.startsWith("0x")) {
+      if (walletClient && validUserId?.startsWith("0x")) {
         try {
           const timestamp = Date.now();
-          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${userId}`;
+          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${validUserId}`;
 
           const signature = await walletClient.signMessage({
-            account: userId as `0x${string}`,
+            account: validUserId as `0x${string}`,
             message: authMessage,
           });
 

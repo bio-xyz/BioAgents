@@ -74,8 +74,37 @@ export const deepResearchStartRoute = new Elysia()
         source = authenticatedUser.authMethod;
       }
     } else {
-      userId = X402_SYSTEM_USER_ID;
-      source = "x402_agent";
+      // Check if a valid userId was provided in the request body
+      const providedUserId = parsedBody.userId;
+      const isValidUserId = providedUserId && 
+        typeof providedUserId === 'string' && 
+        providedUserId.length > 0 &&
+        providedUserId !== 'undefined' &&
+        providedUserId !== 'null';
+
+      if (logger) {
+        logger.info(
+          { providedUserId, isValidUserId, hasPaymentSettlement: !!paymentSettlement },
+          "deep_research_determining_user_id"
+        );
+      }
+
+      if (isValidUserId) {
+        // Always prefer the provided userId if it's valid
+        userId = providedUserId;
+        source = paymentSettlement ? "x402_agent" : "dev_ui";
+      } else if (paymentSettlement) {
+        // x402 payment without userId - use system user
+        userId = X402_SYSTEM_USER_ID;
+        source = "x402_agent";
+      } else {
+        // No valid userId and no payment - generate one for anonymous dev user
+        userId = `agent_${Date.now()}`;
+        source = "dev_ui";
+        if (logger) {
+          logger.warn({ generatedUserId: userId }, "deep_research_no_user_id_provided_generating_temp");
+        }
+      }
     }
 
     // Auto-generate conversationId if not provided
@@ -694,21 +723,16 @@ These molecular changes align with established longevity pathways (Converging nu
       "reply_generated",
     );
 
-    // Step 7: Create assistant message with the reply
-    const { createMessage } = await import("../../db/operations");
+    // Step 7: Update the message with the reply content
+    const { updateMessage } = await import("../../db/operations");
 
-    const assistantMessage = await createMessage({
-      conversation_id: createdMessage.conversation_id,
-      user_id: createdMessage.user_id,
+    await updateMessage(createdMessage.id, {
       content: replyResult.reply,
-      source: createdMessage.source,
-      question: createdMessage.question,
-      state_id: stateRecord.id,
     });
 
     logger.info(
-      { assistantMessageId: assistantMessage.id },
-      "assistant_reply_saved",
+      { messageId: createdMessage.id, contentLength: replyResult.reply.length },
+      "message_content_saved",
     );
 
     const responseTime = 0; // TODO: Calculate response time

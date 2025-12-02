@@ -11,6 +11,7 @@ import { ToastContainer } from "./components/Toast";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { Modal } from "./components/ui/Modal";
 import { WelcomeScreen } from "./components/WelcomeScreen";
+import { ResearchStatePanel, SuggestedSteps } from "./components/research";
 
 // Custom hooks
 import {
@@ -104,11 +105,12 @@ export function App() {
     switchSession,
   } = useSessions(actualUserId || undefined);
 
-  // Real-time states for thinking visualization
-  const { currentState, isLoading: isLoadingStates } = useStates(
-    userId,
-    currentSessionId,
-  );
+  // Real-time states for thinking visualization and research state
+  const {
+    currentState,
+    conversationState,
+    isLoading: isLoadingStates,
+  } = useStates(userId, currentSessionId);
 
   // Chat API
   const {
@@ -165,7 +167,49 @@ export function App() {
   // Track if we're in deep research mode (simplified - just shows typing indicator)
   const [isDeepResearch, setIsDeepResearch] = useState(false);
 
+  // Research state panel visibility (collapsed by default)
+  const [isResearchPanelExpanded, setIsResearchPanelExpanded] = useState(false);
+
   const messages = currentSession.messages;
+
+  // Extract research state from conversation state (persistent) for display
+  // Falls back to currentState.values for backward compatibility during active sessions
+  const researchState = conversationState?.values
+    ? {
+        plan: conversationState.values.plan,
+        discoveries: conversationState.values.discoveries,
+        keyInsights: conversationState.values.keyInsights,
+        methodology: conversationState.values.methodology,
+        currentObjective: conversationState.values.currentObjective,
+        uploadedDatasets: conversationState.values.uploadedDatasets,
+        currentHypothesis: conversationState.values.currentHypothesis,
+        suggestedNextSteps: conversationState.values.suggestedNextSteps,
+      }
+    : currentState?.values
+      ? {
+          // Fallback to message-level state during active processing
+          plan: currentState.values.plan,
+          discoveries: currentState.values.discoveries,
+          keyInsights: currentState.values.keyInsights,
+          methodology: currentState.values.methodology,
+          currentObjective: currentState.values.currentObjective,
+          uploadedDatasets: currentState.values.uploadedDatasets,
+          currentHypothesis: currentState.values.currentHypothesis,
+          suggestedNextSteps: currentState.values.suggestedNextSteps,
+        }
+      : null;
+
+  // Check if we have an active research session for the CURRENT conversation
+  // Only show research state if:
+  // 1. We have a research state
+  // 2. The conversation has messages (not a new blank conversation)
+  // 3. The research state has meaningful content
+  const hasActiveResearch =
+    researchState &&
+    messages.length > 0 &&
+    (researchState.currentHypothesis ||
+      researchState.plan?.length > 0 ||
+      researchState.suggestedNextSteps?.length > 0);
 
   // Check if the current conversation is the one that's loading
   const isCurrentConversationLoading =
@@ -348,6 +392,25 @@ export function App() {
 
     fetchAndAttachStates();
   }, [currentSessionId, userId, messages.length]);
+
+  /**
+   * Handle selecting a suggested research step
+   */
+  const handleSelectStep = (step: any, index: number) => {
+    // Format the step as a concise message
+    const stepType = step.type?.toLowerCase() || "analysis";
+    const datasets = step.datasets?.length > 0 
+      ? ` using ${step.datasets.map((d: any) => d.filename).join(", ")}`
+      : "";
+    
+    // Create a shorter, more natural message
+    const stepMessage = `Proceed with ${stepType}${datasets}`;
+
+    setInputValue(stepMessage);
+
+    // Optionally auto-send
+    // handleSend("deep");
+  };
 
   /**
    * Handle sending a message
@@ -921,6 +984,30 @@ export function App() {
 
                 {/* Show typing indicator when loading */}
                 {isCurrentConversationLoading && <TypingIndicator />}
+
+                {/* Show research state panel when we have an active research session */}
+                {hasActiveResearch && !isCurrentConversationLoading && (
+                  <div className="research-section-container">
+                    {/* Research State Panel */}
+                    <ResearchStatePanel
+                      state={researchState}
+                      isExpanded={isResearchPanelExpanded}
+                      onToggle={() =>
+                        setIsResearchPanelExpanded(!isResearchPanelExpanded)
+                      }
+                    />
+
+                    {/* Suggested Next Steps */}
+                    {researchState.suggestedNextSteps &&
+                      researchState.suggestedNextSteps.length > 0 && (
+                        <SuggestedSteps
+                          steps={researchState.suggestedNextSteps}
+                          onSelectStep={handleSelectStep}
+                          disabled={isCurrentConversationLoading}
+                        />
+                      )}
+                  </div>
+                )}
               </>
             )}
           </div>

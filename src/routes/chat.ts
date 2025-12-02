@@ -169,14 +169,32 @@ export const chatRoute = new Elysia()
           source = authenticatedUser.authMethod;
         }
       } else {
-        const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
+        // Check if a valid userId was provided in the request body
+        const providedUserId = parsedBody.userId;
+        const isValidUserId = providedUserId && 
+          typeof providedUserId === 'string' && 
+          providedUserId.length > 0 &&
+          providedUserId !== 'undefined' &&
+          providedUserId !== 'null';
 
-        if (parsedBody.userId && !paymentSettlement) {
+        logger.info(
+          { providedUserId, isValidUserId, hasPaymentSettlement: !!paymentSettlement },
+          "determining_user_id"
+        );
+
+        if (isValidUserId) {
+          // Always prefer the provided userId if it's valid
           userId = providedUserId;
-          source = "dev_ui";
-        } else {
+          source = paymentSettlement ? "x402_agent" : "dev_ui";
+        } else if (paymentSettlement) {
+          // x402 payment without userId - use system user
           userId = X402_SYSTEM_USER_ID;
           source = "x402_agent";
+        } else {
+          // No valid userId and no payment - generate one for anonymous dev user
+          userId = `agent_${Date.now()}`;
+          source = "dev_ui";
+          logger.warn({ generatedUserId: userId }, "no_user_id_provided_generating_temp");
         }
       }
 
@@ -666,6 +684,17 @@ export const chatRoute = new Elysia()
       const response: ChatV2Response = {
         text: replyText,
       };
+
+      // Save the response to the message's content field
+      const { updateMessage } = await import("../db/operations");
+      await updateMessage(createdMessage.id, {
+        content: replyText,
+      });
+
+      logger.info(
+        { messageId: createdMessage.id, contentLength: replyText.length },
+        "message_content_saved",
+      );
 
       // Calculate and update response time
       const responseTime = Date.now() - startTime;
