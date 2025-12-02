@@ -36,9 +36,7 @@ export const deepResearchStartRoute = new Elysia()
       apiDocumentation: "https://your-docs-url.com/api",
     };
   })
-  .post(
-  "/api/deep-research/start",
-  async (ctx) => {
+  .post("/api/deep-research/start", async (ctx) => {
     const {
       body,
       set,
@@ -203,8 +201,7 @@ export const deepResearchStartRoute = new Elysia()
     }
 
     return response;
-  },
-);
+  });
 
 /**
  * Background function that executes the deep research workflow
@@ -412,7 +409,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          // edisonPromise,
+          edisonPromise,
           // knowledgePromise,
         ]);
 
