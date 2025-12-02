@@ -152,7 +152,7 @@ AVAILABLE TASK TYPES (only these two):
   "plan": [
     {
       "objective": "Specific objective tailored to this task",
-      "datasets": [{filename: "", id: "", description: string}], // Dataset metadata, only for ANALYSIS tasks
+      "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
       "type": "LITERATURE or ANALYSIS"
     }
   ]

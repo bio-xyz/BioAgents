@@ -7,10 +7,7 @@ import {
   setupConversationData,
   X402_SYSTEM_USER_ID,
 } from "../../services/chat/setup";
-import {
-  createMessageRecord,
-  executeFileUpload,
-} from "../../services/chat/tools";
+import { createMessageRecord } from "../../services/chat/tools";
 import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -262,16 +259,21 @@ async function runDeepResearch(params: {
 
     // Step 1: Process files if any
     if (files.length > 0) {
-      const fileResult = await executeFileUpload({
-        state,
+      const { fileUploadAgent } = await import("../../agents/fileUpload");
+
+      const fileResult = await fileUploadAgent({
         conversationState,
-        message: createdMessage,
         files,
+        userId: state.values.userId || "unknown",
       });
 
       logger.info(
-        { fileResult, fileCount: files.length },
-        "file_upload_result",
+        {
+          uploadedDatasets: fileResult.uploadedDatasets,
+          errors: fileResult.errors,
+          fileCount: files.length,
+        },
+        "file_upload_agent_result",
       );
     }
 

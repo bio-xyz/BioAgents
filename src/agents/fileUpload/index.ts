@@ -1,185 +1,187 @@
-import { updateState } from "../../db/operations";
+import { updateConversationState } from "../../db/operations";
 import {
   getConversationBasePath,
   getStorageProvider,
   getUploadPath,
 } from "../../storage";
-import type {
-  ConversationState,
-  Message,
-  State,
-  UploadedFile,
-} from "../../types/core";
+import type { ConversationState, UploadedFile } from "../../types/core";
 import logger from "../../utils/logger";
-import { addVariablesToState, endStep, startStep } from "../../utils/state";
+import { addVariablesToState } from "../../utils/state";
 import { generateUUID } from "../../utils/uuid";
 import { MAX_FILE_SIZE_MB } from "./config";
 import { parseFile } from "./parsers";
 import { formatFileSize, mbToBytes } from "./utils";
 
-const fileUploadTool = {
-  name: "FILE-UPLOAD",
-  description:
-    "File upload provider that parses uploaded files (PDF, Excel, CSV, MD, JSON, TXT) and makes their content available to the LLM.",
-  enabled: true,
-  deepResearchEnabled: true,
-  execute: async (input: {
-    state: State;
-    message: Message;
-    conversationState: ConversationState;
-    files?: File[];
-  }) => {
-    const { state, files, conversationState } = input;
+/**
+ * File upload agent for processing and storing uploaded files
+ * Independent agent that handles file parsing, storage, and description generation
+ *
+ * Flow:
+ * 1. Parse uploaded files (PDF, Excel, CSV, MD, JSON, TXT)
+ * 2. Upload to storage
+ * 3. Generate AI descriptions
+ * 4. Update conversation state with dataset metadata
+ */
+export async function fileUploadAgent(input: {
+  conversationState: ConversationState;
+  files: File[];
+  userId: string;
+}): Promise<{
+  uploadedDatasets: Array<{ id: string; filename: string; description: string }>;
+  errors: string[];
+}> {
+  const { files, conversationState, userId } = input;
 
-    startStep(state, "FILE_UPLOAD");
+  if (!files || files.length === 0) {
+    logger.info("No files to process");
+    return { uploadedDatasets: [], errors: [] };
+  }
 
-    // Update state in DB after startStep
-    if (state.id) {
-      try {
-        await updateState(state.id, state.values);
-      } catch (err) {
-        if (logger) logger.error("Failed to update state in DB:", err as any);
-      }
-    }
+  logger.info(
+    { fileCount: files.length, conversationStateId: conversationState.id },
+    "file_upload_agent_started",
+  );
 
-    if (!files || files.length === 0) {
-      if (logger) logger.warn("FILE-UPLOAD tool called but no files provided");
-      return {
-        text: "No files to process",
-        values: {},
-      };
-    }
+  const rawFiles: Array<{
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    parsedText: string;
+    metadata?: any;
+  }> = [];
+  const errors: string[] = [];
 
-    if (logger) logger.info(`📎 Processing ${files.length} uploaded file(s)`);
+  // Process each file
+  for (const file of files) {
+    try {
+      // Convert File to Buffer
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-    const rawFiles: Array<{
-      buffer: Buffer;
-      filename: string;
-      mimeType: string;
-      parsedText: string;
-      metadata?: any;
-    }> = [];
-    const errors: string[] = [];
-
-    // Process each file
-    for (const file of files) {
-      try {
-        // Convert File to Buffer
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // Check file size limit
-        const maxSize = mbToBytes(MAX_FILE_SIZE_MB);
-        if (buffer.length > maxSize) {
-          errors.push(
-            `${file.name}: File too large (${formatFileSize(buffer.length)}, max ${MAX_FILE_SIZE_MB}MB)`,
-          );
-          if (logger)
-            logger.warn(
-              `File ${file.name} exceeds size limit: ${formatFileSize(buffer.length)}`,
-            );
-          continue;
-        }
-
-        if (logger) logger.info(` Parsing file: ${file.name} (${file.type})`);
-
-        // Parse the file for text context (fallback for non-Google providers)
-        const parsed = await parseFile(buffer, file.name, file.type);
-
-        // Store raw file buffer for Gemini File API + parsed text for fallback
-        rawFiles.push({
-          buffer,
-          filename: file.name,
-          mimeType: file.type,
-          parsedText: parsed.text,
-          metadata: parsed.metadata,
-        });
-
-        if (logger) logger.info(` Successfully parsed ${file.name}`);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        errors.push(`${file.name}: ${errorMsg}`);
-        if (logger)
-          logger.error(`Failed to parse file ${file.name}:`, error as any);
-      }
-    }
-
-    const conversationStateId = conversationState.id; // Use conversation_state ID for consistent file paths
-    const userId = state.values.userId;
-    const uploadedFiles = await uploadFilesToStorage(
-      userId,
-      conversationStateId,
-      rawFiles,
-    ).catch((err) => {
-      errors.push(`Storage upload error: ${(err as Error).message}`);
-      if (logger)
-        logger.error("Failed to upload files to storage:", err as any);
-      return [];
-    });
-
-    // Generate descriptions for uploaded files
-    const uploadedDatasetsWithDescriptions = await Promise.all(
-      uploadedFiles.map(async (file) => {
-        const description = await generateFileDescription(
-          file.filename,
-          file.mimeType || "",
-          rawFiles.find((rf) => rf.filename === file.filename)?.parsedText ||
-            "",
+      // Check file size limit
+      const maxSize = mbToBytes(MAX_FILE_SIZE_MB);
+      if (buffer.length > maxSize) {
+        errors.push(
+          `${file.name}: File too large (${formatFileSize(buffer.length)}, max ${MAX_FILE_SIZE_MB}MB)`,
         );
-        return {
-          id: file.id,
-          filename: file.filename,
-          description,
-        };
-      }),
-    );
-
-    // Update conversation state with newly uploaded datasets, replacing duplicates by filename
-    const existingDatasets = conversationState.values.uploadedDatasets || [];
-    const uploadedDatasets = [
-      // keep only old ones whose filename is not in the new uploads
-      ...existingDatasets.filter(
-        (f) =>
-          !uploadedDatasetsWithDescriptions.some(
-            (nf) => nf.filename === f.filename,
-          ),
-      ),
-      // then append all new files (they replace by filename)
-      ...uploadedDatasetsWithDescriptions,
-    ];
-
-    addVariablesToState(conversationState, {
-      uploadedDatasets,
-    });
-
-    // Store only rawFiles with parsed text included
-    addVariablesToState(state, {
-      rawFiles, // Contains buffer (for Gemini), parsedText (for fallback), and metadata
-      fileUploadErrors: errors.length > 0 ? errors : undefined,
-    });
-
-    const result = {
-      text: `Processed ${rawFiles.length} file(s)${errors.length > 0 ? ` with ${errors.length} error(s)` : ""}`,
-      values: {
-        rawFiles,
-        fileUploadErrors: errors.length > 0 ? errors : undefined,
-      },
-    };
-
-    endStep(state, "FILE_UPLOAD");
-
-    // Update state in DB after endStep
-    if (state.id) {
-      try {
-        await updateState(state.id, state.values);
-      } catch (err) {
-        if (logger) logger.error("Failed to update state in DB:", err as any);
+        logger.warn(
+          `File ${file.name} exceeds size limit: ${formatFileSize(buffer.length)}`,
+        );
+        continue;
       }
-    }
 
-    return result;
-  },
-};
+      logger.info(`Parsing file: ${file.name} (${file.type})`);
+
+      // Parse the file for text context
+      const parsed = await parseFile(buffer, file.name, file.type);
+
+      // Store raw file buffer + parsed text
+      rawFiles.push({
+        buffer,
+        filename: file.name,
+        mimeType: file.type,
+        parsedText: parsed.text,
+        metadata: parsed.metadata,
+      });
+
+      logger.info(`Successfully parsed ${file.name}`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      errors.push(`${file.name}: ${errorMsg}`);
+      logger.error(`Failed to parse file ${file.name}:`, error as any);
+    }
+  }
+
+  const conversationStateId = conversationState.id;
+  const uploadedFiles = await uploadFilesToStorage(
+    userId,
+    conversationStateId,
+    rawFiles,
+  ).catch((err) => {
+    errors.push(`Storage upload error: ${(err as Error).message}`);
+    logger.error("Failed to upload files to storage:", err as any);
+    return [];
+  });
+
+  // Generate descriptions for uploaded files
+  const uploadedDatasetsWithDescriptions = await Promise.all(
+    uploadedFiles.map(async (file) => {
+      const description = await generateFileDescription(
+        file.filename,
+        file.mimeType || "",
+        rawFiles.find((rf) => rf.filename === file.filename)?.parsedText || "",
+      );
+      return {
+        id: file.id,
+        filename: file.filename,
+        description,
+      };
+    }),
+  );
+
+  logger.info(
+    {
+      uploadedDatasets: uploadedDatasetsWithDescriptions.map((d) => ({
+        filename: d.filename,
+        description: d.description,
+      })),
+    },
+    "file_descriptions_generated",
+  );
+
+  // Update conversation state with newly uploaded datasets, replacing duplicates by filename
+  const existingDatasets = conversationState.values.uploadedDatasets || [];
+  const uploadedDatasets = [
+    // keep only old ones whose filename is not in the new uploads
+    ...existingDatasets.filter(
+      (f) =>
+        !uploadedDatasetsWithDescriptions.some(
+          (nf) => nf.filename === f.filename,
+        ),
+    ),
+    // then append all new files (they replace by filename)
+    ...uploadedDatasetsWithDescriptions,
+  ];
+
+  addVariablesToState(conversationState, {
+    uploadedDatasets,
+  });
+
+  // Persist conversation state to database
+  if (conversationState.id) {
+    try {
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
+      logger.info(
+        {
+          conversationStateId: conversationState.id,
+          uploadedDatasets: uploadedDatasets.map((d) => ({
+            filename: d.filename,
+            description: d.description,
+          })),
+        },
+        "conversation_state_persisted",
+      );
+    } catch (err) {
+      logger.error("Failed to update conversation state in DB:", err as any);
+    }
+  }
+
+  logger.info(
+    {
+      uploadedCount: uploadedDatasets.length,
+      errorCount: errors.length,
+    },
+    "file_upload_agent_completed",
+  );
+
+  return {
+    uploadedDatasets,
+    errors,
+  };
+}
 
 /**
  * Generate a brief description of the uploaded file using AI
@@ -325,6 +327,3 @@ async function uploadFilesToStorage(
 
   return uploadedFiles;
 }
-
-export default fileUploadTool;
-export { fileUploadTool };

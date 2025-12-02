@@ -10,7 +10,6 @@ import {
 } from "../services/chat/setup";
 import {
   createMessageRecord,
-  executeFileUpload,
   updateMessageResponseTime,
 } from "../services/chat/tools";
 import type { ConversationState, PlanTask, State } from "../types/core";
@@ -344,23 +343,23 @@ export const chatV2Route = chatV2RoutePlugin.post(
 
       // Step 1: Process files if any
       if (files.length > 0) {
+        const { fileUploadAgent } = await import("../agents/fileUpload");
+
         logger.info({ fileCount: files.length }, "processing_file_uploads");
 
-        const fileResult = await executeFileUpload({
-          state,
+        const fileResult = await fileUploadAgent({
           conversationState,
-          message: createdMessage,
           files,
+          userId: state.values.userId || "unknown",
         });
 
         logger.info(
           {
-            fileResult,
+            uploadedDatasets: fileResult.uploadedDatasets,
+            errors: fileResult.errors,
             fileCount: files.length,
-            uploadedDatasets:
-              conversationState.values.uploadedDatasets?.length || 0,
           },
-          "file_upload_completed",
+          "file_upload_agent_completed",
         );
       }
 
