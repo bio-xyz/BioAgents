@@ -121,7 +121,7 @@ export function useChatAPI(
 
       if (!skipPaymentCheck) {
         // First try without payment to see if it's required
-        response = await fetch("/api/chat-v2", {
+        response = await fetch("/api/chat", {
           method: "POST",
           body: formData,
           credentials: "include",
@@ -160,7 +160,7 @@ export function useChatAPI(
         }
       } else {
         // User confirmed, use payment-enabled fetch
-        response = await fetchWithPayment("/api/chat-v2", {
+        response = await fetchWithPayment("/api/chat", {
           method: "POST",
           body: formData,
           credentials: "include",
@@ -357,7 +357,7 @@ export function useChatAPI(
         formData.append("files", file);
       }
 
-      const response = await fetch("/api/deep-research-v2/start", {
+      const response = await fetch("/api/deep-research/start", {
         method: "POST",
         body: formData,
         credentials: "include",

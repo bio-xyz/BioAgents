@@ -2,18 +2,9 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { x402Middleware } from "./middleware/x402";
 import { authRoute } from "./routes/auth";
-import { chatRoute, chatRouteGet } from "./routes/chat";
-import { chatV2Route, chatV2RouteGet } from "./routes/chatv2";
-import {
-  deepResearchStartGet,
-  deepResearchStartRoute,
-} from "./routes/deep-research/start";
+import { chatRoute } from "./routes/chat";
+import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
-import {
-  deepResearchStartGet as deepResearchStartGetV2,
-  deepResearchStartRoute as deepResearchStartRouteV2,
-} from "./routes/deep-research-v2/start";
-import { deepResearchStatusRoute as deepResearchStatusRouteV2 } from "./routes/deep-research-v2/status";
 import { x402Route } from "./routes/x402";
 import logger from "./utils/logger";
 
@@ -130,16 +121,9 @@ const app = new Elysia()
   })
 
   // API routes (not protected by UI auth)
-  .use(chatRouteGet) // GET /api/chat for x402scan discovery
-  .use(chatRoute) // POST /api/chat for actual chat
-  .use(chatV2RouteGet) // GET /api/chat-v2 for x402scan discovery
-  .use(chatV2Route) // POST /api/chat-v2 for agent-based chat
-  .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
-  .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
+  .use(chatRoute) // GET and POST /api/chat for agent-based chat
+  .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
-  .use(deepResearchStartGetV2) // GET /api/deep-research-v2/start for x402scan discovery
-  .use(deepResearchStartRouteV2) // POST /api/deep-research-v2/start to start deep research v2
-  .use(deepResearchStatusRouteV2) // GET /api/deep-research-v2/status/:messageId to check status v2
 
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI

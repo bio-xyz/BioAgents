@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
-import logger from "../../utils/logger";
-import { smartAuthMiddleware } from "../../middleware/smartAuth";
 import { getMessage, getState } from "../../db/operations";
+import { smartAuthMiddleware } from "../../middleware/smartAuth";
+import logger from "../../utils/logger";
 
 type DeepResearchStatusResponse = {
   status: "processing" | "completed" | "failed";
