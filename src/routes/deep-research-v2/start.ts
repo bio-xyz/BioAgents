@@ -416,7 +416,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          edisonPromise,
+          // edisonPromise,
           // knowledgePromise,
         ]);
 
