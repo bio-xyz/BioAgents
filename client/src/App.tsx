@@ -326,7 +326,7 @@ export function App() {
     embeddedWalletClient,
   ]);
 
-  // Fetch and attach all states to messages when conversation loads
+  // Fetch and attach all states to messages when conversation loads or new messages arrive
   useEffect(() => {
     if (!currentSessionId || !userId) return;
     if (messages.length === 0) return;
@@ -351,46 +351,81 @@ export function App() {
         const { getStatesByConversation } = await import("./lib/supabase");
         const states = await getStatesByConversation(currentSessionId);
 
-        if (!states || states.length === 0) return;
+        if (!states || states.length === 0) {
+          console.log("[App] No states found yet, will retry...");
+          return false; // Indicate we should retry
+        }
 
         console.log("[App] Fetched", states.length, "states for conversation");
 
-        // Match states to messages (each state corresponds to one assistant response)
-        // States are in chronological order, matching the order of assistant messages
+        // Create a map of messageId -> state for quick lookup
+        const stateByMessageId = new Map<string, any>();
+        for (const state of states) {
+          if (state.values?.messageId) {
+            stateByMessageId.set(state.values.messageId, state);
+          }
+        }
+        console.log("[App] States with messageId:", stateByMessageId.size);
+
+        // Match states to messages
+        // Priority 1: Match by dbMessageId if available
+        // Priority 2: Fall back to chronological order
         let stateIndex = 0;
+        let attachedCount = 0;
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((msg) => {
-            if (
-              msg.role === "assistant" &&
-              !msg.thinkingState &&
-              stateIndex < states.length
-            ) {
-              const state = states[stateIndex];
-              stateIndex++;
-
-              if (state.values && state.values.steps) {
-                console.log("[App] Attaching state to message:", msg.id);
-                return {
-                  ...msg,
-                  thinkingState: {
-                    steps: state.values.steps,
-                    source: state.values.source,
-                    thought: state.values.thought,
-                    edisonResults: state.values.edisonResults,
-                    dataAnalysisResults: state.values.dataAnalysisResults,
-                  },
-                };
-              }
+            if (msg.role !== "assistant" || msg.thinkingState) {
+              return msg;
             }
+
+            // Try to find state by dbMessageId first
+            let state = msg.dbMessageId ? stateByMessageId.get(msg.dbMessageId) : null;
+            
+            // Fall back to chronological matching
+            if (!state && stateIndex < states.length) {
+              state = states[stateIndex];
+              stateIndex++;
+            }
+
+            if (state?.values) {
+              console.log("[App] Attaching state to message:", msg.id, "dbMessageId:", msg.dbMessageId);
+              attachedCount++;
+              return {
+                ...msg,
+                thinkingState: {
+                  steps: state.values.steps,
+                  source: state.values.source,
+                  thought: state.values.thought,
+                  edisonResults: state.values.edisonResults,
+                  dataAnalysisResults: state.values.dataAnalysisResults,
+                },
+              };
+            }
+
             return msg;
           }),
         );
+        
+        return attachedCount > 0; // Success if we attached at least one state
       } catch (err) {
         console.error("[App] Error fetching states:", err);
+        return false;
       }
     }
 
-    fetchAndAttachStates();
+    // Add delay before fetching to ensure backend has saved the state
+    // This is needed because real-time message arrives before state is saved
+    const timeoutId = setTimeout(async () => {
+      const success = await fetchAndAttachStates();
+      
+      // If no states found, retry after a longer delay (state might still be saving)
+      if (!success && messagesNeedingStates.length > 0) {
+        console.log("[App] Retrying state fetch in 2s...");
+        setTimeout(fetchAndAttachStates, 2000);
+      }
+    }, 500); // 500ms initial delay
+
+    return () => clearTimeout(timeoutId);
   }, [currentSessionId, userId, messages.length]);
 
   /**
@@ -515,47 +550,11 @@ export function App() {
 
         // Only continue if we got a response (not empty from payment confirmation)
         if (response.text) {
-          // Capture the current thinking state (no delay needed - causes race condition with realtime)
-          const capturedState =
-            currentState && currentState.values && currentState.values.steps
-              ? {
-                  steps: currentState.values.steps,
-                  source: currentState.values.source,
-                  thought: currentState.values.thought,
-                  edisonResults: currentState.values.edisonResults,
-                  dataAnalysisResults: currentState.values.dataAnalysisResults,
-                }
-              : undefined;
+          console.log("[App] Response received, real-time subscription will add message");
 
-          console.log(
-            "[App] Captured thinking state for message:",
-            capturedState,
-          );
-
-          // Use the response text from API
-          const finalText = response.text;
-
-          console.log("[App] Final text:", finalText);
-
-          // Check if realtime already added this message (prevent duplicate)
-          const lastMessage = messages[messages.length - 1];
-          const realtimeAlreadyAdded = 
-            lastMessage?.role === "assistant" && 
-            lastMessage?.content === finalText;
-
-          if (!realtimeAlreadyAdded) {
-            // Add assistant message
-            addMessage({
-              id: Date.now(),
-              role: "assistant" as const,
-              content: finalText,
-              files: response.files,
-              thinkingState: capturedState,
-            });
-          } else {
-            console.log("[App] Skipping addMessage - realtime already added this response");
-          }
-
+          // DON'T add message here - let real-time UPDATE handler add it
+          // This prevents race condition duplicates
+          
           scrollToBottom();
 
           // Clear loading state to hide streaming component
@@ -1057,42 +1056,10 @@ export function App() {
             const response = await confirmPayment();
 
             if (response && response.text) {
-              // Capture the current thinking state (no delay - causes race condition)
-              const capturedState =
-                currentState && currentState.values && currentState.values.steps
-                  ? {
-                      steps: currentState.values.steps,
-                      source: currentState.values.source,
-                      thought: currentState.values.thought,
-                    }
-                  : undefined;
+              console.log("[App] Payment response received, real-time subscription will add message");
 
-              console.log(
-                "[App] Captured thinking state for payment message:",
-                capturedState,
-              );
-
-              // Use response text from API
-              const finalText = response.text;
-
-              // Check if realtime already added this message (prevent duplicate)
-              const lastMessage = messages[messages.length - 1];
-              const realtimeAlreadyAdded = 
-                lastMessage?.role === "assistant" && 
-                lastMessage?.content === finalText;
-
-              if (!realtimeAlreadyAdded) {
-                // Add assistant message
-                addMessage({
-                  id: Date.now(),
-                  role: "assistant" as const,
-                  content: finalText,
-                  files: response.files,
-                  thinkingState: capturedState,
-                });
-              } else {
-                console.log("[App] Skipping addMessage - realtime already added this response");
-              }
+              // DON'T add message here - let real-time UPDATE handler add it
+              // This prevents race condition duplicates
 
               scrollToBottom();
 

@@ -10,6 +10,7 @@ import { DataAnalysisResult, EdisonResult } from "./useStates";
 
 export interface Message {
   id: number;
+  dbMessageId?: string; // Database UUID for matching with states
   role: "user" | "assistant";
   content: string;
   file?: {
@@ -513,34 +514,30 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
                 }
               } else {
                 // No assistant message exists yet at nextIndex
-                // BUT check if this content already exists ANYWHERE in messages
-                // (App.tsx addMessage() might have added it at the end already)
+                // Check if this content already exists ANYWHERE in messages (race condition protection)
                 const contentAlreadyExists = messages.some(
                   (m) => m.role === "assistant" && m.content.trim() === updatedContent
                 );
 
                 if (contentAlreadyExists) {
                   console.log(
-                    "[Realtime] UPDATE: Content already exists elsewhere, skipping:",
+                    "[Realtime] UPDATE: Content already exists, skipping:",
                     updatedContent.slice(0, 50),
                   );
                 } else {
-                  // Content doesn't exist anywhere - add it
-                  // This happens with deep research which processes in background
+                  // Add the assistant message - this is the ONLY place messages get added
+                  // Both normal chat and deep research flow through here
                   console.log(
-                    "[Realtime] UPDATE: Adding assistant message from DB update",
+                    "[Realtime] UPDATE: Adding assistant message:",
+                    updatedContent.slice(0, 50),
                   );
 
                   messages.splice(nextIndex, 0, {
                     id: Date.now(),
+                    dbMessageId: updatedMessage.id, // Store DB ID for state matching
                     role: "assistant" as const,
                     content: updatedContent,
                   });
-
-                  console.log(
-                    "[Realtime] ✅ Added assistant message from UPDATE:",
-                    updatedContent.slice(0, 50),
-                  );
                 }
               }
 
