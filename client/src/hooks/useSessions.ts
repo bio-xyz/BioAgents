@@ -10,6 +10,7 @@ import { DataAnalysisResult, EdisonResult } from "./useStates";
 
 export interface Message {
   id: number;
+  dbMessageId?: string; // Database UUID for matching with states
   role: "user" | "assistant";
   content: string;
   file?: {
@@ -94,6 +95,30 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
 }
 
 /**
+ * Get or create a persistent dev user ID from localStorage
+ * This ensures the same user ID is used across page refreshes
+ * Uses the same key as App.tsx for consistency
+ */
+function getOrCreateDevUserId(): string {
+  const STORAGE_KEY = "dev_user_id";
+  const stored = localStorage.getItem(STORAGE_KEY);
+  
+  // Migration: If stored ID is old format (dev_user_*), clear it and generate new UUID
+  if (stored && stored.startsWith("dev_user_")) {
+    console.log("[useSessions] Migrating old dev user ID to UUID format:", stored);
+    localStorage.removeItem(STORAGE_KEY);
+    // Fall through to create new UUID
+  } else if (stored) {
+    return stored;
+  }
+  
+  const newId = generateConversationId();
+  localStorage.setItem(STORAGE_KEY, newId);
+  console.log("[useSessions] Created new persistent dev user ID:", newId);
+  return newId;
+}
+
+/**
  * Custom hook for managing chat sessions with Supabase integration
  * Handles session creation, deletion, switching, and message updates
  * Syncs with Supabase database and subscribes to real-time updates
@@ -105,8 +130,9 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Use provided wallet user ID, or generate a temporary one if not available
-  const userId = walletUserId || generateConversationId();
+  // Use provided wallet user ID, or get/create a persistent dev user ID
+  // IMPORTANT: Always use a persistent ID to ensure conversations persist across refreshes
+  const userId = walletUserId || getOrCreateDevUserId();
 
   // Provide a default session to prevent undefined errors during initial load
   const currentSession = sessions.find((s) => s.id === currentSessionId) ||
@@ -118,22 +144,11 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
 
   /**
    * Load conversations and messages from Supabase on mount
-   * Only load if we have a valid wallet user ID
+   * Always loads using the persistent userId (wallet or dev user ID)
    */
   useEffect(() => {
-    // Don't load if we don't have a wallet user ID yet
-    if (!walletUserId) {
-      setIsLoading(false);
-      // Create a temporary session for immediate use
-      const tempSession = {
-        id: generateConversationId(),
-        title: "New conversation",
-        messages: [],
-      };
-      setSessions([tempSession]);
-      setCurrentSessionId(tempSession.id);
-      return;
-    }
+    // Always have a valid userId due to getOrCreateDevUserId fallback
+    console.log("[useSessions] Loading conversations for userId:", userId);
 
     let mounted = true;
 
@@ -285,7 +300,7 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
     return () => {
       mounted = false;
     };
-  }, [userId, walletUserId]);
+  }, [userId]);
 
   /**
    * Subscribe to real-time message updates for current conversation
@@ -329,48 +344,53 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
                 const trimmedContent = uiMsg.content.trim();
                 if (!trimmedContent) continue; // Skip empty messages
 
-                // Check if a message with this content already exists
-                // For assistant messages, also check for partial matches (animation in progress)
+                // IMPORTANT: NEVER add user messages from real-time INSERT
+                // User messages are ALWAYS added locally first via addMessage()
+                // Adding from INSERT causes duplicates due to race conditions
+                if (uiMsg.role === "user") {
+                  console.log(
+                    "[Realtime] Skipping user message from INSERT (UI handles these):",
+                    trimmedContent.slice(0, 50),
+                  );
+                  continue;
+                }
+
+                // Check if an assistant message with this content already exists
                 const isDuplicate = existingMessages.some((existing) => {
-                  if (existing.role !== uiMsg.role) return false;
+                  if (existing.role !== "assistant") return false;
                   const existingText = existing.content.trim();
 
                   // Exact match - always a duplicate
                   if (existingText === trimmedContent) return true;
 
-                  // For assistant messages, check for partial matches (typing animation)
-                  if (uiMsg.role === "assistant") {
-                    // If trimmedContent is the full response and existingText is partial (animating)
-                    if (
-                      existingText.length > 0 &&
-                      trimmedContent.startsWith(existingText)
-                    )
-                      return true;
-                    // If existingText is the full response and trimmedContent is partial (shouldn't happen but be safe)
-                    if (
-                      trimmedContent.length > 0 &&
-                      existingText.startsWith(trimmedContent)
-                    )
-                      return true;
-                    // If existing is empty (animation just started)
-                    if (existingText === "" && uiMsg.role === "assistant")
-                      return true;
-                  }
+                  // Check for partial matches (typing animation in progress)
+                  // If trimmedContent is the full response and existingText is partial (animating)
+                  if (
+                    existingText.length > 0 &&
+                    trimmedContent.startsWith(existingText)
+                  )
+                    return true;
+                  // If existingText is the full response and trimmedContent is partial
+                  if (
+                    trimmedContent.length > 0 &&
+                    existingText.startsWith(trimmedContent)
+                  )
+                    return true;
+                  // If existing is empty (animation just started)
+                  if (existingText === "") return true;
 
                   return false;
                 });
 
                 if (!isDuplicate) {
                   console.log(
-                    "[Realtime] Adding new message from INSERT:",
-                    uiMsg.role,
+                    "[Realtime] Adding new assistant message from INSERT:",
                     trimmedContent.slice(0, 50),
                   );
                   newMessagesToAdd.push(uiMsg);
                 } else {
                   console.log(
-                    "[Realtime] Skipping duplicate from INSERT:",
-                    uiMsg.role,
+                    "[Realtime] Skipping duplicate assistant message from INSERT:",
                     trimmedContent.slice(0, 50),
                   );
                 }
@@ -493,35 +513,32 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
                   };
                 }
               } else {
-                // No assistant message exists yet after this user message
-                console.log(
-                  "[Realtime] UPDATE: No assistant message found at position",
-                  nextIndex,
-                );
-                console.log(
-                  "[Realtime] UPDATE: Total messages:",
-                  messages.length,
-                );
-                console.log(
-                  "[Realtime] UPDATE: Messages:",
-                  messages.map(
-                    (m) => `${m.role}: ${m.content.slice(0, 30)}...`,
-                  ),
+                // No assistant message exists yet at nextIndex
+                // Check if this content already exists ANYWHERE in messages (race condition protection)
+                const contentAlreadyExists = messages.some(
+                  (m) => m.role === "assistant" && m.content.trim() === updatedContent
                 );
 
-                // CRITICAL FIX: If there's no assistant message at the expected position,
-                // it means the UPDATE event fired BEFORE the UI created the typing animation.
-                // In this case, we should ALWAYS skip because the UI will handle it.
-                // We should NEVER add a message from UPDATE when none exists - the UI owns message creation.
-                console.log(
-                  "[Realtime] ⚠️ Skipping UPDATE - UI has not created assistant message yet",
-                );
-                console.log(
-                  "[Realtime] This UPDATE event fired too early, typing animation will handle it",
-                );
+                if (contentAlreadyExists) {
+                  console.log(
+                    "[Realtime] UPDATE: Content already exists, skipping:",
+                    updatedContent.slice(0, 50),
+                  );
+                } else {
+                  // Add the assistant message - this is the ONLY place messages get added
+                  // Both normal chat and deep research flow through here
+                  console.log(
+                    "[Realtime] UPDATE: Adding assistant message:",
+                    updatedContent.slice(0, 50),
+                  );
 
-                // Don't add anything - let the UI's typing animation handle it
-                return session;
+                  messages.splice(nextIndex, 0, {
+                    id: Date.now(),
+                    dbMessageId: updatedMessage.id, // Store DB ID for state matching
+                    role: "assistant" as const,
+                    content: updatedContent,
+                  });
+                }
               }
 
               return {

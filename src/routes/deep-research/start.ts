@@ -1,11 +1,8 @@
 import { Elysia } from "elysia";
-import { smartAuthMiddleware } from "../../middleware/smartAuth";
-import { x402Middleware } from "../../middleware/x402";
-import { recordPayment } from "../../services/chat/payment";
+import { authBeforeHandle } from "../../middleware/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
-  X402_SYSTEM_USER_ID,
 } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
 import type { ConversationState, PlanTask, State } from "../../types/core";
@@ -15,6 +12,7 @@ import { generateUUID } from "../../utils/uuid";
 type DeepResearchStartResponse = {
   messageId: string | null;
   conversationId: string;
+  userId: string; // Important: Return userId so external platforms can check status
   status: "processing";
   error?: string;
 };
@@ -22,32 +20,35 @@ type DeepResearchStartResponse = {
 /**
  * Deep Research Start Route - Returns immediately with messageId
  * The actual research runs in the background
+ * Uses guard pattern to ensure auth runs for all routes
  */
-export const deepResearchStartRoute = new Elysia()
-  .use(
-    smartAuthMiddleware({
-      optional: true, // Allow unauthenticated requests (AI agents)
-    }),
-  )
-  .use(x402Middleware())
-  .get("/api/deep-research/start", async () => {
-    return {
-      message: "This endpoint requires POST method with payment.",
-      apiDocumentation: "https://your-docs-url.com/api",
-    };
-  })
-  .post("/api/deep-research/start", async (ctx) => {
-    const {
-      body,
-      set,
-      request,
-      paymentSettlement,
-      paymentRequirement,
-      paymentHeader,
-    } = ctx as any;
+export const deepResearchStartRoute = new Elysia().guard(
+  {
+    beforeHandle: [
+      authBeforeHandle({
+        optional: process.env.NODE_ENV !== "production",
+      }),
+    ],
+  },
+  (app) =>
+    app
+      .get("/api/deep-research/start", async () => {
+        return {
+          message: "This endpoint requires POST method.",
+          apiDocumentation: "https://your-docs-url.com/api",
+        };
+      })
+      .post("/api/deep-research/start", deepResearchStartHandler)
+);
+
+/**
+ * Deep Research Start Handler - Core logic for POST /api/deep-research/start
+ * Exported for reuse in x402 routes
+ */
+export async function deepResearchStartHandler(ctx: any) {
+  const { body, set, request } = ctx;
 
     const parsedBody = body as any;
-    const authenticatedUser = (request as any).authenticatedUser;
 
     // Extract message (REQUIRED)
     const message = parsedBody.message;
@@ -59,23 +60,46 @@ export const deepResearchStartRoute = new Elysia()
       };
     }
 
-    // Determine userId and source
+    // Determine userId: x402 wallet > body.userId > anonymous
     let userId: string;
-    let source: string;
+    let source = "api";
+    let isX402User = false;
 
-    if (authenticatedUser) {
-      userId = authenticatedUser.userId;
-
-      if (authenticatedUser.authMethod === "privy") {
-        source = "external_ui";
-      } else if (authenticatedUser.authMethod === "cdp") {
-        source = "dev_ui";
-      } else {
-        source = authenticatedUser.authMethod;
-      }
+    // Check if this is an x402 request with wallet payment
+    const x402Settlement = (request as any).x402Settlement;
+    if (x402Settlement?.payer) {
+      // x402 user - get or create user by wallet address
+      const { getOrCreateUserByWallet } = await import("../../db/operations");
+      const { user, isNew } = await getOrCreateUserByWallet(x402Settlement.payer);
+      userId = user.id;
+      source = "x402";
+      isX402User = true;
+      
+      logger.info(
+        { 
+          userId, 
+          wallet: x402Settlement.payer, 
+          isNewUser: isNew,
+          transaction: x402Settlement.transaction 
+        }, 
+        "x402_user_identified"
+      );
     } else {
-      userId = X402_SYSTEM_USER_ID;
-      source = "x402_agent";
+      // Regular API request - use provided userId or generate anonymous
+      const providedUserId = parsedBody.userId;
+      const isValidUserId = providedUserId && 
+        typeof providedUserId === 'string' && 
+        providedUserId.length > 0 &&
+        providedUserId !== 'undefined' &&
+        providedUserId !== 'null';
+
+      userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
+
+      if (!isValidUserId) {
+        logger.warn({ generatedUserId: userId }, "deep_research_no_user_id_provided_generating_temp");
+      }
+
+      logger.info({ userId, source }, "deep_research_user_identified");
     }
 
     // Auto-generate conversationId if not provided
@@ -116,12 +140,10 @@ export const deepResearchStartRoute = new Elysia()
     }
 
     // Ensure user and conversation exist
-    const setupResult = await ensureUserAndConversation(
-      userId,
-      conversationId,
-      authenticatedUser?.authMethod,
-      source,
-    );
+    // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
+    const setupResult = await ensureUserAndConversation(userId, conversationId, {
+      skipUserCreation: isX402User,
+    });
     if (!setupResult.success) {
       set.status = 500;
       return { ok: false, error: setupResult.error || "Setup failed" };
@@ -132,20 +154,16 @@ export const deepResearchStartRoute = new Elysia()
       conversationId,
       userId,
       source,
-      setupResult.isExternal || false,
+      false, // isExternal
       message,
       files.length,
-      setupResult.isExternal
-        ? parsedBody.userId || `agent_${Date.now()}`
-        : undefined,
     );
     if (!dataSetup.success) {
       set.status = 500;
       return { ok: false, error: dataSetup.error || "Data setup failed" };
     }
 
-    const { conversationStateRecord, stateRecord, x402ExternalRecord } =
-      dataSetup.data!;
+    const { conversationStateRecord, stateRecord } = dataSetup.data!;
 
     // Create message record
     const messageResult = await createMessageRecord({
@@ -155,7 +173,7 @@ export const deepResearchStartRoute = new Elysia()
       source,
       stateId: stateRecord.id,
       files,
-      isExternal: setupResult.isExternal || false,
+      isExternal: false,
     });
     if (!messageResult.success) {
       set.status = 500;
@@ -168,9 +186,11 @@ export const deepResearchStartRoute = new Elysia()
     const createdMessage = messageResult.message!;
 
     // Return immediately with message ID
+    // Include userId so external platforms (x402) can check status later
     const response: DeepResearchStartResponse = {
       messageId: createdMessage.id,
       conversationId,
+      userId, // Important for x402 users who may not have provided one
       status: "processing",
     };
 
@@ -182,10 +202,6 @@ export const deepResearchStartRoute = new Elysia()
       createdMessage,
       files,
       setupResult,
-      x402ExternalRecord,
-      paymentSettlement,
-      paymentHeader,
-      paymentRequirement,
     }).catch((err) => {
       logger.error(
         { err, messageId: createdMessage.id },
@@ -201,7 +217,7 @@ export const deepResearchStartRoute = new Elysia()
     }
 
     return response;
-  });
+}
 
 /**
  * Background function that executes the deep research workflow
@@ -212,10 +228,6 @@ async function runDeepResearch(params: {
   createdMessage: any;
   files: File[];
   setupResult: any;
-  x402ExternalRecord: any;
-  paymentSettlement: any;
-  paymentHeader: any;
-  paymentRequirement: any;
 }) {
   const {
     stateRecord,
@@ -223,10 +235,6 @@ async function runDeepResearch(params: {
     createdMessage,
     files,
     setupResult,
-    x402ExternalRecord,
-    paymentSettlement,
-    paymentHeader,
-    paymentRequirement,
   } = params;
 
   try {
@@ -694,38 +702,18 @@ These molecular changes align with established longevity pathways (Converging nu
       "reply_generated",
     );
 
-    // Step 7: Create assistant message with the reply
-    const { createMessage } = await import("../../db/operations");
+    // Step 7: Update the message with the reply content
+    const { updateMessage } = await import("../../db/operations");
 
-    const assistantMessage = await createMessage({
-      conversation_id: createdMessage.conversation_id,
-      user_id: createdMessage.user_id,
+    await updateMessage(createdMessage.id, {
       content: replyResult.reply,
-      source: createdMessage.source,
-      question: createdMessage.question,
-      state_id: stateRecord.id,
     });
 
     logger.info(
-      { assistantMessageId: assistantMessage.id },
-      "assistant_reply_saved",
+      { messageId: createdMessage.id, contentLength: replyResult.reply.length },
+      "message_content_saved",
     );
-
     const responseTime = 0; // TODO: Calculate response time
-
-    // Record payment
-    await recordPayment({
-      isExternal: setupResult.isExternal || false,
-      x402ExternalRecord,
-      userId: createdMessage.user_id,
-      conversationId: createdMessage.conversation_id,
-      messageId: createdMessage.id,
-      paymentSettlement,
-      paymentHeader,
-      paymentRequirement,
-      providers: [], // Planning tool handles all providers internally
-      responseTime,
-    });
 
     if (logger) {
       logger.info(
