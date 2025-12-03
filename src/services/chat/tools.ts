@@ -8,25 +8,16 @@ export interface MessageCreationParams {
   source: string;
   stateId: string;
   files: File[];
-  isExternal: boolean;
+  isExternal?: boolean; // Deprecated, kept for compatibility
 }
 
 /**
- * Create message record (for both internal and external agents)
- * External agents need persistent messages to enable multi-turn conversations
+ * Create message record
  */
 export async function createMessageRecord(
   params: MessageCreationParams,
 ): Promise<{ success: boolean; message?: any; error?: string }> {
-  const {
-    conversationId,
-    userId,
-    message,
-    source,
-    stateId,
-    files,
-    isExternal,
-  } = params;
+  const { conversationId, userId, message, source, stateId, files } = params;
 
   try {
     const fileMetadata =
@@ -49,15 +40,12 @@ export async function createMessageRecord(
     });
 
     if (logger) {
-      logger.info(
-        { messageId: createdMessage.id, isExternal },
-        "message_created",
-      );
+      logger.info({ messageId: createdMessage.id }, "message_created");
     }
 
     return { success: true, message: createdMessage };
   } catch (err) {
-    if (logger) logger.error({ err, isExternal }, "create_message_failed");
+    if (logger) logger.error({ err }, "create_message_failed");
     return { success: false, error: "Failed to create message" };
   }
 }
@@ -68,12 +56,7 @@ export async function createMessageRecord(
 export async function updateMessageResponseTime(
   messageId: string,
   responseTime: number,
-  isExternal: boolean,
 ): Promise<void> {
-  if (isExternal) {
-    return; // Skip for external agents
-  }
-
   try {
     await updateMessage(messageId, {
       response_time: responseTime,

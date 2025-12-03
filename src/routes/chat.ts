@@ -1,12 +1,9 @@
 import { Elysia } from "elysia";
 import { LLM } from "../llm/provider";
-import { smartAuthMiddleware } from "../middleware/smartAuth";
-import { x402Middleware } from "../middleware/x402";
-import { recordPayment } from "../services/chat/payment";
+import { authBeforeHandle } from "../middleware/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
-  X402_SYSTEM_USER_ID,
 } from "../services/chat/setup";
 import {
   createMessageRecord,
@@ -18,7 +15,31 @@ import { generateUUID } from "../utils/uuid";
 
 type ChatV2Response = {
   text: string;
+  userId?: string; // Included for x402 users to know their identity
 };
+
+/**
+ * Chat Route - Agent-based architecture
+ * Uses guard pattern to ensure auth runs for all routes
+ */
+export const chatRoute = new Elysia().guard(
+  {
+    beforeHandle: [
+      authBeforeHandle({
+        optional: process.env.NODE_ENV !== "production",
+      }),
+    ],
+  },
+  (app) =>
+    app
+      .get("/api/chat", async () => {
+        return {
+          message: "This endpoint requires POST method.",
+          apiDocumentation: "https://your-docs-url.com/api",
+        };
+      })
+      .post("/api/chat", chatHandler)
+);
 
 /**
  * Check if the question requires a hypothesis using LLM
@@ -99,42 +120,19 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
 }
 
 /**
- * Chat Route - Agent-based architecture
+ * Chat Handler - Core logic for POST /api/chat
+ * Exported for reuse in x402 routes
  */
-export const chatRoute = new Elysia()
-  .use(
-    smartAuthMiddleware({
-      optional: true,
-    }),
-  )
-  .use(x402Middleware())
-  .get("/api/chat", async () => {
-    return {
-      message: "This endpoint requires POST method with payment.",
-      apiDocumentation: "https://your-docs-url.com/api",
-    };
-  })
-  .post("/api/chat", async (ctx) => {
-    try {
-      const {
-        body,
-        set,
-        request,
-        paymentSettlement,
-        paymentRequirement,
-        paymentHeader,
-      } = ctx as any;
-      const startTime = Date.now();
+export async function chatHandler(ctx: any) {
+  try {
+    const { body, set, request } = ctx;
+    const startTime = Date.now();
 
       const parsedBody = body as any;
-      const authenticatedUser = (request as any).authenticatedUser;
 
       logger.info(
         {
           contentType: request.headers.get("content-type"),
-          hasPaymentHeader: !!paymentHeader,
-          hasPaymentSettlement: !!paymentSettlement,
-          authMethod: authenticatedUser?.authMethod,
           bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
         },
         "chat_route_entry",
@@ -154,22 +152,32 @@ export const chatRoute = new Elysia()
         };
       }
 
-      // Determine userId and source
+      // Determine userId: x402 wallet > body.userId > anonymous
       let userId: string;
-      let source: string;
+      let source = "api";
+      let isX402User = false;
 
-      if (authenticatedUser) {
-        userId = authenticatedUser.userId;
-
-        if (authenticatedUser.authMethod === "privy") {
-          source = "external_ui";
-        } else if (authenticatedUser.authMethod === "cdp") {
-          source = "dev_ui";
-        } else {
-          source = authenticatedUser.authMethod;
-        }
+      // Check if this is an x402 request with wallet payment
+      const x402Settlement = (request as any).x402Settlement;
+      if (x402Settlement?.payer) {
+        // x402 user - get or create user by wallet address
+        const { getOrCreateUserByWallet } = await import("../db/operations");
+        const { user, isNew } = await getOrCreateUserByWallet(x402Settlement.payer);
+        userId = user.id;
+        source = "x402";
+        isX402User = true;
+        
+        logger.info(
+          { 
+            userId, 
+            wallet: x402Settlement.payer, 
+            isNewUser: isNew,
+            transaction: x402Settlement.transaction 
+          }, 
+          "x402_user_identified"
+        );
       } else {
-        // Check if a valid userId was provided in the request body
+        // Regular API request - use provided userId or generate anonymous
         const providedUserId = parsedBody.userId;
         const isValidUserId = providedUserId && 
           typeof providedUserId === 'string' && 
@@ -177,25 +185,13 @@ export const chatRoute = new Elysia()
           providedUserId !== 'undefined' &&
           providedUserId !== 'null';
 
-        logger.info(
-          { providedUserId, isValidUserId, hasPaymentSettlement: !!paymentSettlement },
-          "determining_user_id"
-        );
+        userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
 
-        if (isValidUserId) {
-          // Always prefer the provided userId if it's valid
-          userId = providedUserId;
-          source = paymentSettlement ? "x402_agent" : "dev_ui";
-        } else if (paymentSettlement) {
-          // x402 payment without userId - use system user
-          userId = X402_SYSTEM_USER_ID;
-          source = "x402_agent";
-        } else {
-          // No valid userId and no payment - generate one for anonymous dev user
-          userId = `agent_${Date.now()}`;
-          source = "dev_ui";
+        if (!isValidUserId) {
           logger.warn({ generatedUserId: userId }, "no_user_id_provided_generating_temp");
         }
+
+        logger.info({ userId, source }, "user_identified");
       }
 
       // Auto-generate conversationId if not provided
@@ -225,8 +221,6 @@ export const chatRoute = new Elysia()
           conversationId,
           source,
           message,
-          authMethod: authenticatedUser?.authMethod,
-          paidViaX402: !!paymentSettlement,
           messageLength: message.length,
           fileCount: files.length,
           routeType: "chat-v2",
@@ -235,12 +229,10 @@ export const chatRoute = new Elysia()
       );
 
       // Ensure user and conversation exist
-      const setupResult = await ensureUserAndConversation(
-        userId,
-        conversationId,
-        authenticatedUser?.authMethod,
-        source,
-      );
+      // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
+      const setupResult = await ensureUserAndConversation(userId, conversationId, {
+        skipUserCreation: isX402User,
+      });
       if (!setupResult.success) {
         logger.error(
           { error: setupResult.error, userId, conversationId },
@@ -251,11 +243,7 @@ export const chatRoute = new Elysia()
       }
 
       logger.info(
-        {
-          userId,
-          conversationId,
-          isExternal: setupResult.isExternal,
-        },
+        { userId, conversationId },
         "user_conversation_setup_completed",
       );
 
@@ -264,12 +252,9 @@ export const chatRoute = new Elysia()
         conversationId,
         userId,
         source,
-        setupResult.isExternal || false,
+        false, // isExternal
         message,
         files.length,
-        setupResult.isExternal
-          ? parsedBody.userId || `agent_${Date.now()}`
-          : undefined,
       );
       if (!dataSetup.success) {
         logger.error(
@@ -280,14 +265,12 @@ export const chatRoute = new Elysia()
         return { ok: false, error: dataSetup.error || "Data setup failed" };
       }
 
-      const { conversationStateRecord, stateRecord, x402ExternalRecord } =
-        dataSetup.data!;
+      const { conversationStateRecord, stateRecord } = dataSetup.data!;
 
       logger.info(
         {
           conversationStateId: conversationStateRecord.id,
           stateId: stateRecord.id,
-          hasX402Record: !!x402ExternalRecord,
         },
         "conversation_data_setup_completed",
       );
@@ -300,7 +283,7 @@ export const chatRoute = new Elysia()
         source,
         stateId: stateRecord.id,
         files,
-        isExternal: setupResult.isExternal || false,
+        isExternal: false,
       });
       if (!messageResult.success) {
         logger.error(
@@ -683,6 +666,7 @@ export const chatRoute = new Elysia()
 
       const response: ChatV2Response = {
         text: replyText,
+        userId, // Include userId so x402 users know their identity
       };
 
       // Save the response to the message's content field
@@ -698,11 +682,7 @@ export const chatRoute = new Elysia()
 
       // Calculate and update response time
       const responseTime = Date.now() - startTime;
-      await updateMessageResponseTime(
-        createdMessage.id,
-        responseTime,
-        setupResult.isExternal || false,
-      );
+      await updateMessageResponseTime(createdMessage.id, responseTime);
 
       logger.info(
         {
@@ -712,20 +692,6 @@ export const chatRoute = new Elysia()
         },
         "response_time_recorded",
       );
-
-      // Record payment
-      await recordPayment({
-        isExternal: setupResult.isExternal || false,
-        x402ExternalRecord,
-        userId,
-        conversationId,
-        messageId: createdMessage.id,
-        paymentSettlement,
-        paymentHeader,
-        paymentRequirement,
-        providers: [], // Agent-based approach
-        responseTime,
-      });
 
       logger.info(
         {
@@ -758,11 +724,11 @@ export const chatRoute = new Elysia()
         "chat_unhandled_error",
       );
 
-      const { set } = ctx as any;
+      const { set } = ctx;
       set.status = 500;
       return {
         ok: false,
         error: error.message || "Internal server error",
       };
     }
-  });
+}

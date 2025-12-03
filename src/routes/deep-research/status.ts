@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { getMessage, getState } from "../../db/operations";
-import { smartAuthMiddleware } from "../../middleware/smartAuth";
+import { authBeforeHandle } from "../../middleware/auth";
 import logger from "../../utils/logger";
 
 type DeepResearchStatusResponse = {
@@ -26,24 +26,42 @@ type DeepResearchStatusResponse = {
 
 /**
  * Deep Research Status Route - Check progress of a deep research job
+ * Uses guard pattern to ensure auth runs for all routes
  */
-const deepResearchStatusPlugin = new Elysia().use(
-  smartAuthMiddleware({
-    optional: true, // Allow unauthenticated requests (AI agents)
-  }),
+export const deepResearchStatusRoute = new Elysia().guard(
+  {
+    beforeHandle: [
+      authBeforeHandle({
+        optional: process.env.NODE_ENV !== "production",
+      }),
+    ],
+  },
+  (app) =>
+    app.get("/api/deep-research/status/:messageId", deepResearchStatusHandler)
 );
 
-export const deepResearchStatusRoute = deepResearchStatusPlugin.get(
-  "/api/deep-research/status/:messageId",
-  async (ctx) => {
-    const { params, set } = ctx as any;
-    const messageId = params.messageId;
+/**
+ * Deep Research Status Handler - Core logic for GET /api/deep-research/status/:messageId
+ * Exported for reuse in x402 routes
+ */
+export async function deepResearchStatusHandler(ctx: any) {
+  const { params, query, set } = ctx;
+  const messageId = params.messageId;
+  const userId = query.userId;
 
     if (!messageId) {
       set.status = 400;
       return {
         ok: false,
         error: "Missing required parameter: messageId",
+      };
+    }
+
+    if (!userId) {
+      set.status = 400;
+      return {
+        ok: false,
+        error: "Missing required query parameter: userId",
       };
     }
 
@@ -55,6 +73,19 @@ export const deepResearchStatusRoute = deepResearchStatusPlugin.get(
         return {
           ok: false,
           error: "Message not found",
+        };
+      }
+
+      // Ownership validation: ensure message belongs to the requesting user
+      if (message.user_id !== userId) {
+        logger.warn(
+          { messageId, requestedBy: userId, ownedBy: message.user_id },
+          "deep_research_status_ownership_mismatch"
+        );
+        set.status = 403;
+        return {
+          ok: false,
+          error: "Access denied: message belongs to another user",
         };
       }
 
@@ -158,5 +189,4 @@ export const deepResearchStatusRoute = deepResearchStatusPlugin.get(
         error: "Failed to check deep research status",
       };
     }
-  },
-);
+}

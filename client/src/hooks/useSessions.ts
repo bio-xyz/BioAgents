@@ -512,28 +512,36 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
                   };
                 }
               } else {
-                // No assistant message exists yet after this user message
-                // This happens with deep research which runs in background and updates DB directly
-                console.log(
-                  "[Realtime] UPDATE: No assistant message found at position",
-                  nextIndex,
-                );
-                console.log(
-                  "[Realtime] UPDATE: Adding assistant message from DB update",
+                // No assistant message exists yet at nextIndex
+                // BUT check if this content already exists ANYWHERE in messages
+                // (App.tsx addMessage() might have added it at the end already)
+                const contentAlreadyExists = messages.some(
+                  (m) => m.role === "assistant" && m.content.trim() === updatedContent
                 );
 
-                // Add the assistant message from the DB update
-                // This is critical for deep research which processes in background
-                messages.splice(nextIndex, 0, {
-                  id: Date.now(),
-                  role: "assistant" as const,
-                  content: updatedContent,
-                });
+                if (contentAlreadyExists) {
+                  console.log(
+                    "[Realtime] UPDATE: Content already exists elsewhere, skipping:",
+                    updatedContent.slice(0, 50),
+                  );
+                } else {
+                  // Content doesn't exist anywhere - add it
+                  // This happens with deep research which processes in background
+                  console.log(
+                    "[Realtime] UPDATE: Adding assistant message from DB update",
+                  );
 
-                console.log(
-                  "[Realtime] ✅ Added assistant message from UPDATE:",
-                  updatedContent.slice(0, 50),
-                );
+                  messages.splice(nextIndex, 0, {
+                    id: Date.now(),
+                    role: "assistant" as const,
+                    content: updatedContent,
+                  });
+
+                  console.log(
+                    "[Realtime] ✅ Added assistant message from UPDATE:",
+                    updatedContent.slice(0, 50),
+                  );
+                }
               }
 
               return {

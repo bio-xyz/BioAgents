@@ -41,9 +41,6 @@ export interface Message {
   files?: any; // JSONB field for file metadata
 }
 
-// System user ID used for dev UI users (matches backend X402_SYSTEM_USER_ID)
-const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
-
 // Client-side database operations
 export async function getConversationsByUser(userId: string) {
   console.log("[supabase] Fetching conversations for user_id:", userId);
@@ -60,24 +57,6 @@ export async function getConversationsByUser(userId: string) {
   }
   
   console.log("[supabase] Found conversations for userId:", data?.length || 0);
-  
-  // If no conversations found and we're not already querying system user,
-  // also try querying with system user ID as fallback (for backwards compatibility)
-  if ((!data || data.length === 0) && userId !== SYSTEM_USER_ID) {
-    console.log("[supabase] No conversations found, trying system user fallback...");
-    
-    const { data: systemData, error: systemError } = await supabase
-      .from("conversations")
-      .select("*")
-      .eq("user_id", SYSTEM_USER_ID)
-      .order("created_at", { ascending: false });
-    
-    if (!systemError && systemData && systemData.length > 0) {
-      console.log("[supabase] Found conversations with system user:", systemData.length);
-      return systemData;
-    }
-  }
-  
   return data;
 }
 

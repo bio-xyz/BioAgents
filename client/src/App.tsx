@@ -11,7 +11,7 @@ import { ToastContainer } from "./components/Toast";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { Modal } from "./components/ui/Modal";
 import { WelcomeScreen } from "./components/WelcomeScreen";
-import { ResearchStatePanel, SuggestedSteps } from "./components/research";
+import { ResearchStatePanel } from "./components/research";
 
 // Custom hooks
 import {
@@ -394,25 +394,6 @@ export function App() {
   }, [currentSessionId, userId, messages.length]);
 
   /**
-   * Handle selecting a suggested research step
-   */
-  const handleSelectStep = (step: any, index: number) => {
-    // Format the step as a concise message
-    const stepType = step.type?.toLowerCase() || "analysis";
-    const datasets = step.datasets?.length > 0 
-      ? ` using ${step.datasets.map((d: any) => d.filename).join(", ")}`
-      : "";
-    
-    // Create a shorter, more natural message
-    const stepMessage = `Proceed with ${stepType}${datasets}`;
-
-    setInputValue(stepMessage);
-
-    // Optionally auto-send
-    // handleSend("deep");
-  };
-
-  /**
    * Handle sending a message
    */
   const handleSend = async (mode: string = "normal") => {
@@ -534,10 +515,7 @@ export function App() {
 
         // Only continue if we got a response (not empty from payment confirmation)
         if (response.text) {
-          // Give a small delay for state to be fully updated via subscription
-          await new Promise((resolve) => setTimeout(resolve, 200));
-
-          // Capture the current thinking state after delay
+          // Capture the current thinking state (no delay needed - causes race condition with realtime)
           const capturedState =
             currentState && currentState.values && currentState.values.steps
               ? {
@@ -554,20 +532,29 @@ export function App() {
             capturedState,
           );
 
-          // Use the streamed finalResponse if available, otherwise fall back to response.text
+          // Use the response text from API
           const finalText = response.text;
 
           console.log("[App] Final text:", finalText);
-          console.log("[App] Response text:", response.text);
 
-          // Create final message directly (no animation needed since we showed it in real-time)
-          addMessage({
-            id: Date.now(),
-            role: "assistant" as const,
-            content: finalText,
-            files: response.files,
-            thinkingState: capturedState,
-          });
+          // Check if realtime already added this message (prevent duplicate)
+          const lastMessage = messages[messages.length - 1];
+          const realtimeAlreadyAdded = 
+            lastMessage?.role === "assistant" && 
+            lastMessage?.content === finalText;
+
+          if (!realtimeAlreadyAdded) {
+            // Add assistant message
+            addMessage({
+              id: Date.now(),
+              role: "assistant" as const,
+              content: finalText,
+              files: response.files,
+              thinkingState: capturedState,
+            });
+          } else {
+            console.log("[App] Skipping addMessage - realtime already added this response");
+          }
 
           scrollToBottom();
 
@@ -996,16 +983,6 @@ export function App() {
                         setIsResearchPanelExpanded(!isResearchPanelExpanded)
                       }
                     />
-
-                    {/* Suggested Next Steps */}
-                    {researchState.suggestedNextSteps &&
-                      researchState.suggestedNextSteps.length > 0 && (
-                        <SuggestedSteps
-                          steps={researchState.suggestedNextSteps}
-                          onSelectStep={handleSelectStep}
-                          disabled={isCurrentConversationLoading}
-                        />
-                      )}
                   </div>
                 )}
               </>
@@ -1080,10 +1057,7 @@ export function App() {
             const response = await confirmPayment();
 
             if (response && response.text) {
-              // Give a small delay for state to be fully updated via subscription
-              await new Promise((resolve) => setTimeout(resolve, 200));
-
-              // Capture the current thinking state after delay
+              // Capture the current thinking state (no delay - causes race condition)
               const capturedState =
                 currentState && currentState.values && currentState.values.steps
                   ? {
@@ -1098,18 +1072,27 @@ export function App() {
                 capturedState,
               );
 
-              // Use the streamed finalResponse if available, otherwise fall back to response.text
-              const finalText =
-                currentState?.values?.finalResponse || response.text;
+              // Use response text from API
+              const finalText = response.text;
 
-              // Create final message directly (no animation needed since we showed it in real-time)
-              addMessage({
-                id: Date.now(),
-                role: "assistant" as const,
-                content: finalText,
-                files: response.files,
-                thinkingState: capturedState,
-              });
+              // Check if realtime already added this message (prevent duplicate)
+              const lastMessage = messages[messages.length - 1];
+              const realtimeAlreadyAdded = 
+                lastMessage?.role === "assistant" && 
+                lastMessage?.content === finalText;
+
+              if (!realtimeAlreadyAdded) {
+                // Add assistant message
+                addMessage({
+                  id: Date.now(),
+                  role: "assistant" as const,
+                  content: finalText,
+                  files: response.files,
+                  thinkingState: capturedState,
+                });
+              } else {
+                console.log("[App] Skipping addMessage - realtime already added this response");
+              }
 
               scrollToBottom();
 

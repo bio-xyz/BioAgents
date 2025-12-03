@@ -3,6 +3,23 @@ import type { WalletClient } from "viem";
 import { useToast } from "./useToast";
 import { useX402Payment, type UseX402PaymentReturn } from "./useX402Payment";
 
+/**
+ * Get the API secret for authentication
+ * Priority: localStorage > environment variable
+ */
+function getApiSecret(): string | null {
+  // Check localStorage first (allows runtime configuration)
+  const localSecret = localStorage.getItem("bioagents_secret");
+  if (localSecret) return localSecret;
+  
+  // Fall back to build-time environment variable
+  // @ts-ignore - Vite injects this at build time
+  const envSecret = import.meta.env?.VITE_BIOAGENTS_SECRET;
+  if (envSecret) return envSecret;
+  
+  return null;
+}
+
 export interface SendMessageParams {
   message: string;
   conversationId: string;
@@ -77,8 +94,7 @@ export function useChatAPI(
     params: SendMessageParams,
     skipPaymentCheck = false,
   ): Promise<ChatResponse> => {
-    const { message, conversationId, userId, file, files, walletClient } =
-      params;
+    const { message, conversationId, userId, file, files } = params;
 
     try {
       const formData = new FormData();
@@ -94,27 +110,6 @@ export function useChatAPI(
         console.warn("[useChatAPI] No valid userId provided!");
       }
 
-      // Add CDP wallet authentication if wallet client is available
-      if (walletClient && validUserId?.startsWith("0x")) {
-        try {
-          const timestamp = Date.now();
-          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${validUserId}`;
-
-          const signature = await walletClient.signMessage({
-            account: validUserId as `0x${string}`,
-            message: authMessage,
-          });
-
-          formData.append("authSignature", signature);
-          formData.append("authTimestamp", timestamp.toString());
-
-          console.log("[useChatAPI] Added CDP authentication signature");
-        } catch (err) {
-          console.warn("[useChatAPI] Failed to sign auth message:", err);
-          // Continue without authentication - will be treated as unauthenticated request
-        }
-      }
-
       // Support both single file (legacy) and multiple files
       if (files && files.length > 0) {
         files.forEach((f) => {
@@ -127,12 +122,20 @@ export function useChatAPI(
       // First, check if payment is required by making a regular fetch
       let response: Response;
 
+      // Build headers with auth
+      const headers: Record<string, string> = {};
+      const apiSecret = getApiSecret();
+      if (apiSecret) {
+        headers["Authorization"] = `Bearer ${apiSecret}`;
+      }
+
       if (!skipPaymentCheck) {
         // First try without payment to see if it's required
         response = await fetch("/api/chat", {
           method: "POST",
           body: formData,
           credentials: "include",
+          headers,
         });
 
         // If 402, show confirmation modal instead of automatically paying
@@ -172,6 +175,7 @@ export function useChatAPI(
           method: "POST",
           body: formData,
           credentials: "include",
+          headers,
         });
       }
 
@@ -321,8 +325,7 @@ export function useChatAPI(
   const sendDeepResearchMessage = async (
     params: SendMessageParams,
   ): Promise<DeepResearchResponse> => {
-    const { message, conversationId, userId, file, files, walletClient } =
-      params;
+    const { message, conversationId, userId, file, files } = params;
 
     setIsLoading(true);
     setError("");
@@ -342,28 +345,6 @@ export function useChatAPI(
         console.warn("[useChatAPI] No valid userId for deep research!");
       }
 
-      // Add CDP wallet authentication if wallet client is available
-      if (walletClient && validUserId?.startsWith("0x")) {
-        try {
-          const timestamp = Date.now();
-          const authMessage = `BioAgents Auth\nTimestamp: ${timestamp}\nUser: ${validUserId}`;
-
-          const signature = await walletClient.signMessage({
-            account: validUserId as `0x${string}`,
-            message: authMessage,
-          });
-
-          formData.append("authSignature", signature);
-          formData.append("authTimestamp", timestamp.toString());
-
-          console.log(
-            "[useChatAPI] Added CDP authentication signature for deep research",
-          );
-        } catch (err) {
-          console.warn("[useChatAPI] Failed to sign auth message:", err);
-        }
-      }
-
       // Support both single file (legacy) and multiple files
       if (files && files.length > 0) {
         files.forEach((f) => {
@@ -373,10 +354,18 @@ export function useChatAPI(
         formData.append("files", file);
       }
 
+      // Build headers with auth
+      const headers: Record<string, string> = {};
+      const apiSecret = getApiSecret();
+      if (apiSecret) {
+        headers["Authorization"] = `Bearer ${apiSecret}`;
+      }
+
       const response = await fetch("/api/deep-research/start", {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers,
       });
 
       // Handle 401 Unauthorized

@@ -9,6 +9,7 @@ export interface User {
   id?: string;
   username: string;
   email: string;
+  wallet_address?: string; // For x402 payment users identified by wallet
   used_invite_code?: string;
   points?: number;
   has_completed_invite_flow?: boolean;
@@ -57,6 +58,47 @@ export async function createUser(userData: User) {
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Get user by wallet address (for x402 users)
+ */
+export async function getUserByWallet(walletAddress: string) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("wallet_address", walletAddress.toLowerCase())
+    .single();
+
+  if (error && error.code !== "PGRST116") throw error; // PGRST116 = not found
+  return data;
+}
+
+/**
+ * Get or create user by wallet address (for x402 users)
+ * Returns existing user or creates a new one with wallet as identity
+ */
+export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
+  user: any;
+  isNew: boolean;
+}> {
+  const normalizedWallet = walletAddress.toLowerCase();
+  
+  // Try to find existing user
+  const existingUser = await getUserByWallet(normalizedWallet);
+  if (existingUser) {
+    return { user: existingUser, isNew: false };
+  }
+
+  // Create new user with wallet identity
+  const shortWallet = normalizedWallet.slice(0, 10);
+  const newUser = await createUser({
+    username: `wallet_${shortWallet}`,
+    email: `${normalizedWallet}@x402.local`,
+    wallet_address: normalizedWallet,
+  });
+
+  return { user: newUser, isNew: true };
 }
 
 // Conversation operations
