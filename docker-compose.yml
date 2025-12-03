@@ -9,8 +9,8 @@ services:
       - bioagents-docs:/app/docs
       - bioagents-images:/app/client/public/images
 
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       # Required: LLM API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY}
