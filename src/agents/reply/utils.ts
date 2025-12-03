@@ -1,7 +1,9 @@
+import character from "../../character";
 import { LLM } from "../../llm/provider";
+import type { LLMRequest } from "../../llm/types";
 import type { LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { replyPrompt, chatReplyPrompt } from "./prompts";
+import { chatReplyPrompt, replyPrompt } from "./prompts";
 
 export type ReplyContext = {
   completedTasks: PlanTask[];
@@ -57,7 +59,9 @@ export async function generateReply(
   // Format key insights
   const keyInsightsText =
     context.keyInsights.length > 0
-      ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
+      ? context.keyInsights
+          .map((insight, i) => `${i + 1}. ${insight}`)
+          .join("\n")
       : "No key insights yet.";
 
   // Build the prompt
@@ -68,7 +72,10 @@ export async function generateReply(
     .replace("{{nextPlan}}", nextPlanText)
     .replace("{{keyInsights}}", keyInsightsText)
     .replace("{{methodology}}", context.methodology || "Not specified")
-    .replace("{{currentObjective}}", context.currentObjective || "Not specified");
+    .replace(
+      "{{currentObjective}}",
+      context.currentObjective || "Not specified",
+    );
 
   const REPLY_LLM_PROVIDER: LLMProvider =
     (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
@@ -85,7 +92,7 @@ export async function generateReply(
     apiKey: llmApiKey,
   });
 
-  const llmRequest = {
+  const llmRequest: LLMRequest = {
     model,
     messages: [
       {
@@ -97,6 +104,7 @@ export async function generateReply(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 1024)
       : undefined,
+    systemInstruction: character.system,
   };
 
   try {
@@ -140,7 +148,9 @@ export async function generateChatReply(
   // Format key insights
   const keyInsightsText =
     context.keyInsights.length > 0
-      ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
+      ? context.keyInsights
+          .map((insight, i) => `${i + 1}. ${insight}`)
+          .join("\n")
       : "No key insights available.";
 
   // Build the prompt
@@ -165,7 +175,7 @@ export async function generateChatReply(
     apiKey: llmApiKey,
   });
 
-  const llmRequest = {
+  const llmRequest: LLMRequest = {
     model,
     messages: [
       {
@@ -177,6 +187,7 @@ export async function generateChatReply(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
       : undefined,
+    systemInstruction: character.system,
   };
 
   try {

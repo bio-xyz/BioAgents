@@ -1,3 +1,4 @@
+import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type {
   ConversationState,
@@ -180,6 +181,7 @@ NOTES:
       },
     ],
     maxTokens: 1024,
+    systemInstruction: character.system,
   });
 
   const rawContent = response.content.trim();
