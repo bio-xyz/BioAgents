@@ -13,8 +13,8 @@ function getApiSecret(): string | null {
   if (localSecret) return localSecret;
   
   // Fall back to build-time environment variable
-  // @ts-ignore - Vite injects this at build time
-  const envSecret = import.meta.env?.VITE_BIOAGENTS_SECRET;
+  // @ts-ignore - Bun injects this at build time
+  const envSecret = import.meta.env?.BIOAGENTS_SECRET;
   if (envSecret) return envSecret;
   
   return null;
