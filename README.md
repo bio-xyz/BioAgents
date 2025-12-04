@@ -15,6 +15,10 @@ The system operates through two main routes:
 - **[/api/chat](src/routes/chat.ts)** - Agent-based chat for general research questions with automatic literature search
 - **[/api/deep-research](src/routes/deep-research/)** - Deep research mode with iterative hypothesis-driven investigation
 
+**Chat diagram**
+<img width="858" height="142" alt="image" src="https://github.com/user-attachments/assets/f6f8e85c-c975-4894-8268-017ed4ff33ce" />
+
+
 **Deep research diagram**
 <img width="1274" height="316" alt="image" src="https://github.com/user-attachments/assets/a859e30c-49f4-4e4a-bd39-bb0722ef43d7" />
 
