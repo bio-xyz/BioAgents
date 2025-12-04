@@ -119,7 +119,7 @@ export async function getStatesByConversation(conversationId: string) {
   const { data, error } = await supabase
     .from("states")
     .select("*")
-    .eq("values->>conversationId", conversationId)
+    .contains("values", { conversationId })
     .order("created_at", { ascending: true }); // Get all states in chronological order
 
   if (error) throw error;

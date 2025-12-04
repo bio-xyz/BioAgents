@@ -125,7 +125,7 @@ export function useStates(
         const { data, error: fetchError } = await supabase
           .from("states")
           .select("*")
-          .eq("values->>conversationId", conversationId)
+          .contains("values", { conversationId })
           .order("created_at", { ascending: false })
           .limit(1)
           .single();
