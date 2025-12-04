@@ -10,51 +10,163 @@ Check out [SETUP.md](SETUP.md)
 
 ### Routes
 
-The agent primarily operates through the [/api/chat](src/routes/chat.ts) route. The [deep research](src/routes/deep-research.ts) route is coming soon.
+The system operates through two main routes:
 
-You can define and modify the agent's flow in the chat route. It currently calls the planning tool, and based on the planning tool's results, calls other tools—generally all providers first, then all actions, with some exceptions.
+- **[/api/chat](src/routes/chat.ts)** - Agent-based chat for general research questions with automatic literature search
+- **[/api/deep-research](src/routes/deep-research/)** - Deep research mode with iterative hypothesis-driven investigation
 
-### Tools
+Both routes use the same agent architecture but differ in their orchestration and iteration patterns.
 
-[Tools](src/tools) are the core concept in this repository. We separate different logic into tools—including a planning tool, file upload tool, hypothesis tool, knowledge tool, knowledge graph tool, reply tool, and semantic search tool, with more coming soon.
+### Agents
 
-You can enable/disable each tool by switching the enabled boolean.
+**Agents** are the core concept in this repository. Each agent is a self-contained, independent function that performs a specific task in the research workflow. Agents are designed to be modular and reusable across different routes and contexts.
 
-### State
+#### Available Agents
 
-State is a key concept for tools. The message state contains all important information from processing a message—which science papers were cited, which knowledge was used, which files were uploaded, etc. Since state is stored as a large JSON object, you should ideally set up a database trigger to clear message states older than ~30 minutes. We plan to introduce a 'conversation' state soon, which will represent permanent conversation state and summarize the most important takeaways.
+1. **[File Upload Agent](src/agents/fileUpload/)** - Handles file parsing, storage, and automatic description generation
+   - Supports PDF, Excel, CSV, MD, JSON, TXT files
+   - Generates AI-powered descriptions for each dataset
+   - Stores files in cloud storage with metadata
 
-To add a new tool, create a folder in the tools directory, place the main logic in index.ts, and put additional logic in separate files within that folder. Logic shared across multiple tools should go in [utils](src/utils).
+2. **[Planning Agent](src/agents/planning/)** - Creates research plans based on user questions
+   - Analyzes available datasets and research context
+   - Generates task sequences (LITERATURE or ANALYSIS)
+   - Updates current research objectives
+
+3. **[Literature Agent](src/agents/literature/)** - Searches and synthesizes scientific literature
+   - **OPENSCHOLAR**: General scientific literature search with citations
+   - **EDISON**: Edison AI literature search (deep research mode only)
+   - **KNOWLEDGE**: Searches your custom knowledge base with semantic search and reranking
+   - Returns synthesized findings with inline citations in format: `(claim)[DOI or URL]`
+
+4. **[Analysis Agent](src/agents/analysis/)** - Performs data analysis on uploaded datasets
+   - **EDISON**: Deep analysis via Edison AI agent with file upload to Edison storage
+   - **BIO**: Basic analysis via BioAgents Data Analysis Agent
+   - Uploads datasets to analysis service and retrieves results
+
+5. **[Hypothesis Agent](src/agents/hypothesis/)** - Generates research hypotheses
+   - Synthesizes findings from literature and analysis
+   - Creates testable hypotheses with inline citations
+   - Considers current research context and objectives
+
+6. **[Reflection Agent](src/agents/reflection/)** - Reflects on research progress
+   - Extracts key insights and discoveries
+   - Updates research methodology
+   - Maintains conversation-level understanding
+
+7. **[Reply Agent](src/agents/reply/)** - Generates user-facing responses
+   - **Deep Research Mode**: Includes current objective, next steps, and asks for feedback
+   - **Chat Mode**: Concise answers without next steps
+   - Preserves inline citations throughout
+
+#### Adding New Agents
+
+To add a new agent:
+
+1. Create a folder in `src/agents/`
+2. Implement the main agent function in `index.ts`
+3. Add supporting logic in separate files within the folder
+4. Export the agent function for use in routes
+5. Shared utilities go in [src/utils](src/utils)
+
+### State Management
+
+State is separated into two types:
+
+**Message State** (`State`):
+
+- Ephemeral, tied to a single message
+- Contains processing details for that message only
+- Automatically cleared after processing
+- Used for temporary data like raw file buffers
+
+**Conversation State** (`ConversationState`):
+
+- Persistent across the entire conversation
+- Contains cumulative research data:
+  - Uploaded datasets with descriptions
+  - Current plan and completed tasks
+  - Key insights and discoveries
+  - Current hypothesis and methodology
+  - Research objectives
+- Stored in database and maintained across requests
+- This is the primary state that drives the research workflow
 
 ### LLM Library
 
-The [LLM library](src/llm) is another important component we've built. It allows you to use any Anthropic/OpenAI/Google or OpenRouter LLM via the [same interface](src/llm/provider.ts). Examples of calling our LLM library can be found in most tools in the repository.
+The [LLM library](src/llm) provides a unified interface for multiple LLM providers. It allows you to use any Anthropic/OpenAI/Google or OpenRouter LLM via the [same interface](src/llm/provider.ts). Examples of calling the LLM library can be found in all agents.
 
-We also support [Anthropic skills](src/llm/skills/skills.ts). To add a skill, place it in the [.claude/skills](.claude/skills) directory.
+**Key Features:**
 
-### Knowledge Tool & Document Processing
+- Unified API across providers (Anthropic, OpenAI, Google, OpenRouter)
+- Extended thinking support for Anthropic models
+- System instruction support
+- Streaming and non-streaming responses
+- Examples in every agent implementation
 
-The knowledge tool includes vector database and embedding support in [embeddings](src/embeddings). We also use a Cohere reranker, so if you want to leverage it, make sure to set up a Cohere API key.
+### Literature Agent & Knowledge Base
 
-To process documents for the knowledge tool's vector database, place them in the [docs directory](docs). Documents are processed on each run but never processed twice for the same document name.
+The Literature Agent includes multiple search backends:
+
+**OPENSCHOLAR (Optional):**
+
+- General scientific literature search with high-quality citations
+- Requires custom deployment and configuration
+- Set `OPENSCHOLAR_API_URL` and `OPENSCHOLAR_API_KEY` to enable
+- Paper: https://arxiv.org/abs/2411.14199
+- Deployment: https://github.com/bio-xyz/bio-openscholar
+
+**EDISON (Optional):**
+
+- Edison AI literature search (deep research mode only)
+- Requires custom deployment and configuration
+- Set `EDISON_API_URL` and `EDISON_API_KEY` to enable
+- Deployment: https://github.com/bio-xyz/bio-edison-api
+
+**KNOWLEDGE (Customizable):**
+
+- Vector database with semantic search ([embeddings](src/embeddings))
+- Cohere reranker for improved results (requires `COHERE_API_KEY`)
+- Document processing from [docs directory](docs)
+- Documents are processed once per filename and stored in vector DB
+
+**To add custom knowledge:**
+
+1. Place documents in the `docs/` directory
+2. Documents are automatically processed on startup
+3. Vector embeddings are generated and stored
+4. Available to Literature Agent via KNOWLEDGE tasks
 
 **Docker Deployment Note**: When deploying with Docker, agent-specific documentation in `docs/` and branding images in `client/public/images/` are persisted using Docker volumes. These directories are excluded from git (see `.gitignore`) but automatically mounted in your Docker containers via volume mounts defined in `docker-compose.yml`. This allows you to customize your agent with private documentation without committing it to the repository.
 
-### Data Analysis tool
+### Analysis Agent Configuration
 
-The data analysis tool allows the agent to run code execution tasks using secure sandboxed environment.
+The Analysis Agent supports two backends for data analysis:
 
-- Current default setup uses Edison ANALYSIS job API to run analysis operations.
-- You can switch to BioAgents Data Analysis Agent by setting PRIMARY_ANALYSIS_AGENT=bio in your .env file and providing DATA_ANALYSIS_API_URL and DATA_ANALYSIS_API_KEY (see .env.example for details).
+**EDISON (Default):**
+
+- Deep analysis via Edison AI agent
+- Automatic file upload to Edison storage service
+- Requires `EDISON_API_URL` and `EDISON_API_KEY`
+- https://github.com/bio-xyz/bio-edison-api
+
+**BIO (Alternative):**
+
+- Basic analysis via BioAgents Data Analysis Agent
+- Set `PRIMARY_ANALYSIS_AGENT=bio` in `.env`
+- Requires `DATA_ANALYSIS_API_URL` and `DATA_ANALYSIS_API_KEY`
+- https://github.com/bio-xyz/bio-data-analysis
+
+Both backends receive datasets and analysis objectives, execute analysis code, and return results.
 
 ### Character File
 
-The [character file](src/character.ts) defines your agent's persona, behavior, and response templates. Customize it to configure:
+The [character file](src/character.ts) defines your agent's identity and system instructions. It's now simplified to focus on core behavior:
 
-- **Name & System Prompt**: Define the agent's identity and core instructions
-- **Response Templates**: Customize prompts for different contexts (chat replies, planning, hypothesis generation, Twitter responses)
+- **name**: Your agent's name
+- **system**: System prompt that guides agent behavior across all interactions
 
-To create your own character, modify `src/character.ts` or create a new character file with the same structure.
+The character's system instruction is automatically included in LLM calls for planning, hypothesis generation, and replies, ensuring consistent behavior throughout the research workflow. You can enable the system prompt in any LLM call by setting the 'systemInstruction' parameter.
 
 ## UI
 
@@ -149,17 +261,29 @@ Note: Mainnet requires CDP API credentials. The system automatically uses the CD
 ```
 ├── src/                      # Backend source
 │   ├── routes/              # HTTP route handlers
-│   │   └── chat.ts          # Main chat endpoint (orchestrates services)
+│   │   ├── chat.ts          # Agent-based chat endpoint
+│   │   └── deep-research/   # Deep research endpoints
+│   │       ├── start.ts     # Start deep research
+│   │       └── status.ts    # Check research status
+│   ├── agents/              # Independent agent modules
+│   │   ├── fileUpload/      # File parsing & storage
+│   │   ├── planning/        # Research planning
+│   │   ├── literature/      # Literature search (OPENSCHOLAR, EDISON, KNOWLEDGE)
+│   │   ├── analysis/        # Data analysis (EDISON, BIO)
+│   │   ├── hypothesis/      # Hypothesis generation
+│   │   ├── reflection/      # Research reflection
+│   │   └── reply/           # User-facing responses
 │   ├── services/            # Business logic layer
 │   │   └── chat/            # Chat-related services
 │   │       ├── setup.ts     # User/conversation setup
 │   │       ├── payment.ts   # Payment recording
-│   │       └── tools.ts     # Tool execution logic
+│   │       └── tools.ts     # Legacy tool execution
 │   ├── middleware/          # Request/response middleware
 │   │   ├── smartAuth.ts     # Multi-method authentication
 │   │   └── x402.ts          # Payment enforcement
-│   ├── tools/               # Agent tools (PLANNING, REPLY, etc.)
 │   ├── llm/                 # LLM providers & interfaces
+│   │   └── provider.ts      # Unified LLM interface
+│   ├── embeddings/          # Vector database & document processing
 │   ├── db/                  # Database operations
 │   │   ├── operations.ts    # Core DB operations
 │   │   └── x402Operations.ts # Payment tracking
@@ -167,14 +291,17 @@ Note: Mainnet requires CDP API credentials. The system automatically uses the CD
 │   │   ├── config.ts        # Network & payment config
 │   │   ├── pricing.ts       # Route-based pricing
 │   │   └── service.ts       # Payment verification
+│   ├── storage/             # File storage (S3-compatible)
 │   ├── utils/               # Shared utilities
-│   └── types/               # TypeScript types
-├── client/                  # Frontend UI
+│   ├── types/               # TypeScript types
+│   └── character.ts         # Agent identity & system prompt
+├── client/                  # Frontend UI (Preact)
 │   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── hooks/          # Custom hooks
+│   │   ├── components/     # UI components
+│   │   ├── hooks/          # Custom hooks (chat, payments, etc.)
 │   │   └── styles/         # CSS files
 │   └── public/             # Static assets
+├── docs/                    # Custom knowledge base documents
 └── package.json
 ```
 
