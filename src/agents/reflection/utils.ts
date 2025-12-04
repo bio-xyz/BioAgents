@@ -89,11 +89,12 @@ export async function reflectOnWorld(
         .trim();
       parsedResponse = JSON.parse(cleaned);
     } catch (parseError) {
-      logger.error(
-        { parseError, rawContent: response.content },
-        "failed_to_parse_reflection_response",
+      // try to locate the json inbetween {} in the message content
+      const jsonMatch = response.content.match(
+        /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
       );
-      throw new Error("Failed to parse reflection response as JSON");
+      const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
+      parsedResponse = JSON.parse(jsonString);
     }
 
     // Validate required fields

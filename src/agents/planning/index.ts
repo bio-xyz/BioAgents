@@ -147,7 +147,7 @@ AVAILABLE TASK TYPES (only these two):
   - For LITERATURE tasks: describe the objective simply in 1-2 sentences
   - For ANALYSIS tasks: Describe the objective in this format "GOAL: <goal> DATASETS: <short dataset descriptions> OUTPUT: <desired output>". Each section should be relatively simple, 1-3 sentences max. Do not overexplain so that you allow the data scientist agent to be creative and come up with the best solution. Focus on the what, not on the how.
 
-  OUTPUT FORMAT (respond with ONLY valid JSON):
+  OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
 {
   "currentObjective": "Updated objective for the next phase of research (1-2 sentences)",
   "plan": [
@@ -170,7 +170,10 @@ NOTES:
 - Plan only 1-3 tasks maximum
 - If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration). You can express what you're planning to do next in the currentObjective field.
 - Update the currentObjective to reflect what you're currently doing and what comes after these tasks
-- Be specific and actionable`;
+- Be specific and actionable
+
+SILENT SELF CHECK:
+CRUCIAL: You absolutely MUST only output the JSON object, no additional text or explanation.`;
 
   const response = await llmProvider.createChatCompletion({
     model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
@@ -190,7 +193,17 @@ NOTES:
   const jsonMatch = rawContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
   const jsonString = jsonMatch ? jsonMatch[1] || "" : rawContent || "";
 
-  const result = JSON.parse(jsonString) as PlanningResult;
+  let result: PlanningResult;
+  try {
+    result = JSON.parse(jsonString) as PlanningResult;
+  } catch (error) {
+    // try to locate the json inbetween {} in the message content
+    const jsonMatch = message.content.match(
+      /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
+    );
+    const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
+    result = JSON.parse(jsonString) as PlanningResult;
+  }
 
   logger.info(
     {

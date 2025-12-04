@@ -130,4 +130,7 @@ SILENT SELF-CHECK (DO NOT OUTPUT)
 - Is currentObjective specific and actionable?
 - Have I removed outdated/redundant information?
 - Is the output valid JSON?
+
+Reminder:
+It is CRUCIAL that the output is a valid JSON object, no additional text or explanation.
 `;
