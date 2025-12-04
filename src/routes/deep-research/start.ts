@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { authBeforeHandle } from "../../middleware/auth";
 import {
   ensureUserAndConversation,
@@ -8,6 +9,8 @@ import { createMessageRecord } from "../../services/chat/tools";
 import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
+
+initKnowledgeBase();
 
 type DeepResearchStartResponse = {
   messageId: string | null;
@@ -38,7 +41,7 @@ export const deepResearchStartRoute = new Elysia().guard(
           apiDocumentation: "https://your-docs-url.com/api",
         };
       })
-      .post("/api/deep-research/start", deepResearchStartHandler)
+      .post("/api/deep-research/start", deepResearchStartHandler),
 );
 
 /**
@@ -48,175 +51,176 @@ export const deepResearchStartRoute = new Elysia().guard(
 export async function deepResearchStartHandler(ctx: any) {
   const { body, set, request } = ctx;
 
-    const parsedBody = body as any;
+  const parsedBody = body as any;
 
-    // Extract message (REQUIRED)
-    const message = parsedBody.message;
-    if (!message) {
-      set.status = 400;
-      return {
-        ok: false,
-        error: "Missing required field: message",
-      };
-    }
-
-    // Determine userId: x402 wallet > body.userId > anonymous
-    let userId: string;
-    let source = "api";
-    let isX402User = false;
-
-    // Check if this is an x402 request with wallet payment
-    const x402Settlement = (request as any).x402Settlement;
-    if (x402Settlement?.payer) {
-      // x402 user - get or create user by wallet address
-      const { getOrCreateUserByWallet } = await import("../../db/operations");
-      const { user, isNew } = await getOrCreateUserByWallet(x402Settlement.payer);
-      userId = user.id;
-      source = "x402";
-      isX402User = true;
-      
-      logger.info(
-        { 
-          userId, 
-          wallet: x402Settlement.payer, 
-          isNewUser: isNew,
-          transaction: x402Settlement.transaction 
-        }, 
-        "x402_user_identified"
-      );
-    } else {
-      // Regular API request - use provided userId or generate anonymous
-      const providedUserId = parsedBody.userId;
-      const isValidUserId = providedUserId && 
-        typeof providedUserId === 'string' && 
-        providedUserId.length > 0 &&
-        providedUserId !== 'undefined' &&
-        providedUserId !== 'null';
-
-      userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
-
-      if (!isValidUserId) {
-        logger.warn({ generatedUserId: userId }, "deep_research_no_user_id_provided_generating_temp");
-      }
-
-      logger.info({ userId, source }, "deep_research_user_identified");
-    }
-
-    // Auto-generate conversationId if not provided
-    let conversationId = parsedBody.conversationId;
-    if (!conversationId) {
-      conversationId = generateUUID();
-      if (logger) {
-        logger.info(
-          { conversationId, userId },
-          "auto_generated_conversation_id",
-        );
-      }
-    }
-
-    // Extract files from parsed body
-    let files: File[] = [];
-    if (parsedBody.files) {
-      if (Array.isArray(parsedBody.files)) {
-        files = parsedBody.files.filter((f: any) => f instanceof File);
-      } else if (parsedBody.files instanceof File) {
-        files = [parsedBody.files];
-      }
-    }
-
-    // Log request details
-    if (logger) {
-      logger.info(
-        {
-          userId,
-          conversationId,
-          source,
-          message: message,
-          fileCount: files.length,
-          routeType: "deep-research-v2-start",
-        },
-        "deep_research_start_request_received",
-      );
-    }
-
-    // Ensure user and conversation exist
-    // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
-    const setupResult = await ensureUserAndConversation(userId, conversationId, {
-      skipUserCreation: isX402User,
-    });
-    if (!setupResult.success) {
-      set.status = 500;
-      return { ok: false, error: setupResult.error || "Setup failed" };
-    }
-
-    // Setup conversation data
-    const dataSetup = await setupConversationData(
-      conversationId,
-      userId,
-      source,
-      false, // isExternal
-      message,
-      files.length,
-    );
-    if (!dataSetup.success) {
-      set.status = 500;
-      return { ok: false, error: dataSetup.error || "Data setup failed" };
-    }
-
-    const { conversationStateRecord, stateRecord } = dataSetup.data!;
-
-    // Create message record
-    const messageResult = await createMessageRecord({
-      conversationId,
-      userId,
-      message,
-      source,
-      stateId: stateRecord.id,
-      files,
-      isExternal: false,
-    });
-    if (!messageResult.success) {
-      set.status = 500;
-      return {
-        ok: false,
-        error: messageResult.error || "Message creation failed",
-      };
-    }
-
-    const createdMessage = messageResult.message!;
-
-    // Return immediately with message ID
-    // Include userId so external platforms (x402) can check status later
-    const response: DeepResearchStartResponse = {
-      messageId: createdMessage.id,
-      conversationId,
-      userId, // Important for x402 users who may not have provided one
-      status: "processing",
+  // Extract message (REQUIRED)
+  const message = parsedBody.message;
+  if (!message) {
+    set.status = 400;
+    return {
+      ok: false,
+      error: "Missing required field: message",
     };
+  }
 
-    // Run the actual deep research in the background
-    // Don't await - let it run asynchronously
-    runDeepResearch({
-      stateRecord,
-      conversationStateRecord,
-      createdMessage,
-      files,
-      setupResult,
-    }).catch((err) => {
-      logger.error(
-        { err, messageId: createdMessage.id },
-        "deep_research_background_failed",
-      );
-    });
+  // Determine userId: x402 wallet > body.userId > anonymous
+  let userId: string;
+  let source = "api";
+  let isX402User = false;
 
-    if (logger) {
-      logger.info(
-        { messageId: createdMessage.id, conversationId },
-        "deep_research_started",
+  // Check if this is an x402 request with wallet payment
+  const x402Settlement = (request as any).x402Settlement;
+  if (x402Settlement?.payer) {
+    // x402 user - get or create user by wallet address
+    const { getOrCreateUserByWallet } = await import("../../db/operations");
+    const { user, isNew } = await getOrCreateUserByWallet(x402Settlement.payer);
+    userId = user.id;
+    source = "x402";
+    isX402User = true;
+
+    logger.info(
+      {
+        userId,
+        wallet: x402Settlement.payer,
+        isNewUser: isNew,
+        transaction: x402Settlement.transaction,
+      },
+      "x402_user_identified",
+    );
+  } else {
+    // Regular API request - use provided userId or generate anonymous
+    const providedUserId = parsedBody.userId;
+    const isValidUserId =
+      providedUserId &&
+      typeof providedUserId === "string" &&
+      providedUserId.length > 0 &&
+      providedUserId !== "undefined" &&
+      providedUserId !== "null";
+
+    userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
+
+    if (!isValidUserId) {
+      logger.warn(
+        { generatedUserId: userId },
+        "deep_research_no_user_id_provided_generating_temp",
       );
     }
 
-    return response;
+    logger.info({ userId, source }, "deep_research_user_identified");
+  }
+
+  // Auto-generate conversationId if not provided
+  let conversationId = parsedBody.conversationId;
+  if (!conversationId) {
+    conversationId = generateUUID();
+    if (logger) {
+      logger.info({ conversationId, userId }, "auto_generated_conversation_id");
+    }
+  }
+
+  // Extract files from parsed body
+  let files: File[] = [];
+  if (parsedBody.files) {
+    if (Array.isArray(parsedBody.files)) {
+      files = parsedBody.files.filter((f: any) => f instanceof File);
+    } else if (parsedBody.files instanceof File) {
+      files = [parsedBody.files];
+    }
+  }
+
+  // Log request details
+  if (logger) {
+    logger.info(
+      {
+        userId,
+        conversationId,
+        source,
+        message: message,
+        fileCount: files.length,
+        routeType: "deep-research-v2-start",
+      },
+      "deep_research_start_request_received",
+    );
+  }
+
+  // Ensure user and conversation exist
+  // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
+  const setupResult = await ensureUserAndConversation(userId, conversationId, {
+    skipUserCreation: isX402User,
+  });
+  if (!setupResult.success) {
+    set.status = 500;
+    return { ok: false, error: setupResult.error || "Setup failed" };
+  }
+
+  // Setup conversation data
+  const dataSetup = await setupConversationData(
+    conversationId,
+    userId,
+    source,
+    false, // isExternal
+    message,
+    files.length,
+  );
+  if (!dataSetup.success) {
+    set.status = 500;
+    return { ok: false, error: dataSetup.error || "Data setup failed" };
+  }
+
+  const { conversationStateRecord, stateRecord } = dataSetup.data!;
+
+  // Create message record
+  const messageResult = await createMessageRecord({
+    conversationId,
+    userId,
+    message,
+    source,
+    stateId: stateRecord.id,
+    files,
+    isExternal: false,
+  });
+  if (!messageResult.success) {
+    set.status = 500;
+    return {
+      ok: false,
+      error: messageResult.error || "Message creation failed",
+    };
+  }
+
+  const createdMessage = messageResult.message!;
+
+  // Return immediately with message ID
+  // Include userId so external platforms (x402) can check status later
+  const response: DeepResearchStartResponse = {
+    messageId: createdMessage.id,
+    conversationId,
+    userId, // Important for x402 users who may not have provided one
+    status: "processing",
+  };
+
+  // Run the actual deep research in the background
+  // Don't await - let it run asynchronously
+  runDeepResearch({
+    stateRecord,
+    conversationStateRecord,
+    createdMessage,
+    files,
+    setupResult,
+  }).catch((err) => {
+    logger.error(
+      { err, messageId: createdMessage.id },
+      "deep_research_background_failed",
+    );
+  });
+
+  if (logger) {
+    logger.info(
+      { messageId: createdMessage.id, conversationId },
+      "deep_research_started",
+    );
+  }
+
+  return response;
 }
 
 /**
@@ -402,23 +406,29 @@ async function runDeepResearch(params: {
           );
         });
 
-        // const knowledgePromise = literatureAgent({
-        //   objective: task.objective,
-        //   type: "KNOWLEDGE",
-        // }).then(async (result) => {
-        //   task.output += `Knowledge literature results:\n${result.output}\n\n`;
-        //   if (conversationState.id) {
-        //     await updateState(conversationState.id, conversationState.values);
-        //     logger.info("knowledge_completed");
-        //   }
-        //   logger.info({ outputLength: result.output.length }, "knowledge_result_received");
-        // });
+        const knowledgePromise = literatureAgent({
+          objective: task.objective,
+          type: "KNOWLEDGE",
+        }).then(async (result) => {
+          task.output += `Knowledge literature results:\n${result.output}\n\n`;
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+            logger.info("knowledge_completed");
+          }
+          logger.info(
+            { outputLength: result.output.length },
+            "knowledge_result_received",
+          );
+        });
 
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
           edisonPromise,
-          // knowledgePromise,
+          knowledgePromise,
         ]);
 
         // Set end timestamp after all are done

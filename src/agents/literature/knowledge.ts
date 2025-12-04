@@ -1,16 +1,18 @@
 import { VectorSearchWithDocuments } from "../../embeddings/vectorSearchWithDocs";
 import logger from "../../utils/logger";
 
-// Initialize vector search with documents at module level
+const docsPath = process.env.KNOWLEDGE_DOCS_PATH;
+
 const vectorSearch = new VectorSearchWithDocuments();
 
-// Load documents on startup if KNOWLEDGE_DOCS_PATH is set
-const docsPath = process.env.KNOWLEDGE_DOCS_PATH;
-if (docsPath) {
-  logger.info(`Loading knowledge base documents from: ${docsPath}`);
-  await vectorSearch.loadDocsOnStartup(docsPath);
-} else {
-  logger.warn("KNOWLEDGE_DOCS_PATH not set, skipping document loading");
+export async function initKnowledgeBase() {
+  // Load documents on startup if KNOWLEDGE_DOCS_PATH is set
+  if (docsPath) {
+    logger.info(`Loading knowledge base documents from: ${docsPath}`);
+    await vectorSearch.loadDocsOnStartup(docsPath);
+  } else {
+    logger.warn("KNOWLEDGE_DOCS_PATH not set, skipping document loading");
+  }
 }
 
 /**

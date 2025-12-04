@@ -112,7 +112,7 @@ CHUNK_OVERLAP=200
 1. Get an OpenAI API key for embeddings (or use another embedding provider)
 2. (Optional) Get a Cohere API key for reranking - improves results significantly
 3. Place your knowledge base documents in the `docs/` directory
-   - Supported formats: PDF, Markdown, TXT
+   - Supported formats: PDF, Markdown (.md), DOCX, TXT
 4. Documents are automatically processed on server startup
 5. Embeddings are stored in PostgreSQL with pgvector
 
@@ -244,6 +244,34 @@ DATA_ANALYSIS_API_KEY=your-api-key
 - Returns analysis results
 
 **Choose one:** You only need either Edison OR BIO for analysis - not both.
+
+---
+
+## Character Configuration
+
+Your agent's personality and behavior are defined in `src/character.ts`. This is a simple system prompt that guides how your agent responds.
+
+**Configuration:**
+```typescript
+const character = {
+  name: "YourAgentName",
+  system: `Your system prompt here...`
+};
+```
+
+**What to customize:**
+- `name`: Your agent's name
+- `system`: The system prompt that defines your agent's personality, expertise, and response style
+
+The system prompt is automatically included in LLM calls for planning, hypothesis generation, and replies, ensuring consistent behavior throughout the research workflow.
+
+**Example use cases:**
+- Scientific research assistant with specific domain expertise
+- Medical literature reviewer
+- Data analysis expert
+- Domain-specific research agent
+
+---
 
 ### Development
 

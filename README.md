@@ -133,6 +133,7 @@ The Literature Agent includes multiple search backends:
 **To add custom knowledge:**
 
 1. Place documents in the `docs/` directory
+   - Supported formats: PDF, Markdown (.md), DOCX, TXT
 2. Documents are automatically processed on startup
 3. Vector embeddings are generated and stored
 4. Available to Literature Agent via KNOWLEDGE tasks
