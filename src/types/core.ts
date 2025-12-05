@@ -39,6 +39,7 @@ export type PlanTask = {
   start?: string;
   end?: string;
   output?: string;
+  artifacts?: Array<AnalysisArtifact>;
 };
 
 // Conversation state values interface (extends StateValues with persistent data)
@@ -112,17 +113,11 @@ export type UploadedFile = {
   metadata?: any;
 };
 
-export type DataAnalysisResult = {
+export type AnalysisArtifact = {
   id: string;
-  status: string;
-  success: boolean;
-  answer: string;
-  artifacts: Array<{
-    id: string;
-    description: string;
-    content: string;
-    filename: string;
-    path?: string;
-  }>;
-  question?: string;
+  description: string;
+  type: "FILE" | "FOLDER";
+  content?: string;
+  name: string;
+  path?: string;
 };

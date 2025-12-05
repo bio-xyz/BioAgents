@@ -10,7 +10,7 @@ export async function analyzeWithEdison(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-): Promise<string> {
+): Promise<{ output: string }> {
   const EDISON_API_URL = process.env.EDISON_API_URL;
   const EDISON_API_KEY = process.env.EDISON_API_KEY;
 
@@ -67,7 +67,9 @@ export async function analyzeWithEdison(
 
   logger.info({ taskId: taskResponse.task_id }, "edison_analysis_completed");
 
-  return result.answer || "No answer received from Edison";
+  return {
+    output: result.answer || "No answer received from Edison",
+  };
 }
 
 /**

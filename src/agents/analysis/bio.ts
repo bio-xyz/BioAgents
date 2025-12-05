@@ -1,7 +1,19 @@
-import { getStorageProvider } from "../../storage";
-import type { DataAnalysisResult } from "../../types/core";
+import {
+  getConversationBasePath,
+  getStorageProvider,
+  getUploadPath,
+} from "../../storage";
+import { type AnalysisArtifact } from "../../types/core";
 import logger from "../../utils/logger";
 import type { Dataset } from "./index";
+
+type BioDataAnalysisResult = {
+  id: string;
+  status: string;
+  success: boolean;
+  answer: string;
+  artifacts: Array<AnalysisArtifact>;
+};
 
 /**
  * Analyze data using Bio Data Analysis agent for deep analysis
@@ -11,7 +23,7 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-): Promise<string> {
+): Promise<{ output: string; artifacts: Array<AnalysisArtifact> }> {
   if (!objective) {
     logger.error("No question provided to Data Analysis Agent");
     throw new Error("No question provided to Data Analysis Agent");
@@ -37,12 +49,13 @@ export async function analyzeWithBio(
     "starting_bio_analysis",
   );
 
-  let taskResult: DataAnalysisResult;
+  let taskResult: BioDataAnalysisResult;
   try {
     const taskResponse = await startBioTask(
       DATA_ANALYSIS_API_URL,
       DATA_ANALYSIS_API_KEY,
       finalQuery,
+      getConversationBasePath(userId, conversationStateId),
       datasets,
     );
 
@@ -56,12 +69,18 @@ export async function analyzeWithBio(
       { err, objective, datasetCount: datasets.length },
       "bio_analysis_task_failed",
     );
-    return `Error performing Bio data analysis: ${
-      err instanceof Error ? err.message : "Unknown error"
-    }`;
+    return {
+      output: `Error performing Bio data analysis: ${
+        err instanceof Error ? err.message : "Unknown error"
+      }`,
+      artifacts: [],
+    };
   }
 
-  return taskResult.answer || "No answer received from Bio Data Analysis agent";
+  return {
+    output: taskResult.answer,
+    artifacts: taskResult.artifacts || [],
+  };
 }
 
 /**
@@ -133,20 +152,31 @@ async function startBioTask(
   apiUrl: string,
   apiKey: string,
   question: string,
+  basePath: string,
   datasets: Dataset[],
-): Promise<DataAnalysisResult> {
+): Promise<BioDataAnalysisResult> {
   const endpoint = `${apiUrl}/api/task/run/async`;
 
   const formData = new FormData();
   formData.append("task_description", question);
+  const isStorageProviderAvailable = getStorageProvider() ? true : false;
 
-  // Append each file individually with the field name 'data_files'
-  for (const dataset of datasets) {
-    if (dataset.content) {
-      const blob = new Blob([new Uint8Array(dataset.content)]);
-      formData.append("data_files", blob, dataset.filename);
+  if (isStorageProviderAvailable) {
+    // Append base path for stored files
+    formData.append("base_path", basePath);
+    for (const dataset of datasets) {
+      formData.append("file_paths", getUploadPath(dataset.filename));
+    }
+  } else {
+    // Append each file individually with the field name 'data_files'
+    for (const dataset of datasets) {
+      if (dataset.content) {
+        const blob = new Blob([new Uint8Array(dataset.content)]);
+        formData.append("data_files", blob, dataset.filename);
+      }
     }
   }
+
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -166,7 +196,7 @@ async function startBioTask(
     );
   }
 
-  return (await response.json()) as DataAnalysisResult;
+  return (await response.json()) as BioDataAnalysisResult;
 }
 
 /**
@@ -180,7 +210,7 @@ async function awaitBioTask(
   apiUrl: string,
   apiKey: string,
   taskId: string,
-): Promise<DataAnalysisResult> {
+): Promise<BioDataAnalysisResult> {
   const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes max wait
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
@@ -206,7 +236,7 @@ async function awaitBioTask(
       );
     }
 
-    const taskResult = (await response.json()) as DataAnalysisResult;
+    const taskResult = (await response.json()) as BioDataAnalysisResult;
 
     if (taskResult.status === "completed" && taskResult.success === true) {
       logger.info({ taskId }, "task_completed_successfully");

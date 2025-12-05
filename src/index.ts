@@ -1,5 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
+import { artifactsRoute } from "./routes/artifacts";
 import { authRoute } from "./routes/auth";
 import { chatRoute } from "./routes/chat";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
@@ -125,6 +126,7 @@ const app = new Elysia()
   .use(chatRoute) // GET and POST /api/chat for agent-based chat
   .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
+  .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
 
   // x402 payment routes (payment auth instead of API key)
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
@@ -174,15 +176,20 @@ app.listen(
   () => {
     if (logger) {
       logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
-      logger.info({
-        nodeEnv: process.env.NODE_ENV || "development",
-        isProduction,
-        authRequired: isProduction,
-        secretConfigured: hasSecret,
-      }, "auth_configuration");
+      logger.info(
+        {
+          nodeEnv: process.env.NODE_ENV || "development",
+          isProduction,
+          authRequired: isProduction,
+          secretConfigured: hasSecret,
+        },
+        "auth_configuration",
+      );
     } else {
       console.log(`Server listening on http://${hostname}:${port}`);
-      console.log(`Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`);
+      console.log(
+        `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
+      );
     }
   },
 );

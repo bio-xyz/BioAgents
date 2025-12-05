@@ -1,7 +1,6 @@
 import { useState } from "preact/hooks";
 import { Icon } from "./icons";
 import { InlineCitationText } from "./InlineCitationText";
-import { ArtifactViewer } from "./research";
 
 export function Message({ message }) {
   const isUser = message.role === "user";
@@ -39,19 +38,6 @@ export function Message({ message }) {
     return "file";
   };
 
-  // Get code execution results from thinking state
-  const getCodeExecutionResults = () => {
-    if (!message.thinkingState?.dataAnalysisResults) return [];
-    
-    return message.thinkingState.dataAnalysisResults.map((result) => ({
-      success: !result.error,
-      output: result.output || result.result,
-      error: result.error,
-      artifacts: result.artifacts || [],
-      executionTime: result.executionTime,
-    }));
-  };
-
   const renderContent = () => {
     if (isUser) {
       return (
@@ -77,16 +63,10 @@ export function Message({ message }) {
         </div>
       );
     } else {
-      const codeResults = getCodeExecutionResults();
-      const hasCodeResults = codeResults.length > 0;
-
       return (
         <div className="message-content-wrapper">
           {/* Use InlineCitationText component for citation support */}
           <InlineCitationText content={message.content} />
-
-          {/* Show code execution results and artifacts using new ArtifactViewer */}
-          {hasCodeResults && <ArtifactViewer results={codeResults} />}
 
           <div className="message-actions">
             <button
