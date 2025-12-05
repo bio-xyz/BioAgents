@@ -628,6 +628,8 @@ These molecular changes align with established longevity pathways (Converging nu
     });
 
     // Update conversation state with reflection results
+    conversationState.values.conversationTitle =
+      reflectionResult.conversationTitle;
     conversationState.values.currentObjective =
       reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;

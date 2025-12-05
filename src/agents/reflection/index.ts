@@ -7,6 +7,7 @@ import logger from "../../utils/logger";
 import { reflectOnWorld, type ReflectionDoc } from "./utils";
 
 type ReflectionResult = {
+  conversationTitle?: string;
   currentObjective?: string;
   keyInsights: string[];
   discoveries: string[];

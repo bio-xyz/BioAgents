@@ -45,6 +45,7 @@ export type PlanTask = {
 export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
   objective: string;
+  conversationTitle?: string; // Concise title for the conversation (updated by reflection agent)
   currentObjective?: string;
   currentLevel?: number; // Current level of tasks being executed (for UI visualization)
   keyInsights?: string[];
