@@ -43,13 +43,20 @@ export interface Message {
 
 // Client-side database operations
 export async function getConversationsByUser(userId: string) {
+  console.log("[supabase] Fetching conversations for user_id:", userId);
+  
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error("[supabase] Error fetching conversations:", error);
+    throw error;
+  }
+  
+  console.log("[supabase] Found conversations for userId:", data?.length || 0);
   return data;
 }
 
@@ -57,6 +64,8 @@ export async function getMessagesByConversation(
   conversationId: string,
   limit?: number
 ) {
+  console.log("[supabase] Fetching messages for conversation_id:", conversationId);
+  
   let query = supabase
     .from("messages")
     .select("*")
@@ -69,7 +78,12 @@ export async function getMessagesByConversation(
 
   const { data, error } = await query;
 
-  if (error) throw error;
+  if (error) {
+    console.error("[supabase] Error fetching messages:", error);
+    throw error;
+  }
+  
+  console.log("[supabase] Found messages:", data?.length || 0);
   return data;
 }
 
@@ -109,5 +123,42 @@ export async function getStatesByConversation(conversationId: string) {
     .order("created_at", { ascending: true }); // Get all states in chronological order
 
   if (error) throw error;
+  return data;
+}
+
+/**
+ * Get the conversation state (persistent research state) for a conversation
+ * This contains the hypothesis, insights, datasets, suggested next steps, etc.
+ */
+export async function getConversationState(conversationId: string) {
+  // First get the conversation to find the conversation_state_id
+  const { data: conversation, error: convError } = await supabase
+    .from("conversations")
+    .select("conversation_state_id")
+    .eq("id", conversationId)
+    .single();
+
+  if (convError) {
+    // If conversation not found, return null (not an error)
+    if (convError.code === "PGRST116") return null;
+    throw convError;
+  }
+
+  if (!conversation?.conversation_state_id) {
+    return null;
+  }
+
+  // Fetch the conversation state
+  const { data, error } = await supabase
+    .from("conversation_states")
+    .select("*")
+    .eq("id", conversation.conversation_state_id)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+
   return data;
 }

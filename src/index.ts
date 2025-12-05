@@ -1,18 +1,17 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
-import { x402Middleware } from "./middleware/x402";
+import { artifactsRoute } from "./routes/artifacts";
 import { authRoute } from "./routes/auth";
-import { chatRoute, chatRouteGet } from "./routes/chat";
-import {
-  deepResearchStartGet,
-  deepResearchStartRoute,
-} from "./routes/deep-research/start";
+import { chatRoute } from "./routes/chat";
+import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { x402Route } from "./routes/x402";
+import { x402ChatRoute } from "./routes/x402/chat";
+import { x402DeepResearchRoute } from "./routes/x402/deep-research";
 import logger from "./utils/logger";
 
 const app = new Elysia()
-  // Enable CORS for frontend access + x402 headers
+  // Enable CORS for frontend access
   .use(
     cors({
       origin: true, // Allow all origins (Coolify handles domain routing)
@@ -20,15 +19,16 @@ const app = new Elysia()
       allowedHeaders: [
         "Content-Type",
         "Authorization",
-        "X-PAYMENT",
+        "X-API-Key",
         "X-Requested-With",
+        "X-PAYMENT", // x402 payment proof header
       ],
-      exposeHeaders: ["X-PAYMENT-RESPONSE", "Content-Type"],
+      exposeHeaders: [
+        "Content-Type",
+        "X-PAYMENT-RESPONSE", // x402 settlement response header
+      ],
     }),
   )
-
-  // Apply x402 payment gating (only active when enabled via config)
-  .use(x402Middleware())
 
   // Basic request logging (optional)
   .onRequest(({ request }) => {
@@ -45,7 +45,6 @@ const app = new Elysia()
 
   // Mount auth routes (no protection needed for auth endpoints)
   .use(authRoute)
-  .use(x402Route)
 
   // Note: We always serve UI files regardless of auth status
   // The frontend (useAuth hook) will check /api/auth/status and show login screen if needed
@@ -124,11 +123,15 @@ const app = new Elysia()
   })
 
   // API routes (not protected by UI auth)
-  .use(chatRouteGet) // GET /api/chat for x402scan discovery
-  .use(chatRoute) // POST /api/chat for actual chat
-  .use(deepResearchStartGet) // GET /api/deep-research/start for x402scan discovery
-  .use(deepResearchStartRoute) // POST /api/deep-research/start to start deep research
+  .use(chatRoute) // GET and POST /api/chat for agent-based chat
+  .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
+  .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
+
+  // x402 payment routes (payment auth instead of API key)
+  .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
+  .use(x402ChatRoute) // POST /api/x402/chat for payment-gated chat
+  .use(x402DeepResearchRoute) // POST /api/x402/deep-research/start, GET /api/x402/deep-research/status/:messageId
 
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI
@@ -161,14 +164,32 @@ const app = new Elysia()
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 const hostname = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for Docker/Coolify
 
+// Log startup configuration
+const isProduction = process.env.NODE_ENV === "production";
+const hasSecret = !!process.env.BIOAGENTS_SECRET;
+
 app.listen(
   {
     port,
     hostname,
   },
   () => {
-    if (logger)
+    if (logger) {
       logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
-    else console.log(`Server listening on http://${hostname}:${port}`);
+      logger.info(
+        {
+          nodeEnv: process.env.NODE_ENV || "development",
+          isProduction,
+          authRequired: isProduction,
+          secretConfigured: hasSecret,
+        },
+        "auth_configuration",
+      );
+    } else {
+      console.log(`Server listening on http://${hostname}:${port}`);
+      console.log(
+        `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
+      );
+    }
   },
 );

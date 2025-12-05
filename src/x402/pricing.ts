@@ -114,11 +114,20 @@ export function getTotalPremiumToolsPrice(): number {
  * - Simpler to implement
  */
 export const routePricing: RoutePricing[] = [
+
+  // x402 payment routes
   {
-    route: "/api/chat",
-    priceUSD: "0.01", // Simple flat rate: $0.01 per chat request
-    description: "Chat API access (includes all tools)",
+    route: "/api/x402/chat",
+    priceUSD: "0.01", // Same as standard chat
+    description: "Chat API access via x402 payment",
   },
+  {
+    route: "/api/x402/deep-research/start",
+    priceUSD: "0.025", // Higher price for deep research (more resources)
+    description: "Deep research initiation via x402 payment",
+  },
+  // Note: /api/x402/deep-research/status/:messageId is FREE (no payment)
+  // Security: Handler validates ownership via userId query param
 ];
 
 /**

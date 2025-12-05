@@ -191,13 +191,22 @@ export class VectorSearchWithReranker {
         logger.info(
           `🔄 Processing document ${index + 1}/${documents.length}: ${doc.title}`,
         );
-        const embedding = await this.embeddingProvider.generateEmbedding(
-          `${doc.title}\n${doc.content}`,
-        );
-        return {
-          ...doc,
-          embedding,
-        };
+        try {
+          const embedding = await this.embeddingProvider.generateEmbedding(
+            `${doc.title}\n${doc.content}`,
+          );
+          return {
+            ...doc,
+            embedding,
+          };
+        } catch (embeddingError: any) {
+          logger.error(
+            `Failed to generate embedding for ${doc.title}: ${embeddingError.message}`,
+          );
+          throw new Error(
+            `Embedding generation failed for ${doc.title}: ${embeddingError.message}`,
+          );
+        }
       }),
     );
 

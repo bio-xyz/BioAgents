@@ -2,6 +2,7 @@ import matter from "front-matter";
 import fs from "fs/promises";
 import mammoth from "mammoth";
 import path from "path";
+import { PDFParse } from "pdf-parse";
 import logger from "../utils/logger";
 
 export interface ProcessedDocument {
@@ -38,6 +39,22 @@ export class DocumentProcessor {
           const buffer = await fs.readFile(filePath);
           const result = await mammoth.extractRawText({ buffer });
           content = result.value;
+          break;
+
+        case ".pdf":
+          try {
+            const parser = new PDFParse({ url: filePath });
+            const pdfResult = await parser.getText();
+            await parser.destroy();
+            content = pdfResult.text;
+          } catch (pdfError: any) {
+            logger.error(
+              `PDF parsing error for ${fileName}: ${pdfError.message}`,
+            );
+            throw new Error(
+              `Failed to parse PDF ${fileName}: ${pdfError.message}`,
+            );
+          }
           break;
 
         default:

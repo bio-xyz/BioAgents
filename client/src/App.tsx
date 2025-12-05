@@ -6,13 +6,13 @@ import { ErrorMessage } from "./components/ErrorMessage";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
+import { ResearchStatePanel } from "./components/research";
 import { Sidebar } from "./components/Sidebar";
-import { StreamingResponse } from "./components/StreamingResponse";
-import { ThinkingSteps } from "./components/ThinkingSteps";
 import { ToastContainer } from "./components/Toast";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { Modal } from "./components/ui/Modal";
 import { WelcomeScreen } from "./components/WelcomeScreen";
+import { ConversationProvider } from "./providers/ConversationProvider";
 
 // Custom hooks
 import {
@@ -106,11 +106,12 @@ export function App() {
     switchSession,
   } = useSessions(actualUserId || undefined);
 
-  // Real-time states for thinking visualization
-  const { currentState, isLoading: isLoadingStates } = useStates(
-    userId,
-    currentSessionId,
-  );
+  // Real-time states for thinking visualization and research state
+  const {
+    currentState,
+    conversationState,
+    isLoading: isLoadingStates,
+  } = useStates(userId, currentSessionId);
 
   // Chat API
   const {
@@ -120,6 +121,7 @@ export function App() {
     sendMessage,
     sendDeepResearchMessage,
     clearError,
+    clearLoading,
     pendingPayment,
     confirmPayment,
     cancelPayment,
@@ -163,7 +165,52 @@ export function App() {
   // Track which message is currently loading (for matching with state updates)
   const [loadingMessageId, setLoadingMessageId] = useState<string | null>(null);
 
+  // Track if we're in deep research mode (simplified - just shows typing indicator)
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
+
+  // Research state panel visibility (collapsed by default)
+  const [isResearchPanelExpanded, setIsResearchPanelExpanded] = useState(false);
+
   const messages = currentSession.messages;
+
+  // Extract research state from conversation state (persistent) for display
+  // Falls back to currentState.values for backward compatibility during active sessions
+  const researchState = conversationState?.values
+    ? {
+        plan: conversationState.values.plan,
+        discoveries: conversationState.values.discoveries,
+        keyInsights: conversationState.values.keyInsights,
+        methodology: conversationState.values.methodology,
+        currentObjective: conversationState.values.currentObjective,
+        uploadedDatasets: conversationState.values.uploadedDatasets,
+        currentHypothesis: conversationState.values.currentHypothesis,
+        suggestedNextSteps: conversationState.values.suggestedNextSteps,
+      }
+    : currentState?.values
+      ? {
+          // Fallback to message-level state during active processing
+          plan: currentState.values.plan,
+          discoveries: currentState.values.discoveries,
+          keyInsights: currentState.values.keyInsights,
+          methodology: currentState.values.methodology,
+          currentObjective: currentState.values.currentObjective,
+          uploadedDatasets: currentState.values.uploadedDatasets,
+          currentHypothesis: currentState.values.currentHypothesis,
+          suggestedNextSteps: currentState.values.suggestedNextSteps,
+        }
+      : null;
+
+  // Check if we have an active research session for the CURRENT conversation
+  // Only show research state if:
+  // 1. We have a research state
+  // 2. The conversation has messages (not a new blank conversation)
+  // 3. The research state has meaningful content
+  const hasActiveResearch =
+    researchState &&
+    messages.length > 0 &&
+    (researchState.currentHypothesis ||
+      researchState.plan?.length > 0 ||
+      researchState.suggestedNextSteps?.length > 0);
 
   // Check if the current conversation is the one that's loading
   const isCurrentConversationLoading =
@@ -180,7 +227,28 @@ export function App() {
   // Clear loading message ID when switching conversations
   useEffect(() => {
     setLoadingMessageId(null);
+    setIsDeepResearch(false);
   }, [currentSessionId]);
+
+  // Detect when deep research completes via real-time message updates
+  useEffect(() => {
+    if (!isDeepResearch || !isCurrentConversationLoading) return;
+
+    // Check if a new assistant message appeared (via real-time subscription)
+    // The last message should be an assistant message when research completes
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage && lastMessage.role === "assistant") {
+      console.log("[App] Deep research completed - assistant message detected");
+
+      // Clear all loading states
+      setIsDeepResearch(false);
+      setLoadingConversationId(null);
+      setLoadingMessageId(null);
+      clearLoading(); // Clear the loading state in useChatAPI
+      scrollToBottom();
+    }
+  }, [messages, isDeepResearch, isCurrentConversationLoading]);
 
   // Watch for deep research completion
   useEffect(() => {
@@ -221,8 +289,6 @@ export function App() {
           steps: currentState.values.steps,
           source: currentState.values.source,
           thought: currentState.values.thought,
-          edisonResults: currentState.values.edisonResults,
-          dataAnalysisResults: currentState.values.dataAnalysisResults,
         };
 
         // Add final message
@@ -259,7 +325,7 @@ export function App() {
     embeddedWalletClient,
   ]);
 
-  // Fetch and attach all states to messages when conversation loads
+  // Fetch and attach all states to messages when conversation loads or new messages arrive
   useEffect(() => {
     if (!currentSessionId || !userId) return;
     if (messages.length === 0) return;
@@ -284,46 +350,86 @@ export function App() {
         const { getStatesByConversation } = await import("./lib/supabase");
         const states = await getStatesByConversation(currentSessionId);
 
-        if (!states || states.length === 0) return;
+        if (!states || states.length === 0) {
+          console.log("[App] No states found yet, will retry...");
+          return false; // Indicate we should retry
+        }
 
         console.log("[App] Fetched", states.length, "states for conversation");
 
-        // Match states to messages (each state corresponds to one assistant response)
-        // States are in chronological order, matching the order of assistant messages
+        // Create a map of messageId -> state for quick lookup
+        const stateByMessageId = new Map<string, any>();
+        for (const state of states) {
+          if (state.values?.messageId) {
+            stateByMessageId.set(state.values.messageId, state);
+          }
+        }
+        console.log("[App] States with messageId:", stateByMessageId.size);
+
+        // Match states to messages
+        // Priority 1: Match by dbMessageId if available
+        // Priority 2: Fall back to chronological order
         let stateIndex = 0;
+        let attachedCount = 0;
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((msg) => {
-            if (
-              msg.role === "assistant" &&
-              !msg.thinkingState &&
-              stateIndex < states.length
-            ) {
-              const state = states[stateIndex];
-              stateIndex++;
-
-              if (state.values && state.values.steps) {
-                console.log("[App] Attaching state to message:", msg.id);
-                return {
-                  ...msg,
-                  thinkingState: {
-                    steps: state.values.steps,
-                    source: state.values.source,
-                    thought: state.values.thought,
-                    edisonResults: state.values.edisonResults,
-                    dataAnalysisResults: state.values.dataAnalysisResults,
-                  },
-                };
-              }
+            if (msg.role !== "assistant" || msg.thinkingState) {
+              return msg;
             }
+
+            // Try to find state by dbMessageId first
+            let state = msg.dbMessageId
+              ? stateByMessageId.get(msg.dbMessageId)
+              : null;
+
+            // Fall back to chronological matching
+            if (!state && stateIndex < states.length) {
+              state = states[stateIndex];
+              stateIndex++;
+            }
+
+            if (state?.values) {
+              console.log(
+                "[App] Attaching state to message:",
+                msg.id,
+                "dbMessageId:",
+                msg.dbMessageId,
+              );
+              attachedCount++;
+              return {
+                ...msg,
+                thinkingState: {
+                  steps: state.values.steps,
+                  source: state.values.source,
+                  thought: state.values.thought,
+                },
+              };
+            }
+
             return msg;
           }),
         );
+
+        return attachedCount > 0; // Success if we attached at least one state
       } catch (err) {
         console.error("[App] Error fetching states:", err);
+        return false;
       }
     }
 
-    fetchAndAttachStates();
+    // Add delay before fetching to ensure backend has saved the state
+    // This is needed because real-time message arrives before state is saved
+    const timeoutId = setTimeout(async () => {
+      const success = await fetchAndAttachStates();
+
+      // If no states found, retry after a longer delay (state might still be saving)
+      if (!success && messagesNeedingStates.length > 0) {
+        console.log("[App] Retrying state fetch in 2s...");
+        setTimeout(fetchAndAttachStates, 2000);
+      }
+    }, 500); // 500ms initial delay
+
+    return () => clearTimeout(timeoutId);
   }, [currentSessionId, userId, messages.length]);
 
   /**
@@ -421,7 +527,6 @@ export function App() {
           setLoadingMessageId(null);
         } else if (response.status === "processing") {
           // Research started - the state will update in real-time via subscription
-          // The StreamingResponse component will show the finalResponse as it streams
           // Keep loading state active - don't clear it yet
           console.log(
             "[App] Deep research started, messageId:",
@@ -430,6 +535,7 @@ export function App() {
 
           // Store the message ID so we can match state updates to this specific message
           setLoadingMessageId(response.messageId);
+          setIsDeepResearch(true);
         }
 
         // Clear pending message data
@@ -448,40 +554,12 @@ export function App() {
 
         // Only continue if we got a response (not empty from payment confirmation)
         if (response.text) {
-          // Give a small delay for state to be fully updated via subscription
-          await new Promise((resolve) => setTimeout(resolve, 200));
-
-          // Capture the current thinking state after delay
-          const capturedState =
-            currentState && currentState.values && currentState.values.steps
-              ? {
-                  steps: currentState.values.steps,
-                  source: currentState.values.source,
-                  thought: currentState.values.thought,
-                  edisonResults: currentState.values.edisonResults,
-                  dataAnalysisResults: currentState.values.dataAnalysisResults,
-                }
-              : undefined;
-
           console.log(
-            "[App] Captured thinking state for message:",
-            capturedState,
+            "[App] Response received, real-time subscription will add message",
           );
 
-          // Use the streamed finalResponse if available, otherwise fall back to response.text
-          const finalText = response.text;
-
-          console.log("[App] Final text:", finalText);
-          console.log("[App] Response text:", response.text);
-
-          // Create final message directly (no animation needed since we showed it in real-time)
-          addMessage({
-            id: Date.now(),
-            role: "assistant" as const,
-            content: finalText,
-            files: response.files,
-            thinkingState: capturedState,
-          });
+          // DON'T add message here - let real-time UPDATE handler add it
+          // This prevents race condition duplicates
 
           scrollToBottom();
 
@@ -541,7 +619,11 @@ export function App() {
 
   // Show main app
   return (
-    <>
+    <ConversationProvider
+      userId={userId}
+      conversationId={currentSessionId}
+      conversationStateId={conversationState?.id}
+    >
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <div className="app">
         {/* Mobile overlay */}
@@ -896,33 +978,22 @@ export function App() {
                   <Message key={msg.id} message={msg} />
                 ))}
 
-                {/* Show live thinking steps only for current loading message */}
-                {isCurrentConversationLoading &&
-                  currentState?.values?.conversationId === currentSessionId &&
-                  (loadingMessageId === null ||
-                    currentState?.values?.messageId === loadingMessageId) &&
-                  currentState?.values?.steps &&
-                  Object.keys(currentState.values.steps).length > 0 && (
-                    <ThinkingSteps state={currentState.values} />
-                  )}
+                {/* Show typing indicator when loading */}
+                {isCurrentConversationLoading && <TypingIndicator />}
 
-                {/* Show streaming response in real-time */}
-                {isCurrentConversationLoading &&
-                  currentState?.values?.conversationId === currentSessionId &&
-                  (loadingMessageId === null ||
-                    currentState?.values?.messageId === loadingMessageId) &&
-                  currentState.values.finalResponse && (
-                    <StreamingResponse
-                      finalResponse={currentState.values.finalResponse}
+                {/* Show research state panel when we have an active research session */}
+                {hasActiveResearch && !isCurrentConversationLoading && (
+                  <div className="research-section-container">
+                    {/* Research State Panel */}
+                    <ResearchStatePanel
+                      state={researchState}
+                      isExpanded={isResearchPanelExpanded}
+                      onToggle={() =>
+                        setIsResearchPanelExpanded(!isResearchPanelExpanded)
+                      }
                     />
-                  )}
-
-                {isCurrentConversationLoading &&
-                  (!currentState?.values?.finalResponse ||
-                    currentState?.values?.conversationId !== currentSessionId ||
-                    (loadingMessageId !== null &&
-                      currentState?.values?.messageId !==
-                        loadingMessageId)) && <TypingIndicator />}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -995,36 +1066,12 @@ export function App() {
             const response = await confirmPayment();
 
             if (response && response.text) {
-              // Give a small delay for state to be fully updated via subscription
-              await new Promise((resolve) => setTimeout(resolve, 200));
-
-              // Capture the current thinking state after delay
-              const capturedState =
-                currentState && currentState.values && currentState.values.steps
-                  ? {
-                      steps: currentState.values.steps,
-                      source: currentState.values.source,
-                      thought: currentState.values.thought,
-                    }
-                  : undefined;
-
               console.log(
-                "[App] Captured thinking state for payment message:",
-                capturedState,
+                "[App] Payment response received, real-time subscription will add message",
               );
 
-              // Use the streamed finalResponse if available, otherwise fall back to response.text
-              const finalText =
-                currentState?.values?.finalResponse || response.text;
-
-              // Create final message directly (no animation needed since we showed it in real-time)
-              addMessage({
-                id: Date.now(),
-                role: "assistant" as const,
-                content: finalText,
-                files: response.files,
-                thinkingState: capturedState,
-              });
+              // DON'T add message here - let real-time UPDATE handler add it
+              // This prevents race condition duplicates
 
               scrollToBottom();
 
@@ -1042,6 +1089,6 @@ export function App() {
           }}
         />
       )}
-    </>
+    </ConversationProvider>
   );
 }
