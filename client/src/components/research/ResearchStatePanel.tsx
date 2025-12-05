@@ -1,10 +1,20 @@
 import { useState } from "preact/hooks";
 import { Icon } from "../icons";
+import { ArtifactViewer } from "./ArtifactViewer";
 
 interface Dataset {
   id: string;
   filename: string;
   description: string;
+}
+
+interface AnalysisArtifact {
+  id: string;
+  description: string;
+  type: "FILE" | "FOLDER";
+  content?: string;
+  name: string;
+  path?: string;
 }
 
 interface PlanStep {
@@ -14,6 +24,7 @@ interface PlanStep {
   datasets?: Dataset[];
   start?: string;
   end?: string;
+  artifacts?: AnalysisArtifact[];
 }
 
 interface ResearchState {
@@ -32,8 +43,14 @@ interface Props {
   onToggle?: () => void;
 }
 
-export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Props) {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+export function ResearchStatePanel({
+  state,
+  isExpanded = false,
+  onToggle,
+}: Props) {
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >({
     hypothesis: true,
     discoveries: false,
     insights: false,
@@ -41,10 +58,12 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
     datasets: false,
     plan: false,
   });
-  
+
   // Track which step outputs are expanded
-  const [expandedStepOutputs, setExpandedStepOutputs] = useState<Record<number, boolean>>({});
-  
+  const [expandedStepOutputs, setExpandedStepOutputs] = useState<
+    Record<number, boolean>
+  >({});
+
   const toggleStepOutput = (index: number) => {
     setExpandedStepOutputs((prev) => ({
       ...prev,
@@ -60,7 +79,10 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
   };
 
   const formatStepType = (type: string) => {
-    const types: Record<string, { label: string; icon: string; color: string }> = {
+    const types: Record<
+      string,
+      { label: string; icon: string; color: string }
+    > = {
       LITERATURE: { label: "Literature Search", icon: "📚", color: "#8b5cf6" },
       ANALYSIS: { label: "Data Analysis", icon: "📊", color: "#06b6d4" },
       HYPOTHESIS: { label: "Hypothesis", icon: "💡", color: "#f59e0b" },
@@ -79,7 +101,10 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push({ type: "text", content: text.slice(lastIndex, match.index) });
+        parts.push({
+          type: "text",
+          content: text.slice(lastIndex, match.index),
+        });
       }
       parts.push({ type: "link", text: match[1], url: match[2] });
       lastIndex = match.index + match[0].length;
@@ -107,7 +132,7 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
         </a>
       ) : (
         <span key={i}>{part.content}</span>
-      )
+      ),
     );
   };
 
@@ -139,7 +164,9 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
                 <span className="research-section-icon">🎯</span>
                 Current Objective
               </div>
-              <p className="research-objective-text">{state.currentObjective}</p>
+              <p className="research-objective-text">
+                {state.currentObjective}
+              </p>
             </div>
           )}
 
@@ -267,7 +294,9 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
               </button>
               {expandedSections.methodology && (
                 <div className="research-section-body">
-                  <p className="research-methodology-text">{state.methodology}</p>
+                  <p className="research-methodology-text">
+                    {state.methodology}
+                  </p>
                 </div>
               )}
             </div>
@@ -297,7 +326,9 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
                       <div key={dataset.id} className="research-dataset-item">
                         <Icon name="file" size={14} />
                         <div className="research-dataset-info">
-                          <span className="research-dataset-name">{dataset.filename}</span>
+                          <span className="research-dataset-name">
+                            {dataset.filename}
+                          </span>
                           <span className="research-dataset-description">
                             {dataset.description}
                           </span>
@@ -334,46 +365,83 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
                       const stepInfo = formatStepType(step.type);
                       const isOutputExpanded = expandedStepOutputs[i] || false;
                       const outputPreviewLength = 300;
-                      const needsTruncation = step.output && step.output.length > outputPreviewLength;
-                      
+                      const needsTruncation =
+                        step.output && step.output.length > outputPreviewLength;
+
                       return (
                         <div key={i} className="research-step-item completed">
                           <div className="research-step-header">
                             <div
                               className="research-step-type"
-                              style={{ background: `${stepInfo.color}15`, color: stepInfo.color }}
+                              style={{
+                                background: `${stepInfo.color}15`,
+                                color: stepInfo.color,
+                              }}
                             >
-                              <span className="research-step-emoji">{stepInfo.icon}</span>
+                              <span className="research-step-emoji">
+                                {stepInfo.icon}
+                              </span>
                               {stepInfo.label}
                             </div>
                           </div>
-                          <p className="research-step-objective">{step.objective}</p>
-                          
+                          <p className="research-step-objective">
+                            {step.objective}
+                          </p>
+
                           {/* Step datasets */}
                           {step.datasets && step.datasets.length > 0 && (
                             <div className="research-step-datasets">
                               {step.datasets.map((ds, di) => (
-                                <span key={di} className="research-step-dataset-badge">
+                                <span
+                                  key={di}
+                                  className="research-step-dataset-badge"
+                                >
                                   <Icon name="file" size={12} />
                                   {ds.filename}
                                 </span>
                               ))}
                             </div>
                           )}
-                          
+
+                          {/* Step artifacts */}
+                          {step.artifacts && step.artifacts.length > 0 && (
+                            <div
+                              className="research-step-artifacts"
+                              style={{ marginTop: "8px" }}
+                            >
+                              <ArtifactViewer
+                                results={[
+                                  {
+                                    success: true,
+                                    artifacts: step.artifacts.map((a) => ({
+                                      id: a.id,
+                                      filename: a.name,
+                                      content: a.content || "",
+                                      description: a.description,
+                                      path: a.path,
+                                    })),
+                                  },
+                                ]}
+                                defaultExpanded={false}
+                              />
+                            </div>
+                          )}
+
                           {/* Step output with expand/collapse */}
                           {step.output && (
                             <div className="research-step-output">
                               <pre className="research-step-output-content">
-                                {isOutputExpanded 
-                                  ? step.output 
-                                  : needsTruncation 
-                                    ? step.output.slice(0, outputPreviewLength) + "..."
-                                    : step.output
-                                }
+                                {isOutputExpanded
+                                  ? step.output
+                                  : needsTruncation
+                                    ? step.output.slice(
+                                        0,
+                                        outputPreviewLength,
+                                      ) + "..."
+                                    : step.output}
                               </pre>
                               {needsTruncation && (
-                                <button 
+                                <button
                                   className="research-step-output-toggle"
                                   onClick={() => toggleStepOutput(i)}
                                 >
@@ -385,7 +453,9 @@ export function ResearchStatePanel({ state, isExpanded = false, onToggle }: Prop
                                   ) : (
                                     <>
                                       <Icon name="chevronDown" size={12} />
-                                      Show full output ({Math.round(step.output.length / 1000)}k chars)
+                                      Show full output (
+                                      {Math.round(step.output.length / 1000)}k
+                                      chars)
                                     </>
                                   )}
                                 </button>

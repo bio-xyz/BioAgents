@@ -6,7 +6,6 @@ import {
   supabase,
 } from "../lib/supabase";
 import { generateConversationId } from "../utils/helpers";
-import { DataAnalysisResult, EdisonResult } from "./useStates";
 
 export interface Message {
   id: number;
@@ -27,8 +26,6 @@ export interface Message {
     steps: Record<string, { start: number; end?: number }>;
     source?: string;
     thought?: string;
-    edisonResults?: Array<EdisonResult>;
-    dataAnalysisResults?: Array<DataAnalysisResult>;
   };
 }
 
@@ -102,16 +99,19 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
 function getOrCreateDevUserId(): string {
   const STORAGE_KEY = "dev_user_id";
   const stored = localStorage.getItem(STORAGE_KEY);
-  
+
   // Migration: If stored ID is old format (dev_user_*), clear it and generate new UUID
   if (stored && stored.startsWith("dev_user_")) {
-    console.log("[useSessions] Migrating old dev user ID to UUID format:", stored);
+    console.log(
+      "[useSessions] Migrating old dev user ID to UUID format:",
+      stored,
+    );
     localStorage.removeItem(STORAGE_KEY);
     // Fall through to create new UUID
   } else if (stored) {
     return stored;
   }
-  
+
   const newId = generateConversationId();
   localStorage.setItem(STORAGE_KEY, newId);
   console.log("[useSessions] Created new persistent dev user ID:", newId);
@@ -516,7 +516,9 @@ export function useSessions(walletUserId?: string): UseSessionsReturn {
                 // No assistant message exists yet at nextIndex
                 // Check if this content already exists ANYWHERE in messages (race condition protection)
                 const contentAlreadyExists = messages.some(
-                  (m) => m.role === "assistant" && m.content.trim() === updatedContent
+                  (m) =>
+                    m.role === "assistant" &&
+                    m.content.trim() === updatedContent,
                 );
 
                 if (contentAlreadyExists) {

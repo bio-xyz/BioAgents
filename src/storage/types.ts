@@ -39,6 +39,19 @@ export abstract class StorageProvider {
   abstract exists(path: string): Promise<boolean>;
 
   /**
+   * Generate a presigned URL for downloading a file
+   * @param path - The path of the file
+   * @param expiresIn - URL expiration time in seconds (default: 3600)
+   * @param filename - Optional filename for Content-Disposition header (forces download)
+   * @returns A presigned URL for downloading the file
+   */
+  abstract getPresignedUrl(
+    path: string,
+    expiresIn?: number,
+    filename?: string,
+  ): Promise<string>;
+
+  /**
    * Download a file from a user's conversation storage
    * @param userId - ID of the user
    * @param conversationStateId - ID of the conversation state
@@ -57,6 +70,28 @@ export abstract class StorageProvider {
     logger.info({ filename, fullPath }, "fetching_file_from_storage");
 
     return await this.download(fullPath);
+  }
+
+  /**
+   * Get a presigned URL for a file in a user's conversation storage
+   * @param userId - ID of the user
+   * @param conversationStateId - ID of the conversation state
+   * @param relativePath - Relative path of the file within the conversation storage
+   * @param expiresIn - URL expiration time in seconds (default: 3600)
+   * @returns A presigned URL for downloading the file
+   */
+  async getPresignedUrlForConversationFile(
+    userId: string,
+    conversationStateId: string,
+    relativePath: string,
+    expiresIn?: number,
+  ): Promise<string> {
+    const basePath = getConversationBasePath(userId, conversationStateId);
+    const fullPath = `${basePath}/${relativePath}`;
+
+    logger.info({ relativePath, fullPath }, "generating_presigned_url");
+
+    return await this.getPresignedUrl(fullPath, expiresIn);
   }
 }
 

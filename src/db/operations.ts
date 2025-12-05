@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { AnalysisArtifact, PlanTask } from "../types/core";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -83,7 +84,7 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
   isNew: boolean;
 }> {
   const normalizedWallet = walletAddress.toLowerCase();
-  
+
   // Try to find existing user
   const existingUser = await getUserByWallet(normalizedWallet);
   if (existingUser) {
@@ -186,22 +187,8 @@ export async function createState(stateData: { values: any }) {
  * These large fields are kept in memory for processing but not persisted
  */
 export async function updateState(id: string, values: any) {
-  // Clone values to avoid mutating the original in-memory state
-  const cleanedValues = { ...values };
-  
-  // Strip buffers and parsedText from rawFiles if present
-  // These can be very large (MBs) and cause Supabase JSONB write timeouts
-  if (cleanedValues.rawFiles?.length) {
-    cleanedValues.rawFiles = cleanedValues.rawFiles.map((f: any) => ({
-      filename: f.filename,
-      mimeType: f.mimeType,
-      metadata: f.metadata,
-      size: f.buffer?.length || f.size,
-      // ❌ buffer: stripped (can be several MB)
-      // ❌ parsedText: stripped (can be hundreds of KB)
-    }));
-  }
-  
+  const cleanedValues = cleanValues(values);
+
   const { data, error } = await supabase
     .from("states")
     .update({ values: cleanedValues })
@@ -237,9 +224,10 @@ export async function createConversationState(stateData: { values: any }) {
 }
 
 export async function updateConversationState(id: string, values: any) {
+  const cleanedValues = cleanValues(values);
   const { data, error } = await supabase
     .from("conversation_states")
-    .update({ values })
+    .update({ values: cleanedValues })
     .eq("id", id)
     .select()
     .single();
@@ -285,4 +273,58 @@ export async function updateConversation(
 
   if (error) throw error;
   return data;
+}
+
+// Helper to clean large fields from state values before persisting
+function cleanValues(values: any): any {
+  const cleanedValues = { ...values };
+
+  // Strip buffers and parsedText from rawFiles if present
+  if (cleanedValues.rawFiles?.length) {
+    cleanedValues.rawFiles = cleanedValues.rawFiles.map((f: any) => ({
+      ...f,
+      buffer: undefined,
+      parsedText: undefined,
+    }));
+  }
+
+  // Strip buffers from datasets if present
+  if (cleanedValues.uploadedDatasets?.length) {
+    cleanedValues.uploadedDatasets = cleanedValues.uploadedDatasets.map(
+      (d: any) => ({
+        ...d,
+        content: undefined,
+      }),
+    );
+  }
+
+  // Strip buffers from plan datasets if present
+  if (cleanedValues.plan?.length) {
+    cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
+      if (task.datasets?.length) {
+        const cleanedDatasets = task.datasets.map((d: any) => ({
+          ...d,
+          content: undefined,
+        }));
+        return { ...task, datasets: cleanedDatasets };
+      }
+      return task;
+    });
+  }
+
+  // Strip content from plan artifacts if present
+  if (cleanedValues.plan?.length) {
+    cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
+      if (task.artifacts?.length) {
+        const cleanedArtifacts = task.artifacts.map((a: AnalysisArtifact) => ({
+          ...a,
+          content: undefined,
+        }));
+        return { ...task, artifacts: cleanedArtifacts };
+      }
+      return task;
+    });
+  }
+
+  return cleanedValues;
 }

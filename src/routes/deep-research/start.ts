@@ -553,6 +553,7 @@ These molecular changes align with established longevity pathways (Converging nu
           }
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
+          task.artifacts = analysisResult.artifacts || [];
 
           if (conversationState.id) {
             await updateConversationState(

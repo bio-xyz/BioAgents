@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { supabase, getConversationState } from "../lib/supabase";
+import { getConversationState, supabase } from "../lib/supabase";
 
 export interface ToolState {
   start: number;
@@ -15,8 +15,6 @@ export interface StateValues {
   thought?: string;
   finalResponse?: string;
   isDeepResearch?: boolean;
-  edisonResults?: Array<EdisonResult>;
-  dataAnalysisResults?: Array<DataAnalysisResult>;
   // Research state fields (from conversation_states)
   plan?: Array<any>;
   discoveries?: string[];
@@ -60,29 +58,6 @@ export interface UseStatesReturn {
   error: string | null;
 }
 
-export type EdisonResult = {
-  taskId: string;
-  jobType: string;
-  question: string;
-  answer?: string;
-  error?: string;
-};
-
-export type DataAnalysisResult = {
-  id: string;
-  status: string;
-  success: boolean;
-  answer: string;
-  artifacts: Array<{
-    id: string;
-    description: string;
-    content: string;
-    filename: string;
-    path?: string;
-  }>;
-  question?: string;
-};
-
 /**
  * Custom hook for subscribing to real-time state updates from Supabase
  * Listens to the states table for tool execution progress
@@ -100,7 +75,10 @@ export function useStates(
 
   // Reset states when conversation changes
   useEffect(() => {
-    console.log("[useStates] Conversation changed, resetting states:", conversationId);
+    console.log(
+      "[useStates] Conversation changed, resetting states:",
+      conversationId,
+    );
     setCurrentState(null);
     setConversationState(null);
     setError(null);
@@ -141,7 +119,10 @@ export function useStates(
             setCurrentState(data as State);
             setError(null);
           } else {
-            console.log("[useStates] No message state found for conversation:", conversationId);
+            console.log(
+              "[useStates] No message state found for conversation:",
+              conversationId,
+            );
             setCurrentState(null);
           }
         }
@@ -154,12 +135,18 @@ export function useStates(
               console.log("[useStates] Fetched conversation state:", convState);
               setConversationState(convState as ConversationState);
             } else {
-              console.log("[useStates] No conversation state found for:", conversationId);
+              console.log(
+                "[useStates] No conversation state found for:",
+                conversationId,
+              );
               setConversationState(null);
             }
           }
         } catch (convErr) {
-          console.log("[useStates] Error fetching conversation state:", convErr);
+          console.log(
+            "[useStates] Error fetching conversation state:",
+            convErr,
+          );
           if (mounted) {
             setConversationState(null);
           }
@@ -250,7 +237,10 @@ export function useStates(
               setConversationState(convState as ConversationState);
             }
           } catch (err) {
-            console.error("[useStates] Error refetching conversation state:", err);
+            console.error(
+              "[useStates] Error refetching conversation state:",
+              err,
+            );
           }
         },
       )
@@ -266,7 +256,10 @@ export function useStates(
           const updatedConvState = payload.new as ConversationState;
 
           // Check if this is our conversation's state
-          if (conversationState && conversationState.id === updatedConvState.id) {
+          if (
+            conversationState &&
+            conversationState.id === updatedConvState.id
+          ) {
             console.log(
               "[useStates] ✅ Setting updated conversation state from UPDATE",
             );
@@ -282,7 +275,10 @@ export function useStates(
                 setConversationState(convState as ConversationState);
               }
             } catch (err) {
-              console.error("[useStates] Error refetching conversation state:", err);
+              console.error(
+                "[useStates] Error refetching conversation state:",
+                err,
+              );
             }
           }
         },

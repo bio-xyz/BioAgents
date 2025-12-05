@@ -1,3 +1,4 @@
+import type { AnalysisArtifact } from "../../types/core";
 import logger from "../../utils/logger";
 import { analyzeWithBio } from "./bio";
 import { analyzeWithEdison } from "./edison";
@@ -11,11 +12,12 @@ export type Dataset = {
   content?: Buffer;
 };
 
-type AnalysisResult = {
+export type AnalysisResult = {
   objective: string;
   output: string;
-  start: string;
-  end: string;
+  start?: string;
+  end?: string;
+  artifacts?: Array<AnalysisArtifact>;
 };
 
 /**
@@ -37,7 +39,12 @@ export async function analysisAgent(input: {
   conversationStateId: string;
 }): Promise<AnalysisResult> {
   const { objective, datasets, type, userId, conversationStateId } = input;
-  const start = new Date().toISOString();
+  let result: AnalysisResult = {
+    objective,
+    start: new Date().toISOString(),
+    output: "",
+    artifacts: [],
+  };
 
   logger.info(
     {
@@ -48,45 +55,43 @@ export async function analysisAgent(input: {
     "analysis_agent_started",
   );
 
-  let output: string;
-
   try {
     switch (type) {
-      case "EDISON":
-        output = await analyzeWithEdison(
+      case "EDISON": {
+        const { output } = await analyzeWithEdison(
           objective,
           datasets,
           userId,
           conversationStateId,
         );
+        result.output = output;
         break;
-      case "BIO":
-        output = await analyzeWithBio(
+      }
+      case "BIO": {
+        const { output, artifacts } = await analyzeWithBio(
           objective,
           datasets,
           userId,
           conversationStateId,
         );
+        result.output = output;
+        result.artifacts = artifacts;
         break;
+      }
       default:
         throw new Error(`Unknown analysis type: ${type}`);
     }
   } catch (err) {
     logger.error({ err, objective, type }, "analysis_agent_failed");
-    output = `Error performing analysis: ${err instanceof Error ? err.message : "Unknown error"}`;
+    result.output = `Error performing analysis: ${err instanceof Error ? err.message : "Unknown error"}`;
   }
 
-  const end = new Date().toISOString();
+  result.end = new Date().toISOString();
 
   logger.info(
-    { objective, type, outputLength: output.length },
+    { objective, type, outputLength: result.output.length },
     "analysis_agent_completed",
   );
 
-  return {
-    objective,
-    output,
-    start,
-    end,
-  };
+  return result;
 }

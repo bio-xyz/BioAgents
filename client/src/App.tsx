@@ -6,12 +6,13 @@ import { ErrorMessage } from "./components/ErrorMessage";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { PaymentConfirmationModal } from "./components/PaymentConfirmationModal";
+import { ResearchStatePanel } from "./components/research";
 import { Sidebar } from "./components/Sidebar";
 import { ToastContainer } from "./components/Toast";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { Modal } from "./components/ui/Modal";
 import { WelcomeScreen } from "./components/WelcomeScreen";
-import { ResearchStatePanel } from "./components/research";
+import { ConversationProvider } from "./providers/ConversationProvider";
 
 // Custom hooks
 import {
@@ -288,8 +289,6 @@ export function App() {
           steps: currentState.values.steps,
           source: currentState.values.source,
           thought: currentState.values.thought,
-          edisonResults: currentState.values.edisonResults,
-          dataAnalysisResults: currentState.values.dataAnalysisResults,
         };
 
         // Add final message
@@ -379,8 +378,10 @@ export function App() {
             }
 
             // Try to find state by dbMessageId first
-            let state = msg.dbMessageId ? stateByMessageId.get(msg.dbMessageId) : null;
-            
+            let state = msg.dbMessageId
+              ? stateByMessageId.get(msg.dbMessageId)
+              : null;
+
             // Fall back to chronological matching
             if (!state && stateIndex < states.length) {
               state = states[stateIndex];
@@ -388,7 +389,12 @@ export function App() {
             }
 
             if (state?.values) {
-              console.log("[App] Attaching state to message:", msg.id, "dbMessageId:", msg.dbMessageId);
+              console.log(
+                "[App] Attaching state to message:",
+                msg.id,
+                "dbMessageId:",
+                msg.dbMessageId,
+              );
               attachedCount++;
               return {
                 ...msg,
@@ -396,8 +402,6 @@ export function App() {
                   steps: state.values.steps,
                   source: state.values.source,
                   thought: state.values.thought,
-                  edisonResults: state.values.edisonResults,
-                  dataAnalysisResults: state.values.dataAnalysisResults,
                 },
               };
             }
@@ -405,7 +409,7 @@ export function App() {
             return msg;
           }),
         );
-        
+
         return attachedCount > 0; // Success if we attached at least one state
       } catch (err) {
         console.error("[App] Error fetching states:", err);
@@ -417,7 +421,7 @@ export function App() {
     // This is needed because real-time message arrives before state is saved
     const timeoutId = setTimeout(async () => {
       const success = await fetchAndAttachStates();
-      
+
       // If no states found, retry after a longer delay (state might still be saving)
       if (!success && messagesNeedingStates.length > 0) {
         console.log("[App] Retrying state fetch in 2s...");
@@ -550,11 +554,13 @@ export function App() {
 
         // Only continue if we got a response (not empty from payment confirmation)
         if (response.text) {
-          console.log("[App] Response received, real-time subscription will add message");
+          console.log(
+            "[App] Response received, real-time subscription will add message",
+          );
 
           // DON'T add message here - let real-time UPDATE handler add it
           // This prevents race condition duplicates
-          
+
           scrollToBottom();
 
           // Clear loading state to hide streaming component
@@ -613,7 +619,11 @@ export function App() {
 
   // Show main app
   return (
-    <>
+    <ConversationProvider
+      userId={userId}
+      conversationId={currentSessionId}
+      conversationStateId={conversationState?.id}
+    >
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <div className="app">
         {/* Mobile overlay */}
@@ -1056,7 +1066,9 @@ export function App() {
             const response = await confirmPayment();
 
             if (response && response.text) {
-              console.log("[App] Payment response received, real-time subscription will add message");
+              console.log(
+                "[App] Payment response received, real-time subscription will add message",
+              );
 
               // DON'T add message here - let real-time UPDATE handler add it
               // This prevents race condition duplicates
@@ -1077,6 +1089,6 @@ export function App() {
           }}
         />
       )}
-    </>
+    </ConversationProvider>
   );
 }
