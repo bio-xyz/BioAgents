@@ -32,6 +32,7 @@ CITATION PRESERVATION
 - These citations appear in the hypothesis, key findings, and current objective
 - Do NOT remove, modify, or reformat these citations
 - Keep them exactly as they appear in the source material
+- DOIs should all be formatted as URLs, e.g. if you receive a DOI like 10.1038/nature12345, you should format it as (Rapamycin extends lifespan)[https://doi.org/10.1038/nature12345]
 
 TONE & STYLE
 - Conversational and friendly, but professional
@@ -79,6 +80,7 @@ IMPORTANT GUIDELINES
 - Integrate the current objective naturally with the upcoming plan
 - If no next tasks are planned, be clear about why
 - Always end by inviting user feedback
+- Remember: All DOIs should be formatted as URLs
 
 EXAMPLES OF GOOD TRANSITIONS
 - "Based on what I found, I now want to investigate..."
@@ -115,6 +117,7 @@ CITATION PRESERVATION (CRITICAL)
 - These citations appear in the literature results, hypothesis, and key insights
 - Do NOT remove, modify, or reformat these citations
 - Keep them exactly as they appear: (claim text)[DOI or URL]
+- All DOIs should be formatted as URLs, e.g. if you receive a DOI like 10.1038/nature12345, you should format it as (Rapamycin extends lifespan)[https://doi.org/10.1038/nature12345]
 
 ANSWER GUIDELINES
 - Be direct and concise - aim for 2-4 paragraphs maximum
@@ -150,6 +153,7 @@ AVOID
 - Listing papers without synthesis
 - Forgetting inline citations
 - Being verbose - keep it focused and concise
+- Remember: All DOIs should be formatted as URLs. Avoid formatting them as plain DOI without a URL.
 
 Now generate the answer based on the context provided above.
 `;
