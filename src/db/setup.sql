@@ -15,6 +15,7 @@ CREATE TABLE users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   email TEXT NOT NULL UNIQUE,
+  wallet_address TEXT UNIQUE, -- For x402 payment users identified by wallet
   used_invite_code TEXT,
   points INTEGER DEFAULT 0,
   has_completed_invite_flow BOOLEAN DEFAULT false,
@@ -22,6 +23,9 @@ CREATE TABLE users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Index for fast wallet lookups
+CREATE INDEX idx_users_wallet_address ON users(wallet_address);
 
 -- States table (stores message processing state)
 CREATE TABLE states (

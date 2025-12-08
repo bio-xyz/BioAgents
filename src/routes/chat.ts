@@ -1,111 +1,150 @@
 import { Elysia } from "elysia";
-import { smartAuthMiddleware } from "../middleware/smartAuth";
-import { x402Middleware } from "../middleware/x402";
-import { recordPayment } from "../services/chat/payment";
+import { LLM } from "../llm/provider";
+import { authBeforeHandle } from "../middleware/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
-  X402_SYSTEM_USER_ID,
 } from "../services/chat/setup";
 import {
   createMessageRecord,
-  executeActionTool,
-  executeFileUpload,
-  executePlanning,
-  executeProviderTools,
-  executeReflection,
   updateMessageResponseTime,
 } from "../services/chat/tools";
-import type { ConversationState, State } from "../types/core";
+import type { ConversationState, PlanTask, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
-type ChatResponse = {
+type ChatV2Response = {
   text: string;
-  files?: Array<{
-    filename: string;
-    mimeType: string;
-    size?: number;
-  }>;
+  userId?: string; // Included for x402 users to know their identity
 };
 
 /**
- * Chat Route with Three-Tier Access Control
- *
- * 1. smartAuthMiddleware - Verifies Privy JWT or CDP signature (optional)
- * 2. x402Middleware - Enforces payment (bypassed for Privy users)
+ * Chat Route - Agent-based architecture
+ * Uses guard pattern to ensure auth runs for all routes
  */
-const chatRoutePlugin = new Elysia()
-  .use(
-    smartAuthMiddleware({
-      optional: true, // Allow unauthenticated requests (AI agents)
-    }),
-  )
-  .use(x402Middleware());
+export const chatRoute = new Elysia().guard(
+  {
+    beforeHandle: [
+      authBeforeHandle({
+        optional: process.env.NODE_ENV !== "production",
+      }),
+    ],
+  },
+  (app) =>
+    app
+      .get("/api/chat", async () => {
+        return {
+          message: "This endpoint requires POST method.",
+          apiDocumentation: "https://your-docs-url.com/api",
+        };
+      })
+      .post("/api/chat", chatHandler),
+);
 
-// GET endpoint for x402scan discovery
-// Returns 402 with payment requirements and outputSchema
-// The x402Middleware should intercept this and return 402
-// If this handler runs, x402 is disabled
-export const chatRouteGet = chatRoutePlugin.get("/api/chat", async () => {
-  // This should never be reached if x402 is enabled
-  // The middleware should intercept and return 402 Payment Required
-  const responseData = {
-    message: "This endpoint requires POST method with payment.",
-    apiDocumentation: "https://your-docs-url.com/api",
-  };
+/**
+ * Check if the question requires a hypothesis using LLM
+ */
+async function requiresHypothesis(
+  question: string,
+  literatureResults: string,
+): Promise<boolean> {
+  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
+  const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
-  return new Response(JSON.stringify(responseData), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Content-Encoding": "identity", // Explicitly disable compression
+  if (!apiKey) {
+    logger.warn("LLM API key not configured, defaulting to no hypothesis");
+    return false;
+  }
+
+  logger.info(
+    {
+      questionLength: question.length,
+      literatureResultsLength: literatureResults.length,
+      provider: PLANNING_LLM_PROVIDER,
     },
-  });
-});
+    "checking_hypothesis_requirement",
+  );
 
-export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
+  const llmProvider = new LLM({
+    // @ts-ignore
+    name: PLANNING_LLM_PROVIDER,
+    apiKey,
+  });
+
+  const prompt = `Analyze this user question and literature results to determine if a research hypothesis is needed.
+
+User Question: ${question}
+
+Literature Results Preview: ${literatureResults.slice(0, 1000)}
+
+A hypothesis IS needed if:
+- The question asks about mechanisms, predictions, or causal relationships
+- The question requires synthesizing multiple sources into a novel insight
+- The question is exploratory and needs a testable proposition
+
+A hypothesis IS NOT needed if:
+- The question asks for factual information or definitions
+- The question can be answered directly from literature
+- The question is a simple lookup or clarification
+
+Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
+
   try {
-    const {
-      body,
-      set,
-      request,
-      paymentSettlement,
-      paymentRequirement,
-      paymentHeader,
-    } = ctx as any;
+    const response = await llmProvider.createChatCompletion({
+      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
+      messages: [
+        {
+          role: "user" as const,
+          content: prompt,
+        },
+      ],
+      maxTokens: 10,
+    });
+
+    const answer = response.content.trim().toUpperCase();
+    logger.info(
+      {
+        answer,
+        questionLength: question.length,
+        decision:
+          answer === "YES" ? "hypothesis_required" : "hypothesis_not_required",
+      },
+      "hypothesis_requirement_check_completed",
+    );
+
+    return answer === "YES";
+  } catch (err) {
+    logger.error({ err }, "hypothesis_check_failed");
+    return false; // Default to no hypothesis on error
+  }
+}
+
+/**
+ * Chat Handler - Core logic for POST /api/chat
+ * Exported for reuse in x402 routes
+ */
+export async function chatHandler(ctx: any) {
+  try {
+    const { body, set, request } = ctx;
     const startTime = Date.now();
 
     const parsedBody = body as any;
-    const authenticatedUser = (request as any).authenticatedUser;
 
-    // Debug: Log request details for MetaMask/Phantom debugging
-    if (logger) {
-      logger.info(
-        {
-          contentType: request.headers.get("content-type"),
-          hasPaymentHeader: !!paymentHeader,
-          hasPaymentSettlement: !!paymentSettlement,
-          paymentSettlementSuccess: paymentSettlement?.success,
-          paymentSettlementNetwork: paymentSettlement?.network,
-          paymentSettlementPayer: paymentSettlement?.payer,
-          authMethod: authenticatedUser?.authMethod,
-          bodyType: typeof body,
-          bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
-        },
-        "chat_route_entry_debug",
-      );
-    }
+    logger.info(
+      {
+        contentType: request.headers.get("content-type"),
+        bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
+      },
+      "chat_route_entry",
+    );
 
     // Extract message (REQUIRED)
     const message = parsedBody.message;
     if (!message) {
-      if (logger) {
-        logger.warn(
-          { bodyKeys: Object.keys(parsedBody) },
-          "missing_message_field",
-        );
-      }
+      logger.warn(
+        { bodyKeys: Object.keys(parsedBody) },
+        "missing_message_field",
+      );
       set.status = 400;
       return {
         ok: false,
@@ -113,49 +152,59 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
       };
     }
 
-    // Determine userId and source (priority: auth > body > generate)
+    // Determine userId: x402 wallet > body.userId > anonymous
     let userId: string;
-    let source: string;
+    let source = "api";
+    let isX402User = false;
 
-    if (authenticatedUser) {
-      userId = authenticatedUser.userId;
+    // Check if this is an x402 request with wallet payment
+    const x402Settlement = (request as any).x402Settlement;
+    if (x402Settlement?.payer) {
+      // x402 user - get or create user by wallet address
+      const { getOrCreateUserByWallet } = await import("../db/operations");
+      const { user, isNew } = await getOrCreateUserByWallet(
+        x402Settlement.payer,
+      );
+      userId = user.id;
+      source = "x402";
+      isX402User = true;
 
-      // Set descriptive source based on auth method
-      if (authenticatedUser.authMethod === "privy") {
-        source = "external_ui"; // Next.js frontend with Privy
-      } else if (authenticatedUser.authMethod === "cdp") {
-        source = "dev_ui"; // Internal dev UI with CDP wallets
-      } else {
-        source = authenticatedUser.authMethod; // Fallback to auth method
-      }
+      logger.info(
+        {
+          userId,
+          wallet: x402Settlement.payer,
+          isNewUser: isNew,
+          transaction: x402Settlement.transaction,
+        },
+        "x402_user_identified",
+      );
     } else {
-      // Unauthenticated request
-      const providedUserId = parsedBody.userId || `agent_${Date.now()}`;
+      // Regular API request - use provided userId or generate anonymous
+      const providedUserId = parsedBody.userId;
+      const isValidUserId =
+        providedUserId &&
+        typeof providedUserId === "string" &&
+        providedUserId.length > 0 &&
+        providedUserId !== "undefined" &&
+        providedUserId !== "null";
 
-      // Check if this is from dev UI or an external agent
-      // Dev UI sends userId directly, x402 agents pay for access
-      if (parsedBody.userId && !paymentSettlement) {
-        // Dev UI without x402 - treat as authenticated dev user
-        userId = providedUserId;
-        source = "dev_ui";
-      } else {
-        // External AI agent with x402 payment - use system user for persistence
-        // Store the provided/generated agent ID in x402_external metadata
-        userId = X402_SYSTEM_USER_ID; // All external agents owned by system user
-        source = "x402_agent"; // All external agents
+      userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
+
+      if (!isValidUserId) {
+        logger.warn(
+          { generatedUserId: userId },
+          "no_user_id_provided_generating_temp",
+        );
       }
+
+      logger.info({ userId, source }, "user_identified");
     }
 
-    // Auto-generate conversationId if not provided (UUID v4 format)
+    // Auto-generate conversationId if not provided
     let conversationId = parsedBody.conversationId;
     if (!conversationId) {
       conversationId = generateUUID();
-      if (logger) {
-        logger.info(
-          { conversationId, userId },
-          "auto_generated_conversation_id",
-        );
-      }
+      logger.info({ conversationId, userId }, "auto_generated_conversation_id");
     }
 
     // Extract files from parsed body
@@ -169,58 +218,69 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
     }
 
     // Log request details
-    if (logger) {
-      logger.info(
-        {
-          userId,
-          conversationId,
-          source,
-          authMethod: authenticatedUser?.authMethod,
-          paidViaX402: !!paymentSettlement,
-          messageLength: message.length,
-          fileCount: files.length,
-        },
-        "chat_request_received",
-      );
-    }
+    logger.info(
+      {
+        userId,
+        conversationId,
+        source,
+        message,
+        messageLength: message.length,
+        fileCount: files.length,
+        routeType: "chat-v2",
+      },
+      "chat_request_received",
+    );
 
-    // TODO: Implement rate limiting in general
-    // - Limit requests per conversationId per time window (e.g., 10 requests/minute)
-    // - Track last_request_at in x402_external table
-    // - Use Redis or in-memory cache for rate limit counters
-    // - Return 429 Too Many Requests with Retry-After header when exceeded
-
-    // Ensure user and conversation exist (auth-aware)
+    // Ensure user and conversation exist
+    // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
     const setupResult = await ensureUserAndConversation(
       userId,
       conversationId,
-      authenticatedUser?.authMethod,
-      source,
+      {
+        skipUserCreation: isX402User,
+      },
     );
     if (!setupResult.success) {
+      logger.error(
+        { error: setupResult.error, userId, conversationId },
+        "user_conversation_setup_failed",
+      );
       set.status = 500;
       return { ok: false, error: setupResult.error || "Setup failed" };
     }
 
-    // Setup conversation data (state, x402_external record)
+    logger.info(
+      { userId, conversationId },
+      "user_conversation_setup_completed",
+    );
+
+    // Setup conversation data
     const dataSetup = await setupConversationData(
       conversationId,
       userId,
       source,
-      setupResult.isExternal || false,
+      false, // isExternal
       message,
       files.length,
-      setupResult.isExternal
-        ? parsedBody.userId || `agent_${Date.now()}`
-        : undefined,
     );
     if (!dataSetup.success) {
+      logger.error(
+        { error: dataSetup.error, conversationId },
+        "conversation_data_setup_failed",
+      );
       set.status = 500;
       return { ok: false, error: dataSetup.error || "Data setup failed" };
     }
 
-    const { conversationStateRecord, stateRecord, x402ExternalRecord } =
-      dataSetup.data!;
+    const { conversationStateRecord, stateRecord } = dataSetup.data!;
+
+    logger.info(
+      {
+        conversationStateId: conversationStateRecord.id,
+        stateId: stateRecord.id,
+      },
+      "conversation_data_setup_completed",
+    );
 
     // Create message record
     const messageResult = await createMessageRecord({
@@ -230,9 +290,13 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
       source,
       stateId: stateRecord.id,
       files,
-      isExternal: setupResult.isExternal || false,
+      isExternal: false,
     });
     if (!messageResult.success) {
+      logger.error(
+        { error: messageResult.error, conversationId },
+        "message_creation_failed",
+      );
       set.status = 500;
       return {
         ok: false,
@@ -242,7 +306,16 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
 
     const createdMessage = messageResult.message!;
 
-    // Initialize state per request (message-specific state)
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        conversationId: createdMessage.conversation_id,
+        question: createdMessage.question,
+      },
+      "message_record_created",
+    );
+
+    // Initialize state
     const state: State = {
       id: stateRecord.id,
       values: {
@@ -253,141 +326,413 @@ export const chatRoute = chatRoutePlugin.post("/api/chat", async (ctx) => {
       },
     };
 
-    // Initialize conversation state (persistent across messages)
+    // Initialize conversation state
     const conversationState: ConversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
 
-    const toolContext = {
-      state,
-      conversationState,
-      message: createdMessage,
-      files,
-    };
-
-    // Step 1: Process files FIRST if present (before planning)
-    const fileResult = await executeFileUpload(toolContext);
-    if (!fileResult.success) {
-      set.status = 500;
-      return { ok: false, error: fileResult.error || "File upload failed" };
-    }
-
-    // Step 2: Execute planning tool
-    const planningResult = await executePlanning(toolContext);
-    if (!planningResult.success) {
-      set.status = 500;
-      return {
-        ok: false,
-        error: planningResult.error || "Planning execution failed",
-      };
-    }
-
-    const { providers, actions } = planningResult.result!;
-
-    // Step 3: Parallel execution of provider tools
-    await executeProviderTools(providers, toolContext);
-
-    // Step 4: Execute primary action (REPLY or HYPOTHESIS)
-    const action = actions?.[0];
-    if (!action) {
-      set.status = 500;
-      return { ok: false, error: "No action specified by planning tool" };
-    }
-
-    const actionResult = await executeActionTool(action, toolContext);
-    if (!actionResult.success) {
-      set.status = 500;
-      return {
-        ok: false,
-        error: actionResult.error || "Action execution failed",
-      };
-    }
-
-    const primaryActionResult = actionResult.result;
-
-    // Step 5: Execute REFLECTION after primary action completes
-    await executeReflection(toolContext);
-
-    // Include file metadata in response if files were uploaded
-    const rawFiles = state.values.rawFiles;
-    const fileMetadata =
-      rawFiles?.length && rawFiles?.length > 0
-        ? rawFiles?.map((f: any) => ({
-            filename: f.filename,
-            mimeType: f.mimeType,
-            size: f.metadata?.size,
-          }))
-        : undefined;
-
-    const response: ChatResponse = {
-      text: primaryActionResult.text,
-      files: fileMetadata,
-    };
-
-    // Calculate and update response time
-    const responseTime = Date.now() - startTime;
-    await updateMessageResponseTime(
-      createdMessage.id,
-      responseTime,
-      setupResult.isExternal || false,
+    logger.info(
+      {
+        stateId: state.id,
+        conversationStateId: conversationState.id,
+        existingHypothesis: !!conversationState.values.currentHypothesis,
+        keyInsightsCount: conversationState.values.keyInsights?.length || 0,
+      },
+      "state_initialized",
     );
 
-    // Record payment based on request type
-    await recordPayment({
-      isExternal: setupResult.isExternal || false,
-      x402ExternalRecord,
-      userId,
-      conversationId,
-      messageId: createdMessage.id,
-      paymentSettlement,
-      paymentHeader,
-      paymentRequirement,
-      providers: providers ?? [],
-      responseTime,
-    });
+    // Step 1: Process files if any
+    if (files.length > 0) {
+      const { fileUploadAgent } = await import("../agents/fileUpload");
 
-    // Debug: Log response being returned
-    if (logger) {
+      logger.info({ fileCount: files.length }, "processing_file_uploads");
+
+      const fileResult = await fileUploadAgent({
+        conversationState,
+        files,
+        userId: state.values.userId || "unknown",
+      });
+
       logger.info(
         {
-          responseTextLength: response.text?.length || 0,
-          hasFiles: !!response.files,
-          fileCount: response.files?.length || 0,
-          responseTime,
-          paidViaX402: !!paymentSettlement,
+          uploadedDatasets: fileResult.uploadedDatasets,
+          errors: fileResult.errors,
+          fileCount: files.length,
         },
-        "chat_route_returning_response",
+        "file_upload_agent_completed",
       );
     }
 
-    // Return explicit Response object to ensure proper JSON encoding
-    // and prevent automatic compression that x402scan can't handle
+    // Step 2: Execute planning agent (literature only)
+    logger.info(
+      {
+        message: createdMessage.question,
+        existingPlan: conversationState.values.plan?.length || 0,
+      },
+      "starting_planning_agent",
+    );
+
+    const { planningAgent } = await import("../agents/planning");
+
+    const planningResult = await planningAgent({
+      state,
+      conversationState,
+      message: createdMessage,
+      mode: "initial",
+    });
+
+    const plan = planningResult.plan;
+
+    logger.info(
+      {
+        currentObjective: planningResult.currentObjective,
+        totalPlannedTasks: plan.length,
+        taskTypes: plan.map((t) => t.type),
+        taskObjectives: plan.map((t) => t.objective),
+      },
+      "planning_agent_completed",
+    );
+
+    // Filter to only LITERATURE tasks (no ANALYSIS for regular chat)
+    const literatureTasks = plan.filter((task) => task.type === "LITERATURE");
+
+    logger.info(
+      {
+        totalTasks: plan.length,
+        literatureTasks: literatureTasks.length,
+        analysisTasks: plan.length - literatureTasks.length,
+        filteredTasks: literatureTasks.map((t) => ({
+          type: t.type,
+          objective: t.objective,
+        })),
+      },
+      "tasks_filtered_literature_only",
+    );
+
+    if (literatureTasks.length === 0) {
+      logger.info("no_literature_tasks_planned_skipping_to_reply");
+    }
+
+    // Step 3: Execute literature tasks (OPENSCHOLAR, KNOWLEDGE - no EDISON)
+    const { literatureAgent } = await import("../agents/literature");
+    const { updateConversationState } = await import("../db/operations");
+
+    const completedTasks: PlanTask[] = [];
+
+    for (const task of literatureTasks) {
+      task.start = new Date().toISOString();
+      task.output = "";
+
+      logger.info(
+        {
+          taskObjective: task.objective,
+          taskType: task.type,
+          taskStart: task.start,
+        },
+        "executing_literature_task",
+      );
+
+      // Run OPENSCHOLAR
+      const openScholarPromise = literatureAgent({
+        objective: task.objective,
+        type: "OPENSCHOLAR",
+      }).then((result) => {
+        task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+        logger.info(
+          {
+            taskObjective: task.objective,
+            outputLength: result.output.length,
+            outputPreview: result.output.substring(0, 200),
+          },
+          "openscholar_completed",
+        );
+      });
+
+      // Optionally run KNOWLEDGE
+      const knowledgePromise = literatureAgent({
+        objective: task.objective,
+        type: "KNOWLEDGE",
+      }).then((result) => {
+        task.output += `Knowledge literature results:\n${result.output}\n\n`;
+        logger.info(
+          {
+            taskObjective: task.objective,
+            outputLength: result.output.length,
+          },
+          "knowledge_completed",
+        );
+      });
+
+      await Promise.all([openScholarPromise, knowledgePromise]);
+
+      task.end = new Date().toISOString();
+      completedTasks.push(task);
+
+      logger.info(
+        {
+          taskObjective: task.objective,
+          taskType: task.type,
+          taskStart: task.start,
+          taskEnd: task.end,
+          outputLength: task.output?.length || 0,
+        },
+        "literature_task_completed",
+      );
+    }
+
+    logger.info(
+      {
+        completedTasksCount: completedTasks.length,
+        totalOutputLength: completedTasks.reduce(
+          (sum, t) => sum + (t.output?.length || 0),
+          0,
+        ),
+      },
+      "all_literature_tasks_completed",
+    );
+
+    // Step 4: Check if hypothesis is needed
+    const allLiteratureOutput = completedTasks
+      .map((t) => t.output)
+      .join("\n\n");
+
+    logger.info(
+      {
+        question: message,
+        literatureOutputLength: allLiteratureOutput.length,
+        completedTasksCount: completedTasks.length,
+      },
+      "checking_if_hypothesis_required",
+    );
+
+    const needsHypothesis = await requiresHypothesis(
+      message,
+      allLiteratureOutput,
+    );
+
+    logger.info(
+      {
+        needsHypothesis,
+        question: message,
+        completedTasksCount: completedTasks.length,
+      },
+      "hypothesis_requirement_determined",
+    );
+
+    let hypothesisText: string | undefined;
+
+    // Step 5: Generate hypothesis if needed
+    if (needsHypothesis && completedTasks.length > 0) {
+      logger.info(
+        {
+          currentObjective: planningResult.currentObjective,
+          completedTasksCount: completedTasks.length,
+          existingHypothesis: conversationState.values.currentHypothesis,
+        },
+        "starting_hypothesis_generation",
+      );
+
+      const { hypothesisAgent } = await import("../agents/hypothesis");
+
+      const hypothesisResult = await hypothesisAgent({
+        objective: planningResult.currentObjective,
+        message: createdMessage,
+        conversationState,
+        completedTasks,
+      });
+
+      hypothesisText = hypothesisResult.hypothesis;
+      conversationState.values.currentHypothesis = hypothesisText;
+
+      logger.info(
+        {
+          mode: hypothesisResult.mode,
+          hypothesisLength: hypothesisText.length,
+          hypothesisPreview: hypothesisText.substring(0, 200),
+        },
+        "hypothesis_generated",
+      );
+
+      if (conversationState.id) {
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
+        logger.info(
+          {
+            conversationStateId: conversationState.id,
+            mode: hypothesisResult.mode,
+          },
+          "hypothesis_saved_to_conversation_state",
+        );
+      }
+
+      // Step 6: Run reflection agent
+      logger.info(
+        {
+          completedTasksCount: completedTasks.length,
+          hypothesisLength: hypothesisText.length,
+        },
+        "starting_reflection_agent",
+      );
+
+      const { reflectionAgent } = await import("../agents/reflection");
+
+      const reflectionResult = await reflectionAgent({
+        conversationState,
+        message: createdMessage,
+        completedMaxTasks: completedTasks,
+        hypothesis: hypothesisText,
+      });
+
+      logger.info(
+        {
+          currentObjective: reflectionResult.currentObjective,
+          keyInsightsCount: reflectionResult.keyInsights.length,
+          discoveriesCount: reflectionResult.discoveries.length,
+          methodology: reflectionResult.methodology,
+          keyInsights: reflectionResult.keyInsights,
+          discoveries: reflectionResult.discoveries,
+        },
+        "reflection_agent_completed",
+      );
+
+      // Update conversation state with reflection results
+      conversationState.values.currentObjective =
+        reflectionResult.currentObjective;
+      conversationState.values.keyInsights = reflectionResult.keyInsights;
+      conversationState.values.discoveries = reflectionResult.discoveries;
+      conversationState.values.methodology = reflectionResult.methodology;
+
+      if (conversationState.id) {
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
+        logger.info(
+          {
+            conversationStateId: conversationState.id,
+            keyInsightsCount: reflectionResult.keyInsights.length,
+            discoveriesCount: reflectionResult.discoveries.length,
+          },
+          "reflection_results_saved_to_conversation_state",
+        );
+      }
+    } else {
+      logger.info(
+        {
+          needsHypothesis,
+          completedTasksCount: completedTasks.length,
+          reason: !needsHypothesis
+            ? "question_does_not_require_hypothesis"
+            : "no_completed_tasks",
+        },
+        "skipping_hypothesis_and_reflection",
+      );
+    }
+
+    // Step 7: Generate reply (chat-specific - concise, no next steps)
+    logger.info(
+      {
+        completedTasksCount: completedTasks.length,
+        hasHypothesis: !!hypothesisText,
+        keyInsightsCount: conversationState.values.keyInsights?.length || 0,
+      },
+      "starting_chat_reply_generation",
+    );
+
+    const { generateChatReply } = await import("../agents/reply/utils");
+
+    const replyText = await generateChatReply(
+      message,
+      {
+        completedTasks,
+        hypothesis: hypothesisText,
+        nextPlan: [], // No next plan for regular chat
+        keyInsights: conversationState.values.keyInsights || [],
+        discoveries: conversationState.values.discoveries || [],
+        methodology: conversationState.values.methodology,
+        currentObjective: conversationState.values.currentObjective,
+      },
+      {
+        maxTokens: 1024,
+      },
+    );
+
+    logger.info(
+      {
+        replyLength: replyText.length,
+        replyPreview: replyText.substring(0, 200),
+      },
+      "chat_reply_generated",
+    );
+
+    const response: ChatV2Response = {
+      text: replyText,
+      userId, // Include userId so x402 users know their identity
+    };
+
+    // Save the response to the message's content field
+    const { updateMessage } = await import("../db/operations");
+    await updateMessage(createdMessage.id, {
+      content: replyText,
+    });
+
+    logger.info(
+      { messageId: createdMessage.id, contentLength: replyText.length },
+      "message_content_saved",
+    );
+
+    // Calculate and update response time
+    const responseTime = Date.now() - startTime;
+    await updateMessageResponseTime(createdMessage.id, responseTime);
+
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        responseTime,
+        responseTimeSec: (responseTime / 1000).toFixed(2),
+      },
+      "response_time_recorded",
+    );
+
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        conversationId,
+        responseTextLength: response.text?.length || 0,
+        responseTime,
+        responseTimeSec: (responseTime / 1000).toFixed(2),
+        needsHypothesis,
+        completedTasksCount: completedTasks.length,
+      },
+      "chat_completed_successfully",
+    );
+
+    // Return response
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Content-Encoding": "identity", // Explicitly disable compression
+        "Content-Encoding": "identity",
       },
     });
   } catch (error: any) {
-    // Catch any unhandled errors and log them
-    if (logger) {
-      logger.error(
-        {
-          error: error.message,
-          stack: error.stack,
-          name: error.name,
-        },
-        "chat_route_unhandled_error",
-      );
-    }
+    logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        name: error.name,
+      },
+      "chat_unhandled_error",
+    );
 
-    const { set } = ctx as any;
+    const { set } = ctx;
     set.status = 500;
     return {
       ok: false,
       error: error.message || "Internal server error",
     };
   }
-});
+}

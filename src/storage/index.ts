@@ -68,3 +68,20 @@ export const getConversationBasePath = (
  */
 export const getUploadPath = (filename: string): string =>
   `uploads/${filename}`;
+
+/**
+ * Simple helper to guess MIME type from filename
+ */
+export function getMimeTypeFromFilename(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    pdf: "application/pdf",
+    csv: "text/csv",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    txt: "text/plain",
+    json: "application/json",
+    md: "text/markdown",
+  };
+  return mimeTypes[ext || ""] || "application/octet-stream";
+}

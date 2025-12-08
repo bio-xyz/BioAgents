@@ -23,83 +23,44 @@ export interface StateValues {
   source?: string;
   isDeepResearch?: boolean;
 
-  // Cost tracking
-  estimatedCostsUSD?: Record<string, number>;
-
-  // File upload
-  rawFiles?: Array<{
-    buffer: Buffer;
-    filename: string;
-    mimeType: string;
-    parsedText: string;
-    metadata?: any;
-  }>;
-  fileUploadErrors?: string[];
-
-  // OpenScholar provider
-  openScholarPapers?: Array<{ title: string; doi: string }>;
-  openScholarRaw?: Array<{ title: string; doi: string; chunkText: string }>;
-  openScholarPaperDois?: string[];
-  openScholarShortenedPapers?: string[];
-  openScholarSynthesis?: string;
-
-  // Semantic Scholar provider
-  semanticScholarSynthesis?: string;
-  semanticScholarPapers?: Paper[];
-
-  // Knowledge provider
-  knowledge?: Array<{ title: string; content: string }>;
-
-  // Knowledge Graph provider
-  kgPapers?: any[];
-  finalPapers?: Paper[];
-
-  // Hypothesis action
-  hypothesis?: string;
-  hypothesisThought?: string;
-  noveltyImprovement?: string; // Improvement suggestion from precedent check
-
-  // Edison provider
-  edisonTasks?: Array<{
-    taskId: string;
-    jobType: string;
-    question: string;
-    status: string;
-  }>;
-  edisonResults?: Array<{
-    taskId: string;
-    jobType: string;
-    question: string;
-    answer?: string;
-    error?: string;
-  }>;
-
-  // Data Analysis Agent results
-  dataAnalysisResults?: Array<DataAnalysisResult>;
-
   // Action responses
   finalResponse?: string; // Final text response from REPLY or HYPOTHESIS
-  webSearchResults?: Array<{
-    title: string;
-    url: string;
-    originalUrl: string;
-    index: number;
-  }>;
   thought?: string;
 
   // Step tracking
   steps?: Record<string, { start: number; end?: number }>;
 }
 
+export type PlanTask = {
+  objective: string;
+  datasets: Array<{ filename: string; id: string; description: string }>;
+  type: "LITERATURE" | "ANALYSIS";
+  level?: number;
+  start?: string;
+  end?: string;
+  output?: string;
+  artifacts?: Array<AnalysisArtifact>;
+};
+
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
   // Persistent conversation data
-  conversationTitle?: string; // Title of the conversation
-  papers?: Paper[]; // All papers referenced in conversation
-  conversationGoal?: string;
+  objective: string;
+  conversationTitle?: string; // Concise title for the conversation (updated by reflection agent)
+  currentObjective?: string;
+  currentLevel?: number; // Current level of tasks being executed (for UI visualization)
   keyInsights?: string[];
-  methodology?: string;
-  uploadedDatasets: Array<UploadedFile>;
+  methodology?: string; // Methodology for the current goal
+  currentHypothesis?: string;
+  discoveries?: string[];
+  plan?: Array<PlanTask>; // Actual plan being executed or already executed
+  suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
+  uploadedDatasets?: Array<{
+    filename: string;
+    id: string;
+    description: string;
+    path?: string;
+  }>;
 }
 
 // TODO: add expiry to state rows in DB
@@ -148,22 +109,16 @@ export type Paper = {
 export type UploadedFile = {
   id: string;
   filename: string;
-  mimeType: string;
-  path: string;
+  mimeType?: string;
+  path?: string;
   metadata?: any;
 };
 
-export type DataAnalysisResult = {
+export type AnalysisArtifact = {
   id: string;
-  status: string;
-  success: boolean;
-  answer: string;
-  artifacts: Array<{
-    id: string;
-    description: string;
-    content: string;
-    filename: string;
-    path?: string;
-  }>;
-  question?: string;
+  description: string;
+  type: "FILE" | "FOLDER";
+  content?: string;
+  name: string;
+  path?: string;
 };
