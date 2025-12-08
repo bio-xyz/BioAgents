@@ -27,7 +27,7 @@ export async function fileUploadAgent(input: {
   files: File[];
   userId: string;
 }): Promise<{
-  uploadedDatasets: Array<{ id: string; filename: string; description: string }>;
+  uploadedDatasets: Array<{ id: string; filename: string; description: string; path?: string }>;
   errors: string[];
 }> {
   const { files, conversationState, userId } = input;
@@ -115,6 +115,7 @@ export async function fileUploadAgent(input: {
         id: file.id,
         filename: file.filename,
         description,
+        path: file.path,
       };
     }),
   );

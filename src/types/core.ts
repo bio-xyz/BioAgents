@@ -59,6 +59,7 @@ export interface ConversationStateValues extends StateValues {
     filename: string;
     id: string;
     description: string;
+    path?: string;
   }>;
 }
 
