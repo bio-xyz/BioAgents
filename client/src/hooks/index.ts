@@ -22,4 +22,4 @@ export type { UseFileUploadReturn } from './useFileUpload';
 export type { UseTypingAnimationReturn } from './useTypingAnimation';
 export type { UseAutoScrollReturn } from './useAutoScroll';
 export type { UseX402PaymentReturn } from './useX402Payment';
-export type { State, StateValues, ToolState, UseStatesReturn } from './useStates';
+export type { State, StateValues, ToolState, UseStatesReturn, ConversationState } from './useStates';

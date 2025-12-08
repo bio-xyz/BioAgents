@@ -23,10 +23,11 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     logger.info(`🚀 Starting document load for directory: ${dirPath}`);
     const startTime = Date.now();
 
-    // 1. Get all unique titles currently stored in the database.
+    // 1. Get all unique titles currently stored in the database using DISTINCT
     const { data: existingDocs, error } = await supabase
       .from("documents")
-      .select("title");
+      .select("title", { count: "exact" })
+      .limit(10000);
 
     if (error) {
       logger.error(
@@ -36,7 +37,10 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
       return;
     }
 
-    const existingTitles = new Set(existingDocs.map((doc) => doc.title));
+    // Create Set from titles (handles any remaining duplicates)
+    const existingTitles = new Set(
+      existingDocs?.map((doc) => doc.title) || [],
+    );
     logger.info(
       `🔍 Found ${existingTitles.size} unique titles in the database.`,
     );
@@ -48,10 +52,20 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
       return;
     }
 
+    logger.info(`📂 Found ${localDocs.length} local documents to check.`);
+
     let addedCount = 0;
     let skippedCount = 0;
 
-    const newDocuments = localDocs.filter((doc) => !existingTitles.has(doc.title));
+    const newDocuments = localDocs.filter((doc) => {
+      const exists = existingTitles.has(doc.title);
+      if (exists) {
+        logger.info(`⏭️  Skipping existing document: ${doc.title}`);
+      } else {
+        logger.info(`➕ New document to add: ${doc.title}`);
+      }
+      return !exists;
+    });
 
     if (newDocuments.length === 0) {
       logger.info(
@@ -106,8 +120,15 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
       );
       try {
         await this.addDocuments(batch);
-      } catch (e) {
-        logger.error(`  - Failed to add batch starting at index ${i}:`, e as any);
+      } catch (e: any) {
+        logger.error(
+          `  - Failed to add batch starting at index ${i}: ${e.message}`,
+        );
+        logger.error(`  - Error details:`, e);
+        // Log which documents were in this batch
+        logger.error(
+          `  - Documents in failed batch: ${batch.map((d) => d.title).join(", ")}`,
+        );
       }
     }
 

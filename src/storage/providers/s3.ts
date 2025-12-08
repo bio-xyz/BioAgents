@@ -5,10 +5,11 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import logger from "../../utils/logger";
-import type { StorageProvider } from "../types";
+import { StorageProvider } from "../types";
 
-export class S3StorageProvider implements StorageProvider {
+export class S3StorageProvider extends StorageProvider {
   private client: S3Client;
   private bucket: string;
 
@@ -19,6 +20,7 @@ export class S3StorageProvider implements StorageProvider {
     bucket: string;
     endpoint?: string;
   }) {
+    super();
     this.bucket = config.bucket;
 
     this.client = new S3Client({
@@ -76,13 +78,8 @@ export class S3StorageProvider implements StorageProvider {
         throw new Error("No data received from S3");
       }
 
-      // Convert stream to buffer
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of response.Body as any) {
-        chunks.push(chunk);
-      }
-
-      return Buffer.concat(chunks);
+      const byteArray = await response.Body.transformToByteArray();
+      return Buffer.from(byteArray);
     } catch (error) {
       if (logger) {
         logger.error(`Failed to download file from S3: ${path}`, error as any);
@@ -132,6 +129,42 @@ export class S3StorageProvider implements StorageProvider {
         logger.error(`Failed to check file existence in S3: ${path}`, error);
       }
       throw new Error(`S3 exists check failed: ${error.message}`);
+    }
+  }
+
+  async getPresignedUrl(
+    path: string,
+    expiresIn: number = 3600,
+    filename?: string,
+  ): Promise<string> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: path,
+        ...(filename && {
+          ResponseContentDisposition: `attachment; filename="${filename}"`,
+        }),
+      });
+
+      const url = await getSignedUrl(this.client, command, { expiresIn });
+
+      if (logger) {
+        logger.info(
+          `Generated presigned URL for S3: ${path}, expires in ${expiresIn}s`,
+        );
+      }
+
+      return url;
+    } catch (error) {
+      if (logger) {
+        logger.error(
+          `Failed to generate presigned URL for S3: ${path}`,
+          error as any,
+        );
+      }
+      throw new Error(
+        `S3 presigned URL generation failed: ${(error as Error).message}`,
+      );
     }
   }
 }
