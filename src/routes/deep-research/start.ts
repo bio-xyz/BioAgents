@@ -369,6 +369,13 @@ async function runDeepResearch(params: {
           "executing_literature_task",
         );
 
+        const primaryLiteratureType =
+          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
+            ? "BIOLIT"
+            : "EDISON";
+        const primaryLiteratureLabel =
+          primaryLiteratureType === "BIOLIT" ? "BioLiterature" : "Edison";
+
         // Run OpenScholar and update state when done
         const openScholarPromise = literatureAgent({
           objective: task.objective,
@@ -388,12 +395,12 @@ async function runDeepResearch(params: {
           );
         });
 
-        // Run Edison and update state when done
-        const edisonPromise = literatureAgent({
+        // Run primary literature agent (Edison by default, BioLiterature when configured)
+        const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
-          type: "EDISON",
+          type: primaryLiteratureType,
         }).then(async (result) => {
-          task.output += `Edison literature results:\n${result.output}\n\n`;
+          task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
@@ -402,7 +409,7 @@ async function runDeepResearch(params: {
           }
           logger.info(
             { outputLength: result.output.length },
-            "edison_result_received",
+            "primary_literature_result_received",
           );
         });
 
@@ -427,7 +434,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          edisonPromise,
+          primaryLiteraturePromise,
           knowledgePromise,
         ]);
 
