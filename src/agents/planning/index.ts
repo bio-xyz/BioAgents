@@ -167,6 +167,8 @@ NOTES:
   - Only include datasets that are directly relevant to the specific analysis objective
   - Copy the exact dataset objects (filename, id, description) from the "Uploaded Datasets" section above
   - If no datasets are uploaded or none are relevant, use an empty array
+  - Use ONLY the datasets that are uploaded in the CURRENT RESEARCH STATE above
+  - If there's an open source dataset linked in the message, DO NOT put it in the datasets array. Instead use the task objective to let the data scientist agent know that it should download and use the open source dataset.
 - Plan only 1-3 tasks maximum
 - If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration). You can express what you're planning to do next in the currentObjective field.
 - Update the currentObjective to reflect what you're currently doing and what comes after these tasks
