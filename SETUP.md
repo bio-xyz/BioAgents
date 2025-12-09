@@ -148,7 +148,7 @@ OPENSCHOLAR_API_KEY=your-api-key
 
 ### BioLiterature Agent (New)
 
-Adds Bio's in-house scientific literature API search with rich answer (see `src/agents/literature/bioLiteratureApi.ts`).
+Adds Bio's in-house scientific literature API search with rich answer (see `src/agents/literature/bio.ts`).
 
 **Configuration:**
 
