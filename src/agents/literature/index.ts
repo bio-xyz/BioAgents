@@ -1,9 +1,10 @@
 import logger from "../../utils/logger";
+import { searchBioLiterature } from "./bio";
 import { searchEdison } from "./edison";
 import { searchKnowledge } from "./knowledge";
 import { searchOpenScholar } from "./openscholar";
 
-type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON";
+type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON" | "BIOLIT";
 
 type LiteratureResult = {
   objective: string;
@@ -22,6 +23,7 @@ type LiteratureResult = {
  *    - OPENSCHOLAR: Search academic papers via OpenScholar API
  *    - KNOWLEDGE: Search local knowledge base via vector search
  *    - EDISON: Deep search via Edison AI agent
+ *    - BIOLIT: Search via BioLiterature API
  * 3. Return results with timing information
  */
 export async function literatureAgent(input: {
@@ -42,6 +44,9 @@ export async function literatureAgent(input: {
         break;
       case "KNOWLEDGE":
         output = await searchKnowledge(objective);
+        break;
+      case "BIOLIT":
+        output = await searchBioLiterature(objective);
         break;
       case "EDISON":
         output = await searchEdison(

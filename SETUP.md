@@ -25,13 +25,16 @@ Edit `.env` and configure the following:
 #### Required: Core Configuration
 
 **Authentication:**
+
 ```bash
 BIOAGENTS_SECRET=your-secure-random-string-here
 ```
+
 Generate a secure random string for API authentication.
 
 **LLM Providers:**
 Configure which LLM provider to use for each agent:
+
 ```bash
 # Choose provider for each agent
 REPLY_LLM_PROVIDER=openai          # or google, anthropic, openrouter
@@ -54,10 +57,12 @@ OPENROUTER_API_KEY=...          # If using OpenRouter
 ```
 
 **Database:**
+
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 ```
+
 Get these from your [Supabase project settings](https://supabase.com/dashboard).
 
 ### 3. Set up the Database
@@ -73,6 +78,7 @@ Run these SQL scripts in your PostgreSQL database:
    - Creates vector storage for knowledge base
 
 **Using Supabase SQL Editor:**
+
 1. Go to your Supabase project → SQL Editor
 2. Copy and paste each script
 3. Run them in order
@@ -88,6 +94,7 @@ Literature agents search and synthesize scientific literature. You can start wit
 **Start here!** This is the easiest literature backend to set up and works with your own documents.
 
 **Configuration:**
+
 ```bash
 # Embedding provider for document vectorization
 EMBEDDING_PROVIDER=openai
@@ -109,6 +116,7 @@ CHUNK_OVERLAP=200
 ```
 
 **Setup Steps:**
+
 1. Get an OpenAI API key for embeddings (or use another embedding provider)
 2. (Optional) Get a Cohere API key for reranking - improves results significantly
 3. Place your knowledge base documents in the `docs/` directory
@@ -123,12 +131,14 @@ CHUNK_OVERLAP=200
 Adds high-quality scientific literature search with peer-reviewed citations.
 
 **Configuration:**
+
 ```bash
 OPENSCHOLAR_API_URL=https://your-openscholar-deployment.com
 OPENSCHOLAR_API_KEY=your-api-key
 ```
 
 **Setup:**
+
 1. Deploy OpenScholar: https://github.com/bio-xyz/bio-openscholar
 2. Add API URL and key to `.env`
 
@@ -136,21 +146,43 @@ OPENSCHOLAR_API_KEY=your-api-key
 
 **Research:** Based on https://arxiv.org/abs/2411.14199
 
+### BioLiterature Agent (New)
+
+Adds Bio's in-house scientific literature API search with rich answer (see `src/agents/literature/bio.ts`).
+
+**Configuration:**
+
+```bash
+BIOLIT_API_URL=https://your-bioliterature-deployment.com
+BIOLIT_API_KEY=your-api-key
+PRIMARY_LITERATURE_AGENT=BIO  # optional; set to use BioLiterature as the primary deep-research agent
+```
+
+**Setup:**
+
+1. Point the URL to your BioLiterature API instance
+2. Add the URL and key to `.env`
+
+**What you gain:** Direct access to the synthesized `answer` plus references/context for traceability.
+
 ### Edison Literature Agent (Amazing Add-on)
 
 The most advanced literature search option with deep synthesis capabilities.
 
 **Configuration:**
+
 ```bash
 EDISON_API_URL=https://your-edison-deployment.com
 EDISON_API_KEY=your-api-key
 ```
 
 **Setup:**
+
 1. Deploy Edison API: https://github.com/bio-xyz/bio-edison-api
 2. Add API URL and key to `.env`
 
 **What you gain:**
+
 - Advanced literature synthesis
 - Used in deep research mode for iterative investigation
 - Best-in-class citation quality
@@ -183,17 +215,20 @@ S3_ENDPOINT=https://nyc3.digitaloceanspaces.com  # Optional
 **Setup Options:**
 
 **Option 1: AWS S3**
+
 1. Create an S3 bucket in AWS Console
 2. Create IAM user with S3 access
 3. Add credentials to `.env`
 
 **Option 2: DigitalOcean Spaces**
+
 1. Create a Space in DigitalOcean
 2. Generate Spaces access key
 3. Set `S3_ENDPOINT` to your region (e.g., `https://nyc3.digitaloceanspaces.com`)
 4. Add credentials to `.env`
 
 **Option 3: MinIO (Self-hosted)**
+
 1. Deploy MinIO server
 2. Create bucket
 3. Set `S3_ENDPOINT` to your MinIO URL
@@ -206,17 +241,20 @@ S3_ENDPOINT=https://nyc3.digitaloceanspaces.com  # Optional
 The default analysis backend with advanced capabilities.
 
 **Configuration:**
+
 ```bash
 EDISON_API_URL=https://your-edison-deployment.com
 EDISON_API_KEY=your-api-key
 ```
 
 **Setup:**
+
 1. Deploy Edison API: https://github.com/bio-xyz/bio-edison-api
 2. Add API URL and key to `.env`
 3. Edison is used by default (no `PRIMARY_ANALYSIS_AGENT` setting needed)
 
 **What it does:**
+
 - Deep analysis of uploaded datasets
 - Automatic file upload to Edison storage
 - Code execution in secure sandbox
@@ -227,6 +265,7 @@ EDISON_API_KEY=your-api-key
 Alternative analysis backend if not using Edison.
 
 **Configuration:**
+
 ```bash
 PRIMARY_ANALYSIS_AGENT=bio
 DATA_ANALYSIS_API_URL=https://your-bio-analysis-deployment.com
@@ -234,11 +273,13 @@ DATA_ANALYSIS_API_KEY=your-api-key
 ```
 
 **Setup:**
+
 1. Deploy BIO analysis agent: https://github.com/bio-xyz/bio-data-analysis
 2. Set `PRIMARY_ANALYSIS_AGENT=bio` in `.env`
 3. Add API URL and key to `.env`
 
 **What it does:**
+
 - Basic data analysis capabilities
 - Code execution in secure sandbox
 - Returns analysis results
@@ -252,20 +293,23 @@ DATA_ANALYSIS_API_KEY=your-api-key
 Your agent's personality and behavior are defined in `src/character.ts`. This is a simple system prompt that guides how your agent responds.
 
 **Configuration:**
+
 ```typescript
 const character = {
   name: "YourAgentName",
-  system: `Your system prompt here...`
+  system: `Your system prompt here...`,
 };
 ```
 
 **What to customize:**
+
 - `name`: Your agent's name
 - `system`: The system prompt that defines your agent's personality, expertise, and response style
 
 The system prompt is automatically included in LLM calls for planning, hypothesis generation, and replies, ensuring consistent behavior throughout the research workflow.
 
 **Example use cases:**
+
 - Scientific research assistant with specific domain expertise
 - Medical literature reviewer
 - Data analysis expert

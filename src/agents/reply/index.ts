@@ -1,8 +1,4 @@
-import type {
-  ConversationState,
-  Message,
-  PlanTask,
-} from "../../types/core";
+import type { ConversationState, Message, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateReply } from "./utils";
 
@@ -64,7 +60,7 @@ export async function replyAgent(input: {
         currentObjective: conversationState.values.currentObjective,
       },
       {
-        maxTokens: 2000,
+        maxTokens: 3200,
         thinking: true,
         thinkingBudget: 1024,
       },
