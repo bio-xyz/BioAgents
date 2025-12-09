@@ -1,7 +1,7 @@
 import logger from "../../utils/logger";
 
-const BIO_LIT_API_URL = process.env.BIOLIT_API_URL;
-const BIO_LIT_API_KEY = process.env.BIOLIT_API_KEY;
+const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
+const BIO_LIT_AGENT_API_KEY = process.env.BIO_LIT_AGENT_API_KEY || "";
 
 type BioLiteratureResponse = {
   answer?: string;
@@ -24,19 +24,20 @@ type BioLiteratureResponse = {
 };
 
 export async function searchBioLiterature(objective: string): Promise<string> {
-  if (!BIO_LIT_API_URL || !BIO_LIT_API_KEY) {
+  logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
+  if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
   }
 
   logger.info({ objective }, "starting_bioliterature_search");
 
-  const endpoint = `${BIO_LIT_API_URL.replace(/\/$/, "")}/query`;
+  const endpoint = `${BIO_LIT_AGENT_API_URL.replace(/\/$/, "")}/query`;
 
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": BIO_LIT_API_KEY,
+      "X-API-Key": BIO_LIT_AGENT_API_KEY,
     },
     body: JSON.stringify({
       question: objective,

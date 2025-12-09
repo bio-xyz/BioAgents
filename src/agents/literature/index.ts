@@ -1,6 +1,6 @@
 import logger from "../../utils/logger";
+import { searchBioLiterature } from "./bio";
 import { searchEdison } from "./edison";
-import { searchBioLiterature } from "./bioLiteratureApi";
 import { searchKnowledge } from "./knowledge";
 import { searchOpenScholar } from "./openscholar";
 

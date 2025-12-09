@@ -155,6 +155,7 @@ Adds Bio's in-house scientific literature API search with rich answer (see `src/
 ```bash
 BIOLIT_API_URL=https://your-bioliterature-deployment.com
 BIOLIT_API_KEY=your-api-key
+PRIMARY_LITERATURE_AGENT=BIO  # optional; set to use BioLiterature as the primary deep-research agent
 ```
 
 **Setup:**

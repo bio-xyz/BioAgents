@@ -433,6 +433,9 @@ export async function chatHandler(ctx: any) {
         "executing_literature_task",
       );
 
+      const useBioLiterature =
+        process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
+
       // Run OPENSCHOLAR
       const openScholarPromise = literatureAgent({
         objective: task.objective,
@@ -449,6 +452,24 @@ export async function chatHandler(ctx: any) {
         );
       });
 
+      // Optionally run BIOLIT when configured as the primary literature agent
+      const bioLiteraturePromise = useBioLiterature
+        ? literatureAgent({
+            objective: task.objective,
+            type: "BIOLIT",
+          }).then((result) => {
+            task.output += `BioLiterature results:\n${result.output}\n\n`;
+            logger.info(
+              {
+                taskObjective: task.objective,
+                outputLength: result.output.length,
+                outputPreview: result.output.substring(0, 200),
+              },
+              "bioliterature_completed",
+            );
+          })
+        : Promise.resolve();
+
       // Optionally run KNOWLEDGE
       const knowledgePromise = literatureAgent({
         objective: task.objective,
@@ -464,7 +485,11 @@ export async function chatHandler(ctx: any) {
         );
       });
 
-      await Promise.all([openScholarPromise, knowledgePromise]);
+      await Promise.all([
+        openScholarPromise,
+        bioLiteraturePromise,
+        knowledgePromise,
+      ]);
 
       task.end = new Date().toISOString();
       completedTasks.push(task);
