@@ -16,7 +16,7 @@ import type {
   LLMTool,
   WebSearchResult,
 } from "../types";
-import { hasUrlInMessages, enrichMessagesWithUrlContent } from "./utils";
+import { enrichMessagesWithUrlContent, hasUrlInMessages } from "./utils";
 
 interface BuildRequestOptions {
   includeWebSearch?: boolean;
@@ -34,7 +34,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
     const clientOptions: ConstructorParameters<typeof Anthropic>[0] = {
       apiKey: provider.apiKey,
-      timeout: 60000,
+      timeout: 240000,
     };
 
     if (provider.baseUrl) {
@@ -50,7 +50,10 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Handle streaming
     if (request.stream && request.onStreamChunk) {
-      return this.createStreamingCompletion(anthropicRequest, request.onStreamChunk);
+      return this.createStreamingCompletion(
+        anthropicRequest,
+        request.onStreamChunk,
+      );
     }
 
     try {
@@ -75,7 +78,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
       const stream = this.client.messages.stream(anthropicRequest);
 
-      stream.on('text', async (text) => {
+      stream.on("text", async (text) => {
         fullText += text;
         await onStreamChunk(text, fullText);
       });
@@ -98,7 +101,9 @@ export class AnthropicAdapter extends LLMAdapter {
       };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`Anthropic streaming completion failed: ${error.message}`);
+        throw new Error(
+          `Anthropic streaming completion failed: ${error.message}`,
+        );
       }
       throw error;
     }
@@ -117,7 +122,10 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Handle streaming
     if (request.stream && request.onStreamChunk) {
-      return this.createStreamingWebSearch(anthropicRequest, request.onStreamChunk);
+      return this.createStreamingWebSearch(
+        anthropicRequest,
+        request.onStreamChunk,
+      );
     }
 
     try {
@@ -144,7 +152,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
       const stream = this.client.messages.stream(anthropicRequest);
 
-      stream.on('text', async (text) => {
+      stream.on("text", async (text) => {
         fullText += text;
         await onStreamChunk(text, fullText);
       });
@@ -162,7 +170,9 @@ export class AnthropicAdapter extends LLMAdapter {
       };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`Anthropic streaming web search failed: ${error.message}`);
+        throw new Error(
+          `Anthropic streaming web search failed: ${error.message}`,
+        );
       }
       throw error;
     }
