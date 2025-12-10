@@ -1,5 +1,9 @@
 import { getMimeTypeFromFilename, getStorageProvider } from "../../storage";
 import logger from "../../utils/logger";
+import {
+  startEdisonTask,
+  awaitEdisonTask,
+} from "../../utils/edison";
 import type { Dataset } from "./index";
 
 /**
@@ -220,113 +224,5 @@ async function fetchFileBufferFromStorage(
       "failed_to_download_file_from_storage",
     );
     throw error;
-  }
-}
-
-/**
- * Start an async Edison task
- */
-async function startEdisonTask(
-  apiUrl: string,
-  apiKey: string,
-  jobType: string,
-  query: string,
-  dataStorageEntryIds?: string[],
-): Promise<{ task_id: string; status: string; job_type: string }> {
-  const endpoint = `${apiUrl}/api/v1/edison/run/async`;
-
-  const requestBody: {
-    name: string;
-    query: string;
-    data_storage_entry_ids?: string[];
-  } = {
-    name: jobType,
-    query,
-  };
-
-  // Add data storage entry IDs if provided
-  if (dataStorageEntryIds && dataStorageEntryIds.length > 0) {
-    requestBody.data_storage_entry_ids = dataStorageEntryIds;
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Edison API error: ${response.status} - ${errorText}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Await single Edison task to complete by polling its status
- */
-async function awaitEdisonTask(
-  apiUrl: string,
-  apiKey: string,
-  taskId: string,
-): Promise<{ answer?: string; error?: string }> {
-  const MAX_WAIT_TIME = 20 * 60 * 1000; // 20 minutes max wait
-  const POLL_INTERVAL = 3000; // Poll every 3 seconds
-  const startTime = Date.now();
-
-  while (true) {
-    // Check timeout
-    if (Date.now() - startTime > MAX_WAIT_TIME) {
-      logger.warn({ taskId }, "edison_analysis_task_timeout");
-      return { error: "Analysis task timed out after 20 minutes" };
-    }
-
-    try {
-      // Poll status endpoint
-      const response = await fetch(
-        `${apiUrl}/api/v1/edison/task/${taskId}/status`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error(
-          { taskId, status: response.status, errorText },
-          "edison_analysis_status_check_failed",
-        );
-        return { error: `Failed to check status: ${response.status}` };
-      }
-
-      const statusData = await response.json();
-      const status = statusData.status;
-
-      logger.debug({ taskId, status }, "edison_analysis_task_status_check");
-
-      if (status === "success") {
-        return { answer: statusData.answer || "" };
-      } else if (status === "failed") {
-        return { error: statusData.error || "Analysis task failed" };
-      } else if (status === "queued" || status === "in progress") {
-        // Still processing, wait and poll again
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
-      } else {
-        // Unknown status
-        logger.warn({ taskId, status }, "edison_analysis_unknown_status");
-        return { error: `Unknown status: ${status}` };
-      }
-    } catch (err) {
-      logger.error({ err, taskId }, "edison_analysis_status_poll_error");
-      return { error: err instanceof Error ? err.message : "Unknown error" };
-    }
   }
 }
