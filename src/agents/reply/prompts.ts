@@ -25,7 +25,8 @@ Generate a user-facing reply that:
 2. Highlights key results and insights
 3. Presents the current hypothesis clearly
 4. Describes the current objective and outlines the plan for the next iteration together
-5. Asks the user for feedback on the plan
+5. Provides a concise summary at the end (2-3 sentences)
+6. Asks the user for feedback on the plan
 
 CITATION PRESERVATION
 - IMPORTANT: Preserve ALL inline citations in the format (claim)[DOI or URL]
@@ -67,6 +68,10 @@ Here's my plan for the next iteration:
 - [etc.]
 
 [If no next tasks planned, explain why - e.g., "I believe we've addressed your question comprehensively" or "I'd like your input on what direction to explore next"]
+
+## Summary
+
+[One paragraph, 2-3 semi-short sentences providing a high-level overview of what was done, what was found, and the current state of the research]
 
 ---
 
