@@ -28,7 +28,7 @@ import {
 } from "./hooks";
 
 // Utils
-import { generateConversationId } from "./utils/helpers";
+import { generateConversationId, walletAddressToUUID } from "./utils/helpers";
 
 export function App() {
   // Toast notifications
@@ -49,19 +49,13 @@ export function App() {
     config: x402ConfigData,
   } = x402;
 
-  // Embedded wallet state (only if x402 is enabled)
-  const embeddedWallet = x402Enabled
-    ? useEmbeddedWallet(x402ConfigData?.network)
-    : null;
+  // Embedded wallet state (always called, but only active when x402 is enabled)
+  // The hook internally handles the case when x402 is disabled
   const {
     isSignedIn: isEmbeddedWalletConnected,
     evmAddress: embeddedWalletAddress,
     walletClient: embeddedWalletClient,
-  } = embeddedWallet || {
-    isSignedIn: false,
-    evmAddress: null,
-    walletClient: null,
-  };
+  } = useEmbeddedWallet(x402ConfigData?.network, x402Enabled);
 
   // Get or create dev user ID (only used when x402 is disabled)
   const getDevUserId = () => {
@@ -87,10 +81,24 @@ export function App() {
 
   const devUserId = getDevUserId();
 
-  // Determine which user ID to use: embedded wallet (x402) or dev user ID
-  const actualUserId = x402Enabled ? embeddedWalletAddress : devUserId;
+  // Determine which user ID to use: x402 wallet-derived UUID or dev user ID
+  // When x402 is enabled, convert wallet address to a deterministic UUID
+  const actualUserId = x402Enabled
+    ? embeddedWalletAddress
+      ? walletAddressToUUID(embeddedWalletAddress)
+      : null
+    : devUserId;
 
-  // Session management (pass the appropriate user ID)
+  // Debug logging for x402 user identity
+  console.log("[App] x402 identity debug:", {
+    x402Enabled,
+    embeddedWalletAddress,
+    embeddedWalletAddressLower: embeddedWalletAddress?.toLowerCase(),
+    actualUserId,
+    isWalletConnected: !!embeddedWalletAddress,
+  });
+
+  // Session management (pass the appropriate user ID and x402 status)
   const {
     sessions,
     currentSession,
@@ -104,7 +112,7 @@ export function App() {
     createNewSession,
     deleteSession,
     switchSession,
-  } = useSessions(actualUserId || undefined);
+  } = useSessions(actualUserId || undefined, x402Enabled);
 
   // Real-time states for thinking visualization and research state
   const {
@@ -123,7 +131,9 @@ export function App() {
     clearError,
     clearLoading,
     pendingPayment,
+    pendingPaymentType,
     confirmPayment,
+    confirmDeepResearchPayment,
     cancelPayment,
   } = useChatAPI(x402);
 
@@ -211,6 +221,18 @@ export function App() {
     (researchState.currentHypothesis ||
       researchState.plan?.length > 0 ||
       researchState.suggestedNextSteps?.length > 0);
+
+  // Debug logging for research state
+  console.log("[App] Research state debug:", {
+    hasResearchState: !!researchState,
+    messagesLength: messages.length,
+    hasHypothesis: !!researchState?.currentHypothesis,
+    planLength: researchState?.plan?.length || 0,
+    suggestedNextStepsLength: researchState?.suggestedNextSteps?.length || 0,
+    hasActiveResearch,
+    conversationState: conversationState?.values,
+    currentState: currentState?.values,
+  });
 
   // Check if the current conversation is the one that's loading
   const isCurrentConversationLoading =
@@ -525,21 +547,31 @@ export function App() {
           // Clear loading state since we're done
           setLoadingConversationId(null);
           setLoadingMessageId(null);
+          // Clear pending message data
+          setPendingMessageData(null);
         } else if (response.status === "processing") {
-          // Research started - the state will update in real-time via subscription
-          // Keep loading state active - don't clear it yet
-          console.log(
-            "[App] Deep research started, messageId:",
-            response.messageId,
-          );
+          // Check if this is a payment required response (modal will show)
+          if (response.error === "PAYMENT_REQUIRED") {
+            console.log("[App] Deep research payment required - modal will show");
+            // Don't clear pending message data - it's needed for payment confirmation
+            // Don't set deep research mode yet - wait for payment confirmation
+            // Keep loading conversation ID for the typing indicator after payment
+          } else {
+            // Research started - the state will update in real-time via subscription
+            // Keep loading state active - don't clear it yet
+            console.log(
+              "[App] Deep research started, messageId:",
+              response.messageId,
+            );
 
-          // Store the message ID so we can match state updates to this specific message
-          setLoadingMessageId(response.messageId);
-          setIsDeepResearch(true);
+            // Store the message ID so we can match state updates to this specific message
+            setLoadingMessageId(response.messageId);
+            setIsDeepResearch(true);
+
+            // Clear pending message data
+            setPendingMessageData(null);
+          }
         }
-
-        // Clear pending message data
-        setPendingMessageData(null);
       } else {
         // Normal mode - use regular sendMessage
         const response = await sendMessage({
@@ -570,17 +602,17 @@ export function App() {
           // Clear pending message data after successful send
           setPendingMessageData(null);
         } else {
-          // If payment confirmation is needed, remove the user message we just added
-          // since it will be added again after payment confirmation
-          removeMessage(userMessage.id);
+          // If payment confirmation is needed, keep the user message visible
+          // Payment modal will just proceed with the payment, message stays in UI
+          console.log("[App] Payment required - keeping user message visible");
         }
       }
     } catch (err: any) {
       console.error("Chat error:", err);
       // Don't show error for payment confirmation - modal is handling it
       if (err?.isPaymentConfirmation) {
-        // Remove the user message since payment modal will re-add it
-        removeMessage(userMessage.id);
+        // Keep the user message visible - payment modal will proceed with payment
+        console.log("[App] Payment confirmation required - keeping user message");
         return;
       }
       // For other errors, remove the user message and restore the input so user can try again
@@ -1043,44 +1075,66 @@ export function App() {
           onConfirm={async () => {
             if (!pendingMessageData) return;
 
-            // Add user message to chat IMMEDIATELY after confirmation
-            const userMessage = {
-              id: Date.now(),
-              role: "user" as const,
-              content: pendingMessageData.content,
-              files: pendingMessageData.fileMetadata,
-            };
+            // Set loading conversation ID BEFORE confirmPayment so typing indicator shows
+            setLoadingConversationId(currentSessionId);
 
-            addMessage(userMessage);
+            // Handle based on payment type
+            if (pendingPaymentType === "deep-research") {
+              // For deep research, user message was already added in handleSend()
+              // Just scroll and proceed with payment confirmation
+              setTimeout(() => scrollToBottom(), 50);
+              // Deep research payment confirmation
+              const response = await confirmDeepResearchPayment();
 
-            // Update session title if it's the first message
-            if (messages.length === 0) {
-              const title = pendingMessageData.content || "New conversation";
-              updateSessionTitle(currentSessionId, title);
-            }
+              if (response && response.status === "processing") {
+                console.log(
+                  "[App] Deep research payment confirmed, messageId:",
+                  response.messageId,
+                );
 
-            // Let message animation complete and scroll
-            setTimeout(() => scrollToBottom(), 50);
+                // Store the message ID so we can match state updates
+                setLoadingMessageId(response.messageId);
+                setIsDeepResearch(true);
 
-            // Now process the payment and get response
-            const response = await confirmPayment();
+                // Clear pending message data
+                setPendingMessageData(null);
+              } else if (response?.status === "rejected") {
+                // Show error
+                addMessage({
+                  id: Date.now(),
+                  role: "assistant" as const,
+                  content: response.error || "Deep research request was rejected.",
+                });
+                scrollToBottom();
+                setLoadingConversationId(null);
+                setLoadingMessageId(null);
+                setPendingMessageData(null);
+              }
+            } else {
+              // Regular chat payment confirmation
+              // User message was already added in handleSend() before the 402 check
+              // Just scroll and proceed with payment confirmation
+              setTimeout(() => scrollToBottom(), 50);
 
-            if (response && response.text) {
-              console.log(
-                "[App] Payment response received, real-time subscription will add message",
-              );
+              const response = await confirmPayment();
 
-              // DON'T add message here - let real-time UPDATE handler add it
-              // This prevents race condition duplicates
+              if (response && response.text) {
+                console.log(
+                  "[App] Payment response received, real-time subscription will add message",
+                );
 
-              scrollToBottom();
+                // DON'T add message here - let real-time UPDATE handler add it
+                // This prevents race condition duplicates
 
-              // Clear loading state to hide streaming component
-              setLoadingConversationId(null);
-              setLoadingMessageId(null);
+                scrollToBottom();
 
-              // Clear pending message data after successful send
-              setPendingMessageData(null);
+                // Clear loading state to hide streaming component
+                setLoadingConversationId(null);
+                setLoadingMessageId(null);
+
+                // Clear pending message data after successful send
+                setPendingMessageData(null);
+              }
             }
           }}
           onCancel={() => {

@@ -4,19 +4,50 @@ import {
   custom,
   publicActions,
   type Address,
+  type Chain,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment, decodeXPaymentResponse } from "x402-fetch";
 import type { Signer } from "x402/types";
 import { useToast } from "./useToast";
 
+// Protocol type
+type PaymentProtocol = "x402" | "b402";
+
+// Network info from server
+type NetworkInfo = {
+  id: string;
+  protocol: PaymentProtocol;
+  name: string;
+  chainId: number;
+  tokens: Array<{
+    symbol: string;
+    address: string;
+    decimals: number;
+  }>;
+  facilitatorUrl: string;
+  relayerAddress?: string | null;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+};
+
 type X402ConfigResponse = {
   enabled?: boolean;
+  protocol?: PaymentProtocol;
   network?: string;
+  environment?: string;
   asset?: string;
   facilitatorUrl?: string;
   paymentAddress?: string;
   usdcAddress?: string;
+  relayerAddress?: string | null;
+  chainId?: number;
+  rpcUrl?: string;
+  explorer?: string;
+  availableNetworks?: NetworkInfo[];
 };
 
 type PricingResponse = {
@@ -45,6 +76,10 @@ export interface UseX402PaymentReturn {
   usdcBalance: string | null;
   isCheckingBalance: boolean;
   hasInsufficientBalance: boolean;
+  // Protocol info
+  protocol: PaymentProtocol;
+  availableNetworks: NetworkInfo[];
+  // Methods
   refresh: () => Promise<void>;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => Promise<void>;
@@ -133,7 +168,7 @@ export function useX402Payment(): UseX402PaymentReturn {
     }
   }, [config?.enabled, config?.network, resetSigner]);
 
-  const getTargetChain = useCallback(() => {
+  const getTargetChain = useCallback((): Chain => {
     const network = config?.network ?? "base-sepolia";
     switch (network) {
       case "base":
@@ -153,14 +188,16 @@ export function useX402Payment(): UseX402PaymentReturn {
         throw new Error("Provider not available");
       }
 
-      // USDC contract address - default to Base Sepolia if network not specified
       const network = config?.network || "base-sepolia";
-      const usdcAddress =
+
+      // x402 uses USDC on Base (6 decimals)
+      const tokenAddress =
         config?.usdcAddress && config.usdcAddress.length > 0
           ? config.usdcAddress
           : network === "base"
             ? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
             : "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+      const tokenDecimals = 6;
 
       // ERC20 balanceOf ABI
       const balanceOfAbi = "70a08231"; // balanceOf(address) - function selector
@@ -171,18 +208,19 @@ export function useX402Payment(): UseX402PaymentReturn {
         method: "eth_call",
         params: [
           {
-            to: usdcAddress,
+            to: tokenAddress,
             data: callData,
           },
           "latest",
         ],
       });
 
-      // Convert hex balance to decimal (USDC has 6 decimals)
+      // Convert hex balance to decimal using correct decimals
       const balanceInWei = BigInt(balance as string);
-      const balanceInUsdc = Number(balanceInWei) / 1_000_000;
+      const divisor = BigInt(10 ** tokenDecimals);
+      const balanceInToken = Number(balanceInWei) / Number(divisor);
 
-      setUsdcBalance(balanceInUsdc.toFixed(2));
+      setUsdcBalance(balanceInToken.toFixed(2));
     } catch (err) {
       setUsdcBalance("0.00");
     } finally {
@@ -291,7 +329,7 @@ export function useX402Payment(): UseX402PaymentReturn {
       signerRef.current = walletClient as unknown as Signer;
       signerPromiseRef.current = Promise.resolve(walletClient as unknown as Signer);
 
-      // Create wrapped fetch with payment capability
+      // Create wrapped fetch with x402 payment capability
       // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
       wrappedFetchRef.current = wrapFetchWithPayment(fetch, walletClient as any);
 
@@ -372,10 +410,10 @@ export function useX402Payment(): UseX402PaymentReturn {
       const balance = parseFloat(usdcBalance);
       if (balance < 0.10) {
         const network = config?.network || "base-sepolia";
-        const isSepolia = network.includes("sepolia");
-        
+        const isTestnet = network.includes("sepolia");
+
         toast.warning(
-          `⚠️ Low USDC Balance\n\nYour balance is $${usdcBalance} USDC. You need at least $0.10 to make payments.\n\n${isSepolia ? "Get free testnet USDC from Circle Faucet!" : "Please fund your wallet."}`,
+          `⚠️ Low USDC Balance\n\nYour balance is $${usdcBalance} USDC. You need at least $0.10 to make payments.\n\n${isTestnet ? "Get free testnet USDC from Circle Faucet!" : "Please fund your wallet."}`,
           8000
         );
       }
@@ -398,19 +436,29 @@ export function useX402Payment(): UseX402PaymentReturn {
   // Return wrapped fetch with payment or regular fetch
   const fetchWithPayment = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const actualFetch = canSign ? wrappedFetchRef.current : fetch;
+      // Re-evaluate canSign at call time to avoid stale closure
+      const currentCanSign = Boolean(config?.enabled) && Boolean(walletAddress) && !isConnecting;
+      const hasWrappedFetch = !!wrappedFetchRef.current;
+      const shouldUseWrapped = currentCanSign && hasWrappedFetch;
+      const actualFetch = shouldUseWrapped ? wrappedFetchRef.current : fetch;
 
       console.log("[useX402Payment] fetchWithPayment called:", {
-        canSign,
-        hasWrappedFetch: !!wrappedFetchRef.current,
+        canSign: currentCanSign,
+        configEnabled: config?.enabled,
         walletAddress,
-        usingWrappedFetch: canSign && !!wrappedFetchRef.current,
+        isConnecting,
+        hasWrappedFetch,
+        shouldUseWrapped,
         url: typeof input === "string" ? input : input instanceof URL ? input.toString() : "Request object",
       });
 
+      if (!shouldUseWrapped) {
+        console.warn("[useX402Payment] NOT using wrapped fetch - payment header will NOT be added!");
+      }
+
       return actualFetch(input, init) as Promise<Response>;
     },
-    [canSign, walletAddress]
+    [config?.enabled, walletAddress, isConnecting]
   );
 
   // Calculate if user has insufficient balance (less than $0.10 for example)
@@ -430,7 +478,7 @@ export function useX402Payment(): UseX402PaymentReturn {
     signerRef.current = client as unknown as Signer;
     signerPromiseRef.current = Promise.resolve(client as unknown as Signer);
 
-    // Create wrapped fetch with payment capability
+    // Create wrapped fetch with x402 payment capability
     // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
     wrappedFetchRef.current = wrapFetchWithPayment(fetch, client as any);
 
@@ -467,6 +515,10 @@ export function useX402Payment(): UseX402PaymentReturn {
     usdcBalance,
     isCheckingBalance,
     hasInsufficientBalance,
+    // Protocol info
+    protocol: (config?.protocol || "x402") as PaymentProtocol,
+    availableNetworks: config?.availableNetworks || [],
+    // Methods
     refresh: fetchConfig,
     connectWallet,
     disconnectWallet,

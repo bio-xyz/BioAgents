@@ -1,19 +1,62 @@
 import { useMemo } from "preact/hooks";
-import { useEvmAddress, useSignEvmTransaction, useSignEvmTypedData } from "@coinbase/cdp-hooks";
-import { createWalletClient, custom, type Transport } from "viem";
-import { base, baseSepolia } from "viem/chains";
+import { createWalletClient, custom, type Transport, type Chain } from "viem";
+import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
+
+// Network to chain mapping
+const CHAIN_MAP: Record<string, Chain> = {
+  "base": base,
+  "base-sepolia": baseSepolia,
+  "bnb": bsc,
+  "bnb-testnet": bscTestnet,
+};
+
+// Network to RPC URL mapping
+const RPC_MAP: Record<string, string> = {
+  "base": "https://base-rpc.publicnode.com",
+  "base-sepolia": "https://base-sepolia-rpc.publicnode.com",
+  "bnb": "https://bsc-dataseed1.binance.org",
+  "bnb-testnet": "https://data-seed-prebsc-1-s1.binance.org:8545",
+};
 
 /**
  * Creates a viem-compatible wallet client from the Coinbase embedded wallet
- * This allows the embedded wallet to work with x402 payments
+ * This allows the embedded wallet to work with x402/b402 payments
+ *
+ * Supported networks:
+ * - base, base-sepolia (x402 - USDC)
+ * - bnb, bnb-testnet (b402 - USDT)
+ *
+ * @param network - Network identifier (base, base-sepolia, bnb, bnb-testnet)
+ * @param x402Enabled - Whether payment protocols are enabled (determines if CDP hooks are used)
  */
-export function useEmbeddedWalletClient(network?: string) {
-  const { evmAddress } = useEvmAddress();
-  const { signEvmTransaction } = useSignEvmTransaction();
-  const { signEvmTypedData } = useSignEvmTypedData();
+export function useEmbeddedWalletClient(network?: string, x402Enabled: boolean = true) {
+  // Safely get CDP hooks values - only when x402 is enabled
+  let evmAddress: string | null = null;
+  let signEvmTransaction: ((params: any) => Promise<any>) | null = null;
+  let signEvmTypedData: ((params: any) => Promise<any>) | null = null;
+
+  if (x402Enabled) {
+    try {
+      const cdpHooks = require("@coinbase/cdp-hooks");
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const addressResult = cdpHooks.useEvmAddress();
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const signTxResult = cdpHooks.useSignEvmTransaction();
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const signTypedDataResult = cdpHooks.useSignEvmTypedData();
+
+      evmAddress = addressResult?.evmAddress ?? null;
+      signEvmTransaction = signTxResult?.signEvmTransaction ?? null;
+      signEvmTypedData = signTypedDataResult?.signEvmTypedData ?? null;
+    } catch (err) {
+      // CDP hooks not available - x402 disabled or provider not mounted
+      console.debug("[useEmbeddedWalletClient] CDP hooks not available:", err);
+    }
+  }
 
   const chain = useMemo(() => {
-    return network === "base" ? base : baseSepolia;
+    // Get chain from network parameter, default to base-sepolia
+    return CHAIN_MAP[network || "base-sepolia"] || baseSepolia;
   }, [network]);
 
   const walletClient = useMemo(() => {
@@ -108,10 +151,8 @@ export function useEmbeddedWalletClient(network?: string) {
 
         // For other RPC methods, use a reliable public RPC endpoint
         try {
-          // Use PublicNode as it's fast, free, and reliable
-          const rpcUrl = network === "base"
-            ? "https://base-rpc.publicnode.com"
-            : "https://base-sepolia-rpc.publicnode.com";
+          // Get RPC URL based on network (supports Base and BNB chains)
+          const rpcUrl = RPC_MAP[network || "base-sepolia"] || "https://base-sepolia-rpc.publicnode.com";
 
           const response = await fetch(rpcUrl, {
             method: "POST",

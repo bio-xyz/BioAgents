@@ -18,7 +18,7 @@ export interface X402MiddlewareOptions {
 
 export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
-  const plugin = new Elysia({ name: "x402-middleware" });
+  const plugin = new Elysia({ name: "x402-middleware", scoped: false });
 
   if (!enabled) {
     if (logger) logger.info("x402_middleware_disabled");
@@ -27,7 +27,8 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
-  plugin.onBeforeHandle(async ({ request, path, set }: any) => {
+  // Use 'scoped' so this hook applies to routes in the parent that uses this plugin
+  plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;

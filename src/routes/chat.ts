@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { LLM } from "../llm/provider";
-import { authBeforeHandle } from "../middleware/auth";
+import { authResolver } from "../middleware/authResolver";
+import type { AuthContext } from "../types/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
@@ -25,8 +26,8 @@ type ChatV2Response = {
 export const chatRoute = new Elysia().guard(
   {
     beforeHandle: [
-      authBeforeHandle({
-        optional: process.env.NODE_ENV !== "production",
+      authResolver({
+        required: process.env.NODE_ENV === "production",
       }),
     ],
   },
@@ -152,52 +153,37 @@ export async function chatHandler(ctx: any) {
       };
     }
 
-    // Determine userId: x402 wallet > body.userId > anonymous
-    let userId: string;
-    let source = "api";
-    let isX402User = false;
+    // Get userId from auth context (set by authResolver middleware)
+    // Auth context handles: x402 wallet > JWT token > API key > body.userId > anonymous
+    const auth = (request as any).auth as AuthContext | undefined;
+    const userId = auth?.userId || generateUUID();
+    const source = auth?.method === "x402" ? "x402" : "api";
+    const isX402User = auth?.method === "x402";
 
-    // Check if this is an x402 request with wallet payment
-    const x402Settlement = (request as any).x402Settlement;
-    if (x402Settlement?.payer) {
-      // x402 user - get or create user by wallet address
+    logger.info(
+      {
+        userId,
+        authMethod: auth?.method || "unknown",
+        verified: auth?.verified || false,
+        source,
+        externalId: auth?.externalId,
+      },
+      "user_identified_via_auth",
+    );
+
+    // For x402 users, ensure wallet user record exists
+    if (isX402User && auth?.externalId) {
       const { getOrCreateUserByWallet } = await import("../db/operations");
-      const { user, isNew } = await getOrCreateUserByWallet(
-        x402Settlement.payer,
-      );
-      userId = user.id;
-      source = "x402";
-      isX402User = true;
+      const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
 
       logger.info(
         {
-          userId,
-          wallet: x402Settlement.payer,
+          userId: user.id,
+          wallet: auth.externalId,
           isNewUser: isNew,
-          transaction: x402Settlement.transaction,
         },
-        "x402_user_identified",
+        "x402_user_record_ensured",
       );
-    } else {
-      // Regular API request - use provided userId or generate anonymous
-      const providedUserId = parsedBody.userId;
-      const isValidUserId =
-        providedUserId &&
-        typeof providedUserId === "string" &&
-        providedUserId.length > 0 &&
-        providedUserId !== "undefined" &&
-        providedUserId !== "null";
-
-      userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
-
-      if (!isValidUserId) {
-        logger.warn(
-          { generatedUserId: userId },
-          "no_user_id_provided_generating_temp",
-        );
-      }
-
-      logger.info({ userId, source }, "user_identified");
     }
 
     // Auto-generate conversationId if not provided

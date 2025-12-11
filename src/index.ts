@@ -1,3 +1,6 @@
+// Must be first - polyfills for pdf-parse/pdfjs-dist
+import "./utils/canvas-polyfill";
+
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { artifactsRoute } from "./routes/artifacts";
@@ -128,7 +131,7 @@ const app = new Elysia()
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
 
-  // x402 payment routes (payment auth instead of API key)
+  // x402 payment routes - Base Sepolia (USDC)
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
   .use(x402ChatRoute) // POST /api/x402/chat for payment-gated chat
   .use(x402DeepResearchRoute) // POST /api/x402/deep-research/start, GET /api/x402/deep-research/status/:messageId
