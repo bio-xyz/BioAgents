@@ -19,7 +19,7 @@ export const b402Route = new Elysia({ prefix: "/api/b402" })
 
       // Protocol-specific fields
       facilitatorUrl: b402Config.facilitatorUrl,
-      usdtAddress: b402Config.usdtAddress,
+      tokenAddress: b402Config.tokenAddress,
 
       // Chain info
       chainId: networkConfig.chainId,
@@ -36,8 +36,8 @@ export const b402Route = new Elysia({ prefix: "/api/b402" })
           chainId: networkConfig.chainId,
           tokens: [
             {
-              symbol: "USDT",
-              address: b402Config.usdtAddress,
+              symbol: b402Config.asset,
+              address: b402Config.tokenAddress,
               decimals: 18,
             },
           ],
@@ -51,6 +51,53 @@ export const b402Route = new Elysia({ prefix: "/api/b402" })
   .get("/pricing", () => ({
     routes: b402RoutePricing,
   }))
+  // /supported endpoint - returns supported payment kinds for BNB Chain
+  // Client should query this first to determine the scheme (allowance vs exact)
+  // Proxies to the actual facilitator to get the correct signer address
+  .get("/supported", async ({ set }) => {
+    try {
+      // Query the actual facilitator for supported payment kinds
+      const response = await fetch(`${b402Config.facilitatorUrl}/supported`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+
+      // Fallback to static config if facilitator is unavailable
+      if (logger) {
+        logger.warn(
+          { status: response.status },
+          "b402_facilitator_supported_fallback",
+        );
+      }
+    } catch (error) {
+      if (logger) {
+        logger.warn({ error }, "b402_facilitator_supported_error");
+      }
+    }
+
+    // Fallback: return static config (may not have correct facilitator address)
+    return {
+      kinds: [
+        {
+          network: b402Config.network,
+          scheme: "allowance",
+          x402Version: 1,
+          extra: {
+            facilitatorAddress: networkConfig.relayerAddress,
+            tokenAddress: b402Config.tokenAddress,
+            tokenSymbol: b402Config.asset,
+            tokenDecimals: 18,
+            chainId: networkConfig.chainId,
+          },
+        },
+      ],
+    };
+  })
   .get("/health", async ({ set }) => {
     try {
       const health = await b402Service.checkHealth();

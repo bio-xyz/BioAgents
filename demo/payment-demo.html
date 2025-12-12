@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioAgents Payment Demo - x402 & b402</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { color: #fff; margin-bottom: 10px; }
+    .subtitle { color: #888; margin-bottom: 30px; }
+
+    .wallet-section {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .wallet-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    .status-dot.connected { background: #22c55e; }
+    .wallet-address {
+      font-family: monospace;
+      background: #2a2a2a;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-success:hover:not(:disabled) { background: #16a34a; }
+    .btn-warning { background: #f59e0b; color: black; }
+    .btn-warning:hover:not(:disabled) { background: #d97706; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+    .protocols {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .protocol-card {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #333;
+    }
+    .protocol-card.x402 { border-color: #3b82f6; }
+    .protocol-card.b402 { border-color: #f59e0b; }
+    .protocol-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .protocol-name { font-size: 20px; font-weight: 700; }
+    .protocol-name.x402 { color: #3b82f6; }
+    .protocol-name.b402 { color: #f59e0b; }
+    .protocol-badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #2a2a2a;
+    }
+    .protocol-info {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 15px;
+    }
+    .protocol-info p { margin-bottom: 5px; }
+    .protocol-info strong { color: #ccc; }
+
+    .chat-input {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .chat-input input {
+      flex: 1;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #2a2a2a;
+      color: #fff;
+      font-size: 14px;
+    }
+    .chat-input input:focus { outline: none; border-color: #555; }
+
+    .response-section {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .response-section h3 { margin-bottom: 15px; color: #fff; }
+    .response-box {
+      background: #0a0a0a;
+      border-radius: 8px;
+      padding: 15px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .response-box.error { border: 1px solid #ef4444; }
+    .response-box.success { border: 1px solid #22c55e; }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .network-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #888;
+    }
+    .network-badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .network-badge.base { background: #3b82f620; color: #3b82f6; }
+    .network-badge.bnb { background: #f59e0b20; color: #f59e0b; }
+
+    .status-msg {
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .status-msg.info { background: #3b82f620; color: #60a5fa; }
+    .status-msg.error { background: #ef444420; color: #f87171; }
+    .status-msg.success { background: #22c55e20; color: #4ade80; }
+    .status-msg.warning { background: #f59e0b20; color: #fbbf24; }
+
+    .scheme-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
+    .scheme-badge.exact { background: #22c55e30; color: #4ade80; }
+    .scheme-badge.allowance { background: #f59e0b30; color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BioAgents Payment Demo</h1>
+    <p class="subtitle">Test x402 (Base Sepolia/USDC) and b402 (BNB Mainnet/USDC) payment protocols</p>
+
+    <div class="wallet-section">
+      <div class="wallet-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="walletStatus">Not Connected</span>
+        <span class="wallet-address" id="walletAddress" style="display: none;"></span>
+      </div>
+      <div style="margin-top: 15px;">
+        <button class="btn btn-primary" id="connectBtn" onclick="connectWallet()">Connect MetaMask</button>
+        <button class="btn btn-danger" id="disconnectBtn" onclick="disconnectWallet()" style="display: none;">Disconnect</button>
+      </div>
+      <div class="network-info" id="networkInfo" style="margin-top: 10px; display: none;">
+        Current Network: <span class="network-badge" id="networkBadge"></span>
+        <span id="chainId"></span>
+      </div>
+    </div>
+
+    <div class="protocols">
+      <!-- x402 Card -->
+      <div class="protocol-card x402">
+        <div class="protocol-header">
+          <span class="protocol-name x402">x402 Protocol <span class="scheme-badge exact">EXACT</span></span>
+          <span class="protocol-badge">Base Sepolia</span>
+        </div>
+        <div class="protocol-info">
+          <p><strong>Network:</strong> Base Sepolia (Chain ID: 84532)</p>
+          <p><strong>Token:</strong> USDC (6 decimals)</p>
+          <p><strong>Scheme:</strong> Exact (gasless for user)</p>
+          <p><strong>Chat Price:</strong> $0.01 USDC</p>
+          <p><strong>Endpoint:</strong> /api/x402/chat</p>
+        </div>
+        <button class="btn btn-primary" onclick="switchToBaseSepolia()" id="switchBaseBtn">Switch to Base Sepolia</button>
+        <div class="chat-input">
+          <input type="text" id="x402Message" placeholder="Enter your message..." value="What is rapamycin?">
+          <button class="btn btn-success" onclick="sendX402Chat()" id="x402SendBtn" disabled>Send & Pay</button>
+        </div>
+        <div id="x402Status" class="status-msg info" style="display: none;"></div>
+      </div>
+
+      <!-- b402 Card -->
+      <div class="protocol-card b402">
+        <div class="protocol-header">
+          <span class="protocol-name b402">b402 Protocol <span class="scheme-badge allowance">ALLOWANCE</span></span>
+          <span class="protocol-badge">BNB Mainnet</span>
+        </div>
+        <div class="protocol-info">
+          <p><strong>Network:</strong> BNB Smart Chain (Chain ID: 56)</p>
+          <p><strong>Token:</strong> USDC (18 decimals)</p>
+          <p><strong>Scheme:</strong> Allowance (requires approval tx)</p>
+          <p><strong>Chat Price:</strong> $0.01 USDC</p>
+          <p><strong>Endpoint:</strong> /api/b402/chat</p>
+        </div>
+        <button class="btn btn-warning" onclick="switchToBNBMainnet()" id="switchBNBBtn">Switch to BNB Mainnet</button>
+        <div class="chat-input">
+          <input type="text" id="b402Message" placeholder="Enter your message..." value="What is longevity research?">
+          <button class="btn btn-success" onclick="sendB402Chat()" id="b402SendBtn" disabled>Send & Pay</button>
+        </div>
+        <div id="b402Status" class="status-msg info" style="display: none;"></div>
+      </div>
+    </div>
+
+    <div class="response-section">
+      <h3>Response</h3>
+      <div class="response-box" id="responseBox">Connect your wallet and send a message to see the response here...</div>
+    </div>
+
+    <div class="response-section" style="margin-top: 20px;">
+      <h3>API Configuration</h3>
+      <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+        <button class="btn btn-primary" onclick="fetchX402Config()">Fetch x402 Config</button>
+        <button class="btn btn-warning" onclick="fetchB402Config()">Fetch b402 Config</button>
+        <button class="btn btn-warning" onclick="fetchB402Supported()">b402 /supported</button>
+        <button class="btn btn-success" onclick="checkHealth()">Check Health</button>
+      </div>
+      <div class="response-box" id="configBox">Click a button above to fetch configuration...</div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+
+    const CHAINS = {
+      baseSepolia: {
+        chainId: '0x14a34',
+        chainName: 'Base Sepolia',
+        rpcUrls: ['https://sepolia.base.org'],
+        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        blockExplorerUrls: ['https://sepolia.basescan.org']
+      },
+      bnbMainnet: {
+        chainId: '0x38', // 56
+        chainName: 'BNB Smart Chain',
+        rpcUrls: ['https://bsc-dataseed.binance.org'],
+        nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+        blockExplorerUrls: ['https://bscscan.com']
+      }
+    };
+
+    // USDC on Base Sepolia
+    const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+    // USDC on BNB Mainnet
+    const BNB_USDC_ADDRESS = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
+
+    // ERC20 ABI for allowance and approve
+    const ERC20_ABI = [
+      'function allowance(address owner, address spender) view returns (uint256)',
+      'function approve(address spender, uint256 amount) returns (bool)',
+      'function balanceOf(address owner) view returns (uint256)'
+    ];
+
+    let account = null;
+    let currentChainId = null;
+    let b402FacilitatorAddress = null; // Will be fetched from /supported
+
+    window.addEventListener('load', async () => {
+      if (typeof window.ethereum !== 'undefined') {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          account = accounts[0];
+          updateWalletUI(true);
+          await updateChainInfo();
+        }
+
+        window.ethereum.on('accountsChanged', (accounts) => {
+          if (accounts.length === 0) {
+            disconnectWallet();
+          } else {
+            account = accounts[0];
+            updateWalletUI(true);
+          }
+        });
+
+        window.ethereum.on('chainChanged', (chainId) => {
+          currentChainId = parseInt(chainId, 16);
+          updateChainInfo();
+        });
+      }
+    });
+
+    async function connectWallet() {
+      if (typeof window.ethereum === 'undefined') {
+        alert('MetaMask is not installed!');
+        return;
+      }
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        account = accounts[0];
+        updateWalletUI(true);
+        await updateChainInfo();
+      } catch (error) {
+        console.error('Failed to connect:', error);
+        showStatus('x402Status', 'Failed to connect: ' + error.message, 'error');
+      }
+    }
+
+    function disconnectWallet() {
+      account = null;
+      currentChainId = null;
+      updateWalletUI(false);
+    }
+
+    function updateWalletUI(connected) {
+      document.getElementById('statusDot').classList.toggle('connected', connected);
+      document.getElementById('walletStatus').textContent = connected ? 'Connected' : 'Not Connected';
+      document.getElementById('walletAddress').textContent = connected ? account.slice(0, 6) + '...' + account.slice(-4) : '';
+      document.getElementById('walletAddress').style.display = connected ? 'inline' : 'none';
+      document.getElementById('connectBtn').style.display = connected ? 'none' : 'inline';
+      document.getElementById('disconnectBtn').style.display = connected ? 'inline' : 'none';
+      document.getElementById('networkInfo').style.display = connected ? 'flex' : 'none';
+      if (!connected) {
+        document.getElementById('x402SendBtn').disabled = true;
+        document.getElementById('b402SendBtn').disabled = true;
+      }
+    }
+
+    async function updateChainInfo() {
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      currentChainId = parseInt(chainId, 16);
+
+      const networkBadge = document.getElementById('networkBadge');
+      const chainIdSpan = document.getElementById('chainId');
+
+      chainIdSpan.textContent = `(Chain ID: ${currentChainId})`;
+
+      if (currentChainId === 84532) {
+        networkBadge.textContent = 'Base Sepolia';
+        networkBadge.className = 'network-badge base';
+        document.getElementById('x402SendBtn').disabled = false;
+        document.getElementById('b402SendBtn').disabled = true;
+      } else if (currentChainId === 56) {
+        networkBadge.textContent = 'BNB Mainnet';
+        networkBadge.className = 'network-badge bnb';
+        document.getElementById('x402SendBtn').disabled = true;
+        document.getElementById('b402SendBtn').disabled = false;
+        // Fetch facilitator address when on BNB
+        await fetchFacilitatorAddress();
+      } else {
+        networkBadge.textContent = 'Unknown';
+        networkBadge.className = 'network-badge';
+        document.getElementById('x402SendBtn').disabled = true;
+        document.getElementById('b402SendBtn').disabled = true;
+      }
+    }
+
+    async function fetchFacilitatorAddress() {
+      try {
+        const response = await fetch(`${API_BASE}/api/b402/supported`);
+        if (response.ok) {
+          const data = await response.json();
+          const bnbKind = data.kinds?.find(k => k.network === 'bnb');
+          if (bnbKind?.extra?.facilitatorAddress) {
+            b402FacilitatorAddress = bnbKind.extra.facilitatorAddress;
+            console.log('Facilitator address:', b402FacilitatorAddress);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not fetch facilitator address:', error);
+      }
+    }
+
+    async function switchToBaseSepolia() {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: CHAINS.baseSepolia.chainId }]
+        });
+      } catch (error) {
+        if (error.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [CHAINS.baseSepolia]
+          });
+        }
+      }
+    }
+
+    async function switchToBNBMainnet() {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: CHAINS.bnbMainnet.chainId }]
+        });
+      } catch (error) {
+        if (error.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [CHAINS.bnbMainnet]
+          });
+        }
+      }
+    }
+
+    function showStatus(elementId, message, type) {
+      const el = document.getElementById(elementId);
+      el.textContent = message;
+      el.className = 'status-msg ' + type;
+      el.style.display = 'block';
+    }
+
+    // EIP-712 Domain for x402 (Base Sepolia USDC)
+    function getX402Domain(verifyingContract) {
+      return {
+        name: 'USDC',
+        version: '2',
+        chainId: 84532,
+        verifyingContract: verifyingContract
+      };
+    }
+
+    // EIP-712 Types for x402 exact scheme
+    const X402_TYPES = {
+      TransferWithAuthorization: [
+        { name: 'from', type: 'address' },
+        { name: 'to', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'validAfter', type: 'uint256' },
+        { name: 'validBefore', type: 'uint256' },
+        { name: 'nonce', type: 'bytes32' }
+      ]
+    };
+
+    // EIP-712 Types for b402 allowance scheme
+    // Must match exactly what the facilitator expects to recover the signer
+    const B402_ALLOWANCE_TYPES = {
+      AllowanceTransfer: [
+        { name: 'from', type: 'address' },
+        { name: 'to', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'validBefore', type: 'uint256' },
+        { name: 'nonce', type: 'bytes32' }
+      ]
+    };
+
+    // Alternative: Maybe facilitator uses Permit style?
+    const B402_PERMIT_TYPES = {
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' }
+      ]
+    };
+
+    // Generate random nonce
+    function generateNonce() {
+      const array = new Uint8Array(32);
+      crypto.getRandomValues(array);
+      return '0x' + Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // Helper to call contract methods via eth_call
+    async function ethCall(to, data) {
+      return await window.ethereum.request({
+        method: 'eth_call',
+        params: [{ to, data }, 'latest']
+      });
+    }
+
+    // Get allowance for a spender
+    async function getAllowance(tokenAddress, owner, spender) {
+      // allowance(address,address) selector: 0xdd62ed3e
+      const data = '0xdd62ed3e' +
+        owner.slice(2).padStart(64, '0') +
+        spender.slice(2).padStart(64, '0');
+      const result = await ethCall(tokenAddress, data);
+      return BigInt(result);
+    }
+
+    // Send x402 Chat with actual payment (exact scheme - gasless)
+    async function sendX402Chat() {
+      const message = document.getElementById('x402Message').value;
+      if (!message) return;
+
+      const conversationId = crypto.randomUUID();
+      showStatus('x402Status', 'Step 1: Getting payment requirement...', 'info');
+      document.getElementById('responseBox').textContent = 'Processing...';
+
+      try {
+        // Step 1: Get payment requirement (402 response)
+        const reqResponse = await fetch(`${API_BASE}/api/x402/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, conversationId })
+        });
+
+        if (reqResponse.status !== 402) {
+          const data = await reqResponse.json();
+          document.getElementById('responseBox').textContent = JSON.stringify(data, null, 2);
+          showStatus('x402Status', 'Response received (no payment required)', 'success');
+          return;
+        }
+
+        const paymentReq = await reqResponse.json();
+        const requirement = paymentReq.accepts[0];
+
+        showStatus('x402Status', `Step 2: Signing payment for ${requirement.maxAmountRequired} USDC...`, 'info');
+
+        // Step 2: Create EIP-712 signature for TransferWithAuthorization
+        const now = Math.floor(Date.now() / 1000);
+        const validAfter = 0;
+        const validBefore = now + 3600; // 1 hour validity
+        const nonce = generateNonce();
+
+        const domain = getX402Domain(requirement.asset);
+        const messageData = {
+          from: account,
+          to: requirement.payTo,
+          value: requirement.maxAmountRequired,
+          validAfter: validAfter,
+          validBefore: validBefore,
+          nonce: nonce
+        };
+
+        // Sign with MetaMask
+        const signature = await window.ethereum.request({
+          method: 'eth_signTypedData_v4',
+          params: [account, JSON.stringify({
+            types: {
+              EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' }
+              ],
+              ...X402_TYPES
+            },
+            primaryType: 'TransferWithAuthorization',
+            domain: domain,
+            message: messageData
+          })]
+        });
+
+        showStatus('x402Status', 'Step 3: Sending payment with signed authorization...', 'info');
+
+        // Step 3: Create x402 payment payload
+        const paymentPayload = {
+          x402Version: 1,
+          scheme: 'exact',
+          network: 'base-sepolia',
+          payload: {
+            signature: signature,
+            authorization: {
+              from: account,
+              to: requirement.payTo,
+              value: requirement.maxAmountRequired,
+              validAfter: validAfter.toString(),
+              validBefore: validBefore.toString(),
+              nonce: nonce
+            }
+          }
+        };
+
+        // Base64 encode the payment header
+        const paymentHeader = btoa(JSON.stringify(paymentPayload));
+
+        // Step 4: Send the actual request with payment
+        const chatResponse = await fetch(`${API_BASE}/api/x402/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PAYMENT': paymentHeader
+          },
+          body: JSON.stringify({ message, conversationId })
+        });
+
+        const result = await chatResponse.json();
+
+        if (chatResponse.ok) {
+          showStatus('x402Status', 'Payment successful! Response received.', 'success');
+          document.getElementById('responseBox').className = 'response-box success';
+        } else {
+          showStatus('x402Status', 'Payment failed: ' + (result.error || 'Unknown error'), 'error');
+          document.getElementById('responseBox').className = 'response-box error';
+        }
+
+        document.getElementById('responseBox').textContent = JSON.stringify(result, null, 2);
+
+      } catch (error) {
+        console.error('x402 error:', error);
+        showStatus('x402Status', 'Error: ' + error.message, 'error');
+        document.getElementById('responseBox').textContent = 'Error: ' + error.message;
+        document.getElementById('responseBox').className = 'response-box error';
+      }
+    }
+
+    // Send b402 Chat with allowance scheme (BNB Mainnet)
+    async function sendB402Chat() {
+      const message = document.getElementById('b402Message').value;
+      if (!message) return;
+
+      const conversationId = crypto.randomUUID();
+      showStatus('b402Status', 'Step 1: Getting payment requirement...', 'info');
+      document.getElementById('responseBox').textContent = 'Processing...';
+
+      try {
+        // Step 1: Get payment requirement
+        const reqResponse = await fetch(`${API_BASE}/api/b402/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, conversationId })
+        });
+
+        if (reqResponse.status !== 402) {
+          const data = await reqResponse.json();
+          document.getElementById('responseBox').textContent = JSON.stringify(data, null, 2);
+          showStatus('b402Status', 'Response received (no payment required)', 'success');
+          return;
+        }
+
+        const paymentReq = await reqResponse.json();
+        const requirement = paymentReq.accepts[0];
+        const paymentAmount = BigInt(requirement.maxAmountRequired);
+
+        // Get the facilitator spender address from /supported endpoint
+        // This is the address that will call transferFrom, so user must approve it
+        if (!b402FacilitatorAddress) {
+          await fetchFacilitatorAddress();
+        }
+        if (!b402FacilitatorAddress) {
+          throw new Error('Could not determine facilitator address. Make sure the server is running.');
+        }
+        const FACILITATOR_SPENDER = b402FacilitatorAddress;
+
+        showStatus('b402Status', 'Step 2: Checking USDC approval...', 'info');
+
+        // Step 2: Check current allowance for the facilitator's spender address
+        const currentAllowance = await getAllowance(BNB_USDC_ADDRESS, account, FACILITATOR_SPENDER);
+        console.log('=== B402 DEBUG ===');
+        console.log('Spender address:', FACILITATOR_SPENDER);
+        console.log('Current allowance:', currentAllowance.toString());
+        console.log('Required amount:', paymentAmount.toString());
+        console.log('==================');
+
+        // Step 3: ALWAYS check and approve if needed
+        if (currentAllowance < paymentAmount) {
+          showStatus('b402Status', 'Step 3: Please approve USDC spending (you\'ll pay a small gas fee)...', 'warning');
+
+          // approve(address,uint256) selector: 0x095ea7b3
+          // Approve a large amount to avoid repeated approvals
+          const approveAmount = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'; // Max uint256 (no 0x prefix for concat)
+          const approveData = '0x095ea7b3' +
+            FACILITATOR_SPENDER.slice(2).toLowerCase().padStart(64, '0') +
+            approveAmount;
+
+          console.log('Approve data:', approveData);
+
+          const approveTx = await window.ethereum.request({
+            method: 'eth_sendTransaction',
+            params: [{
+              from: account,
+              to: BNB_USDC_ADDRESS,
+              data: approveData
+            }]
+          });
+
+          showStatus('b402Status', 'Waiting for approval confirmation...', 'info');
+
+          // Wait for transaction to be mined
+          let receipt = null;
+          while (!receipt) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            receipt = await window.ethereum.request({
+              method: 'eth_getTransactionReceipt',
+              params: [approveTx]
+            });
+          }
+
+          if (receipt.status !== '0x1') {
+            throw new Error('Approval transaction failed');
+          }
+
+          showStatus('b402Status', 'Approval confirmed! Now signing payment...', 'success');
+        } else {
+          showStatus('b402Status', 'Step 3: Already approved. Signing payment...', 'info');
+        }
+
+        // Step 4: Sign the AllowanceTransfer authorization
+        const now = Math.floor(Date.now() / 1000);
+        const validBefore = now + 3600; // 1 hour validity
+        const nonce = generateNonce();
+
+        // EIP-712 typed data for allowance scheme
+        // Domain values MUST match what the facilitator uses (from paymentRequirements.extra)
+        const domain = {
+          name: requirement.extra?.name || 'USD Coin',
+          version: requirement.extra?.version || '1',
+          chainId: requirement.extra?.chainId || 56,
+          verifyingContract: requirement.asset
+        };
+
+        // Authorization message - values must be strings for uint256
+        const authorization = {
+          from: account,
+          to: requirement.payTo,
+          value: String(requirement.maxAmountRequired),
+          validBefore: String(validBefore),
+          nonce: nonce
+        };
+
+        console.log('=== EIP-712 Signing ===');
+        console.log('Domain:', domain);
+        console.log('Message:', authorization);
+        console.log('=======================');
+
+        showStatus('b402Status', 'Step 4: Please sign the payment authorization...', 'info');
+
+        const signature = await window.ethereum.request({
+          method: 'eth_signTypedData_v4',
+          params: [account, JSON.stringify({
+            types: {
+              EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' }
+              ],
+              ...B402_ALLOWANCE_TYPES
+            },
+            primaryType: 'AllowanceTransfer',
+            domain: domain,
+            message: authorization
+          })]
+        });
+
+        console.log('Signature:', signature);
+
+        showStatus('b402Status', 'Step 5: Sending payment with signed authorization...', 'info');
+
+        // Step 5: Build payment payload for allowance scheme
+        const paymentPayload = {
+          x402Version: 1,
+          scheme: 'allowance',
+          network: 'bnb',
+          payload: {
+            signature: signature,
+            authorization: {
+              from: account,
+              to: requirement.payTo,
+              value: requirement.maxAmountRequired,
+              validBefore: validBefore.toString(),
+              nonce: nonce
+            }
+          }
+        };
+
+        // Base64 encode and send as X-Payment header
+        const paymentHeader = btoa(JSON.stringify(paymentPayload));
+
+        const chatResponse = await fetch(`${API_BASE}/api/b402/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PAYMENT': paymentHeader
+          },
+          body: JSON.stringify({ message, conversationId })
+        });
+
+        const result = await chatResponse.json();
+
+        if (chatResponse.ok) {
+          showStatus('b402Status', 'Payment successful! Response received.', 'success');
+          document.getElementById('responseBox').className = 'response-box success';
+        } else {
+          // Handle insufficient_allowance error
+          if (result.errorReason === 'insufficient_allowance') {
+            showStatus('b402Status', 'Approval revoked or expired. Please try again.', 'error');
+          } else {
+            showStatus('b402Status', 'Payment failed: ' + (result.error || result.errorReason || 'Unknown error'), 'error');
+          }
+          document.getElementById('responseBox').className = 'response-box error';
+        }
+
+        document.getElementById('responseBox').textContent = JSON.stringify(result, null, 2);
+
+      } catch (error) {
+        console.error('b402 error:', error);
+        showStatus('b402Status', 'Error: ' + error.message, 'error');
+        document.getElementById('responseBox').textContent = 'Error: ' + error.message;
+        document.getElementById('responseBox').className = 'response-box error';
+      }
+    }
+
+    async function fetchX402Config() {
+      try {
+        const response = await fetch(`${API_BASE}/api/x402/config`);
+        const data = await response.json();
+        document.getElementById('configBox').textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        document.getElementById('configBox').textContent = 'Error: ' + error.message;
+      }
+    }
+
+    async function fetchB402Config() {
+      try {
+        const response = await fetch(`${API_BASE}/api/b402/config`);
+        const data = await response.json();
+        document.getElementById('configBox').textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        document.getElementById('configBox').textContent = 'Error: ' + error.message;
+      }
+    }
+
+    async function fetchB402Supported() {
+      try {
+        const response = await fetch(`${API_BASE}/api/b402/supported`);
+        const data = await response.json();
+        document.getElementById('configBox').textContent = JSON.stringify(data, null, 2);
+
+        // Update facilitator address if found
+        const bnbKind = data.kinds?.find(k => k.network === 'bnb');
+        if (bnbKind?.extra?.facilitatorAddress) {
+          b402FacilitatorAddress = bnbKind.extra.facilitatorAddress;
+        }
+      } catch (error) {
+        document.getElementById('configBox').textContent = 'Error: ' + error.message;
+      }
+    }
+
+    async function checkHealth() {
+      try {
+        const [x402Health, b402Health] = await Promise.all([
+          fetch(`${API_BASE}/api/x402/health`).then(r => r.json()).catch(e => ({ error: e.message })),
+          fetch(`${API_BASE}/api/b402/health`).then(r => r.json()).catch(e => ({ error: e.message }))
+        ]);
+        document.getElementById('configBox').textContent = JSON.stringify({ x402: x402Health, b402: b402Health }, null, 2);
+      } catch (error) {
+        document.getElementById('configBox').textContent = 'Error: ' + error.message;
+      }
+    }
+  </script>
+</body>
+</html>

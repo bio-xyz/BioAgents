@@ -9,7 +9,7 @@ import { b402Config, networkConfig } from "./config";
  */
 
 export interface B402PaymentRequirement {
-  scheme: "exact";
+  scheme: "allowance" | "exact";
   network: string;
   maxAmountRequired: string;
   resource: string;
@@ -21,6 +21,7 @@ export interface B402PaymentRequirement {
   extra: {
     name: string;
     version: string;
+    facilitatorAddress: string; // For allowance scheme
     relayerAddress: string;
     chainId: number;
     [key: string]: any;
@@ -52,11 +53,12 @@ export function usdToBaseUnits(amountUSD: string): string {
 }
 
 /**
- * Decoded payment payload from client
+ * Decoded payment payload from client - Allowance scheme for BNB Chain
+ * Note: AllowanceTransfer does NOT have validAfter, only validBefore
  */
 interface DecodedB402Payment {
   x402Version: number;
-  scheme: "exact";
+  scheme: "allowance";
   network: string;
   payload: {
     signature: string;
@@ -64,7 +66,6 @@ interface DecodedB402Payment {
       from: string;
       to: string;
       value: string;
-      validAfter: string;
       validBefore: string;
       nonce: string;
     };
@@ -138,7 +139,7 @@ export class B402Service {
     const maxAmountRequired = usdToBaseUnits(amountUSD);
 
     return {
-      scheme: "exact",
+      scheme: "allowance", // BNB Chain uses allowance scheme
       network: b402Config.network,
       maxAmountRequired,
       resource,
@@ -146,10 +147,13 @@ export class B402Service {
       mimeType: "application/json",
       payTo: b402Config.paymentAddress as `0x${string}`,
       maxTimeoutSeconds: b402Config.defaultTimeout,
-      asset: b402Config.usdtAddress,
+      asset: b402Config.tokenAddress,
       extra: {
-        name: "USDT",
+        // EIP-712 domain name must match the token contract's name() return value
+        // BNB Chain USDC returns "USD Coin", not "USDC"
+        name: "USD Coin",
         version: "1",
+        facilitatorAddress: networkConfig.relayerAddress, // For allowance scheme
         relayerAddress: networkConfig.relayerAddress,
         chainId: networkConfig.chainId,
         ...(options?.metadata || {}),
@@ -175,18 +179,18 @@ export class B402Service {
       }
 
       // Ensure all values are properly formatted as strings (per facilitator requirements)
+      // For allowance scheme (BNB Chain), there is NO validAfter field - only validBefore
       const authorization = parsed.payload.authorization;
       return {
         x402Version: this.b402Version,
-        scheme: "exact",
+        scheme: "allowance", // BNB Chain uses allowance scheme
         network: parsed.network || b402Config.network,
         payload: {
-          signature: authorization.signature || parsed.payload.signature,
+          signature: parsed.payload.signature, // Signature is at payload level, not authorization
           authorization: {
             from: authorization.from,
             to: authorization.to,
             value: String(authorization.value),
-            validAfter: String(authorization.validAfter),
             validBefore: String(authorization.validBefore),
             nonce: authorization.nonce,
           },
@@ -231,6 +235,16 @@ export class B402Service {
         paymentPayload: decodedPayment,
         paymentRequirements: paymentRequirements,
       };
+
+      // Debug: Log the exact request being sent to facilitator
+      if (logger) {
+        logger.info(
+          {
+            facilitatorRequest: JSON.stringify(facilitatorRequest, null, 2),
+          },
+          "b402_facilitator_request_debug",
+        );
+      }
 
       // Call facilitator verify endpoint
       const response = await fetch(`${b402Config.facilitatorUrl}/verify`, {

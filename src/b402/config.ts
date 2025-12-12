@@ -8,8 +8,8 @@ export const B402ConfigSchema = z.object({
   facilitatorUrl: z.string(),
   paymentAddress: z.string(),
   network: z.string(),
-  asset: z.string().default("USDT"),
-  usdtAddress: z.string(),
+  asset: z.string().default("USDC"),
+  tokenAddress: z.string(), // USDC or USDT address
   defaultTimeout: z.number().default(30),
 });
 
@@ -20,6 +20,7 @@ const NETWORK_CONFIG = {
     network: "bnb-testnet", // Must match facilitator's network name
     // Local facilitator for testing
     facilitatorUrl: "http://localhost:8080",
+    usdcAddress: "0x64544969ed7EBf5f083679233325356EbE738930", // BNB Testnet USDC
     usdtAddress: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd", // BNB Testnet USDT
     chainId: 97,
     rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545",
@@ -28,8 +29,9 @@ const NETWORK_CONFIG = {
   },
   mainnet: {
     network: "bnb", // Must match facilitator's network name
-    // Production facilitator (b402.ai when deployed)
-    facilitatorUrl: "https://facilitator.b402.ai",
+    // Production facilitator (bioagents.dev)
+    facilitatorUrl: "https://facilitator.bioagents.dev",
+    usdcAddress: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", // BNB Mainnet USDC
     usdtAddress: "0x55d398326f99059fF775485246999027B3197955", // BNB Mainnet USDT
     chainId: 56,
     rpcUrl: "https://bsc-dataseed.binance.org",
@@ -49,6 +51,15 @@ if (!process.env.B402_PAYMENT_ADDRESS && process.env.B402_ENABLED === "true") {
   );
 }
 
+// Determine token address based on asset type
+const asset = process.env.B402_ASSET || "USDC";
+const getDefaultTokenAddress = () => {
+  if (asset === "USDC") {
+    return networkDefaults.usdcAddress;
+  }
+  return networkDefaults.usdtAddress;
+};
+
 export const b402Config: B402Config = {
   enabled: process.env.B402_ENABLED === "true",
   environment: env,
@@ -56,9 +67,9 @@ export const b402Config: B402Config = {
     process.env.B402_FACILITATOR_URL || networkDefaults.facilitatorUrl,
   paymentAddress: process.env.B402_PAYMENT_ADDRESS || "",
   network: process.env.B402_NETWORK || networkDefaults.network,
-  asset: process.env.B402_ASSET || "USDT",
-  usdtAddress:
-    process.env.B402_USDT_ADDRESS || networkDefaults.usdtAddress,
+  asset: asset,
+  tokenAddress:
+    process.env.B402_USDC_ADDRESS || process.env.B402_USDT_ADDRESS || getDefaultTokenAddress(),
   defaultTimeout: Number(process.env.B402_TIMEOUT || 30),
 };
 

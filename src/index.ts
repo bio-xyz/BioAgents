@@ -122,6 +122,19 @@ const app = new Elysia()
     return new Response(null, { status: 204 });
   })
 
+  // Payment demo page (for testing x402/b402)
+  .get("/demo/payment", async () => {
+    try {
+      const htmlFile = Bun.file("demo/payment-demo.html");
+      const htmlContent = await htmlFile.text();
+      return new Response(htmlContent, {
+        headers: { "Content-Type": "text/html" },
+      });
+    } catch {
+      return new Response("Demo page not found", { status: 404 });
+    }
+  })
+
   // Health check endpoint with optional queue/Redis status
   .get("/api/health", async () => {
     if (logger) logger.info("Health check endpoint hit");
