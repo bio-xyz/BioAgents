@@ -1,5 +1,6 @@
 import { VectorSearchWithDocuments } from "../../embeddings/vectorSearchWithDocs";
 import logger from "../../utils/logger";
+import type { LiteratureResult } from "../../utils/literature";
 
 const docsPath = process.env.KNOWLEDGE_DOCS_PATH;
 
@@ -18,7 +19,9 @@ export async function initKnowledgeBase() {
 /**
  * Search knowledge base for relevant literature
  */
-export async function searchKnowledge(objective: string): Promise<string> {
+export async function searchKnowledge(
+  objective: string,
+): Promise<LiteratureResult> {
   if (!docsPath) {
     throw new Error("KNOWLEDGE_DOCS_PATH not configured");
   }
@@ -34,12 +37,18 @@ export async function searchKnowledge(objective: string): Promise<string> {
   );
 
   // Format output
-  const output = `Found ${searchResults.length} relevant knowledge chunks:\n\n${searchResults
-    .map(
-      (doc, idx) =>
-        `${idx + 1}. ${doc.title}\n   ${doc.content.substring(0, 300)}...`,
-    )
-    .join("\n\n")}`;
+  const output =
+    searchResults.length === 0
+      ? `Found 0 relevant knowledge chunks (no results)`
+      : `Found ${searchResults.length} relevant knowledge chunks:\n\n${searchResults
+          .map(
+            (doc, idx) =>
+              `${idx + 1}. ${doc.title}\n   ${doc.content.substring(0, 300)}...`,
+          )
+          .join("\n\n")}`;
 
-  return output;
+  return {
+    output,
+    count: searchResults.length,
+  };
 }
