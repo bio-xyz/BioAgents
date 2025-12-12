@@ -602,9 +602,10 @@
     }
 
     // EIP-712 Domain for x402 (Base Mainnet USDC)
+    // Note: Base Mainnet USDC uses "USD Coin" as name, not "USDC"
     function getX402Domain(verifyingContract) {
       return {
-        name: 'USDC',
+        name: 'USD Coin',
         version: '2',
         chainId: 8453,
         verifyingContract: verifyingContract

@@ -8,7 +8,7 @@ import type {
 } from "x402/types";
 import { useFacilitator } from "x402/verify";
 import { processPriceToAtomicAmount } from "x402/shared";
-import { createCdpAuthHeaders } from "@coinbase/x402";
+import { createCdpAuthHeaders, createFacilitatorConfig } from "@coinbase/x402";
 import logger from "../utils/logger";
 import { x402Config } from "./config";
 
@@ -165,12 +165,10 @@ export class X402Service {
         throw new Error("CDP_API_KEY_ID and CDP_API_KEY_SECRET are required for CDP facilitator");
       }
 
-      // Use the official Coinbase CDP auth header generator
-      // This creates proper JWT tokens for each request
-      this.facilitator = useFacilitator({
-        url: x402Config.facilitatorUrl as Resource,
-        createAuthHeaders: createCdpAuthHeaders(cdpApiKeyId, cdpApiKeySecret),
-      });
+      // Use the official Coinbase facilitator config helper
+      // This automatically sets up the correct URL and auth headers
+      const cdpConfig = createFacilitatorConfig(cdpApiKeyId, cdpApiKeySecret);
+      this.facilitator = useFacilitator(cdpConfig);
 
       if (logger) {
         logger.info(
@@ -327,7 +325,17 @@ export class X402Service {
       return response;
     } catch (error: any) {
       const message = error?.message || "Settlement error";
-      if (logger) logger.error({ error }, "x402_settlement_error");
+      if (logger) {
+        logger.error(
+          {
+            error: error?.message || String(error),
+            stack: error?.stack,
+            name: error?.name,
+            cause: error?.cause,
+          },
+          "x402_settlement_error",
+        );
+      }
       return { success: false, errorReason: message };
     }
   }
