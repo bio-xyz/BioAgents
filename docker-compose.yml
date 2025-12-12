@@ -12,7 +12,7 @@ services:
       - bioagents-images:/app/client/public/images
 
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
 
     environment:
       # Required: LLM API Keys
@@ -177,7 +177,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
