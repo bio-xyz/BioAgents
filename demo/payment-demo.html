@@ -184,6 +184,42 @@
     }
     .scheme-badge.exact { background: #22c55e30; color: #4ade80; }
     .scheme-badge.allowance { background: #f59e0b30; color: #fbbf24; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-badge.queued { background: #3b82f630; color: #60a5fa; }
+    .status-badge.active { background: #f59e0b30; color: #fbbf24; }
+    .status-badge.processing { background: #f59e0b30; color: #fbbf24; }
+    .status-badge.completed { background: #22c55e30; color: #4ade80; }
+    .status-badge.failed { background: #ef444430; color: #f87171; }
+    .status-badge.unknown { background: #6b728030; color: #9ca3af; }
+
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+    .job-progress {
+      margin-top: 10px;
+      padding: 10px;
+      background: #0a0a0a;
+      border-radius: 8px;
+    }
+    .job-progress-bar {
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .job-progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #22c55e);
+      transition: width 0.3s ease;
+    }
   </style>
 </head>
 <body>
@@ -256,6 +292,30 @@
       <div class="response-box" id="responseBox">Connect your wallet and send a message to see the response here...</div>
     </div>
 
+    <!-- Job Queue Monitor -->
+    <div class="response-section" style="margin-top: 20px;">
+      <h3>Job Queue Monitor</h3>
+      <div id="jobQueueInfo" style="display: none; margin-bottom: 15px;">
+        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+          <div>
+            <strong>Job ID:</strong> <span id="currentJobId" style="font-family: monospace; font-size: 12px;">-</span>
+          </div>
+          <div>
+            <strong>Status:</strong> <span id="jobStatus" class="status-badge">-</span>
+          </div>
+          <div>
+            <strong>Poll URL:</strong> <span id="jobPollUrl" style="font-family: monospace; font-size: 12px;">-</span>
+          </div>
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 10px;">
+          <button class="btn btn-primary" onclick="pollJobStatus()" id="pollJobBtn">Poll Status</button>
+          <button class="btn btn-success" onclick="startAutoPolling()" id="startPollBtn">Auto-Poll (2s)</button>
+          <button class="btn btn-danger" onclick="stopAutoPolling()" id="stopPollBtn" style="display: none;">Stop Polling</button>
+        </div>
+      </div>
+      <div class="response-box" id="jobResultBox">No job queued yet. Send a payment request to see job status...</div>
+    </div>
+
     <div class="response-section" style="margin-top: 20px;">
       <h3>API Configuration</h3>
       <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
@@ -303,6 +363,98 @@
     let account = null;
     let currentChainId = null;
     let b402FacilitatorAddress = null; // Will be fetched from /supported
+
+    // Job queue state
+    let currentJob = null;
+    let pollingInterval = null;
+
+    // Job queue functions
+    function setCurrentJob(jobData) {
+      currentJob = jobData;
+      document.getElementById('jobQueueInfo').style.display = 'block';
+      document.getElementById('currentJobId').textContent = jobData.jobId || jobData.messageId || '-';
+      document.getElementById('jobPollUrl').textContent = jobData.pollUrl || '-';
+      updateJobStatusBadge(jobData.status || 'unknown');
+      document.getElementById('jobResultBox').textContent = JSON.stringify(jobData, null, 2);
+    }
+
+    function updateJobStatusBadge(status) {
+      const badge = document.getElementById('jobStatus');
+      badge.textContent = status;
+      badge.className = 'status-badge ' + (status || 'unknown').toLowerCase();
+    }
+
+    async function pollJobStatus() {
+      if (!currentJob || !currentJob.pollUrl) {
+        document.getElementById('jobResultBox').textContent = 'No job to poll. Send a request first.';
+        return;
+      }
+
+      try {
+        document.getElementById('pollJobBtn').disabled = true;
+        document.getElementById('pollJobBtn').textContent = 'Polling...';
+
+        const response = await fetch(`${API_BASE}${currentJob.pollUrl}`);
+        const result = await response.json();
+
+        // Update status badge
+        updateJobStatusBadge(result.status || result.state || 'unknown');
+
+        // Display full result
+        document.getElementById('jobResultBox').textContent = JSON.stringify(result, null, 2);
+        document.getElementById('jobResultBox').className = 'response-box' +
+          (result.status === 'completed' ? ' success' : result.status === 'failed' ? ' error' : '');
+
+        // If job is done, show in main response box too
+        if (result.status === 'completed' && result.result) {
+          document.getElementById('responseBox').textContent = JSON.stringify(result.result, null, 2);
+          document.getElementById('responseBox').className = 'response-box success';
+          stopAutoPolling();
+        } else if (result.status === 'failed') {
+          document.getElementById('responseBox').textContent = JSON.stringify(result, null, 2);
+          document.getElementById('responseBox').className = 'response-box error';
+          stopAutoPolling();
+        }
+
+        return result;
+      } catch (error) {
+        document.getElementById('jobResultBox').textContent = 'Poll error: ' + error.message;
+        document.getElementById('jobResultBox').className = 'response-box error';
+      } finally {
+        document.getElementById('pollJobBtn').disabled = false;
+        document.getElementById('pollJobBtn').textContent = 'Poll Status';
+      }
+    }
+
+    function startAutoPolling() {
+      if (pollingInterval) return;
+
+      document.getElementById('startPollBtn').style.display = 'none';
+      document.getElementById('stopPollBtn').style.display = 'inline-block';
+
+      // Poll immediately then every 2 seconds
+      pollJobStatus();
+      pollingInterval = setInterval(pollJobStatus, 2000);
+    }
+
+    function stopAutoPolling() {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+      document.getElementById('startPollBtn').style.display = 'inline-block';
+      document.getElementById('stopPollBtn').style.display = 'none';
+    }
+
+    // Helper to handle queued job responses
+    function handleQueuedResponse(result) {
+      if (result.status === 'queued' && result.jobId) {
+        setCurrentJob(result);
+        showStatus('b402Status', `Job queued! ID: ${result.jobId}. Use Job Monitor to track progress.`, 'info');
+        return true;
+      }
+      return false;
+    }
 
     window.addEventListener('load', async () => {
       if (typeof window.ethereum !== 'undefined') {
@@ -619,8 +771,16 @@
         const result = await chatResponse.json();
 
         if (chatResponse.ok) {
-          showStatus('x402Status', 'Payment successful! Response received.', 'success');
-          document.getElementById('responseBox').className = 'response-box success';
+          // Check if this is a queued job response
+          if (result.status === 'queued' && result.jobId) {
+            setCurrentJob(result);
+            showStatus('x402Status', `Payment accepted! Job queued (ID: ${result.jobId.slice(0, 8)}...). Check Job Monitor below.`, 'success');
+            document.getElementById('responseBox').className = 'response-box success';
+            startAutoPolling();
+          } else {
+            showStatus('x402Status', 'Payment successful! Response received.', 'success');
+            document.getElementById('responseBox').className = 'response-box success';
+          }
         } else {
           showStatus('x402Status', 'Payment failed: ' + (result.error || 'Unknown error'), 'error');
           document.getElementById('responseBox').className = 'response-box error';
@@ -811,8 +971,17 @@
         const result = await chatResponse.json();
 
         if (chatResponse.ok) {
-          showStatus('b402Status', 'Payment successful! Response received.', 'success');
-          document.getElementById('responseBox').className = 'response-box success';
+          // Check if this is a queued job response
+          if (result.status === 'queued' && result.jobId) {
+            setCurrentJob(result);
+            showStatus('b402Status', `Payment accepted! Job queued (ID: ${result.jobId.slice(0, 8)}...). Check Job Monitor below.`, 'success');
+            document.getElementById('responseBox').className = 'response-box success';
+            // Optionally start auto-polling
+            startAutoPolling();
+          } else {
+            showStatus('b402Status', 'Payment successful! Response received.', 'success');
+            document.getElementById('responseBox').className = 'response-box success';
+          }
         } else {
           // Handle insufficient_allowance error
           if (result.errorReason === 'insufficient_allowance') {

@@ -43,29 +43,31 @@ type ChatQueuedResponse = {
  * - USE_JOB_QUEUE=false (default): In-process execution, returns result directly
  * - USE_JOB_QUEUE=true: Enqueues job to BullMQ, returns job ID for polling
  */
-export const chatRoute = new Elysia().guard(
-  {
-    beforeHandle: [
-      authResolver({
-        required: process.env.NODE_ENV === "production",
-      }),
-      rateLimitMiddleware("chat"),
-    ],
-  },
-  (app) =>
-    app
-      .get("/api/chat", async () => {
-        return {
-          message: "This endpoint requires POST method.",
-          apiDocumentation: "https://your-docs-url.com/api",
-        };
-      })
-      .post("/api/chat", chatHandler)
-      // Job status endpoint (only used in queue mode)
-      .get("/api/chat/status/:jobId", chatStatusHandler)
-      // Manual retry endpoint for failed jobs
-      .post("/api/chat/retry/:jobId", chatRetryHandler),
-);
+export const chatRoute = new Elysia()
+  // Job status endpoint - outside auth guard since job ID is unguessable UUID
+  // This allows polling without auth, useful for webhooks and external monitoring
+  .get("/api/chat/status/:jobId", chatStatusHandler)
+  .guard(
+    {
+      beforeHandle: [
+        authResolver({
+          required: process.env.NODE_ENV === "production",
+        }),
+        rateLimitMiddleware("chat"),
+      ],
+    },
+    (app) =>
+      app
+        .get("/api/chat", async () => {
+          return {
+            message: "This endpoint requires POST method.",
+            apiDocumentation: "https://your-docs-url.com/api",
+          };
+        })
+        .post("/api/chat", chatHandler)
+        // Manual retry endpoint for failed jobs
+        .post("/api/chat/retry/:jobId", chatRetryHandler),
+  );
 
 /**
  * Chat Status Handler - Check job status (queue mode only)
