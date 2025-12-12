@@ -664,11 +664,14 @@ export async function chatHandler(ctx: any) {
         objective: task.objective,
         type: "OPENSCHOLAR",
       }).then((result) => {
-        task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+        if (result.count && result.count > 0) {
+          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+        }
         logger.info(
           {
             taskObjective: task.objective,
             outputLength: result.output.length,
+            count: result.count,
             outputPreview: result.output.substring(0, 200),
           },
           "openscholar_completed",

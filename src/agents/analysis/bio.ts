@@ -211,7 +211,7 @@ async function awaitBioTask(
   apiKey: string,
   taskId: string,
 ): Promise<BioDataAnalysisResult> {
-  const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes max wait
+  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes max wait
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
 
@@ -258,5 +258,7 @@ async function awaitBioTask(
 
   // Timeout reached
   logger.error({ taskId }, "bio_analysis_task_timeout");
-  throw new Error("Bio data analysis task timed out after 20 minutes");
+  throw new Error(
+    `Bio data analysis task timed out after ${MAX_WAIT_TIME / 60000} minutes`,
+  );
 }

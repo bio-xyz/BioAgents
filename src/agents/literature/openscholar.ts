@@ -1,4 +1,5 @@
 import logger from "../../utils/logger";
+import type { LiteratureResult } from "../../utils/literature";
 
 interface OpenScholarChunk {
   reranker_score: number;
@@ -11,7 +12,9 @@ interface OpenScholarChunk {
 /**
  * Search OpenScholar for relevant literature
  */
-export async function searchOpenScholar(objective: string): Promise<string> {
+export async function searchOpenScholar(
+  objective: string,
+): Promise<LiteratureResult> {
   const endpoint = process.env.OPENSCHOLAR_API_URL || "";
   const apiKey = process.env.OPENSCHOLAR_API_KEY;
 
@@ -29,16 +32,22 @@ export async function searchOpenScholar(objective: string): Promise<string> {
     text: chunk.text,
   }));
 
-  const output = `Found ${papers.length} relevant papers from OpenScholar:\n\n${papers
-    .map(
-      (p, idx) =>
-        `${idx + 1}. ${p.title}\n   DOI: ${p.doi}\n   Excerpt: ${p.text.substring(0, 200)}...`,
-    )
-    .join("\n\n")}`;
+  const output =
+    papers.length === 0
+      ? `Found 0 relevant papers from OpenScholar (no results)`
+      : `Found ${papers.length} relevant papers from OpenScholar:\n\n${papers
+          .map(
+            (p, idx) =>
+              `${idx + 1}. ${p.title}\n   DOI: ${p.doi}\n   Excerpt: ${p.text.substring(0, 200)}...`,
+          )
+          .join("\n\n")}`;
 
   logger.info({ paperCount: papers.length }, "openscholar_search_completed");
 
-  return output;
+  return {
+    output,
+    count: papers.length,
+  };
 }
 
 /**

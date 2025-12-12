@@ -463,28 +463,26 @@ async function runDeepResearch(params: {
           "executing_literature_task",
         );
 
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
-            ? "BIOLIT"
-            : "EDISON";
-        const primaryLiteratureLabel =
-          primaryLiteratureType === "BIOLIT" ? "BioLiterature" : "Edison";
+        const primaryLiteratureType = "EDISON";
+        const primaryLiteratureLabel = "Edison";
 
         // Run OpenScholar and update state when done
         const openScholarPromise = literatureAgent({
           objective: task.objective,
           type: "OPENSCHOLAR",
         }).then(async (result) => {
-          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+          if (result.count && result.count > 0) {
+            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+          }
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
               conversationState.values,
             );
-            logger.info("openscholar_completed");
+            logger.info({ count: result.count }, "openscholar_completed");
           }
           logger.info(
-            { outputLength: result.output.length },
+            { outputLength: result.output.length, count: result.count },
             "openscholar_result_received",
           );
         });
@@ -494,6 +492,7 @@ async function runDeepResearch(params: {
           objective: task.objective,
           type: primaryLiteratureType,
         }).then(async (result) => {
+          // Always append for Edison/BioLit (no count filtering)
           task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
           if (conversationState.id) {
             await updateConversationState(
@@ -511,16 +510,18 @@ async function runDeepResearch(params: {
           objective: task.objective,
           type: "KNOWLEDGE",
         }).then(async (result) => {
-          task.output += `Knowledge literature results:\n${result.output}\n\n`;
+          if (result.count && result.count > 0) {
+            task.output += `Knowledge literature results:\n${result.output}\n\n`;
+          }
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
               conversationState.values,
             );
-            logger.info("knowledge_completed");
+            logger.info({ count: result.count }, "knowledge_completed");
           }
           logger.info(
-            { outputLength: result.output.length },
+            { outputLength: result.output.length, count: result.count },
             "knowledge_result_received",
           );
         });
