@@ -369,12 +369,8 @@ async function runDeepResearch(params: {
           "executing_literature_task",
         );
 
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
-            ? "BIOLIT"
-            : "EDISON";
-        const primaryLiteratureLabel =
-          primaryLiteratureType === "BIOLIT" ? "BioLiterature" : "Edison";
+        const primaryLiteratureType = "EDISON";
+        const primaryLiteratureLabel = "Edison";
 
         // Run OpenScholar and update state when done
         const openScholarPromise = literatureAgent({
