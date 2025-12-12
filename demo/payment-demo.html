@@ -225,7 +225,7 @@
 <body>
   <div class="container">
     <h1>BioAgents Payment Demo</h1>
-    <p class="subtitle">Test x402 (Base Sepolia/USDC) and b402 (BNB Mainnet/USDC) payment protocols</p>
+    <p class="subtitle">Test x402 (Base Mainnet/USDC) and b402 (BNB Mainnet/USDC) payment protocols</p>
 
     <div class="wallet-section">
       <div class="wallet-status">
@@ -248,16 +248,16 @@
       <div class="protocol-card x402">
         <div class="protocol-header">
           <span class="protocol-name x402">x402 Protocol <span class="scheme-badge exact">EXACT</span></span>
-          <span class="protocol-badge">Base Sepolia</span>
+          <span class="protocol-badge">Base Mainnet</span>
         </div>
         <div class="protocol-info">
-          <p><strong>Network:</strong> Base Sepolia (Chain ID: 84532)</p>
+          <p><strong>Network:</strong> Base Mainnet (Chain ID: 8453)</p>
           <p><strong>Token:</strong> USDC (6 decimals)</p>
           <p><strong>Scheme:</strong> Exact (gasless for user)</p>
           <p><strong>Chat Price:</strong> $0.01 USDC</p>
           <p><strong>Endpoint:</strong> /api/x402/chat</p>
         </div>
-        <button class="btn btn-primary" onclick="switchToBaseSepolia()" id="switchBaseBtn">Switch to Base Sepolia</button>
+        <button class="btn btn-primary" onclick="switchToBaseMainnet()" id="switchBaseBtn">Switch to Base Mainnet</button>
         <div class="chat-input">
           <input type="text" id="x402Message" placeholder="Enter your message..." value="What is rapamycin?">
           <button class="btn btn-success" onclick="sendX402Chat()" id="x402SendBtn" disabled>Send & Pay</button>
@@ -332,12 +332,12 @@
     const API_BASE = window.location.origin;
 
     const CHAINS = {
-      baseSepolia: {
-        chainId: '0x14a34',
-        chainName: 'Base Sepolia',
-        rpcUrls: ['https://sepolia.base.org'],
+      baseMainnet: {
+        chainId: '0x2105', // 8453
+        chainName: 'Base',
+        rpcUrls: ['https://mainnet.base.org'],
         nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-        blockExplorerUrls: ['https://sepolia.basescan.org']
+        blockExplorerUrls: ['https://basescan.org']
       },
       bnbMainnet: {
         chainId: '0x38', // 56
@@ -348,8 +348,8 @@
       }
     };
 
-    // USDC on Base Sepolia
-    const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+    // USDC on Base Mainnet
+    const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
     // USDC on BNB Mainnet
     const BNB_USDC_ADDRESS = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
 
@@ -526,8 +526,8 @@
 
       chainIdSpan.textContent = `(Chain ID: ${currentChainId})`;
 
-      if (currentChainId === 84532) {
-        networkBadge.textContent = 'Base Sepolia';
+      if (currentChainId === 8453) {
+        networkBadge.textContent = 'Base Mainnet';
         networkBadge.className = 'network-badge base';
         document.getElementById('x402SendBtn').disabled = false;
         document.getElementById('b402SendBtn').disabled = true;
@@ -562,17 +562,17 @@
       }
     }
 
-    async function switchToBaseSepolia() {
+    async function switchToBaseMainnet() {
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: CHAINS.baseSepolia.chainId }]
+          params: [{ chainId: CHAINS.baseMainnet.chainId }]
         });
       } catch (error) {
         if (error.code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [CHAINS.baseSepolia]
+            params: [CHAINS.baseMainnet]
           });
         }
       }
@@ -601,12 +601,12 @@
       el.style.display = 'block';
     }
 
-    // EIP-712 Domain for x402 (Base Sepolia USDC)
+    // EIP-712 Domain for x402 (Base Mainnet USDC)
     function getX402Domain(verifyingContract) {
       return {
         name: 'USDC',
         version: '2',
-        chainId: 84532,
+        chainId: 8453,
         verifyingContract: verifyingContract
       };
     }
@@ -741,7 +741,7 @@
         const paymentPayload = {
           x402Version: 1,
           scheme: 'exact',
-          network: 'base-sepolia',
+          network: 'base',
           payload: {
             signature: signature,
             authorization: {
