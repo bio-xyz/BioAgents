@@ -9,6 +9,7 @@ type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON" | "BIOLIT";
 type LiteratureResult = {
   objective: string;
   output: string;
+  count?: number;
   start: string;
   end: string;
 };
@@ -36,22 +37,29 @@ export async function literatureAgent(input: {
   logger.info({ objective, type }, "literature_agent_started");
 
   let output: string;
+  let count: number | undefined;
 
   try {
     switch (type) {
-      case "OPENSCHOLAR":
-        output = await searchOpenScholar(objective);
+      case "OPENSCHOLAR": {
+        const result = await searchOpenScholar(objective);
+        output = result.output;
+        count = result.count;
         break;
-      case "KNOWLEDGE":
-        output = await searchKnowledge(objective);
+      }
+      case "KNOWLEDGE": {
+        const result = await searchKnowledge(objective);
+        output = result.output;
+        count = result.count;
         break;
+      }
       case "BIOLIT":
         output = await searchBioLiterature(objective);
         break;
       case "EDISON":
         output = await searchEdison(
           objective +
-            "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY: Each claim should be in the following format: (claim)[DOI] or (claim)[URL]. If there are general statements, it is alright to not include citations for them.",
+            "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY FORMAT: Each claim should be in the following format: (claim goes in the parentheses)[DOI] or (claim goes in the parentheses)[URL]. If there are general statements, it is alright to not include citations for them. DOI URL is totally enough, you don't need to include formats like [pelaezvico2025integrativeanalysisof pages 1-4].\n\nMANDATORY CITATION COUNT: Do your absolute best to cite at least 5 sources in your answer.",
         );
         break;
       default:
@@ -65,13 +73,14 @@ export async function literatureAgent(input: {
   const end = new Date().toISOString();
 
   logger.info(
-    { objective, type, outputLength: output.length },
+    { objective, type, outputLength: output.length, count },
     "literature_agent_completed",
   );
 
   return {
     objective,
     output,
+    count,
     start,
     end,
   };

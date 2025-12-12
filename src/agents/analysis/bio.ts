@@ -2,6 +2,7 @@ import {
   getConversationBasePath,
   getStorageProvider,
   getUploadPath,
+  isStorageProviderAvailable,
 } from "../../storage";
 import { type AnalysisArtifact } from "../../types/core";
 import logger from "../../utils/logger";
@@ -14,6 +15,39 @@ type BioDataAnalysisResult = {
   answer: string;
   artifacts: Array<AnalysisArtifact>;
 };
+
+type BioAnalysisConfig = {
+  apiUrl: string;
+  apiKey: string;
+  supportsSharedStorage: boolean;
+};
+
+type BioTaskContext = {
+  userId: string;
+  conversationStateId: string;
+  datasets: Dataset[];
+};
+
+/**
+ * Get Bio analysis configuration from environment
+ */
+function getBioConfig(): BioAnalysisConfig {
+  const apiUrl = process.env.DATA_ANALYSIS_API_URL;
+  if (!apiUrl) {
+    throw new Error("DATA_ANALYSIS_API_URL is not configured");
+  }
+
+  const apiKey = process.env.DATA_ANALYSIS_API_KEY;
+  if (!apiKey) {
+    throw new Error("DATA_ANALYSIS_API_KEY is not configured");
+  }
+
+  const supportsSharedStorage =
+    process.env.DATA_ANALYSIS_SUPPORTS_STORAGE !== "false" &&
+    isStorageProviderAvailable();
+
+  return { apiUrl, apiKey, supportsSharedStorage };
+}
 
 /**
  * Analyze data using Bio Data Analysis agent for deep analysis
@@ -29,41 +63,25 @@ export async function analyzeWithBio(
     throw new Error("No question provided to Data Analysis Agent");
   }
 
-  const DATA_ANALYSIS_API_URL = process.env.DATA_ANALYSIS_API_URL;
-  if (!DATA_ANALYSIS_API_URL) {
-    logger.error("DATA_ANALYSIS_API_URL not configured");
-    throw new Error("DATA_ANALYSIS_API_URL is not configured");
+  const config = getBioConfig();
+  const context: BioTaskContext = { userId, conversationStateId, datasets };
+
+  // Only download dataset content if shared storage is not available
+  if (!config.supportsSharedStorage) {
+    await downloadDatasetContent(context);
   }
 
-  const DATA_ANALYSIS_API_KEY = process.env.DATA_ANALYSIS_API_KEY;
-  if (!DATA_ANALYSIS_API_KEY) {
-    logger.error("DATA_ANALYSIS_API_KEY not configured");
-    throw new Error("DATA_ANALYSIS_API_KEY is not configured");
-  }
-
-  const finalQuery = await formatQueryWithDatasets(objective, datasets);
-  await downloadDatasetContent(userId, conversationStateId, datasets);
+  const query = await formatQueryWithDatasets(objective, datasets);
 
   logger.info(
-    { finalQuery, datasetCount: datasets.length },
+    { query, datasetCount: datasets.length },
     "starting_bio_analysis",
   );
 
   let taskResult: BioDataAnalysisResult;
   try {
-    const taskResponse = await startBioTask(
-      DATA_ANALYSIS_API_URL,
-      DATA_ANALYSIS_API_KEY,
-      finalQuery,
-      getConversationBasePath(userId, conversationStateId),
-      datasets,
-    );
-
-    taskResult = await awaitBioTask(
-      DATA_ANALYSIS_API_URL,
-      DATA_ANALYSIS_API_KEY,
-      taskResponse.id,
-    );
+    const taskResponse = await startBioTask(config, context, query);
+    taskResult = await awaitBioTask(config, taskResponse.id);
   } catch (err) {
     logger.error(
       { err, objective, datasetCount: datasets.length },
@@ -104,22 +122,16 @@ async function formatQueryWithDatasets(
 
 /**
  * Populate dataset content by downloading files from storage
- * @param userId - ID of the user
- * @param conversationStateId - ID of the conversation state
- * @param datasets - The datasets to populate
- * @returns
  */
-async function downloadDatasetContent(
-  userId: string,
-  conversationStateId: string,
-  datasets: Dataset[],
-): Promise<void> {
+async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
   const storageProvider = getStorageProvider();
 
   if (!storageProvider) {
     logger.warn("No storage provider configured, cannot fetch file content");
     return;
   }
+
+  const { userId, conversationStateId, datasets } = context;
 
   await Promise.all(
     datasets.map(async (dataset) => {
@@ -141,34 +153,25 @@ async function downloadDatasetContent(
 }
 
 /**
- * Start Bio data analysis task
- * @param apiUrl - API base URL
- * @param apiKey - API key
- * @param question - The analysis question
- * @param datasets - The datasets to analyze
- * @returns - The task status response
+ * Build form data for Bio task based on storage configuration
  */
-async function startBioTask(
-  apiUrl: string,
-  apiKey: string,
-  question: string,
-  basePath: string,
-  datasets: Dataset[],
-): Promise<BioDataAnalysisResult> {
-  const endpoint = `${apiUrl}/api/task/run/async`;
-
+function buildTaskFormData(
+  config: BioAnalysisConfig,
+  context: BioTaskContext,
+  query: string,
+): FormData {
   const formData = new FormData();
-  formData.append("task_description", question);
-  const isStorageProviderAvailable = getStorageProvider() ? true : false;
+  formData.append("task_description", query);
 
-  if (isStorageProviderAvailable) {
-    // Append base path for stored files
+  const { userId, conversationStateId, datasets } = context;
+
+  if (config.supportsSharedStorage) {
+    const basePath = getConversationBasePath(userId, conversationStateId);
     formData.append("base_path", basePath);
     for (const dataset of datasets) {
       formData.append("file_paths", getUploadPath(dataset.filename));
     }
   } else {
-    // Append each file individually with the field name 'data_files'
     for (const dataset of datasets) {
       if (dataset.content) {
         const blob = new Blob([new Uint8Array(dataset.content)]);
@@ -177,11 +180,23 @@ async function startBioTask(
     }
   }
 
+  return formData;
+}
+
+/**
+ * Start Bio data analysis task
+ */
+async function startBioTask(
+  config: BioAnalysisConfig,
+  context: BioTaskContext,
+  query: string,
+): Promise<BioDataAnalysisResult> {
+  const endpoint = `${config.apiUrl}/api/task/run/async`;
+  const formData = buildTaskFormData(config, context, query);
+
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      "X-API-Key": apiKey,
-    },
+    headers: { "X-API-Key": config.apiKey },
     body: formData,
   });
 
@@ -201,28 +216,21 @@ async function startBioTask(
 
 /**
  * Await completion of a Bio data analysis task
- * @param apiUrl - API base URL
- * @param apiKey - API key
- * @param taskId - The task ID to monitor
- * @returns The task result when completed
  */
 async function awaitBioTask(
-  apiUrl: string,
-  apiKey: string,
+  config: BioAnalysisConfig,
   taskId: string,
 ): Promise<BioDataAnalysisResult> {
-  const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes max wait
+  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes max wait
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
 
-  const endpoint = `${apiUrl}/api/task/${taskId}`;
+  const endpoint = `${config.apiUrl}/api/task/${taskId}`;
 
   while (Date.now() - startTime < MAX_WAIT_TIME) {
     const response = await fetch(endpoint, {
       method: "GET",
-      headers: {
-        "X-API-Key": apiKey,
-      },
+      headers: { "X-API-Key": config.apiKey },
     });
 
     if (!response.ok) {
@@ -258,5 +266,7 @@ async function awaitBioTask(
 
   // Timeout reached
   logger.error({ taskId }, "bio_analysis_task_timeout");
-  throw new Error("Bio data analysis task timed out after 20 minutes");
+  throw new Error(
+    `Bio data analysis task timed out after ${MAX_WAIT_TIME / 60000} minutes`,
+  );
 }
