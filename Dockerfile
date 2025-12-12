@@ -20,6 +20,10 @@ RUN cd client && bun run build
 # Remove dev dependencies after build
 RUN bun install --production
 
+# Ensure all files are readable by bun user
+RUN chmod -R 755 /app/src && \
+    chown -R bun:bun /app
+
 # Expose port
 EXPOSE 3000
 
@@ -34,7 +38,8 @@ USER bun
 
 # Health check (use Bun's fetch, no curl needed)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD bun run -e 'fetch("http://localhost:3000/api/auth/status").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
+  CMD bun run -e 'fetch("http://localhost:3000/api/health").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
 
-# Start the server
+# Default: run API server
+# Override with CMD ["bun", "run", "src/worker.ts"] for worker container
 CMD ["bun", "run", "src/index.ts"]

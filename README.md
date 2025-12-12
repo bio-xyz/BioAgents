@@ -248,15 +248,38 @@ X402_PAYMENT_ADDRESS=0xYourWalletAddress
 
 **📖 See [AUTH.md](AUTH.md) for x402 configuration details**
 
+## Job Queue (Production)
+
+BioAgents supports BullMQ for reliable background job processing with:
+
+- **Horizontal scaling**: Run multiple worker instances
+- **Job persistence**: Jobs survive server restarts
+- **Automatic retries**: Failed jobs retry with exponential backoff
+- **Real-time updates**: WebSocket notifications for job progress
+- **Admin dashboard**: Bull Board UI at `/admin/queues`
+
+```bash
+# Enable job queue
+USE_JOB_QUEUE=true
+REDIS_URL=redis://localhost:6379
+
+# Start API server and worker separately
+bun run dev      # API server
+bun run worker   # Worker process
+```
+
+**📖 See [JOB_QUEUE.md](JOB_QUEUE.md) for complete setup and configuration guide**
+
 ## Project Structure
 
 ```
 ├── src/                      # Backend source
+│   ├── index.ts             # API server entry point
+│   ├── worker.ts            # BullMQ worker entry point
 │   ├── routes/              # HTTP route handlers
 │   │   ├── chat.ts          # Agent-based chat endpoint
-│   │   └── deep-research/   # Deep research endpoints
-│   │       ├── start.ts     # Start deep research
-│   │       └── status.ts    # Check research status
+│   │   ├── deep-research/   # Deep research endpoints
+│   │   └── admin/           # Bull Board dashboard
 │   ├── agents/              # Independent agent modules
 │   │   ├── fileUpload/      # File parsing & storage
 │   │   ├── planning/        # Research planning
@@ -265,24 +288,23 @@ X402_PAYMENT_ADDRESS=0xYourWalletAddress
 │   │   ├── hypothesis/      # Hypothesis generation
 │   │   ├── reflection/      # Research reflection
 │   │   └── reply/           # User-facing responses
+│   ├── queue/               # BullMQ job queue system
+│   │   ├── connection.ts    # Redis connection management
+│   │   ├── queues.ts        # Queue definitions & config
+│   │   ├── workers/         # Job processors
+│   │   └── notify.ts        # Pub/Sub notifications
+│   ├── websocket/           # Real-time notifications
+│   │   ├── handler.ts       # WebSocket endpoint
+│   │   └── subscribe.ts     # Redis Pub/Sub subscriber
 │   ├── services/            # Business logic layer
 │   │   └── chat/            # Chat-related services
-│   │       ├── setup.ts     # User/conversation setup
-│   │       ├── payment.ts   # Payment recording
-│   │       └── tools.ts     # Legacy tool execution
 │   ├── middleware/          # Request/response middleware
 │   │   ├── authResolver.ts  # Multi-method authentication
 │   │   └── x402.ts          # Payment enforcement
 │   ├── llm/                 # LLM providers & interfaces
-│   │   └── provider.ts      # Unified LLM interface
 │   ├── embeddings/          # Vector database & document processing
 │   ├── db/                  # Database operations
-│   │   ├── operations.ts    # Core DB operations
-│   │   └── x402Operations.ts # Payment tracking
 │   ├── x402/                # x402 payment protocol
-│   │   ├── config.ts        # Network & payment config
-│   │   ├── pricing.ts       # Route-based pricing
-│   │   └── service.ts       # Payment verification
 │   ├── storage/             # File storage (S3-compatible)
 │   ├── utils/               # Shared utilities
 │   ├── types/               # TypeScript types
@@ -293,7 +315,7 @@ X402_PAYMENT_ADDRESS=0xYourWalletAddress
 │   │   ├── hooks/          # Custom hooks (chat, payments, etc.)
 │   │   └── styles/         # CSS files
 │   └── public/             # Static assets
-├── docs/                    # Custom knowledge base documents
+├── docs/                    # Custom knowledge base documents (scientific papers)
 └── package.json
 ```
 

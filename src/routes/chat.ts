@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { LLM } from "../llm/provider";
 import { authResolver } from "../middleware/authResolver";
+import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import type { AuthContext } from "../types/auth";
 import {
   ensureUserAndConversation,
@@ -14,14 +15,33 @@ import type { ConversationState, PlanTask, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
+/**
+ * Response type for synchronous chat (in-process mode)
+ */
 type ChatV2Response = {
   text: string;
   userId?: string; // Included for x402 users to know their identity
 };
 
 /**
+ * Response type for async chat (queue mode)
+ */
+type ChatQueuedResponse = {
+  jobId: string;
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  status: "queued";
+  pollUrl: string;
+};
+
+/**
  * Chat Route - Agent-based architecture
  * Uses guard pattern to ensure auth runs for all routes
+ *
+ * Supports dual mode:
+ * - USE_JOB_QUEUE=false (default): In-process execution, returns result directly
+ * - USE_JOB_QUEUE=true: Enqueues job to BullMQ, returns job ID for polling
  */
 export const chatRoute = new Elysia().guard(
   {
@@ -29,6 +49,7 @@ export const chatRoute = new Elysia().guard(
       authResolver({
         required: process.env.NODE_ENV === "production",
       }),
+      rateLimitMiddleware("chat"),
     ],
   },
   (app) =>
@@ -39,8 +60,137 @@ export const chatRoute = new Elysia().guard(
           apiDocumentation: "https://your-docs-url.com/api",
         };
       })
-      .post("/api/chat", chatHandler),
+      .post("/api/chat", chatHandler)
+      // Job status endpoint (only used in queue mode)
+      .get("/api/chat/status/:jobId", chatStatusHandler)
+      // Manual retry endpoint for failed jobs
+      .post("/api/chat/retry/:jobId", chatRetryHandler),
 );
+
+/**
+ * Chat Status Handler - Check job status (queue mode only)
+ */
+async function chatStatusHandler(ctx: any) {
+  const { params, set } = ctx;
+  const { jobId } = params;
+
+  const { isJobQueueEnabled } = await import("../queue/connection");
+
+  if (!isJobQueueEnabled()) {
+    set.status = 404;
+    return {
+      error: "Job queue not enabled",
+      message: "Status endpoint only available when USE_JOB_QUEUE=true",
+    };
+  }
+
+  const { getChatQueue } = await import("../queue/queues");
+  const chatQueue = getChatQueue();
+
+  const job = await chatQueue.getJob(jobId);
+
+  if (!job) {
+    set.status = 404;
+    return { status: "not_found" };
+  }
+
+  const state = await job.getState();
+  const progress = job.progress as { stage?: string; percent?: number };
+
+  if (state === "completed") {
+    return {
+      status: "completed",
+      result: job.returnvalue,
+    };
+  }
+
+  if (state === "failed") {
+    return {
+      status: "failed",
+      error: job.failedReason,
+      attemptsMade: job.attemptsMade,
+    };
+  }
+
+  return {
+    status: state,
+    progress,
+    attemptsMade: job.attemptsMade,
+  };
+}
+
+/**
+ * Chat Retry Handler - Manually retry a failed job
+ * POST /api/chat/retry/:jobId
+ */
+async function chatRetryHandler(ctx: any) {
+  const { params, set } = ctx;
+  const { jobId } = params;
+
+  const { isJobQueueEnabled } = await import("../queue/connection");
+
+  if (!isJobQueueEnabled()) {
+    set.status = 404;
+    return {
+      error: "Job queue not enabled",
+      message: "Retry endpoint only available when USE_JOB_QUEUE=true",
+    };
+  }
+
+  const { getChatQueue } = await import("../queue/queues");
+  const chatQueue = getChatQueue();
+
+  const job = await chatQueue.getJob(jobId);
+
+  if (!job) {
+    set.status = 404;
+    return {
+      ok: false,
+      error: "Job not found"
+    };
+  }
+
+  const state = await job.getState();
+
+  // Only allow retry for failed jobs
+  if (state !== "failed") {
+    set.status = 400;
+    return {
+      ok: false,
+      error: `Cannot retry job in state '${state}'`,
+      message: "Only failed jobs can be manually retried",
+    };
+  }
+
+  try {
+    // Retry the job - moves it back to waiting state
+    await job.retry();
+
+    logger.info(
+      {
+        jobId,
+        previousAttempts: job.attemptsMade,
+      },
+      "job_manually_retried"
+    );
+
+    return {
+      ok: true,
+      jobId,
+      status: "retrying",
+      message: "Job has been queued for retry",
+      previousAttempts: job.attemptsMade,
+    };
+  } catch (error) {
+    logger.error({ error, jobId }, "manual_retry_failed");
+    set.status = 500;
+    return {
+      ok: false,
+      error: "Failed to retry job",
+      message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
 
 /**
  * Check if the question requires a hypothesis using LLM
@@ -123,6 +273,10 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
 /**
  * Chat Handler - Core logic for POST /api/chat
  * Exported for reuse in x402 routes
+ *
+ * Supports dual mode:
+ * - USE_JOB_QUEUE=false: Executes in-process (existing behavior)
+ * - USE_JOB_QUEUE=true: Enqueues to BullMQ and returns immediately
  */
 export async function chatHandler(ctx: any) {
   try {
@@ -299,6 +453,89 @@ export async function chatHandler(ctx: any) {
         question: createdMessage.question,
       },
       "message_record_created",
+    );
+
+    // =========================================================================
+    // DUAL MODE: Check if job queue is enabled
+    // =========================================================================
+    const { isJobQueueEnabled } = await import("../queue/connection");
+
+    if (isJobQueueEnabled()) {
+      // QUEUE MODE: Enqueue job and return immediately
+      logger.info(
+        { messageId: createdMessage.id, conversationId },
+        "chat_using_queue_mode",
+      );
+
+      // Process files synchronously before enqueuing (files can't be serialized)
+      if (files.length > 0) {
+        const conversationState: ConversationState = {
+          id: conversationStateRecord.id,
+          values: conversationStateRecord.values,
+        };
+
+        const { fileUploadAgent } = await import("../agents/fileUpload");
+
+        logger.info({ fileCount: files.length }, "processing_file_uploads_before_queue");
+
+        await fileUploadAgent({
+          conversationState,
+          files,
+          userId,
+        });
+      }
+
+      // Enqueue the job
+      const { getChatQueue } = await import("../queue/queues");
+      const chatQueue = getChatQueue();
+
+      const job = await chatQueue.add(
+        `chat-${createdMessage.id}`,
+        {
+          userId,
+          conversationId,
+          messageId: createdMessage.id,
+          message,
+          authMethod: auth?.method || "anonymous",
+          requestedAt: new Date().toISOString(),
+        },
+        {
+          jobId: createdMessage.id, // Use message ID as job ID for easy lookup
+        },
+      );
+
+      logger.info(
+        {
+          jobId: job.id,
+          messageId: createdMessage.id,
+          conversationId,
+        },
+        "chat_job_enqueued",
+      );
+
+      const response: ChatQueuedResponse = {
+        jobId: job.id!,
+        messageId: createdMessage.id,
+        conversationId,
+        userId,
+        status: "queued",
+        pollUrl: `/api/chat/status/${job.id}`,
+      };
+
+      return new Response(JSON.stringify(response), {
+        status: 202, // Accepted
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+      });
+    }
+
+    // =========================================================================
+    // IN-PROCESS MODE: Execute directly (existing behavior)
+    // =========================================================================
+    logger.info(
+      { messageId: createdMessage.id, conversationId },
+      "chat_using_in_process_mode",
     );
 
     // Initialize state

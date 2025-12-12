@@ -375,6 +375,18 @@ export async function getConversation(id: string) {
   return data;
 }
 
+// Get all conversations for a user
+export async function getUserConversations(userId: string) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id, user_id, conversation_state_id, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 // Update conversation to link conversation_state_id
 export async function updateConversation(
   id: string,

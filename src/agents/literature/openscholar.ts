@@ -1,4 +1,3 @@
-import axios from "axios";
 import logger from "../../utils/logger";
 
 interface OpenScholarChunk {
@@ -62,18 +61,21 @@ async function fetchOpenScholarChunks(
     max_length: 512,
   };
 
-  const res = await axios.post(endpoint, body, {
+  const res = await fetch(endpoint, {
+    method: "POST",
     headers: {
-      "content-type": "application/json",
+      "Content-Type": "application/json",
       "x-api-key": apiKey,
     },
+    body: JSON.stringify(body),
   });
 
-  if (res.status !== 200) {
-    throw new Error(`OpenScholar API error ${res.status}: ${res.data}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`OpenScholar API error ${res.status}: ${errorText}`);
   }
 
-  const json = res.data as {
+  const json = (await res.json()) as {
     query: string;
     results_count: number;
     processing_time: number;

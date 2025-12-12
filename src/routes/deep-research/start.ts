@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { authResolver } from "../../middleware/authResolver";
+import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import type { AuthContext } from "../../types/auth";
 import {
   ensureUserAndConversation,
@@ -13,6 +14,9 @@ import { generateUUID } from "../../utils/uuid";
 
 initKnowledgeBase();
 
+/**
+ * Response type for deep research start (in-process mode)
+ */
 type DeepResearchStartResponse = {
   messageId: string | null;
   conversationId: string;
@@ -22,9 +26,25 @@ type DeepResearchStartResponse = {
 };
 
 /**
+ * Response type for deep research start (queue mode)
+ */
+type DeepResearchQueuedResponse = {
+  jobId: string;
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  status: "queued";
+  pollUrl: string;
+};
+
+/**
  * Deep Research Start Route - Returns immediately with messageId
  * The actual research runs in the background
  * Uses guard pattern to ensure auth runs for all routes
+ *
+ * Supports dual mode:
+ * - USE_JOB_QUEUE=false (default): Fire-and-forget async execution
+ * - USE_JOB_QUEUE=true: Enqueues job to BullMQ for worker processing
  */
 export const deepResearchStartRoute = new Elysia().guard(
   {
@@ -32,6 +52,7 @@ export const deepResearchStartRoute = new Elysia().guard(
       authResolver({
         required: process.env.NODE_ENV === "production",
       }),
+      rateLimitMiddleware("deep-research"),
     ],
   },
   (app) =>
@@ -176,6 +197,91 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   const createdMessage = messageResult.message!;
+
+  // =========================================================================
+  // DUAL MODE: Check if job queue is enabled
+  // =========================================================================
+  const { isJobQueueEnabled } = await import("../../queue/connection");
+
+  if (isJobQueueEnabled()) {
+    // QUEUE MODE: Enqueue job and return immediately
+    logger.info(
+      { messageId: createdMessage.id, conversationId },
+      "deep_research_using_queue_mode",
+    );
+
+    // Process files synchronously before enqueuing (files can't be serialized)
+    if (files.length > 0) {
+      const conversationState: ConversationState = {
+        id: conversationStateRecord.id,
+        values: conversationStateRecord.values,
+      };
+
+      const { fileUploadAgent } = await import("../../agents/fileUpload");
+
+      logger.info({ fileCount: files.length }, "processing_file_uploads_before_queue");
+
+      await fileUploadAgent({
+        conversationState,
+        files,
+        userId,
+      });
+    }
+
+    // Enqueue the job
+    const { getDeepResearchQueue } = await import("../../queue/queues");
+    const deepResearchQueue = getDeepResearchQueue();
+
+    const job = await deepResearchQueue.add(
+      `deep-research-${createdMessage.id}`,
+      {
+        userId,
+        conversationId,
+        messageId: createdMessage.id,
+        message,
+        authMethod: auth?.method || "anonymous",
+        stateId: stateRecord.id,
+        conversationStateId: conversationStateRecord.id,
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        jobId: createdMessage.id, // Use message ID as job ID for easy lookup
+      },
+    );
+
+    logger.info(
+      {
+        jobId: job.id,
+        messageId: createdMessage.id,
+        conversationId,
+      },
+      "deep_research_job_enqueued",
+    );
+
+    const response: DeepResearchQueuedResponse = {
+      jobId: job.id!,
+      messageId: createdMessage.id,
+      conversationId,
+      userId,
+      status: "queued",
+      pollUrl: `/api/deep-research/status/${createdMessage.id}`,
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 202, // Accepted
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    });
+  }
+
+  // =========================================================================
+  // IN-PROCESS MODE: Fire-and-forget async execution (existing behavior)
+  // =========================================================================
+  logger.info(
+    { messageId: createdMessage.id, conversationId },
+    "deep_research_using_in_process_mode",
+  );
 
   // Return immediately with message ID
   // Include userId so external platforms (x402) can check status later

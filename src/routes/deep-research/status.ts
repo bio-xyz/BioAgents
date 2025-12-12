@@ -38,7 +38,9 @@ export const deepResearchStatusRoute = new Elysia().guard(
     ],
   },
   (app) =>
-    app.get("/api/deep-research/status/:messageId", deepResearchStatusHandler)
+    app
+      .get("/api/deep-research/status/:messageId", deepResearchStatusHandler)
+      .post("/api/deep-research/retry/:jobId", deepResearchRetryHandler)
 );
 
 /**
@@ -204,4 +206,77 @@ export async function deepResearchStatusHandler(ctx: any) {
         error: "Failed to check deep research status",
       };
     }
+}
+
+/**
+ * Deep Research Retry Handler - Manually retry a failed job
+ * POST /api/deep-research/retry/:jobId
+ */
+async function deepResearchRetryHandler(ctx: any) {
+  const { params, set } = ctx;
+  const { jobId } = params;
+
+  const { isJobQueueEnabled } = await import("../../queue/connection");
+
+  if (!isJobQueueEnabled()) {
+    set.status = 404;
+    return {
+      error: "Job queue not enabled",
+      message: "Retry endpoint only available when USE_JOB_QUEUE=true",
+    };
+  }
+
+  const { getDeepResearchQueue } = await import("../../queue/queues");
+  const deepResearchQueue = getDeepResearchQueue();
+
+  const job = await deepResearchQueue.getJob(jobId);
+
+  if (!job) {
+    set.status = 404;
+    return {
+      ok: false,
+      error: "Job not found"
+    };
+  }
+
+  const state = await job.getState();
+
+  // Only allow retry for failed jobs
+  if (state !== "failed") {
+    set.status = 400;
+    return {
+      ok: false,
+      error: `Cannot retry job in state '${state}'`,
+      message: "Only failed jobs can be manually retried",
+    };
+  }
+
+  try {
+    // Retry the job - moves it back to waiting state
+    await job.retry();
+
+    logger.info(
+      {
+        jobId,
+        previousAttempts: job.attemptsMade,
+      },
+      "deep_research_job_manually_retried"
+    );
+
+    return {
+      ok: true,
+      jobId,
+      status: "retrying",
+      message: "Job has been queued for retry",
+      previousAttempts: job.attemptsMade,
+    };
+  } catch (error) {
+    logger.error({ error, jobId }, "deep_research_manual_retry_failed");
+    set.status = 500;
+    return {
+      ok: false,
+      error: "Failed to retry job",
+      message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
