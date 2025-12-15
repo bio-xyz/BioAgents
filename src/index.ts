@@ -17,9 +17,9 @@ import { b402DeepResearchRoute } from "./routes/b402/deep-research";
 import logger from "./utils/logger";
 
 // BullMQ Queue imports (conditional)
-import { isJobQueueEnabled, closeConnections } from "./queue/connection";
-import { websocketHandler, cleanupDeadConnections } from "./websocket/handler";
-import { startRedisSubscription, stopRedisSubscription } from "./websocket/subscribe";
+import { isJobQueueEnabled, closeConnections } from "./services/queue/connection";
+import { websocketHandler, cleanupDeadConnections } from "./services/websocket/handler";
+import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
 import { createQueueDashboard } from "./routes/admin/queue-dashboard";
 
 const app = new Elysia()
@@ -120,19 +120,6 @@ const app = new Elysia()
   // Handle favicon (prevent 404 errors)
   .get("/favicon.ico", () => {
     return new Response(null, { status: 204 });
-  })
-
-  // Payment demo page (for testing x402/b402)
-  .get("/demo/payment", async () => {
-    try {
-      const htmlFile = Bun.file("demo/payment-demo.html");
-      const htmlContent = await htmlFile.text();
-      return new Response(htmlContent, {
-        headers: { "Content-Type": "text/html" },
-      });
-    } catch {
-      return new Response("Demo page not found", { status: 404 });
-    }
   })
 
   // Health check endpoint with optional queue/Redis status

@@ -17,8 +17,8 @@ import {
   notifyStateUpdated,
 } from "../notify";
 import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
-import type { ConversationState, PlanTask, State } from "../../types/core";
-import logger from "../../utils/logger";
+import type { ConversationState, PlanTask, State } from "../../../types/core";
+import logger from "../../../utils/logger";
 
 /**
  * Process a deep research job

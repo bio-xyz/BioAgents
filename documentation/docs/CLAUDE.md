@@ -51,19 +51,26 @@ src/
 │   ├── planning/        # Research planning
 │   ├── reflection/      # Self-reflection/critique
 │   └── reply/           # Response generation
-├── queue/                # BullMQ job queue
-│   ├── connection.ts    # Redis connection management
-│   ├── queues.ts        # Queue definitions (chat, deep-research)
-│   ├── workers/         # Worker implementations
-│   └── notify.ts        # Redis pub/sub notifications
-├── websocket/            # WebSocket handler for real-time updates
+├── services/             # Business logic layer
+│   ├── chat/            # Chat-related services
+│   ├── queue/           # BullMQ job queue
+│   │   ├── connection.ts    # Redis connection management
+│   │   ├── queues.ts        # Queue definitions (chat, deep-research)
+│   │   ├── workers/         # Worker implementations
+│   │   └── notify.ts        # Redis pub/sub notifications
+│   ├── websocket/       # WebSocket handler for real-time updates
+│   └── jwt.ts           # JWT verification service
+├── middleware/           # Auth, rate limiting, payment validation
+│   ├── authResolver.ts  # Multi-method authentication
+│   ├── rateLimiter.ts   # Rate limiting
+│   ├── x402/            # x402 payment protocol (Base/USDC)
+│   └── b402/            # b402 payment protocol (BNB/USDT)
 ├── llm/                  # LLM provider adapters
 │   └── adapters/        # OpenAI, Anthropic, Google, OpenRouter
 ├── embeddings/           # Vector search and document processing
-├── middleware/           # Auth, rate limiting, payment validation
-├── services/             # Business logic (chat, JWT)
 ├── db/                   # Database operations (Supabase)
 ├── storage/              # File storage (S3)
+├── types/                # TypeScript types
 └── utils/                # Helpers (logger, cache, polyfills)
 ```
 

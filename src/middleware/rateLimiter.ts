@@ -10,7 +10,7 @@
  */
 
 import type { AuthContext } from "../types/auth";
-import { isJobQueueEnabled } from "../queue/connection";
+import { isJobQueueEnabled } from "../services/queue/connection";
 import logger from "../utils/logger";
 
 /**

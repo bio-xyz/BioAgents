@@ -4,7 +4,7 @@ An advanced AI agent framework for biological and scientific research. BioAgents
 
 ## Setup
 
-Check out [SETUP.md](SETUP.md)
+Check out [SETUP.md](documentation/docs/SETUP.md)
 
 ## Agent Backend
 
@@ -233,7 +233,7 @@ fetch('https://your-bioagents-api/api/chat', {
 });
 ```
 
-**📖 See [AUTH.md](AUTH.md) for complete JWT integration guide**
+**📖 See [AUTH.md](documentation/docs/AUTH.md) for complete JWT integration guide**
 
 ### x402 Payment Protocol (Optional)
 
@@ -246,7 +246,7 @@ X402_ENVIRONMENT=testnet  # or mainnet
 X402_PAYMENT_ADDRESS=0xYourWalletAddress
 ```
 
-**📖 See [AUTH.md](AUTH.md) for x402 configuration details**
+**📖 See [AUTH.md](documentation/docs/AUTH.md) for x402 configuration details**
 
 ## Job Queue (Production)
 
@@ -268,7 +268,7 @@ bun run dev      # API server
 bun run worker   # Worker process
 ```
 
-**📖 See [JOB_QUEUE.md](JOB_QUEUE.md) for complete setup and configuration guide**
+**📖 See [JOB_QUEUE.md](documentation/docs/JOB_QUEUE.md) for complete setup and configuration guide**
 
 ## Project Structure
 
@@ -279,6 +279,8 @@ bun run worker   # Worker process
 │   ├── routes/              # HTTP route handlers
 │   │   ├── chat.ts          # Agent-based chat endpoint
 │   │   ├── deep-research/   # Deep research endpoints
+│   │   ├── x402/            # x402 payment-gated routes
+│   │   ├── b402/            # b402 payment-gated routes
 │   │   └── admin/           # Bull Board dashboard
 │   ├── agents/              # Independent agent modules
 │   │   ├── fileUpload/      # File parsing & storage
@@ -288,23 +290,25 @@ bun run worker   # Worker process
 │   │   ├── hypothesis/      # Hypothesis generation
 │   │   ├── reflection/      # Research reflection
 │   │   └── reply/           # User-facing responses
-│   ├── queue/               # BullMQ job queue system
-│   │   ├── connection.ts    # Redis connection management
-│   │   ├── queues.ts        # Queue definitions & config
-│   │   ├── workers/         # Job processors
-│   │   └── notify.ts        # Pub/Sub notifications
-│   ├── websocket/           # Real-time notifications
-│   │   ├── handler.ts       # WebSocket endpoint
-│   │   └── subscribe.ts     # Redis Pub/Sub subscriber
 │   ├── services/            # Business logic layer
-│   │   └── chat/            # Chat-related services
+│   │   ├── chat/            # Chat-related services
+│   │   ├── queue/           # BullMQ job queue system
+│   │   │   ├── connection.ts    # Redis connection management
+│   │   │   ├── queues.ts        # Queue definitions & config
+│   │   │   ├── workers/         # Job processors
+│   │   │   └── notify.ts        # Pub/Sub notifications
+│   │   ├── websocket/       # Real-time notifications
+│   │   │   ├── handler.ts       # WebSocket endpoint
+│   │   │   └── subscribe.ts     # Redis Pub/Sub subscriber
+│   │   └── jwt.ts           # JWT verification service
 │   ├── middleware/          # Request/response middleware
 │   │   ├── authResolver.ts  # Multi-method authentication
-│   │   └── x402.ts          # Payment enforcement
+│   │   ├── rateLimiter.ts   # Rate limiting
+│   │   ├── x402/            # x402 payment protocol (Base/USDC)
+│   │   └── b402/            # b402 payment protocol (BNB/USDT)
 │   ├── llm/                 # LLM providers & interfaces
 │   ├── embeddings/          # Vector database & document processing
 │   ├── db/                  # Database operations
-│   ├── x402/                # x402 payment protocol
 │   ├── storage/             # File storage (S3-compatible)
 │   ├── utils/               # Shared utilities
 │   ├── types/               # TypeScript types
@@ -315,6 +319,8 @@ bun run worker   # Worker process
 │   │   ├── hooks/          # Custom hooks (chat, payments, etc.)
 │   │   └── styles/         # CSS files
 │   └── public/             # Static assets
+├── documentation/           # Project documentation
+│   └── docs/               # Detailed guides (AUTH.md, SETUP.md, JOB_QUEUE.md)
 ├── docs/                    # Custom knowledge base documents (scientific papers)
 └── package.json
 ```

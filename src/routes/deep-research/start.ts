@@ -201,7 +201,7 @@ export async function deepResearchStartHandler(ctx: any) {
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
-  const { isJobQueueEnabled } = await import("../../queue/connection");
+  const { isJobQueueEnabled } = await import("../../services/queue/connection");
 
   if (isJobQueueEnabled()) {
     // QUEUE MODE: Enqueue job and return immediately
@@ -229,7 +229,7 @@ export async function deepResearchStartHandler(ctx: any) {
     }
 
     // Enqueue the job
-    const { getDeepResearchQueue } = await import("../../queue/queues");
+    const { getDeepResearchQueue } = await import("../../services/queue/queues");
     const deepResearchQueue = getDeepResearchQueue();
 
     const job = await deepResearchQueue.add(

@@ -10,7 +10,7 @@
  */
 
 import Redis from "ioredis";
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
 
 /**
  * Get Redis URL from environment

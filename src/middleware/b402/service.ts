@@ -1,4 +1,4 @@
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
 import { b402Config, networkConfig } from "./config";
 
 /**

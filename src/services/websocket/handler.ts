@@ -6,13 +6,14 @@
  * - UI fetches actual data via HTTP after notification
  *
  * Authentication:
- * - JWT token required via query string: ws://api/ws?token=<jwt>
+ * - JWT token sent as first message after connection: { action: "auth", token: "<jwt>" }
  * - Validates user ownership of conversations before subscription
+ * - Unauthenticated connections are closed after AUTH_TIMEOUT_MS
  */
 
 import { Elysia } from "elysia";
-import { verifyJWT } from "../services/jwt";
-import logger from "../utils/logger";
+import { verifyJWT } from "../jwt";
+import logger from "../../utils/logger";
 
 // Track connected clients by conversation
 const conversationClients = new Map<string, Set<any>>();
@@ -20,64 +21,43 @@ const conversationClients = new Map<string, Set<any>>();
 // Track user's allowed conversations (cache)
 const userConversationAccess = new Map<string, Set<string>>();
 
+// Track pending authentication timeouts
+const authTimeouts = new Map<any, ReturnType<typeof setTimeout>>();
+
+// Authentication timeout in milliseconds (10 seconds)
+const AUTH_TIMEOUT_MS = 10000;
+
 /**
  * WebSocket handler for Elysia
  *
  * Handles:
- * - Authentication via JWT token
+ * - Authentication via first message (not query string for security)
  * - Subscription to conversation channels
  * - Ping/pong heartbeat
  */
 export const websocketHandler = new Elysia().ws("/api/ws", {
   // Handle connection open
   async open(ws) {
-    const url = new URL(ws.data.request.url);
-    const token = url.searchParams.get("token");
+    // Initialize connection state - NOT authenticated yet
+    (ws.data as any).userId = null;
+    (ws.data as any).subscriptions = new Set<string>();
 
-    if (!token) {
-      ws.send(JSON.stringify({ type: "error", message: "Missing token" }));
-      ws.close(4001, "Unauthorized");
-      return;
-    }
-
-    try {
-      // Verify JWT token
-      const result = await verifyJWT(token);
-
-      if (!result.valid || !result.payload?.sub) {
-        ws.send(JSON.stringify({ type: "error", message: "Invalid token" }));
-        ws.close(4001, "Unauthorized");
-        return;
+    // Set authentication timeout - close if not authenticated within timeout
+    const timeout = setTimeout(() => {
+      if (!(ws.data as any).userId) {
+        logger.warn("ws_auth_timeout");
+        ws.send(JSON.stringify({ type: "error", message: "Authentication timeout" }));
+        ws.close(4001, "Authentication timeout");
       }
+      authTimeouts.delete(ws);
+    }, AUTH_TIMEOUT_MS);
 
-      const userId = result.payload.sub;
+    authTimeouts.set(ws, timeout);
 
-      // Store user info on connection
-      (ws.data as any).userId = userId;
-      (ws.data as any).subscriptions = new Set<string>();
+    // Send ready message to indicate client should send auth
+    ws.send(JSON.stringify({ type: "ready", message: "Send auth message with JWT token" }));
 
-      // Pre-fetch user's conversations for access control
-      try {
-        const { getUserConversations } = await import("../db/operations");
-        const userConversations = await getUserConversations(userId);
-        userConversationAccess.set(
-          userId,
-          new Set(userConversations.map((c: any) => c.id)),
-        );
-      } catch (err) {
-        // If we can't fetch conversations, allow subscription but validate later
-        logger.warn({ err, userId }, "ws_failed_to_prefetch_conversations");
-        userConversationAccess.set(userId, new Set());
-      }
-
-      ws.send(JSON.stringify({ type: "authenticated", userId }));
-
-      logger.info({ userId }, "ws_client_authenticated");
-    } catch (error) {
-      logger.error({ error }, "ws_authentication_failed");
-      ws.send(JSON.stringify({ type: "error", message: "Authentication failed" }));
-      ws.close(4001, "Unauthorized");
-    }
+    logger.info("ws_client_connected_awaiting_auth");
   },
 
   // Handle incoming messages
@@ -104,7 +84,7 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
           // If cache is empty, try to refresh it
           if (!allowedConversations || allowedConversations.size === 0) {
             try {
-              const { getUserConversations } = await import("../db/operations");
+              const { getUserConversations } = await import("../../db/operations");
               const userConversations = await getUserConversations(userId);
               allowedConversations = new Set(userConversations.map((c: any) => c.id));
               userConversationAccess.set(userId, allowedConversations);

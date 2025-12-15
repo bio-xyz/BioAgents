@@ -5,7 +5,7 @@
  * Job data must be serializable (no File objects, only IDs/references).
  */
 
-import type { AuthMethod } from "../types/auth";
+import type { AuthMethod } from "../../types/auth";
 
 /**
  * Job data for chat queue

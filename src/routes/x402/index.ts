@@ -1,12 +1,12 @@
 import { Elysia } from "elysia";
-import { x402Config, networkConfig } from "../../x402/config";
-import { routePricing, toolPricing } from "../../x402/pricing";
+import { x402Config, networkConfig } from "../../middleware/x402/config";
+import { routePricing, toolPricing } from "../../middleware/x402/pricing";
 import {
   getPaymentsByUser,
   getUserPaymentStats,
 } from "../../db/x402Operations";
 import { getOrCreateUserByWallet } from "../../db/operations";
-import { x402Service } from "../../x402/service";
+import { x402Service } from "../../middleware/x402/service";
 import logger from "../../utils/logger";
 
 export const x402Route = new Elysia({ prefix: "/api/x402" })

@@ -8,7 +8,7 @@
 import { Queue } from "bullmq";
 import { getBullMQConnection, isJobQueueEnabled } from "./connection";
 import type { ChatJobData, ChatJobResult, DeepResearchJobData, DeepResearchJobResult } from "./types";
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
 
 // Queue instances (lazy initialized)
 let chatQueueInstance: Queue<ChatJobData, ChatJobResult> | null = null;

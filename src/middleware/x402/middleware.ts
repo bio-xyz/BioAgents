@@ -1,9 +1,9 @@
 import { Elysia } from "elysia";
 import { settleResponseHeader } from "x402/types";
-import logger from "../utils/logger";
-import { x402Config } from "../x402/config";
-import { routePricing } from "../x402/pricing";
-import { x402Service } from "../x402/service";
+import logger from "../../utils/logger";
+import { x402Config } from "./config";
+import { routePricing } from "./pricing";
+import { x402Service } from "./service";
 
 /**
  * x402 Payment Middleware

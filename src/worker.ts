@@ -11,9 +11,9 @@
 // Must be first - polyfills for pdf-parse/pdfjs-dist
 import "./utils/canvas-polyfill";
 
-import { startChatWorker } from "./queue/workers/chat.worker";
-import { startDeepResearchWorker } from "./queue/workers/deep-research.worker";
-import { closeConnections } from "./queue/connection";
+import { startChatWorker } from "./services/queue/workers/chat.worker";
+import { startDeepResearchWorker } from "./services/queue/workers/deep-research.worker";
+import { closeConnections } from "./services/queue/connection";
 import logger from "./utils/logger";
 
 async function main() {

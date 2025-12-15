@@ -76,7 +76,7 @@ async function chatStatusHandler(ctx: any) {
   const { params, set } = ctx;
   const { jobId } = params;
 
-  const { isJobQueueEnabled } = await import("../queue/connection");
+  const { isJobQueueEnabled } = await import("../services/queue/connection");
 
   if (!isJobQueueEnabled()) {
     set.status = 404;
@@ -86,7 +86,7 @@ async function chatStatusHandler(ctx: any) {
     };
   }
 
-  const { getChatQueue } = await import("../queue/queues");
+  const { getChatQueue } = await import("../services/queue/queues");
   const chatQueue = getChatQueue();
 
   const job = await chatQueue.getJob(jobId);
@@ -129,7 +129,7 @@ async function chatRetryHandler(ctx: any) {
   const { params, set } = ctx;
   const { jobId } = params;
 
-  const { isJobQueueEnabled } = await import("../queue/connection");
+  const { isJobQueueEnabled } = await import("../services/queue/connection");
 
   if (!isJobQueueEnabled()) {
     set.status = 404;
@@ -139,7 +139,7 @@ async function chatRetryHandler(ctx: any) {
     };
   }
 
-  const { getChatQueue } = await import("../queue/queues");
+  const { getChatQueue } = await import("../services/queue/queues");
   const chatQueue = getChatQueue();
 
   const job = await chatQueue.getJob(jobId);
@@ -460,7 +460,7 @@ export async function chatHandler(ctx: any) {
     // =========================================================================
     // DUAL MODE: Check if job queue is enabled
     // =========================================================================
-    const { isJobQueueEnabled } = await import("../queue/connection");
+    const { isJobQueueEnabled } = await import("../services/queue/connection");
 
     if (isJobQueueEnabled()) {
       // QUEUE MODE: Enqueue job and return immediately
@@ -488,7 +488,7 @@ export async function chatHandler(ctx: any) {
       }
 
       // Enqueue the job
-      const { getChatQueue } = await import("../queue/queues");
+      const { getChatQueue } = await import("../services/queue/queues");
       const chatQueue = getChatQueue();
 
       const job = await chatQueue.add(

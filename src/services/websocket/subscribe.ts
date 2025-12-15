@@ -7,7 +7,7 @@
 
 import { getSubscriber } from "../queue/connection";
 import { broadcastToConversation } from "./handler";
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
 
 let isSubscribed = false;
 

@@ -9,7 +9,7 @@ import type {
 import { useFacilitator } from "x402/verify";
 import { processPriceToAtomicAmount } from "x402/shared";
 import { createCdpAuthHeaders, createFacilitatorConfig } from "@coinbase/x402";
-import logger from "../utils/logger";
+import logger from "../../utils/logger";
 import { x402Config } from "./config";
 
 /**

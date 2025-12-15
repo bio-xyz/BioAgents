@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { x402Middleware } from "../../middleware/x402";
+import { x402Middleware } from "../../middleware/x402/middleware";
 import { chatHandler } from "../chat";
 
 /**

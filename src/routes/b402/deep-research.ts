@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { b402Middleware } from "../../middleware/b402";
+import { b402Middleware } from "../../middleware/b402/middleware";
 import { deepResearchStartHandler } from "../deep-research/start";
 import { deepResearchStatusHandler } from "../deep-research/status";
 

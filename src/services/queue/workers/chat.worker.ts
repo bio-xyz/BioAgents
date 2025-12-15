@@ -16,8 +16,8 @@ import {
   notifyMessageUpdated,
 } from "../notify";
 import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
-import type { ConversationState, PlanTask, State } from "../../types/core";
-import logger from "../../utils/logger";
+import type { ConversationState, PlanTask, State } from "../../../types/core";
+import logger from "../../../utils/logger";
 
 /**
  * Process a chat job

@@ -216,7 +216,7 @@ async function deepResearchRetryHandler(ctx: any) {
   const { params, set } = ctx;
   const { jobId } = params;
 
-  const { isJobQueueEnabled } = await import("../../queue/connection");
+  const { isJobQueueEnabled } = await import("../../services/queue/connection");
 
   if (!isJobQueueEnabled()) {
     set.status = 404;
@@ -226,7 +226,7 @@ async function deepResearchRetryHandler(ctx: any) {
     };
   }
 
-  const { getDeepResearchQueue } = await import("../../queue/queues");
+  const { getDeepResearchQueue } = await import("../../services/queue/queues");
   const deepResearchQueue = getDeepResearchQueue();
 
   const job = await deepResearchQueue.getJob(jobId);

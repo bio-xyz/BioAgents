@@ -1,8 +1,8 @@
 import { Elysia } from "elysia";
-import { b402Config, networkConfig } from "../../b402/config";
-import { b402RoutePricing } from "../../b402/pricing";
+import { b402Config, networkConfig } from "../../middleware/b402/config";
+import { b402RoutePricing } from "../../middleware/b402/pricing";
 import { getOrCreateUserByWallet } from "../../db/operations";
-import { b402Service } from "../../b402/service";
+import { b402Service } from "../../middleware/b402/service";
 import logger from "../../utils/logger";
 
 export const b402Route = new Elysia({ prefix: "/api/b402" })

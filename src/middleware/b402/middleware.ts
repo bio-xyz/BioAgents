@@ -1,8 +1,8 @@
 import { Elysia } from "elysia";
-import logger from "../utils/logger";
-import { b402Config } from "../b402/config";
-import { b402RoutePricing } from "../b402/pricing";
-import { b402Service } from "../b402/service";
+import logger from "../../utils/logger";
+import { b402Config } from "./config";
+import { b402RoutePricing } from "./pricing";
+import { b402Service } from "./service";
 
 /**
  * b402 Payment Middleware
