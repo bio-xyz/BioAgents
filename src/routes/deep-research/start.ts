@@ -2,12 +2,12 @@ import { Elysia } from "elysia";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
-import type { AuthContext } from "../../types/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
 } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
+import type { AuthContext } from "../../types/auth";
 import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -219,7 +219,10 @@ export async function deepResearchStartHandler(ctx: any) {
 
       const { fileUploadAgent } = await import("../../agents/fileUpload");
 
-      logger.info({ fileCount: files.length }, "processing_file_uploads_before_queue");
+      logger.info(
+        { fileCount: files.length },
+        "processing_file_uploads_before_queue",
+      );
 
       await fileUploadAgent({
         conversationState,
@@ -229,7 +232,9 @@ export async function deepResearchStartHandler(ctx: any) {
     }
 
     // Enqueue the job
-    const { getDeepResearchQueue } = await import("../../services/queue/queues");
+    const { getDeepResearchQueue } = await import(
+      "../../services/queue/queues"
+    );
     const deepResearchQueue = getDeepResearchQueue();
 
     const job = await deepResearchQueue.add(
@@ -756,6 +761,9 @@ These molecular changes align with established longevity pathways (Converging nu
 
     // Step 5: Run planning agent in "next" mode to plan next iteration
     logger.info("running_next_planning_for_future_iteration");
+
+    // Clear old suggestions before generating new ones (ensures fresh planning)
+    conversationState.values.suggestedNextSteps = [];
 
     const nextPlanningResult = await planningAgent({
       state,
