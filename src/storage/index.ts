@@ -56,6 +56,18 @@ export function getStorageProvider(): StorageProvider | null {
 }
 
 /**
+ * Check if a storage provider is available without throwing an exception
+ */
+export function isStorageProviderAvailable(): boolean {
+  try {
+    const provider = getStorageProvider();
+    return provider !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Default base storage path for a conversation
  */
 export const getConversationBasePath = (
