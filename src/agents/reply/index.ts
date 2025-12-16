@@ -4,6 +4,7 @@ import { generateReply } from "./utils";
 
 type ReplyResult = {
   reply: string;
+  summary?: string; // Extracted summary for conversation history
   start: string;
   end: string;
 };
@@ -68,9 +69,16 @@ export async function replyAgent(input: {
 
     const end = new Date().toISOString();
 
+    // Extract summary section for conversation history
+    const summaryMatch = reply.match(/## Summary\s+([\s\S]+?)(?:\n---|\n##|$)/);
+    const summary = summaryMatch
+      ? summaryMatch[1]!.trim()
+      : reply.substring(0, 300) + "..."; // Fallback to first 300 chars
+
     logger.info(
       {
         replyLength: reply.length,
+        summaryLength: summary.length,
         completedTaskCount: completedMaxTasks.length,
         nextPlanCount: nextPlan.length,
       },
@@ -79,6 +87,7 @@ export async function replyAgent(input: {
 
     return {
       reply,
+      summary,
       start,
       end,
     };
