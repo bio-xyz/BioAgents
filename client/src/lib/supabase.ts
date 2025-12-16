@@ -34,6 +34,7 @@ export interface Message {
   user_id: string;
   question?: string;
   content: string;
+  summary?: string; // Optional summary for agent messages
   state?: any;
   response_time?: number;
   source?: string;

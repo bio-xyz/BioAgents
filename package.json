@@ -66,6 +66,8 @@
     "worker": "bun src/worker.ts",
     "worker:dev": "bun --watch src/worker.ts",
     "build:client": "bun run client/build.ts",
-    "build": "bun run build:client"
+    "build": "bun run build:client",
+    "migrate": "supabase migration up",
+    "migrate:new": "supabase migration new"
   }
 }

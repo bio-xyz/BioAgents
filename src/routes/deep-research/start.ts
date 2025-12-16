@@ -492,7 +492,6 @@ async function runDeepResearch(params: {
           );
         });
 
-        // Run primary literature agent (Edison by default, BioLiterature when configured)
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           type: primaryLiteratureType,
@@ -825,15 +824,20 @@ These molecular changes align with established longevity pathways (Converging nu
       "reply_generated",
     );
 
-    // Step 7: Update the message with the reply content
+    // Step 7: Update the message with the reply content and summary
     const { updateMessage } = await import("../../db/operations");
 
     await updateMessage(createdMessage.id, {
       content: replyResult.reply,
+      summary: replyResult.summary, // Save summary for efficient conversation context
     });
 
     logger.info(
-      { messageId: createdMessage.id, contentLength: replyResult.reply.length },
+      {
+        messageId: createdMessage.id,
+        contentLength: replyResult.reply.length,
+        summaryLength: replyResult.summary?.length || 0,
+      },
       "message_content_saved",
     );
     const responseTime = 0; // TODO: Calculate response time

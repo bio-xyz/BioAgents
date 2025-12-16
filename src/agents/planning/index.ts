@@ -76,7 +76,8 @@ async function generateInitialPlan(
   });
 
   // Build context (may include uploaded datasets even if no plan exists)
-  const context = buildContextFromState(conversationState);
+  const conversationId = conversationState.values.conversationId || message.conversation_id;
+  const context = await buildContextFromState(conversationState, conversationId);
 
   const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace(
     "{context}",
@@ -152,7 +153,8 @@ async function generatePlan(
   });
 
   // Build context from latest results
-  const context = buildContextFromState(conversationState);
+  const conversationId = conversationState.values.conversationId || state.values.conversationId;
+  const context = await buildContextFromState(conversationState, conversationId);
 
   // Select prompt based on mode
   const promptTemplate =
@@ -211,8 +213,60 @@ async function generatePlan(
 /**
  * Build context string from current state
  */
-function buildContextFromState(conversationState: ConversationState): string {
+async function buildContextFromState(
+  conversationState: ConversationState,
+  conversationId?: string,
+): Promise<string> {
   const contextParts: string[] = [];
+
+  // Add recent conversation history if available
+  if (conversationId) {
+    try {
+      const { getMessagesByConversation } = await import("../../db/operations");
+      // Fetch 4 messages, then skip the first one (current message)
+      const allMessages = await getMessagesByConversation(conversationId, 4);
+
+      if (allMessages && allMessages.length > 1) {
+        // Skip the first message (most recent = current one), take next 3
+        const previousMessages = allMessages.slice(1, 4);
+
+        // Reverse to get chronological order (oldest to newest)
+        const orderedMessages = previousMessages.reverse();
+
+        const conversationHistory = orderedMessages
+          .map((msg) => {
+            const parts: string[] = [];
+
+            // Each message has both user question and agent response
+            if (msg.question) {
+              parts.push(`User: ${msg.question}`);
+            }
+
+            // Use summary for agent response if available, otherwise truncate content
+            if (msg.summary) {
+              parts.push(`Assistant: ${msg.summary}`);
+            } else if (msg.content) {
+              const content =
+                msg.content.length > 300
+                  ? msg.content.substring(0, 300) + "..."
+                  : msg.content;
+              parts.push(`Assistant: ${content}`);
+            }
+
+            return parts.join("\n");
+          })
+          .join("\n\n");
+
+        if (conversationHistory) {
+          contextParts.push(
+            `Recent Conversation History (last ${orderedMessages.length} exchanges):\n${conversationHistory}`,
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn({ error }, "Failed to fetch conversation history for planning");
+    }
+  }
 
   // Add hypothesis if available
   if (conversationState.values.currentHypothesis) {
