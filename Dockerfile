@@ -49,5 +49,5 @@ USER bun
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD bun run -e 'fetch("http://localhost:3000/api/health").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
 
-# Default: run migrations then API server
-CMD ["sh", "-c", "supabase migration up && bun run src/index.ts"]
+# Start the API server
+CMD ["bun", "run", "src/index.ts"]
