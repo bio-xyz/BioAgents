@@ -6,6 +6,7 @@
 export { useSessions } from './useSessions';
 export { useChatAPI } from './useChatAPI';
 export { useFileUpload } from './useFileUpload';
+export { usePresignedUpload } from './usePresignedUpload';
 export { useTypingAnimation } from './useTypingAnimation';
 export { useAutoScroll } from './useAutoScroll';
 export { useAutoResize } from './useAutoResize';
@@ -19,6 +20,7 @@ export { useStates } from './useStates';
 export type { Message, Session, UseSessionsReturn } from './useSessions';
 export type { SendMessageParams, UseChatAPIReturn } from './useChatAPI';
 export type { UseFileUploadReturn } from './useFileUpload';
+export type { UsePresignedUploadReturn, UploadedFile } from './usePresignedUpload';
 export type { UseTypingAnimationReturn } from './useTypingAnimation';
 export type { UseAutoScrollReturn } from './useAutoScroll';
 export type { UseX402PaymentReturn } from './useX402Payment';

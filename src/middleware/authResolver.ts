@@ -333,4 +333,66 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
   return authResolver({ required: !options.optional });
 }
 
+/**
+ * Standalone auth resolution function
+ * Can be called directly without Elysia middleware context
+ *
+ * @param request - The incoming request
+ * @returns AuthContext with userId if authenticated
+ */
+export async function resolveAuth(request: Request): Promise<{
+  authenticated: boolean;
+  userId?: string;
+  method?: string;
+}> {
+  const config = getAuthConfig();
+
+  // Check x402 settlement (set by x402 middleware)
+  const x402Settlement = (request as any).x402Settlement;
+  if (x402Settlement?.payer) {
+    return {
+      authenticated: true,
+      userId: walletAddressToUUID(x402Settlement.payer),
+      method: "x402",
+    };
+  }
+
+  // Check JWT
+  const authHeader = request.headers.get("Authorization");
+  const token = extractBearerToken(authHeader);
+
+  if (token) {
+    const result = await verifyJWT(token);
+    if (result.valid && result.payload?.sub) {
+      return {
+        authenticated: true,
+        userId: result.payload.sub,
+        method: "jwt",
+      };
+    }
+  }
+
+  // Check API key (legacy)
+  if (isValidApiKey(request)) {
+    return {
+      authenticated: true,
+      userId: generateUUID(),
+      method: "api_key",
+    };
+  }
+
+  // Check if auth is required
+  if (config.mode === "none") {
+    return {
+      authenticated: true,
+      userId: generateUUID(),
+      method: "anonymous",
+    };
+  }
+
+  return {
+    authenticated: false,
+  };
+}
+
 export default authResolver;

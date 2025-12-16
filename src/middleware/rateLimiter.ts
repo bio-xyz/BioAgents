@@ -74,7 +74,7 @@ export async function checkRateLimit(
   }
 
   // Get Redis connection
-  const { getBullMQConnection } = await import("../queue/connection");
+  const { getBullMQConnection } = await import("../services/queue/connection");
   const redis = getBullMQConnection();
 
   const key = `ratelimit:${action}:${userId}`;

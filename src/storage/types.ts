@@ -52,6 +52,21 @@ export abstract class StorageProvider {
   ): Promise<string>;
 
   /**
+   * Generate a presigned URL for uploading a file directly to storage
+   * @param path - The path where the file should be stored
+   * @param contentType - The MIME type of the file
+   * @param expiresIn - URL expiration time in seconds (default: 3600)
+   * @param contentLength - Exact file size in bytes (enforced by S3 - rejects mismatched sizes)
+   * @returns A presigned URL for uploading the file
+   */
+  abstract getPresignedUploadUrl(
+    path: string,
+    contentType: string,
+    expiresIn?: number,
+    contentLength?: number,
+  ): Promise<string>;
+
+  /**
    * Download a file from a user's conversation storage
    * @param userId - ID of the user
    * @param conversationStateId - ID of the conversation state

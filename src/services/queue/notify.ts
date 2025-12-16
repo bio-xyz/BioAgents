@@ -153,3 +153,44 @@ export async function notifyStateUpdated(
     stateId,
   });
 }
+
+/**
+ * Helper to create and send a file:ready notification
+ * Use this after a file has been processed successfully
+ */
+export async function notifyFileReady(
+  jobId: string,
+  conversationId: string,
+  fileId: string,
+  description: string,
+): Promise<void> {
+  await notify({
+    type: "file:ready",
+    jobId,
+    conversationId,
+    fileId,
+    description,
+  });
+}
+
+/**
+ * Helper to create and send a file:error notification
+ * Use this when file processing fails
+ */
+export async function notifyFileError(
+  jobId: string,
+  conversationId: string,
+  fileId: string,
+  error: string,
+): Promise<void> {
+  await notify({
+    type: "file:error",
+    jobId,
+    conversationId,
+    fileId,
+    error,
+  });
+}
+
+// Alias for backwards compatibility
+export { notify as publishNotification };

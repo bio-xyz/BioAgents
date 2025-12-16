@@ -50,8 +50,8 @@ async function processChatJob(
   try {
     // Import required modules
     const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
-      await import("../../db/operations");
-    const { updateMessageResponseTime } = await import("../../services/chat/tools");
+      await import("../../../db/operations");
+    const { updateMessageResponseTime } = await import("../../chat/tools");
 
     // Get message record (already created by route handler)
     const messageRecord = await getMessage(messageId);
@@ -66,7 +66,7 @@ async function processChatJob(
     }
 
     // Get conversation state
-    const { getConversation } = await import("../../db/operations");
+    const { getConversation } = await import("../../../db/operations");
     const conversation = await getConversation(conversationId);
     const conversationStateRecord = await getConversationState(
       conversation.conversation_state_id,
@@ -90,7 +90,7 @@ async function processChatJob(
     // Step 1: Execute planning agent
     logger.info({ jobId: job.id }, "chat_job_planning");
 
-    const { planningAgent } = await import("../../agents/planning");
+    const { planningAgent } = await import("../../../agents/planning");
 
     const planningResult = await planningAgent({
       state,
@@ -118,7 +118,7 @@ async function processChatJob(
     await notifyJobProgress(job.id!, conversationId, "literature", 30);
 
     // Step 2: Execute literature tasks
-    const { literatureAgent } = await import("../../agents/literature");
+    const { literatureAgent } = await import("../../../agents/literature");
     const completedTasks: PlanTask[] = [];
 
     for (const task of literatureTasks) {
@@ -180,7 +180,7 @@ async function processChatJob(
     if (needsHypothesis && completedTasks.length > 0) {
       logger.info({ jobId: job.id }, "chat_job_generating_hypothesis");
 
-      const { hypothesisAgent } = await import("../../agents/hypothesis");
+      const { hypothesisAgent } = await import("../../../agents/hypothesis");
 
       const hypothesisResult = await hypothesisAgent({
         objective: planningResult.currentObjective,
@@ -199,7 +199,7 @@ async function processChatJob(
       // Step 5: Run reflection agent
       logger.info({ jobId: job.id }, "chat_job_reflection");
 
-      const { reflectionAgent } = await import("../../agents/reflection");
+      const { reflectionAgent } = await import("../../../agents/reflection");
 
       const reflectionResult = await reflectionAgent({
         conversationState,
@@ -226,7 +226,7 @@ async function processChatJob(
     // Step 6: Generate reply
     logger.info({ jobId: job.id }, "chat_job_generating_reply");
 
-    const { generateChatReply } = await import("../../agents/reply/utils");
+    const { generateChatReply } = await import("../../../agents/reply/utils");
 
     const replyText = await generateChatReply(
       message,
@@ -298,7 +298,7 @@ async function checkRequiresHypothesis(
   question: string,
   literatureResults: string,
 ): Promise<boolean> {
-  const { LLM } = await import("../../llm/provider");
+  const { LLM } = await import("../../../llm/provider");
 
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];

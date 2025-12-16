@@ -8,6 +8,7 @@ import { authRoute } from "./routes/auth";
 import { chatRoute } from "./routes/chat";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
+import { filesRoute } from "./routes/files";
 import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
 import { x402DeepResearchRoute } from "./routes/x402/deep-research";
@@ -141,7 +142,7 @@ const app = new Elysia()
     // Add job queue status if enabled
     if (isJobQueueEnabled()) {
       try {
-        const { getBullMQConnection } = await import("./queue/connection");
+        const { getBullMQConnection } = await import("./services/queue/connection");
         const redis = getBullMQConnection();
         await redis.ping();
         health.jobQueue = {
@@ -177,6 +178,7 @@ const app = new Elysia()
   .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
+  .use(filesRoute) // POST /api/files/* for direct S3 file uploads
 
   // x402 payment routes - Base Sepolia (USDC)
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health

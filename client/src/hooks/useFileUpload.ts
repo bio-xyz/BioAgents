@@ -12,7 +12,7 @@ export interface UseFileUploadReturn {
 }
 
 const MAX_FILES = 5;
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB (matches backend limit)
 
 /**
  * Custom hook for file upload handling
@@ -28,7 +28,7 @@ export function useFileUpload(): UseFileUploadReturn {
   const selectFile = (file: File) => {
     console.log('[useFileUpload.selectFile] File selected:', file.name, file.size);
     if (file.size > MAX_FILE_SIZE) {
-      alert(`File ${file.name} is too large. Maximum size is 5MB.`);
+      alert(`File ${file.name} is too large. Maximum size is 500MB.`);
       return;
     }
     setSelectedFile(file);
@@ -42,7 +42,7 @@ export function useFileUpload(): UseFileUploadReturn {
   const selectFiles = (files: File[]) => {
     const validFiles = files.filter(file => {
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File ${file.name} is too large. Maximum size is 5MB.`);
+        alert(`File ${file.name} is too large. Maximum size is 500MB.`);
         return false;
       }
       return true;
@@ -61,7 +61,7 @@ export function useFileUpload(): UseFileUploadReturn {
    */
   const addFile = (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      alert(`File ${file.name} is too large. Maximum size is 5MB.`);
+      alert(`File ${file.name} is too large. Maximum size is 500MB.`);
       return;
     }
 
