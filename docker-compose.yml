@@ -1,16 +1,39 @@
-version: "3.8"
-
 services:
+  # ==========================================================================
+  # Database migrations (one-off job if you're using Supabase)
+  # ==========================================================================
+  migrate:
+    build: .
+    container_name: bioagents-migrate
+    env_file:
+      - .env
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - supabase_tmp:/app/supabase/.temp
+    command: >
+      sh -lc '
+        set -eu
+        mkdir -p /app/supabase/.temp
+        echo "Supabase CLI: $(supabase --version)"
+        supabase db push --db-url "$SUPABASE_FULL_URL"
+      '
+    restart: "no"
+  # ==========================================================================
+  # API Server - Handles HTTP requests and WebSocket connections
+  # ==========================================================================
   bioagents:
     build: .
+    container_name: bioagents-api
 
-    # Persistent storage for agent-specific docs and images
     volumes:
       - bioagents-docs:/app/docs
       - bioagents-images:/app/client/public/images
 
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
+
     environment:
       # Required: LLM API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -44,10 +67,12 @@ services:
       - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.45}
       - RERANKER_SCORE_THRESHOLD=${RERANKER_SCORE_THRESHOLD:-0}
 
-      # Optional: UI Password Protection
+      # Authentication
+      - BIOAGENTS_SECRET=${BIOAGENTS_SECRET:-}
+      - AUTH_MODE=${AUTH_MODE:-none}
       - UI_PASSWORD=${UI_PASSWORD:-}
 
-      # Optional: Supabase Database
+      # Optional: Supabase (for app runtime)
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
 
@@ -56,13 +81,25 @@ services:
       - HOST=0.0.0.0
       - NODE_ENV=production
 
-    # Optional: Mount .env file
+      # Job Queue Configuration (connects to Redis)
+      - USE_JOB_QUEUE=${USE_JOB_QUEUE:-false}
+      - REDIS_URL=redis://redis:6379
+
+      # Queue concurrency (for rate limiting info)
+      - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
+      - DEEP_RESEARCH_QUEUE_CONCURRENCY=${DEEP_RESEARCH_QUEUE_CONCURRENCY:-3}
+      - CHAT_RATE_LIMIT_PER_MINUTE=${CHAT_RATE_LIMIT_PER_MINUTE:-10}
+      - DEEP_RESEARCH_RATE_LIMIT_PER_5MIN=${DEEP_RESEARCH_RATE_LIMIT_PER_5MIN:-3}
+
     env_file:
       - .env
 
     restart: unless-stopped
 
-    # Health check (using Bun's fetch, no curl needed)
+    depends_on:
+      redis:
+        condition: service_healthy
+
     healthcheck:
       test:
         [
@@ -70,17 +107,110 @@ services:
           "bun",
           "run",
           "-e",
-          "fetch('http://localhost:3000/api/auth/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
+          "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  # ==========================================================================
+  # Worker - Processes background jobs from BullMQ queues
+  # ==========================================================================
+  worker:
+    build: .
+    container_name: bioagents-worker
+    command: ["bun", "run", "src/worker.ts"]
+
+    volumes:
+      - bioagents-docs:/app/docs
+
+    environment:
+      # Required: LLM API Keys (workers need these to process jobs)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+
+      # Agent LLM Configuration
+      - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
+      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-openai}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gpt-5}
+      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-openai}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gpt-5}
+      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-openai}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gpt-5}
+      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-openai}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gpt-5}
+
+      # Embedding Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - TEXT_EMBEDDING_MODEL=${TEXT_EMBEDDING_MODEL:-text-embedding-3-large}
+
+      # Vector Search & RAG Configuration
+      - CHUNK_SIZE=${CHUNK_SIZE:-2000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-20}
+      - RERANK_FINAL_LIMIT=${RERANK_FINAL_LIMIT:-5}
+      - USE_RERANKING=${USE_RERANKING:-true}
+      - KNOWLEDGE_DOCS_PATH=${KNOWLEDGE_DOCS_PATH:-docs}
+      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.45}
+      - RERANKER_SCORE_THRESHOLD=${RERANKER_SCORE_THRESHOLD:-0}
+
+      # Optional: Supabase Database (workers may need DB access)
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
+
+      # Production environment
+      - NODE_ENV=production
+
+      # Job Queue Configuration (required for worker)
+      - USE_JOB_QUEUE=${USE_JOB_QUEUE:-true}
+      - REDIS_URL=redis://redis:6379
+
+      # Worker concurrency settings
+      - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
+      - DEEP_RESEARCH_QUEUE_CONCURRENCY=${DEEP_RESEARCH_QUEUE_CONCURRENCY:-3}
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    # Worker doesn't expose ports, no healthcheck needed (BullMQ handles reconnection)
+
+  # ==========================================================================
+  # Redis - Message broker for BullMQ job queue
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: bioagents-redis
+    # Memory: Adjust based on load. 512MB handles ~100 concurrent jobs.
+    # For heavy usage (deep research), consider 1-2GB.
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 # Named volumes for persistent storage
-# These volumes store agent-specific documentation and branding
 volumes:
+  supabase_tmp:
+    driver: local
   bioagents-docs:
     driver: local
   bioagents-images:
+    driver: local
+  redis-data:
     driver: local

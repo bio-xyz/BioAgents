@@ -1,17 +1,22 @@
 import { Elysia } from "elysia";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
-import { authBeforeHandle } from "../../middleware/auth";
+import { authResolver } from "../../middleware/authResolver";
+import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import {
   ensureUserAndConversation,
   setupConversationData,
 } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
+import type { AuthContext } from "../../types/auth";
 import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
 initKnowledgeBase();
 
+/**
+ * Response type for deep research start (in-process mode)
+ */
 type DeepResearchStartResponse = {
   messageId: string | null;
   conversationId: string;
@@ -21,16 +26,33 @@ type DeepResearchStartResponse = {
 };
 
 /**
+ * Response type for deep research start (queue mode)
+ */
+type DeepResearchQueuedResponse = {
+  jobId: string;
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  status: "queued";
+  pollUrl: string;
+};
+
+/**
  * Deep Research Start Route - Returns immediately with messageId
  * The actual research runs in the background
  * Uses guard pattern to ensure auth runs for all routes
+ *
+ * Supports dual mode:
+ * - USE_JOB_QUEUE=false (default): Fire-and-forget async execution
+ * - USE_JOB_QUEUE=true: Enqueues job to BullMQ for worker processing
  */
 export const deepResearchStartRoute = new Elysia().guard(
   {
     beforeHandle: [
-      authBeforeHandle({
-        optional: process.env.NODE_ENV !== "production",
+      authResolver({
+        required: process.env.NODE_ENV === "production",
       }),
+      rateLimitMiddleware("deep-research"),
     ],
   },
   (app) =>
@@ -63,50 +85,37 @@ export async function deepResearchStartHandler(ctx: any) {
     };
   }
 
-  // Determine userId: x402 wallet > body.userId > anonymous
-  let userId: string;
-  let source = "api";
-  let isX402User = false;
+  // Get userId from auth context (set by authResolver middleware)
+  // Auth context handles: x402 wallet > JWT token > API key > body.userId > anonymous
+  const auth = (request as any).auth as AuthContext | undefined;
+  const userId = auth?.userId || generateUUID();
+  const source = auth?.method === "x402" ? "x402" : "api";
+  const isX402User = auth?.method === "x402";
 
-  // Check if this is an x402 request with wallet payment
-  const x402Settlement = (request as any).x402Settlement;
-  if (x402Settlement?.payer) {
-    // x402 user - get or create user by wallet address
+  logger.info(
+    {
+      userId,
+      authMethod: auth?.method || "unknown",
+      verified: auth?.verified || false,
+      source,
+      externalId: auth?.externalId,
+    },
+    "deep_research_user_identified_via_auth",
+  );
+
+  // For x402 users, ensure wallet user record exists
+  if (isX402User && auth?.externalId) {
     const { getOrCreateUserByWallet } = await import("../../db/operations");
-    const { user, isNew } = await getOrCreateUserByWallet(x402Settlement.payer);
-    userId = user.id;
-    source = "x402";
-    isX402User = true;
+    const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
 
     logger.info(
       {
-        userId,
-        wallet: x402Settlement.payer,
+        userId: user.id,
+        wallet: auth.externalId,
         isNewUser: isNew,
-        transaction: x402Settlement.transaction,
       },
-      "x402_user_identified",
+      "x402_user_record_ensured",
     );
-  } else {
-    // Regular API request - use provided userId or generate anonymous
-    const providedUserId = parsedBody.userId;
-    const isValidUserId =
-      providedUserId &&
-      typeof providedUserId === "string" &&
-      providedUserId.length > 0 &&
-      providedUserId !== "undefined" &&
-      providedUserId !== "null";
-
-    userId = isValidUserId ? providedUserId : `anon_${Date.now()}`;
-
-    if (!isValidUserId) {
-      logger.warn(
-        { generatedUserId: userId },
-        "deep_research_no_user_id_provided_generating_temp",
-      );
-    }
-
-    logger.info({ userId, source }, "deep_research_user_identified");
   }
 
   // Auto-generate conversationId if not provided
@@ -188,6 +197,96 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   const createdMessage = messageResult.message!;
+
+  // =========================================================================
+  // DUAL MODE: Check if job queue is enabled
+  // =========================================================================
+  const { isJobQueueEnabled } = await import("../../services/queue/connection");
+
+  if (isJobQueueEnabled()) {
+    // QUEUE MODE: Enqueue job and return immediately
+    logger.info(
+      { messageId: createdMessage.id, conversationId },
+      "deep_research_using_queue_mode",
+    );
+
+    // Process files synchronously before enqueuing (files can't be serialized)
+    if (files.length > 0) {
+      const conversationState: ConversationState = {
+        id: conversationStateRecord.id,
+        values: conversationStateRecord.values,
+      };
+
+      const { fileUploadAgent } = await import("../../agents/fileUpload");
+
+      logger.info(
+        { fileCount: files.length },
+        "processing_file_uploads_before_queue",
+      );
+
+      await fileUploadAgent({
+        conversationState,
+        files,
+        userId,
+      });
+    }
+
+    // Enqueue the job
+    const { getDeepResearchQueue } = await import(
+      "../../services/queue/queues"
+    );
+    const deepResearchQueue = getDeepResearchQueue();
+
+    const job = await deepResearchQueue.add(
+      `deep-research-${createdMessage.id}`,
+      {
+        userId,
+        conversationId,
+        messageId: createdMessage.id,
+        message,
+        authMethod: auth?.method || "anonymous",
+        stateId: stateRecord.id,
+        conversationStateId: conversationStateRecord.id,
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        jobId: createdMessage.id, // Use message ID as job ID for easy lookup
+      },
+    );
+
+    logger.info(
+      {
+        jobId: job.id,
+        messageId: createdMessage.id,
+        conversationId,
+      },
+      "deep_research_job_enqueued",
+    );
+
+    const response: DeepResearchQueuedResponse = {
+      jobId: job.id!,
+      messageId: createdMessage.id,
+      conversationId,
+      userId,
+      status: "queued",
+      pollUrl: `/api/deep-research/status/${createdMessage.id}`,
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 202, // Accepted
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    });
+  }
+
+  // =========================================================================
+  // IN-PROCESS MODE: Fire-and-forget async execution (existing behavior)
+  // =========================================================================
+  logger.info(
+    { messageId: createdMessage.id, conversationId },
+    "deep_research_using_in_process_mode",
+  );
 
   // Return immediately with message ID
   // Include userId so external platforms (x402) can check status later
@@ -351,7 +450,8 @@ async function runDeepResearch(params: {
       (t) => t.level === newLevel,
     );
 
-    for (const task of tasksToExecute) {
+    // Execute all tasks concurrently
+    const taskPromises = tasksToExecute.map(async (task) => {
       if (task.type === "LITERATURE") {
         // Set start timestamp
         task.start = new Date().toISOString();
@@ -393,7 +493,6 @@ async function runDeepResearch(params: {
           );
         });
 
-        // Run primary literature agent (Edison by default, BioLiterature when configured)
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           type: primaryLiteratureType,
@@ -594,7 +693,10 @@ These molecular changes align with established longevity pathways (Converging nu
           );
         }
       }
-    }
+    });
+
+    // Wait for all tasks to complete
+    await Promise.all(taskPromises);
 
     // Step 3: Generate/update hypothesis based on completed tasks
     logger.info("generating_hypothesis_from_completed_tasks");
@@ -663,6 +765,9 @@ These molecular changes align with established longevity pathways (Converging nu
     // Step 5: Run planning agent in "next" mode to plan next iteration
     logger.info("running_next_planning_for_future_iteration");
 
+    // Clear old suggestions before generating new ones (ensures fresh planning)
+    conversationState.values.suggestedNextSteps = [];
+
     const nextPlanningResult = await planningAgent({
       state,
       conversationState,
@@ -723,15 +828,20 @@ These molecular changes align with established longevity pathways (Converging nu
       "reply_generated",
     );
 
-    // Step 7: Update the message with the reply content
+    // Step 7: Update the message with the reply content and summary
     const { updateMessage } = await import("../../db/operations");
 
     await updateMessage(createdMessage.id, {
       content: replyResult.reply,
+      summary: replyResult.summary, // Save summary for efficient conversation context
     });
 
     logger.info(
-      { messageId: createdMessage.id, contentLength: replyResult.reply.length },
+      {
+        messageId: createdMessage.id,
+        contentLength: replyResult.reply.length,
+        summaryLength: replyResult.summary?.length || 0,
+      },
       "message_content_saved",
     );
     const responseTime = 0; // TODO: Calculate response time

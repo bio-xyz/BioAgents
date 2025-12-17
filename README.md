@@ -4,7 +4,7 @@ An advanced AI agent framework for biological and scientific research. BioAgents
 
 ## Setup
 
-Check out [SETUP.md](SETUP.md)
+Check out [SETUP.md](documentation/docs/SETUP.md)
 
 ## Agent Backend
 
@@ -198,80 +198,90 @@ The UI includes integrated support for x402 micropayments using Coinbase embedde
 - Seamless USDC payment flow for paid API requests
 - Toast notifications for payment status
 
-## x402 Payment Protocol
+## Authentication
 
-BioAgents AgentKit supports **USDC micropayments** for API access using the x402 payment protocol. The system implements a **three-tier access control model**:
+BioAgents supports two independent auth systems:
 
-| Access Tier          | Authentication | Payment Required        |
-| -------------------- | -------------- | ----------------------- |
-| **Next.js Frontend** | Privy JWT      | ❌ FREE (bypasses x402) |
-| **Internal Dev UI**  | CDP Wallet     | ✅ Requires x402        |
-| **External Agents**  | None           | ✅ Requires x402        |
+| Setting | Options | Purpose |
+| ------- | ------- | ------- |
+| `AUTH_MODE` | `none` / `jwt` | JWT authentication for external frontends |
+| `X402_ENABLED` | `true` / `false` | x402 USDC micropayments |
 
-### Quick Start
+### JWT Authentication (Production)
 
-#### Testnet Setup (Development)
-
-1. **Enable x402 on testnet**:
+For external frontends connecting to the API:
 
 ```bash
+# .env
+AUTH_MODE=jwt
+BIOAGENTS_SECRET=your-secure-secret  # Generate with: openssl rand -hex 32
+```
+
+Your backend signs JWTs with the shared secret:
+
+```javascript
+// Your backend generates JWT for authenticated users
+const jwt = await new jose.SignJWT({ sub: userId })  // sub must be valid UUID
+  .setProtectedHeader({ alg: 'HS256' })
+  .setExpirationTime('1h')
+  .sign(new TextEncoder().encode(process.env.BIOAGENTS_SECRET));
+
+// Call BioAgents API
+fetch('https://your-bioagents-api/api/chat', {
+  headers: { 'Authorization': `Bearer ${jwt}` },
+  body: JSON.stringify({ message: 'What is rapamycin?' })
+});
+```
+
+**📖 See [AUTH.md](documentation/docs/AUTH.md) for complete JWT integration guide**
+
+### x402 Payment Protocol (Optional)
+
+For pay-per-request access using USDC micropayments:
+
+```bash
+# .env
 X402_ENABLED=true
-X402_ENVIRONMENT=testnet
-X402_PAYMENT_ADDRESS=0xYourBaseSepoliaAddress
+X402_ENVIRONMENT=testnet  # or mainnet
+X402_PAYMENT_ADDRESS=0xYourWalletAddress
 ```
 
-2. **Configure Authentication** (optional - for Privy bypass):
+**📖 See [AUTH.md](documentation/docs/AUTH.md) for x402 configuration details**
+
+## Job Queue (Production)
+
+BioAgents supports BullMQ for reliable background job processing with:
+
+- **Horizontal scaling**: Run multiple worker instances
+- **Job persistence**: Jobs survive server restarts
+- **Automatic retries**: Failed jobs retry with exponential backoff
+- **Real-time updates**: WebSocket notifications for job progress
+- **Admin dashboard**: Bull Board UI at `/admin/queues`
 
 ```bash
-# Optional: Only needed if using Privy authentication
-PRIVY_APP_ID=your_app_id
-PRIVY_VERIFICATION_KEY="your_public_key"
+# Enable job queue
+USE_JOB_QUEUE=true
+REDIS_URL=redis://localhost:6379
+
+# Start API server and worker separately
+bun run dev      # API server
+bun run worker   # Worker process
 ```
 
-3. **Get CDP Credentials** from [Coinbase Portal](https://portal.cdp.coinbase.com) (for embedded wallets):
-
-```bash
-CDP_PROJECT_ID=your_project
-```
-
-#### Mainnet Setup (Production)
-
-1. **Enable x402 on mainnet**:
-
-```bash
-X402_ENABLED=true
-X402_ENVIRONMENT=mainnet
-X402_PAYMENT_ADDRESS=0xYourBaseMainnetAddress
-```
-
-2. **REQUIRED: Get CDP API Credentials** from [CDP API Portal](https://portal.cdp.coinbase.com/access/api):
-
-```bash
-CDP_API_KEY_ID=your_key_id
-CDP_API_KEY_SECRET=your_key_secret
-```
-
-Note: Mainnet requires CDP API credentials. The system automatically uses the CDP facilitator object for mainnet (not URL-based).
-
-### Features
-
-- **Three-Tier Access Control**: Privy bypass, CDP auth, or pay-per-request
-- **Gasless Transfers**: EIP-3009 for fee-free USDC payments on Base
-- **Persistent Conversations**: External agents can maintain multi-turn chats
-- **Route-Based Pricing**: Simple flat pricing ($0.01/request default)
-- **Embedded Wallets**: Email-based wallet creation
-
-**📖 For complete documentation, configuration, and implementation details, see [x402.md](x402.md)**
+**📖 See [JOB_QUEUE.md](documentation/docs/JOB_QUEUE.md) for complete setup and configuration guide**
 
 ## Project Structure
 
 ```
 ├── src/                      # Backend source
+│   ├── index.ts             # API server entry point
+│   ├── worker.ts            # BullMQ worker entry point
 │   ├── routes/              # HTTP route handlers
 │   │   ├── chat.ts          # Agent-based chat endpoint
-│   │   └── deep-research/   # Deep research endpoints
-│   │       ├── start.ts     # Start deep research
-│   │       └── status.ts    # Check research status
+│   │   ├── deep-research/   # Deep research endpoints
+│   │   ├── x402/            # x402 payment-gated routes
+│   │   ├── b402/            # b402 payment-gated routes
+│   │   └── admin/           # Bull Board dashboard
 │   ├── agents/              # Independent agent modules
 │   │   ├── fileUpload/      # File parsing & storage
 │   │   ├── planning/        # Research planning
@@ -281,23 +291,24 @@ Note: Mainnet requires CDP API credentials. The system automatically uses the CD
 │   │   ├── reflection/      # Research reflection
 │   │   └── reply/           # User-facing responses
 │   ├── services/            # Business logic layer
-│   │   └── chat/            # Chat-related services
-│   │       ├── setup.ts     # User/conversation setup
-│   │       ├── payment.ts   # Payment recording
-│   │       └── tools.ts     # Legacy tool execution
+│   │   ├── chat/            # Chat-related services
+│   │   ├── queue/           # BullMQ job queue system
+│   │   │   ├── connection.ts    # Redis connection management
+│   │   │   ├── queues.ts        # Queue definitions & config
+│   │   │   ├── workers/         # Job processors
+│   │   │   └── notify.ts        # Pub/Sub notifications
+│   │   ├── websocket/       # Real-time notifications
+│   │   │   ├── handler.ts       # WebSocket endpoint
+│   │   │   └── subscribe.ts     # Redis Pub/Sub subscriber
+│   │   └── jwt.ts           # JWT verification service
 │   ├── middleware/          # Request/response middleware
-│   │   ├── smartAuth.ts     # Multi-method authentication
-│   │   └── x402.ts          # Payment enforcement
+│   │   ├── authResolver.ts  # Multi-method authentication
+│   │   ├── rateLimiter.ts   # Rate limiting
+│   │   ├── x402/            # x402 payment protocol (Base/USDC)
+│   │   └── b402/            # b402 payment protocol (BNB/USDT)
 │   ├── llm/                 # LLM providers & interfaces
-│   │   └── provider.ts      # Unified LLM interface
 │   ├── embeddings/          # Vector database & document processing
 │   ├── db/                  # Database operations
-│   │   ├── operations.ts    # Core DB operations
-│   │   └── x402Operations.ts # Payment tracking
-│   ├── x402/                # x402 payment protocol
-│   │   ├── config.ts        # Network & payment config
-│   │   ├── pricing.ts       # Route-based pricing
-│   │   └── service.ts       # Payment verification
 │   ├── storage/             # File storage (S3-compatible)
 │   ├── utils/               # Shared utilities
 │   ├── types/               # TypeScript types
@@ -308,7 +319,9 @@ Note: Mainnet requires CDP API credentials. The system automatically uses the CD
 │   │   ├── hooks/          # Custom hooks (chat, payments, etc.)
 │   │   └── styles/         # CSS files
 │   └── public/             # Static assets
-├── docs/                    # Custom knowledge base documents
+├── documentation/           # Project documentation
+│   └── docs/               # Detailed guides (AUTH.md, SETUP.md, JOB_QUEUE.md)
+├── docs/                    # Custom knowledge base documents (scientific papers)
 └── package.json
 ```
 

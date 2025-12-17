@@ -1,9 +1,9 @@
 import { createPayment, updateX402External } from "../../db/x402Operations";
 import type { X402ExternalRecord } from "../../db/x402Operations";
 import logger from "../../utils/logger";
-import { x402Config } from "../../x402/config";
-import { routePricing } from "../../x402/pricing";
-import { usdToBaseUnits } from "../../x402/service";
+import { x402Config } from "../../middleware/x402/config";
+import { routePricing } from "../../middleware/x402/pricing";
+import { usdToBaseUnits } from "../../middleware/x402/service";
 
 export interface PaymentRecordingParams {
   isExternal: boolean;

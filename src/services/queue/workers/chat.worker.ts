@@ -1,0 +1,392 @@
+/**
+ * Chat Worker for BullMQ
+ *
+ * Processes chat jobs from the queue.
+ * This is the same logic as chatHandler in routes/chat.ts,
+ * but extracted to run in a separate worker process.
+ */
+
+import { Worker, Job } from "bullmq";
+import { getBullMQConnection } from "../connection";
+import {
+  notifyJobStarted,
+  notifyJobProgress,
+  notifyJobCompleted,
+  notifyJobFailed,
+  notifyMessageUpdated,
+} from "../notify";
+import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
+import type { ConversationState, PlanTask, State } from "../../../types/core";
+import logger from "../../../utils/logger";
+
+/**
+ * Process a chat job
+ * This is the core chat processing logic extracted from chatHandler
+ */
+async function processChatJob(
+  job: Job<ChatJobData, ChatJobResult>,
+): Promise<ChatJobResult> {
+  const startTime = Date.now();
+  const { userId, conversationId, messageId, message } = job.data;
+
+  // Log retry attempt if this is a retry
+  if (job.attemptsMade > 0) {
+    logger.warn(
+      {
+        jobId: job.id,
+        messageId,
+        attempt: job.attemptsMade + 1,
+        maxAttempts: job.opts.attempts,
+      },
+      "chat_job_retry_attempt",
+    );
+  }
+
+  logger.info({ jobId: job.id, messageId, conversationId }, "chat_job_started");
+
+  // Notify: Job started
+  await notifyJobStarted(job.id!, conversationId, messageId);
+
+  try {
+    // Import required modules
+    const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
+      await import("../../../db/operations");
+    const { updateMessageResponseTime } = await import("../../chat/tools");
+
+    // Get message record (already created by route handler)
+    const messageRecord = await getMessage(messageId);
+    if (!messageRecord) {
+      throw new Error(`Message not found: ${messageId}`);
+    }
+
+    // Get state record
+    const stateRecord = await getState(messageRecord.state_id);
+    if (!stateRecord) {
+      throw new Error(`State not found for message: ${messageId}`);
+    }
+
+    // Get conversation state
+    const { getConversation } = await import("../../../db/operations");
+    const conversation = await getConversation(conversationId);
+    const conversationStateRecord = await getConversationState(
+      conversation.conversation_state_id,
+    );
+
+    // Initialize state objects
+    const state: State = {
+      id: stateRecord.id,
+      values: stateRecord.values,
+    };
+
+    const conversationState: ConversationState = {
+      id: conversationStateRecord.id,
+      values: conversationStateRecord.values,
+    };
+
+    // Update progress: Planning
+    await job.updateProgress({ stage: "planning", percent: 10 } as JobProgress);
+    await notifyJobProgress(job.id!, conversationId, "planning", 10);
+
+    // Step 1: Execute planning agent
+    logger.info({ jobId: job.id }, "chat_job_planning");
+
+    const { planningAgent } = await import("../../../agents/planning");
+
+    const planningResult = await planningAgent({
+      state,
+      conversationState,
+      message: messageRecord,
+      mode: "initial",
+    });
+
+    const plan = planningResult.plan;
+
+    // Filter to only LITERATURE tasks (no ANALYSIS for regular chat)
+    const literatureTasks = plan.filter((task) => task.type === "LITERATURE");
+
+    logger.info(
+      {
+        jobId: job.id,
+        totalTasks: plan.length,
+        literatureTasks: literatureTasks.length,
+      },
+      "chat_job_planning_completed",
+    );
+
+    // Update progress: Literature
+    await job.updateProgress({ stage: "literature", percent: 30 } as JobProgress);
+    await notifyJobProgress(job.id!, conversationId, "literature", 30);
+
+    // Step 2: Execute literature tasks
+    const { literatureAgent } = await import("../../../agents/literature");
+    const completedTasks: PlanTask[] = [];
+
+    for (const task of literatureTasks) {
+      task.start = new Date().toISOString();
+      task.output = "";
+
+      const useBioLiterature =
+        process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
+
+      // Run literature searches in parallel
+      const openScholarPromise = literatureAgent({
+        objective: task.objective,
+        type: "OPENSCHOLAR",
+      }).then((result) => {
+        task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+      });
+
+      const bioLiteraturePromise = useBioLiterature
+        ? literatureAgent({
+            objective: task.objective,
+            type: "BIOLIT",
+          }).then((result) => {
+            task.output += `BioLiterature results:\n${result.output}\n\n`;
+          })
+        : Promise.resolve();
+
+      const knowledgePromise = literatureAgent({
+        objective: task.objective,
+        type: "KNOWLEDGE",
+      }).then((result) => {
+        task.output += `Knowledge literature results:\n${result.output}\n\n`;
+      });
+
+      await Promise.all([openScholarPromise, bioLiteraturePromise, knowledgePromise]);
+
+      task.end = new Date().toISOString();
+      completedTasks.push(task);
+    }
+
+    logger.info(
+      { jobId: job.id, completedTasksCount: completedTasks.length },
+      "chat_job_literature_completed",
+    );
+
+    // Notify message updated (literature results available)
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+
+    // Update progress: Hypothesis
+    await job.updateProgress({ stage: "hypothesis", percent: 60 } as JobProgress);
+    await notifyJobProgress(job.id!, conversationId, "hypothesis", 60);
+
+    // Step 3: Check if hypothesis is needed
+    const allLiteratureOutput = completedTasks.map((t) => t.output).join("\n\n");
+    const needsHypothesis = await checkRequiresHypothesis(message, allLiteratureOutput);
+
+    let hypothesisText: string | undefined;
+
+    // Step 4: Generate hypothesis if needed
+    if (needsHypothesis && completedTasks.length > 0) {
+      logger.info({ jobId: job.id }, "chat_job_generating_hypothesis");
+
+      const { hypothesisAgent } = await import("../../../agents/hypothesis");
+
+      const hypothesisResult = await hypothesisAgent({
+        objective: planningResult.currentObjective,
+        message: messageRecord,
+        conversationState,
+        completedTasks,
+      });
+
+      hypothesisText = hypothesisResult.hypothesis;
+      conversationState.values.currentHypothesis = hypothesisText;
+
+      if (conversationState.id) {
+        await updateConversationState(conversationState.id, conversationState.values);
+      }
+
+      // Step 5: Run reflection agent
+      logger.info({ jobId: job.id }, "chat_job_reflection");
+
+      const { reflectionAgent } = await import("../../../agents/reflection");
+
+      const reflectionResult = await reflectionAgent({
+        conversationState,
+        message: messageRecord,
+        completedMaxTasks: completedTasks,
+        hypothesis: hypothesisText,
+      });
+
+      // Update conversation state with reflection results
+      conversationState.values.currentObjective = reflectionResult.currentObjective;
+      conversationState.values.keyInsights = reflectionResult.keyInsights;
+      conversationState.values.discoveries = reflectionResult.discoveries;
+      conversationState.values.methodology = reflectionResult.methodology;
+
+      if (conversationState.id) {
+        await updateConversationState(conversationState.id, conversationState.values);
+      }
+    }
+
+    // Update progress: Reply
+    await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
+    await notifyJobProgress(job.id!, conversationId, "reply", 90);
+
+    // Step 6: Generate reply
+    logger.info({ jobId: job.id }, "chat_job_generating_reply");
+
+    const { generateChatReply } = await import("../../../agents/reply/utils");
+
+    const replyText = await generateChatReply(
+      message,
+      {
+        completedTasks,
+        hypothesis: hypothesisText,
+        nextPlan: [],
+        keyInsights: conversationState.values.keyInsights || [],
+        discoveries: conversationState.values.discoveries || [],
+        methodology: conversationState.values.methodology,
+        currentObjective: conversationState.values.currentObjective,
+      },
+      {
+        maxTokens: 1024,
+      },
+    );
+
+    // Save reply to message
+    await updateMessage(messageId, { content: replyText });
+
+    // Calculate and update response time
+    const responseTime = Date.now() - startTime;
+    await updateMessageResponseTime(messageId, responseTime);
+
+    logger.info(
+      {
+        jobId: job.id,
+        messageId,
+        responseTime,
+        responseTimeSec: (responseTime / 1000).toFixed(2),
+      },
+      "chat_job_completed",
+    );
+
+    // Notify: Job completed
+    await notifyJobCompleted(job.id!, conversationId, messageId);
+
+    return {
+      text: replyText,
+      userId,
+      responseTime,
+    };
+  } catch (error) {
+    logger.error(
+      {
+        jobId: job.id,
+        error,
+        attempt: job.attemptsMade + 1,
+        willRetry: job.attemptsMade + 1 < (job.opts.attempts || 3),
+      },
+      "chat_job_failed",
+    );
+
+    // Notify: Job failed (only on final attempt)
+    if (job.attemptsMade + 1 >= (job.opts.attempts || 3)) {
+      await notifyJobFailed(job.id!, conversationId, messageId);
+    }
+
+    // Re-throw to trigger retry (if attempts remaining)
+    throw error;
+  }
+}
+
+/**
+ * Check if the question requires a hypothesis using LLM
+ * Extracted from routes/chat.ts requiresHypothesis function
+ */
+async function checkRequiresHypothesis(
+  question: string,
+  literatureResults: string,
+): Promise<boolean> {
+  const { LLM } = await import("../../../llm/provider");
+
+  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
+  const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!apiKey) {
+    logger.warn("LLM API key not configured, defaulting to no hypothesis");
+    return false;
+  }
+
+  const llmProvider = new LLM({
+    // @ts-ignore
+    name: PLANNING_LLM_PROVIDER,
+    apiKey,
+  });
+
+  const prompt = `Analyze this user question and literature results to determine if a research hypothesis is needed.
+
+User Question: ${question}
+
+Literature Results Preview: ${literatureResults.slice(0, 1000)}
+
+A hypothesis IS needed if:
+- The question asks about mechanisms, predictions, or causal relationships
+- The question requires synthesizing multiple sources into a novel insight
+- The question is exploratory and needs a testable proposition
+
+A hypothesis IS NOT needed if:
+- The question asks for factual information or definitions
+- The question can be answered directly from literature
+- The question is a simple lookup or clarification
+
+Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
+
+  try {
+    const response = await llmProvider.createChatCompletion({
+      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
+      messages: [{ role: "user" as const, content: prompt }],
+      maxTokens: 10,
+    });
+
+    const answer = response.content.trim().toUpperCase();
+    return answer === "YES";
+  } catch (err) {
+    logger.error({ err }, "hypothesis_check_failed");
+    return false;
+  }
+}
+
+/**
+ * Start the chat worker
+ */
+export function startChatWorker(): Worker {
+  const concurrency = parseInt(process.env.CHAT_QUEUE_CONCURRENCY || "5");
+
+  const worker = new Worker<ChatJobData, ChatJobResult>(
+    "chat",
+    processChatJob,
+    {
+      connection: getBullMQConnection(),
+      concurrency,
+      lockDuration: 120000, // 2 minutes
+      stalledInterval: 30000, // Check stalled jobs every 30s
+    },
+  );
+
+  worker.on("completed", (job, result) => {
+    logger.info(
+      { jobId: job.id, responseTime: result.responseTime },
+      "chat_worker_job_completed",
+    );
+  });
+
+  worker.on("failed", (job, error) => {
+    logger.error(
+      {
+        jobId: job?.id,
+        error: error.message,
+        attemptsMade: job?.attemptsMade,
+      },
+      "chat_worker_job_failed_permanently",
+    );
+  });
+
+  worker.on("stalled", (jobId) => {
+    logger.warn({ jobId }, "chat_worker_job_stalled");
+  });
+
+  logger.info({ concurrency }, "chat_worker_started");
+
+  return worker;
+}

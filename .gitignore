@@ -40,3 +40,7 @@ client/dist/
 docs/*
 
 .claude/skills/skill-creator/*
+
+# Supabase CLI temp/state
+supabase/.temp/
+supabase/temp/
