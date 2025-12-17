@@ -4,6 +4,11 @@ FROM oven/bun:latest AS base
 # Set working directory
 WORKDIR /app
 
+# Install ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+  && update-ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # --- OPTIMIZED SUPABASE CLI INSTALLATION ---
 # Use ADD for a direct, cached download. This is much faster and more reliable.
 # Docker caches the download, so it only happens once if the remote file doesn't change.

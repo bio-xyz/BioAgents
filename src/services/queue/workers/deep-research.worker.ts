@@ -161,12 +161,14 @@ async function processDeepResearchJob(
 
     // Step 2: Execute tasks
     const { literatureAgent } = await import("../../../agents/literature");
+    const { analysisAgent } = await import("../../../agents/analysis");
 
     const tasksToExecute = conversationState.values.plan.filter(
       (t) => t.level === newLevel,
     );
 
-    for (const task of tasksToExecute) {
+    // Execute all tasks concurrently
+    const taskPromises = tasksToExecute.map(async (task) => {
       if (task.type === "LITERATURE") {
         task.start = new Date().toISOString();
         task.output = "";
@@ -239,8 +241,6 @@ async function processDeepResearchJob(
           "deep_research_job_executing_analysis_task",
         );
 
-        const { analysisAgent } = await import("../../../agents/analysis");
-
         try {
           const type =
             process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO"
@@ -276,7 +276,10 @@ async function processDeepResearchJob(
           await notifyStateUpdated(job.id!, conversationId, conversationState.id);
         }
       }
-    }
+    });
+
+    // Wait for all tasks to complete
+    await Promise.all(taskPromises);
 
     logger.info(
       { jobId: job.id, completedTasksCount: tasksToExecute.length },

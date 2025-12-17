@@ -450,7 +450,8 @@ async function runDeepResearch(params: {
       (t) => t.level === newLevel,
     );
 
-    for (const task of tasksToExecute) {
+    // Execute all tasks concurrently
+    const taskPromises = tasksToExecute.map(async (task) => {
       if (task.type === "LITERATURE") {
         // Set start timestamp
         task.start = new Date().toISOString();
@@ -692,7 +693,10 @@ These molecular changes align with established longevity pathways (Converging nu
           );
         }
       }
-    }
+    });
+
+    // Wait for all tasks to complete
+    await Promise.all(taskPromises);
 
     // Step 3: Generate/update hypothesis based on completed tasks
     logger.info("generating_hypothesis_from_completed_tasks");
