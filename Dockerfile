@@ -4,6 +4,11 @@ FROM oven/bun:latest AS base
 # Set working directory
 WORKDIR /app
 
+# Install ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+  && update-ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # --- OPTIMIZED SUPABASE CLI INSTALLATION ---
 # Use ADD for a direct, cached download. This is much faster and more reliable.
 # Docker caches the download, so it only happens once if the remote file doesn't change.
@@ -49,5 +54,5 @@ USER bun
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD bun run -e 'fetch("http://localhost:3000/api/health").then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))'
 
-# Default: run migrations then API server
-CMD ["sh", "-c", "supabase migration up && bun run src/index.ts"]
+# Start the API server
+CMD ["bun", "run", "src/index.ts"]
