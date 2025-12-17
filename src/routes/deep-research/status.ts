@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { getMessage, getState } from "../../db/operations";
-import { authBeforeHandle } from "../../middleware/auth";
+import { authResolver } from "../../middleware/authResolver";
+import type { AuthContext } from "../../types/auth";
 import logger from "../../utils/logger";
 
 type DeepResearchStatusResponse = {
@@ -31,13 +32,15 @@ type DeepResearchStatusResponse = {
 export const deepResearchStatusRoute = new Elysia().guard(
   {
     beforeHandle: [
-      authBeforeHandle({
-        optional: process.env.NODE_ENV !== "production",
+      authResolver({
+        required: process.env.NODE_ENV === "production",
       }),
     ],
   },
   (app) =>
-    app.get("/api/deep-research/status/:messageId", deepResearchStatusHandler)
+    app
+      .get("/api/deep-research/status/:messageId", deepResearchStatusHandler)
+      .post("/api/deep-research/retry/:jobId", deepResearchRetryHandler)
 );
 
 /**
@@ -45,9 +48,13 @@ export const deepResearchStatusRoute = new Elysia().guard(
  * Exported for reuse in x402 routes
  */
 export async function deepResearchStatusHandler(ctx: any) {
-  const { params, query, set } = ctx;
+  const { params, query, set, request } = ctx;
   const messageId = params.messageId;
-  const userId = query.userId;
+
+  // Get userId from auth context (set by authResolver middleware)
+  // Fallback to query.userId for backward compatibility
+  const auth = (request as any).auth as AuthContext | undefined;
+  const userId = auth?.userId || query.userId;
 
     if (!messageId) {
       set.status = 400;
@@ -61,9 +68,19 @@ export async function deepResearchStatusHandler(ctx: any) {
       set.status = 400;
       return {
         ok: false,
-        error: "Missing required query parameter: userId",
+        error: "Missing required query parameter: userId (or provide valid authentication)",
       };
     }
+
+    logger.info(
+      {
+        messageId,
+        userId,
+        authMethod: auth?.method || "query",
+        verified: auth?.verified || false,
+      },
+      "deep_research_status_check",
+    );
 
     try {
       // Fetch the message
@@ -189,4 +206,77 @@ export async function deepResearchStatusHandler(ctx: any) {
         error: "Failed to check deep research status",
       };
     }
+}
+
+/**
+ * Deep Research Retry Handler - Manually retry a failed job
+ * POST /api/deep-research/retry/:jobId
+ */
+async function deepResearchRetryHandler(ctx: any) {
+  const { params, set } = ctx;
+  const { jobId } = params;
+
+  const { isJobQueueEnabled } = await import("../../services/queue/connection");
+
+  if (!isJobQueueEnabled()) {
+    set.status = 404;
+    return {
+      error: "Job queue not enabled",
+      message: "Retry endpoint only available when USE_JOB_QUEUE=true",
+    };
+  }
+
+  const { getDeepResearchQueue } = await import("../../services/queue/queues");
+  const deepResearchQueue = getDeepResearchQueue();
+
+  const job = await deepResearchQueue.getJob(jobId);
+
+  if (!job) {
+    set.status = 404;
+    return {
+      ok: false,
+      error: "Job not found"
+    };
+  }
+
+  const state = await job.getState();
+
+  // Only allow retry for failed jobs
+  if (state !== "failed") {
+    set.status = 400;
+    return {
+      ok: false,
+      error: `Cannot retry job in state '${state}'`,
+      message: "Only failed jobs can be manually retried",
+    };
+  }
+
+  try {
+    // Retry the job - moves it back to waiting state
+    await job.retry();
+
+    logger.info(
+      {
+        jobId,
+        previousAttempts: job.attemptsMade,
+      },
+      "deep_research_job_manually_retried"
+    );
+
+    return {
+      ok: true,
+      jobId,
+      status: "retrying",
+      message: "Job has been queued for retry",
+      previousAttempts: job.attemptsMade,
+    };
+  } catch (error) {
+    logger.error({ error, jobId }, "deep_research_manual_retry_failed");
+    set.status = 500;
+    return {
+      ok: false,
+      error: "Failed to retry job",
+      message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }

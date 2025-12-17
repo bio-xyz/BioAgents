@@ -1,3 +1,6 @@
+// Must be first - polyfills for pdf-parse/pdfjs-dist
+import "./utils/canvas-polyfill";
+
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { artifactsRoute } from "./routes/artifacts";
@@ -8,9 +11,20 @@ import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
 import { x402DeepResearchRoute } from "./routes/x402/deep-research";
+import { b402Route } from "./routes/b402";
+import { b402ChatRoute } from "./routes/b402/chat";
+import { b402DeepResearchRoute } from "./routes/b402/deep-research";
 import logger from "./utils/logger";
 
+// BullMQ Queue imports (conditional)
+import { isJobQueueEnabled, closeConnections } from "./services/queue/connection";
+import { websocketHandler, cleanupDeadConnections } from "./services/websocket/handler";
+import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
+import { createQueueDashboard } from "./routes/admin/queue-dashboard";
+
 const app = new Elysia()
+  // WebSocket handler for real-time notifications (when job queue enabled)
+  .use(websocketHandler)
   // Enable CORS for frontend access
   .use(
     cors({
@@ -108,10 +122,46 @@ const app = new Elysia()
     return new Response(null, { status: 204 });
   })
 
-  // Debug endpoint
-  .get("/api/health", () => {
+  // Health check endpoint with optional queue/Redis status
+  .get("/api/health", async () => {
     if (logger) logger.info("Health check endpoint hit");
-    return { status: "ok", timestamp: new Date().toISOString() };
+
+    const health: {
+      status: string;
+      timestamp: string;
+      jobQueue?: {
+        enabled: boolean;
+        redis?: string;
+      };
+    } = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    };
+
+    // Add job queue status if enabled
+    if (isJobQueueEnabled()) {
+      try {
+        const { getBullMQConnection } = await import("./queue/connection");
+        const redis = getBullMQConnection();
+        await redis.ping();
+        health.jobQueue = {
+          enabled: true,
+          redis: "connected",
+        };
+      } catch (error) {
+        health.jobQueue = {
+          enabled: true,
+          redis: "disconnected",
+        };
+        health.status = "degraded";
+      }
+    } else {
+      health.jobQueue = {
+        enabled: false,
+      };
+    }
+
+    return health;
   })
 
   // Suppress Chrome DevTools 404 error
@@ -128,15 +178,37 @@ const app = new Elysia()
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
 
-  // x402 payment routes (payment auth instead of API key)
+  // x402 payment routes - Base Sepolia (USDC)
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
   .use(x402ChatRoute) // POST /api/x402/chat for payment-gated chat
   .use(x402DeepResearchRoute) // POST /api/x402/deep-research/start, GET /api/x402/deep-research/status/:messageId
 
+  // b402 payment routes - BNB Chain (USDT)
+  .use(b402Route) // GET /api/b402/* for config, pricing, health
+  .use(b402ChatRoute) // POST /api/b402/chat for payment-gated chat
+  .use(b402DeepResearchRoute); // POST /api/b402/deep-research/start, GET /api/b402/deep-research/status/:messageId
+
+// Mount Bull Board dashboard (only when job queue is enabled)
+const queueDashboard = createQueueDashboard();
+if (queueDashboard) {
+  app.use(queueDashboard);
+  logger.info({ path: "/admin/queues" }, "bull_board_dashboard_mounted");
+}
+
+// Continue with catch-all route
+app
   // Catch-all route for SPA client-side routing
   // This handles routes like /chat, /settings, etc. and serves the main UI
   // The client-side router will handle the actual routing
-  .get("*", async () => {
+  // Excludes /api/* and /admin/* paths
+  .get("*", async ({ request }) => {
+    const url = new URL(request.url);
+
+    // Don't intercept /admin/* routes (Bull Board)
+    if (url.pathname.startsWith("/admin")) {
+      return new Response("Not Found", { status: 404 });
+    }
+
     const htmlFile = Bun.file("client/dist/index.html");
     let htmlContent = await htmlFile.text();
 
@@ -173,7 +245,7 @@ app.listen(
     port,
     hostname,
   },
-  () => {
+  async () => {
     if (logger) {
       logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
       logger.info(
@@ -182,6 +254,7 @@ app.listen(
           isProduction,
           authRequired: isProduction,
           secretConfigured: hasSecret,
+          jobQueueEnabled: isJobQueueEnabled(),
         },
         "auth_configuration",
       );
@@ -190,6 +263,65 @@ app.listen(
       console.log(
         `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
       );
+      console.log(`Job queue: ${isJobQueueEnabled() ? "enabled" : "disabled"}`);
+    }
+
+    // Start Redis subscription for WebSocket notifications if job queue is enabled
+    if (isJobQueueEnabled()) {
+      try {
+        await startRedisSubscription();
+        if (logger) {
+          logger.info("websocket_redis_subscription_started");
+        } else {
+          console.log("WebSocket Redis subscription started");
+        }
+      } catch (error) {
+        if (logger) {
+          logger.error({ error }, "websocket_redis_subscription_failed");
+        } else {
+          console.error("Failed to start WebSocket Redis subscription:", error);
+        }
+      }
+
+      // Periodic cleanup of dead WebSocket connections (every 30 seconds)
+      setInterval(() => {
+        cleanupDeadConnections();
+      }, 30000);
     }
   },
 );
+
+// Graceful shutdown handler
+async function gracefulShutdown(signal: string) {
+  if (logger) {
+    logger.info({ signal }, "graceful_shutdown_initiated");
+  } else {
+    console.log(`\nReceived ${signal}, shutting down gracefully...`);
+  }
+
+  try {
+    // Stop Redis subscription
+    if (isJobQueueEnabled()) {
+      await stopRedisSubscription();
+      await closeConnections();
+      if (logger) {
+        logger.info("redis_connections_closed");
+      } else {
+        console.log("Redis connections closed");
+      }
+    }
+
+    process.exit(0);
+  } catch (error) {
+    if (logger) {
+      logger.error({ error }, "graceful_shutdown_error");
+    } else {
+      console.error("Error during shutdown:", error);
+    }
+    process.exit(1);
+  }
+}
+
+// Register shutdown handlers
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
