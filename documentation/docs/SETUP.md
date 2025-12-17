@@ -67,21 +67,19 @@ Get these from your [Supabase project settings](https://supabase.com/dashboard).
 
 ### 3. Set up the Database
 
-Run these SQL scripts in your PostgreSQL database:
+**Run database migrations:**
 
-1. **Core database schema:** [src/db/setup.sql](src/db/setup.sql)
-   - Creates tables for users, conversations, messages, states
-   - Sets up x402 payment tracking
+```bash
+bun run migrate
+```
 
-2. **Embedding/vector support:** [src/embeddings/setup.sql](src/embeddings/setup.sql)
-   - Enables pgvector extension
-   - Creates vector storage for knowledge base
+This will apply all schema migrations from `supabase/migrations/` including:
+- Core tables (users, conversations, messages, states)
+- Vector database setup (pgvector extension)
+- x402 payment tracking
+- All indexes, functions, and triggers
 
-**Using Supabase SQL Editor:**
-
-1. Go to your Supabase project → SQL Editor
-2. Copy and paste each script
-3. Run them in order
+**Note:** Migrations run automatically in Docker on startup.
 
 ---
 
