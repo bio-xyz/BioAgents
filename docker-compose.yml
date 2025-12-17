@@ -10,11 +10,14 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
+    volumes:
+      - supabase_tmp:/app/supabase/.temp
     command: >
       sh -lc '
         set -eu
+        mkdir -p /app/supabase/.temp
         echo "Supabase CLI: $(supabase --version)"
-        supabase db push --debug --db-url "$SUPABASE_FULL_URL"
+        supabase db push --db-url "$SUPABASE_FULL_URL"
       '
     restart: "no"
   # ==========================================================================
@@ -203,6 +206,8 @@ services:
 
 # Named volumes for persistent storage
 volumes:
+  supabase_tmp:
+    driver: local
   bioagents-docs:
     driver: local
   bioagents-images:
