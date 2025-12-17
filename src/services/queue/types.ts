@@ -76,6 +76,29 @@ export interface DeepResearchJobResult {
 }
 
 /**
+ * Job data for file process queue
+ * Processes uploaded files (generates description, updates state)
+ */
+export interface FileProcessJobData {
+  fileId: string;
+  userId: string;
+  conversationId: string;
+  conversationStateId: string;
+  s3Key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+/**
+ * Result returned by file process worker on completion
+ */
+export interface FileProcessJobResult {
+  fileId: string;
+  description: string;
+}
+
+/**
  * Notification types sent via Redis Pub/Sub
  */
 export type NotificationType =
@@ -84,7 +107,9 @@ export type NotificationType =
   | "job:completed"
   | "job:failed"
   | "message:updated"
-  | "state:updated";
+  | "state:updated"
+  | "file:ready"
+  | "file:error";
 
 /**
  * Notification payload structure
@@ -96,5 +121,8 @@ export interface Notification {
   conversationId: string;
   messageId?: string;
   stateId?: string;
+  fileId?: string;
   progress?: { stage: string; percent: number };
+  description?: string;
+  error?: string;
 }

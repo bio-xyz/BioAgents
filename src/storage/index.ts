@@ -82,6 +82,18 @@ export const getUploadPath = (filename: string): string =>
   `uploads/${filename}`;
 
 /**
+ * Full storage path for a file upload
+ * Format: user/{userId}/conversation/{conversationId}/uploads/{filename}
+ * Note: Uses same structure as old upload system for compatibility
+ */
+export const getFileUploadPath = (
+  userId: string,
+  conversationId: string,
+  _fileId: string, // Kept for API compatibility but not used in path
+  filename: string,
+): string => `user/${userId}/conversation/${conversationId}/uploads/${filename}`;
+
+/**
  * Simple helper to guess MIME type from filename
  */
 export function getMimeTypeFromFilename(filename: string): string {

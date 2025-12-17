@@ -21,6 +21,7 @@ import {
   useChatAPI,
   useEmbeddedWallet,
   useFileUpload,
+  usePresignedUpload,
   useSessions,
   useStates,
   useToast,
@@ -137,7 +138,7 @@ export function App() {
     cancelPayment,
   } = useChatAPI(x402);
 
-  // File upload
+  // File upload (local selection)
   const {
     selectedFile,
     selectedFiles,
@@ -146,6 +147,15 @@ export function App() {
     removeFile,
     clearFile,
   } = useFileUpload();
+
+  // Presigned S3 upload
+  const {
+    uploadedFiles,
+    isUploading,
+    uploadError,
+    uploadFiles: uploadToS3,
+    clearUploadedFiles,
+  } = usePresignedUpload();
 
   // Auto-scroll
   const { containerRef, scrollToBottom } = useAutoScroll([
@@ -456,6 +466,7 @@ export function App() {
 
   /**
    * Handle sending a message
+   * Uses presigned S3 uploads for files before sending the chat message
    */
   const handleSend = async (mode: string = "normal") => {
     const trimmedInput = inputValue.trim();
@@ -466,7 +477,7 @@ export function App() {
     console.log("[App.handleSend] Has files:", hasFiles);
     console.log("[App.handleSend] Mode:", mode);
 
-    if ((!trimmedInput && !hasFiles) || isLoading) return;
+    if ((!trimmedInput && !hasFiles) || isLoading || isUploading) return;
 
     clearError();
 
@@ -478,7 +489,7 @@ export function App() {
       : "";
 
     // Store file references before clearing state
-    const filesToSend = [...selectedFiles];
+    const filesToUpload = [...selectedFiles];
     const messageContent = trimmedInput || fileText;
     const fileMetadata = hasFiles
       ? selectedFiles.map((f) => ({ name: f.name, size: f.size }))
@@ -512,7 +523,7 @@ export function App() {
     // Update session title if it's the first message
     const isFirstMessage = messages.length === 0;
     if (isFirstMessage) {
-      const title = trimmedInput || filesToSend[0]?.name || "New conversation";
+      const title = trimmedInput || filesToUpload[0]?.name || "New conversation";
       console.log("[App] First message - updating session title:", title);
       updateSessionTitle(currentSessionId, title);
     }
@@ -523,14 +534,37 @@ export function App() {
     setLoadingConversationId(currentSessionId);
 
     try {
-      // Route based on mode
+      // Step 1: Upload files to S3 via presigned URLs (if any)
+      if (hasFiles && filesToUpload.length > 0) {
+        console.log("[App] Uploading files via presigned URLs...");
+        const uploadResults = await uploadToS3(filesToUpload, currentSessionId);
+
+        if (uploadResults.length === 0) {
+          throw new Error("Failed to upload files. Please try again.");
+        }
+
+        // Check if all uploads succeeded
+        const failedUploads = uploadResults.filter(f => f.status === 'error');
+        if (failedUploads.length > 0) {
+          const failedNames = failedUploads.map(f => f.filename).join(', ');
+          throw new Error(`Failed to upload: ${failedNames}`);
+        }
+
+        console.log("[App] Files uploaded successfully:", uploadResults);
+
+        // Clear uploaded files state after successful upload
+        clearUploadedFiles();
+      }
+
+      // Step 2: Route based on mode (files are now in S3, don't send in FormData)
       if (mode === "deep") {
         // Deep research mode - call deep research endpoint
+        // Note: Files are already uploaded to S3 and linked to conversation
         const response = await sendDeepResearchMessage({
           message: trimmedInput,
           conversationId: currentSessionId,
           userId: userId,
-          files: filesToSend,
+          // Don't send files - they're already in S3
           walletClient: x402Enabled ? embeddedWalletClient : null,
         });
 
@@ -574,11 +608,12 @@ export function App() {
         }
       } else {
         // Normal mode - use regular sendMessage
+        // Note: Files are already uploaded to S3 and linked to conversation
         const response = await sendMessage({
           message: trimmedInput,
           conversationId: currentSessionId,
           userId: userId,
-          files: filesToSend,
+          // Don't send files - they're already in S3
           walletClient: x402Enabled ? embeddedWalletClient : null,
         });
 
@@ -623,6 +658,11 @@ export function App() {
       // Clear loading state on error
       setLoadingConversationId(null);
       setLoadingMessageId(null);
+
+      // Show error toast for upload failures
+      if (err.message?.includes("upload") || err.message?.includes("Upload")) {
+        toast.error(`File upload failed: ${err.message}`, 6000);
+      }
     }
   };
 
@@ -1034,8 +1074,8 @@ export function App() {
             value={inputValue}
             onChange={setInputValue}
             onSend={handleSend}
-            disabled={isCurrentConversationLoading}
-            placeholder="Type your message..."
+            disabled={isCurrentConversationLoading || isUploading}
+            placeholder={isUploading ? "Uploading files..." : "Type your message..."}
             selectedFile={selectedFile}
             selectedFiles={selectedFiles}
             onFileSelect={(fileOrFiles: File | File[]) => {

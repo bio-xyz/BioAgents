@@ -7,12 +7,13 @@
 
 import { Queue } from "bullmq";
 import { getBullMQConnection, isJobQueueEnabled } from "./connection";
-import type { ChatJobData, ChatJobResult, DeepResearchJobData, DeepResearchJobResult } from "./types";
+import type { ChatJobData, ChatJobResult, DeepResearchJobData, DeepResearchJobResult, FileProcessJobData, FileProcessJobResult } from "./types";
 import logger from "../../utils/logger";
 
 // Queue instances (lazy initialized)
 let chatQueueInstance: Queue<ChatJobData, ChatJobResult> | null = null;
 let deepResearchQueueInstance: Queue<DeepResearchJobData, DeepResearchJobResult> | null = null;
+let fileProcessQueueInstance: Queue<FileProcessJobData, FileProcessJobResult> | null = null;
 
 /**
  * Get or create the chat queue
@@ -99,10 +100,48 @@ export function getDeepResearchQueue(): Queue<DeepResearchJobData, DeepResearchJ
 }
 
 /**
+ * Get or create the file process queue
+ * File processing jobs typically complete in 10-60 seconds
+ *
+ * Retry config:
+ * - 3 attempts with exponential backoff (1s → 2s → 4s)
+ * - 2 minute timeout
+ */
+export function getFileProcessQueue(): Queue<FileProcessJobData, FileProcessJobResult> | null {
+  if (!isJobQueueEnabled()) {
+    return null;
+  }
+
+  if (!fileProcessQueueInstance) {
+    fileProcessQueueInstance = new Queue<FileProcessJobData, FileProcessJobResult>("file-process", {
+      connection: getBullMQConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 1000,
+        },
+        removeOnComplete: {
+          age: 3600, // Keep for 1 hour
+          count: 500,
+        },
+        removeOnFail: {
+          age: 86400, // Keep failed for 24 hours
+        },
+      },
+    });
+
+    logger.info({ queue: "file-process" }, "file_process_queue_initialized");
+  }
+
+  return fileProcessQueueInstance;
+}
+
+/**
  * Close all queue instances (for graceful shutdown)
  */
 export async function closeQueues(): Promise<void> {
-  const queues = [chatQueueInstance, deepResearchQueueInstance];
+  const queues = [chatQueueInstance, deepResearchQueueInstance, fileProcessQueueInstance];
 
   await Promise.all(
     queues
@@ -112,6 +151,7 @@ export async function closeQueues(): Promise<void> {
 
   chatQueueInstance = null;
   deepResearchQueueInstance = null;
+  fileProcessQueueInstance = null;
 
   logger.info("queues_closed");
 }

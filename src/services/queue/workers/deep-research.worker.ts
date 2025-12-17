@@ -60,7 +60,7 @@ async function processDeepResearchJob(
       updateConversationState,
       updateMessage,
       updateState,
-    } = await import("../../db/operations");
+    } = await import("../../../db/operations");
 
     // Get message record
     const messageRecord = await getMessage(messageId);
@@ -101,7 +101,7 @@ async function processDeepResearchJob(
     // Step 1: Execute planning agent
     logger.info({ jobId: job.id }, "deep_research_job_planning");
 
-    const { planningAgent } = await import("../../agents/planning");
+    const { planningAgent } = await import("../../../agents/planning");
 
     const planningResult = await planningAgent({
       state,
@@ -160,8 +160,8 @@ async function processDeepResearchJob(
     await notifyJobProgress(job.id!, conversationId, "literature", 20);
 
     // Step 2: Execute tasks
-    const { literatureAgent } = await import("../../agents/literature");
-    const { analysisAgent } = await import("../../agents/analysis");
+    const { literatureAgent } = await import("../../../agents/literature");
+    const { analysisAgent } = await import("../../../agents/analysis");
 
     const tasksToExecute = conversationState.values.plan.filter(
       (t) => t.level === newLevel,
@@ -182,12 +182,9 @@ async function processDeepResearchJob(
           "deep_research_job_executing_literature_task",
         );
 
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
-            ? "BIOLIT"
-            : "EDISON";
-        const primaryLiteratureLabel =
-          primaryLiteratureType === "BIOLIT" ? "BioLiterature" : "Edison";
+        // Use Edison only for deep research literature
+        const primaryLiteratureType = "EDISON";
+        const primaryLiteratureLabel = "Edison";
 
         // Run literature searches in parallel
         const openScholarPromise = literatureAgent({
@@ -296,7 +293,7 @@ async function processDeepResearchJob(
     // Step 3: Generate hypothesis
     logger.info({ jobId: job.id }, "deep_research_job_generating_hypothesis");
 
-    const { hypothesisAgent } = await import("../../agents/hypothesis");
+    const { hypothesisAgent } = await import("../../../agents/hypothesis");
 
     const hypothesisResult = await hypothesisAgent({
       objective: currentObjective,
@@ -317,7 +314,7 @@ async function processDeepResearchJob(
     // Step 4: Run reflection agent
     logger.info({ jobId: job.id }, "deep_research_job_reflection");
 
-    const { reflectionAgent } = await import("../../agents/reflection");
+    const { reflectionAgent } = await import("../../../agents/reflection");
 
     const reflectionResult = await reflectionAgent({
       conversationState,
@@ -365,7 +362,7 @@ async function processDeepResearchJob(
     // Step 6: Generate reply
     logger.info({ jobId: job.id }, "deep_research_job_generating_reply");
 
-    const { replyAgent } = await import("../../agents/reply");
+    const { replyAgent } = await import("../../../agents/reply");
 
     const replyResult = await replyAgent({
       conversationState,
@@ -415,7 +412,7 @@ async function processDeepResearchJob(
     // Update state to mark as failed (only on final attempt)
     if (job.attemptsMade + 1 >= (job.opts.attempts || 2)) {
       try {
-        const { updateState } = await import("../../db/operations");
+        const { updateState } = await import("../../../db/operations");
         await updateState(stateId, {
           error: error instanceof Error ? error.message : "Unknown error",
           status: "failed",

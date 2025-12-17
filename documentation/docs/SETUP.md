@@ -24,14 +24,6 @@ Edit `.env` and configure the following:
 
 #### Required: Core Configuration
 
-**Authentication:**
-
-```bash
-BIOAGENTS_SECRET=your-secure-random-string-here
-```
-
-Generate a secure random string for API authentication.
-
 **LLM Providers:**
 Configure which LLM provider to use for each agent:
 
@@ -234,6 +226,8 @@ S3_ENDPOINT=https://nyc3.digitaloceanspaces.com  # Optional
 
 **Why you need this:** Uploaded datasets are stored in S3, then fetched and sent to analysis agents for processing.
 
+> **For detailed documentation:** See [FILE_UPLOAD.md](./FILE_UPLOAD.md) for the complete file upload API, integration examples, and troubleshooting.
+
 ### Edison Analysis Agent (Default)
 
 The default analysis backend with advanced capabilities.
@@ -315,28 +309,132 @@ The system prompt is automatically included in LLM calls for planning, hypothesi
 
 ---
 
+## Authentication Setup
+
+BioAgents supports multiple authentication methods:
+
+| Mode | Use Case |
+|------|----------|
+| `AUTH_MODE=none` | Development (no auth required) |
+| `AUTH_MODE=jwt` | Production (JWT tokens required) |
+| `X402_ENABLED=true` | Pay-per-request with USDC |
+
+### Quick Setup
+
+**Development (no auth):**
+```bash
+AUTH_MODE=none
+```
+
+**Production (JWT):**
+```bash
+AUTH_MODE=jwt
+BIOAGENTS_SECRET=your-secure-secret  # openssl rand -hex 32
+```
+
+**Pay-per-request (x402):**
+```bash
+X402_ENABLED=true
+X402_PAYMENT_ADDRESS=0xYourWalletAddress
+```
+
+> **For detailed documentation:** See [AUTH.md](./AUTH.md) for JWT implementation examples, x402 payment protocol, and troubleshooting.
+
+---
+
+## Job Queue Setup (Production)
+
+For production deployments, use the job queue for reliable async processing.
+
+| Feature | In-Process (Default) | Job Queue |
+|---------|---------------------|-----------|
+| Setup | Simple | Requires Redis |
+| Scaling | Single process | Horizontal scaling |
+| Reliability | Request lost on crash | Jobs persist in Redis |
+| Monitoring | Logs only | Bull Board dashboard |
+
+### Quick Setup
+
+```bash
+# Enable job queue
+USE_JOB_QUEUE=true
+REDIS_URL=redis://localhost:6379
+```
+
+### Running with Job Queue
+
+```bash
+# Terminal 1: API Server
+USE_JOB_QUEUE=true bun run dev
+
+# Terminal 2: Worker
+USE_JOB_QUEUE=true bun run worker
+```
+
+### Docker Deployment
+
+```bash
+# Start all services (API + Worker + Redis)
+docker compose up -d
+
+# Scale workers
+docker compose up -d --scale worker=3
+```
+
+> **For detailed documentation:** See [JOB_QUEUE.md](./JOB_QUEUE.md) for architecture overview, WebSocket notifications, monitoring, scaling, and troubleshooting.
+
+---
+
+## Running the Application
+
 ### Development
 
-**Run App:**
+**Simple mode (no job queue):**
 
 ```bash
 bun run dev
 ```
 
-**Build UI only:**
-You need to rebuild the UI after you make any changes to it.
+**With job queue:**
+
+```bash
+# Terminal 1: API server
+USE_JOB_QUEUE=true bun run dev
+
+# Terminal 2: Worker
+USE_JOB_QUEUE=true bun run worker:dev
+```
+
+### Production
+
+**Simple mode:**
+
+```bash
+bun run start
+```
+
+**With job queue:**
+
+```bash
+# Using Docker (recommended)
+docker compose up -d
+
+# Or manually
+USE_JOB_QUEUE=true bun run start    # Terminal 1
+USE_JOB_QUEUE=true bun run worker   # Terminal 2
+```
+
+### Build UI
+
+You need to rebuild the UI after making changes:
 
 ```bash
 bun run build:client
 ```
 
-**Start production server (both UI and backend):**
-
-```bash
-bun start
-```
-
 The app will be available at `http://localhost:3000`
+
+---
 
 ## UI Development
 

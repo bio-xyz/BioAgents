@@ -23,6 +23,10 @@ export class S3StorageProvider extends StorageProvider {
     super();
     this.bucket = config.bucket;
 
+    // For S3-compatible services (DigitalOcean Spaces, MinIO, Cloudflare R2),
+    // we need to disable automatic checksum calculation as they don't support it
+    const isS3Compatible = !!config.endpoint;
+
     this.client = new S3Client({
       region: config.region,
       credentials: {
@@ -30,10 +34,18 @@ export class S3StorageProvider extends StorageProvider {
         secretAccessKey: config.secretAccessKey,
       },
       ...(config.endpoint && { endpoint: config.endpoint }),
+      // Disable SDK checksum features for S3-compatible services
+      // This prevents x-amz-checksum-* headers that cause CORS/compatibility issues
+      ...(isS3Compatible && {
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        responseChecksumValidation: "WHEN_REQUIRED",
+      }),
     });
 
     if (logger) {
-      logger.info(`S3 Storage Provider initialized for bucket: ${this.bucket}`);
+      logger.info(
+        `S3 Storage Provider initialized for bucket: ${this.bucket}${isS3Compatible ? " (S3-compatible mode)" : ""}`,
+      );
     }
   }
 
@@ -80,11 +92,20 @@ export class S3StorageProvider extends StorageProvider {
 
       const byteArray = await response.Body.transformToByteArray();
       return Buffer.from(byteArray);
-    } catch (error) {
+    } catch (error: any) {
       if (logger) {
-        logger.error(`Failed to download file from S3: ${path}`, error as any);
+        logger.error(
+          {
+            path,
+            bucket: this.bucket,
+            errorName: error?.name,
+            errorCode: error?.$metadata?.httpStatusCode,
+            errorMessage: error?.message,
+          },
+          "s3_download_failed",
+        );
       }
-      throw new Error(`S3 download failed: ${(error as Error).message}`);
+      throw new Error(`S3 download failed: ${error?.name || "UnknownError"} - ${path}`);
     }
   }
 
@@ -164,6 +185,49 @@ export class S3StorageProvider extends StorageProvider {
       }
       throw new Error(
         `S3 presigned URL generation failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  async getPresignedUploadUrl(
+    path: string,
+    contentType: string,
+    expiresIn: number = 3600,
+    contentLength?: number,
+  ): Promise<string> {
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: path,
+        ContentType: contentType,
+        // When ContentLength is included, S3 will REJECT uploads with different size
+        // This prevents abuse: user cannot upload 5GB using a URL signed for 50MB
+        ...(contentLength && { ContentLength: contentLength }),
+      });
+
+      const url = await getSignedUrl(this.client, command, { expiresIn });
+
+      if (logger) {
+        logger.info(
+          {
+            path,
+            expiresIn,
+            contentLength: contentLength || "not enforced",
+          },
+          "presigned_upload_url_generated",
+        );
+      }
+
+      return url;
+    } catch (error) {
+      if (logger) {
+        logger.error(
+          `Failed to generate presigned upload URL for S3: ${path}`,
+          error as any,
+        );
+      }
+      throw new Error(
+        `S3 presigned upload URL generation failed: ${(error as Error).message}`,
       );
     }
   }
