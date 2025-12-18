@@ -262,7 +262,11 @@ async function processDeepResearchJob(
             await updateConversationState(conversationState.id, conversationState.values);
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error
+            ? error.message
+            : typeof error === 'object' && error !== null
+              ? JSON.stringify(error)
+              : String(error);
           task.output = `Analysis failed: ${errorMsg}`;
           logger.error(
             { error, jobId: job.id, taskObjective: task.objective },

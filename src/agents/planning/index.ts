@@ -76,8 +76,12 @@ async function generateInitialPlan(
   });
 
   // Build context (may include uploaded datasets even if no plan exists)
-  const conversationId = conversationState.values.conversationId || message.conversation_id;
-  const context = await buildContextFromState(conversationState, conversationId);
+  const conversationId =
+    conversationState.values.conversationId || message.conversation_id;
+  const context = await buildContextFromState(
+    conversationState,
+    conversationId,
+  );
 
   const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace(
     "{context}",
@@ -153,8 +157,12 @@ async function generatePlan(
   });
 
   // Build context from latest results
-  const conversationId = conversationState.values.conversationId || state.values.conversationId;
-  const context = await buildContextFromState(conversationState, conversationId);
+  const conversationId =
+    conversationState.values.conversationId || state.values.conversationId;
+  const context = await buildContextFromState(
+    conversationState,
+    conversationId,
+  );
 
   // Select prompt based on mode
   const promptTemplate =
@@ -264,7 +272,10 @@ async function buildContextFromState(
         }
       }
     } catch (error) {
-      logger.warn({ error }, "Failed to fetch conversation history for planning");
+      logger.warn(
+        { error },
+        "Failed to fetch conversation history for planning",
+      );
     }
   }
 
