@@ -1,3 +1,4 @@
+import type { BioLiteratureMode } from ".";
 import logger from "../../utils/logger";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
@@ -23,7 +24,10 @@ type BioLiteratureResponse = {
   [key: string]: unknown;
 };
 
-export async function searchBioLiterature(objective: string): Promise<string> {
+export async function searchBioLiterature(
+  objective: string,
+  mode: BioLiteratureMode = "deep",
+): Promise<string> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
@@ -44,7 +48,7 @@ export async function searchBioLiterature(objective: string): Promise<string> {
       max_results: 20,
       per_source_limit: 5,
       sources: ["arxiv", "pubmed", "clinical-trials"],
-      mode: "fast",
+      mode,
     }),
   });
 
