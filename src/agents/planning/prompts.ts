@@ -45,7 +45,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
   "plan": [
     {
       "objective": "Specific objective tailored to this task",
-      "datasets": [], // Empty for LITERATURE, populate with dataset objects for ANALYSIS
+      "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
       "type": "LITERATURE or ANALYSIS"
     }
   ]
@@ -130,7 +130,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
   "plan": [
     {
       "objective": "Specific objective tailored to this task",
-      "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
+      "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks. Leave empty for LITERATURE tasks.
       "type": "LITERATURE or ANALYSIS"
     }
   ]

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AnalysisArtifact, PlanTask } from "../types/core";
+import logger from "../utils/logger";
 import { walletAddressToUUID } from "../utils/uuid";
 
 const supabase = createClient(
@@ -59,7 +60,10 @@ export async function createUser(userData: User) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[createUser] Error creating user: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -73,7 +77,12 @@ export async function getUserByWallet(walletAddress: string) {
     .eq("wallet_address", walletAddress.toLowerCase())
     .single();
 
-  if (error && error.code !== "PGRST116") throw error; // PGRST116 = not found
+  if (error && error.code !== "PGRST116") {
+    logger.error(
+      `[getUserByWallet] Error getting user by wallet: ${error.message}`,
+    );
+    throw error;
+  } // PGRST116 = not found
   return data;
 }
 
@@ -112,7 +121,9 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
     // Migrate legacy user to deterministic UUID if IDs don't match
     if (existingUserByWallet.id !== deterministicUserId) {
       const oldUserId = existingUserByWallet.id;
-      console.log(`[getOrCreateUserByWallet] Migrating legacy user from ${oldUserId} to ${deterministicUserId}`);
+      logger.info(
+        `[getOrCreateUserByWallet] Migrating legacy user from ${oldUserId} to ${deterministicUserId}`,
+      );
 
       try {
         // Step 1: Create new user with deterministic UUID (copy from old user)
@@ -130,7 +141,9 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
 
         if (createError && createError.code !== "23505") {
           // 23505 = already exists (race condition), which is fine
-          console.error(`[getOrCreateUserByWallet] Failed to create new user:`, createError);
+          logger.error(
+            `[getOrCreateUserByWallet] Failed to create new user: ${createError.message}`,
+          );
           throw createError;
         }
 
@@ -141,7 +154,9 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
           .eq("user_id", oldUserId);
 
         if (convError) {
-          console.error(`[getOrCreateUserByWallet] Failed to migrate conversations:`, convError);
+          logger.error(
+            `[getOrCreateUserByWallet] Failed to migrate conversations: ${convError.message}`,
+          );
         }
 
         // Step 3: Update all messages to use new user ID (if they have user_id column)
@@ -152,18 +167,19 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
 
         if (msgError && msgError.code !== "42703") {
           // 42703 = column doesn't exist, which is fine
-          console.error(`[getOrCreateUserByWallet] Failed to migrate messages:`, msgError);
+          logger.error(
+            `[getOrCreateUserByWallet] Failed to migrate messages: ${msgError.message}`,
+          );
         }
 
         // Step 4: Delete old user (clean up) - only after new user is confirmed
         if (newUserData || createError?.code === "23505") {
-          await supabase
-            .from("users")
-            .delete()
-            .eq("id", oldUserId);
+          await supabase.from("users").delete().eq("id", oldUserId);
         }
 
-        console.log(`[getOrCreateUserByWallet] Migration complete for wallet ${normalizedWallet}`);
+        logger.info(
+          `[getOrCreateUserByWallet] Migration complete for wallet ${normalizedWallet}`,
+        );
 
         // Return the new user
         const { data: migratedUser } = await supabase
@@ -177,9 +193,13 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
         }
 
         // If we still can't find the user, something went wrong
-        console.error(`[getOrCreateUserByWallet] Migration may have failed - user not found after migration`);
+        logger.error(
+          `[getOrCreateUserByWallet] Migration may have failed - user not found after migration`,
+        );
       } catch (migrationError) {
-        console.error(`[getOrCreateUserByWallet] Migration failed:`, migrationError);
+        logger.error(
+          `[getOrCreateUserByWallet] Migration failed: ${migrationError instanceof Error ? migrationError.message : String(migrationError)}`,
+        );
         // Fall back to returning legacy user - better than breaking
         return { user: existingUserByWallet, isNew: false };
       }
@@ -192,7 +212,7 @@ export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
   const { data: newUser, error: createError } = await supabase
     .from("users")
     .insert({
-      id: deterministicUserId,  // Use deterministic UUID
+      id: deterministicUserId, // Use deterministic UUID
       username: `wallet_${shortWallet}`,
       email: `${normalizedWallet}@x402.local`,
       wallet_address: normalizedWallet,
@@ -227,7 +247,12 @@ export async function createConversation(conversationData: Conversation) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[createConversation] Error creating conversation: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -239,7 +264,10 @@ export async function createMessage(messageData: Message) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[createMessage] Error creating message: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -251,7 +279,10 @@ export async function updateMessage(id: string, updates: Partial<Message>) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[updateMessage] Error updating message: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -262,7 +293,10 @@ export async function getMessage(id: string) {
     .eq("id", id)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[getMessage] Error getting message: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -282,7 +316,12 @@ export async function getMessagesByConversation(
 
   const { data, error } = await query;
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[getMessagesByConversation] Error getting messages by conversation: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -294,7 +333,10 @@ export async function createState(stateData: { values: any }) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[createState] Error creating state: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -313,7 +355,10 @@ export async function updateState(id: string, values: any) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[updateState] Error updating state: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -324,7 +369,10 @@ export async function getState(id: string) {
     .eq("id", id)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(`[getState] Error getting state: ${error.message}`);
+    throw error;
+  }
   return data;
 }
 
@@ -336,7 +384,12 @@ export async function createConversationState(stateData: { values: any }) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[createConversationState] Error creating conversation state: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -349,7 +402,12 @@ export async function updateConversationState(id: string, values: any) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[updateConversationState] Error updating conversation state: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -360,7 +418,12 @@ export async function getConversationState(id: string) {
     .eq("id", id)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[getConversationState] Error getting conversation state: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -372,7 +435,12 @@ export async function getConversation(id: string) {
     .eq("id", id)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[getConversation] Error getting conversation: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 
@@ -384,7 +452,12 @@ export async function getUserConversations(userId: string) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[getUserConversations] Error getting user conversations: ${error.message}`,
+    );
+    throw error;
+  }
   return data || [];
 }
 
@@ -400,7 +473,12 @@ export async function updateConversation(
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    logger.error(
+      `[updateConversation] Error updating conversation: ${error.message}`,
+    );
+    throw error;
+  }
   return data;
 }
 

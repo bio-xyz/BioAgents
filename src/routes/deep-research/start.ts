@@ -675,8 +675,11 @@ These molecular changes align with established longevity pathways (Converging nu
             "analysis_result_received",
           );
         } catch (error) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error
+            ? error.message
+            : typeof error === 'object' && error !== null
+              ? JSON.stringify(error)
+              : String(error);
           task.output = `Analysis failed: ${errorMsg}`;
           logger.error(
             { error, taskObjective: task.objective },
