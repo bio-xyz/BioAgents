@@ -59,6 +59,7 @@ NOTES:
 - Plan only 1-3 tasks maximum
 - For LITERATURE tasks: datasets array should be EMPTY []
 - For ANALYSIS tasks: Only include if datasets are mentioned in the user's message
+  - If there's an open source dataset linked in the message, DO NOT put it in the datasets array. Instead use the task objective to let the data scientist agent know that it should download and use the open source dataset.
 - Update the currentObjective to reflect what you're currently doing
 - Be specific and actionable
 
