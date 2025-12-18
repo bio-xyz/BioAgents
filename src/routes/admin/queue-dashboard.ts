@@ -17,7 +17,7 @@ import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ElysiaAdapter } from "@bull-board/elysia";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { getChatQueue, getDeepResearchQueue } from "../../services/queue/queues";
+import { getChatQueue, getDeepResearchQueue, getFileProcessQueue } from "../../services/queue/queues";
 import logger from "../../utils/logger";
 
 /**
@@ -34,16 +34,25 @@ export function createQueueDashboard(): Elysia | null {
     // Get queue instances
     const chatQueue = getChatQueue();
     const deepResearchQueue = getDeepResearchQueue();
+    const fileProcessQueue = getFileProcessQueue();
 
     // Create Bull Board server adapter
     const serverAdapter = new ElysiaAdapter("/admin/queues");
 
+    // Build queue adapters list
+    const queueAdapters = [
+      new BullMQAdapter(chatQueue),
+      new BullMQAdapter(deepResearchQueue),
+    ];
+
+    // Add file-process queue if available
+    if (fileProcessQueue) {
+      queueAdapters.push(new BullMQAdapter(fileProcessQueue));
+    }
+
     // Create Bull Board with queue adapters
     createBullBoard({
-      queues: [
-        new BullMQAdapter(chatQueue),
-        new BullMQAdapter(deepResearchQueue),
-      ],
+      queues: queueAdapters,
       serverAdapter,
     });
 
