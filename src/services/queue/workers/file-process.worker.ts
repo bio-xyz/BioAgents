@@ -15,7 +15,7 @@ import logger from "../../../utils/logger";
 async function processFileJob(
   job: Job<FileProcessJobData, FileProcessJobResult>,
 ): Promise<FileProcessJobResult> {
-  const { fileId, filename, conversationId } = job.data;
+  const { fileId, filename, conversationId, userId, conversationStateId, s3Key, contentType, size } = job.data;
 
   logger.info(
     { jobId: job.id, fileId, filename },
@@ -27,10 +27,32 @@ async function processFileJob(
     const { processFile } = await import("../../files");
     const { updateFileStatus, getFileStatus } = await import("../../files/status");
 
-    // Get current file status
-    const status = await getFileStatus(fileId);
+    // Try to get current file status from Redis, but don't fail if it's missing
+    // (status may have expired due to TTL after Docker redeploy or long retry delays)
+    let status = await getFileStatus(fileId);
+
     if (!status) {
-      throw new Error(`File status not found: ${fileId}`);
+      // Reconstruct status from job data - we have everything we need
+      // This handles cases where Redis TTL expired but the job is still valid
+      logger.warn(
+        { fileId, jobId: job.id },
+        "file_status_not_in_redis_using_job_data",
+      );
+
+      status = {
+        fileId,
+        userId,
+        conversationId,
+        conversationStateId,
+        s3Key,
+        filename,
+        contentType,
+        size,
+        status: "processing",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
+      };
     }
 
     // Process the file
