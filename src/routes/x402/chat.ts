@@ -65,13 +65,13 @@ export const x402ChatRoute = new Elysia()
     const message = (body as any)?.message;
     if (!message) {
       // Payment was validated by middleware - return success for x402scan compliance
+      // Response matches outputSchema: { text, userId?, conversationId?, pollUrl? }
       const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
       return {
-        ok: true,
-        message: "Payment verified successfully",
-        payer: x402Settlement?.payer,
-        transaction: x402Settlement?.transaction,
-        network: x402Settlement?.network,
+        text: `Payment verified successfully. Transaction: ${x402Settlement?.transaction || "N/A"}`,
+        userId: x402Settlement?.payer,
+        conversationId: null,
+        pollUrl: null,
       };
     }
 

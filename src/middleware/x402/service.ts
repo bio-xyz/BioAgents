@@ -146,38 +146,41 @@ function createExactPaymentRequirements(
       },
     };
 
-    // Bazaar discovery config (v1 style)
-    // This enables the route to be listed in the Bazaar discovery endpoint
+    // Bazaar discovery config - stored in 'extra' per x402scan schema
+    // The 'extra' field is for custom provider data
     if (options?.discoverable !== false) {
-      (requirement as any).config = {
+      requirement.extra = {
+        ...requirement.extra,
+        // Bazaar discovery metadata
         discoverable: true,
-        description,
-        inputSchema: {
-          bodyFields: {
-            message: {
-              type: "string",
-              description: "User's question or message to the AI assistant",
-              required: true,
-            },
-            conversationId: {
-              type: "string",
-              description: "Optional conversation ID for multi-turn conversations",
-              required: false,
-            },
-            userId: {
-              type: "string",
-              description: "Optional user ID for tracking",
-              required: false,
+        bazaar: {
+          inputSchema: {
+            bodyFields: {
+              message: {
+                type: "string",
+                description: "User's question or message to the AI assistant",
+                required: true,
+              },
+              conversationId: {
+                type: "string",
+                description: "Optional conversation ID for multi-turn conversations",
+                required: false,
+              },
+              userId: {
+                type: "string",
+                description: "Optional user ID for tracking",
+                required: false,
+              },
             },
           },
-        },
-        outputSchema: {
-          type: "object",
-          properties: {
-            text: { type: "string", description: "AI-generated response text" },
-            userId: { type: "string", description: "User identifier" },
-            conversationId: { type: "string", description: "Conversation identifier" },
-            pollUrl: { type: "string", description: "URL to poll for async job status" },
+          outputSchema: {
+            type: "object",
+            properties: {
+              text: { type: "string", description: "AI-generated response text" },
+              userId: { type: "string", description: "User identifier" },
+              conversationId: { type: "string", description: "Conversation identifier" },
+              pollUrl: { type: "string", description: "URL to poll for async job status" },
+            },
           },
         },
       };
