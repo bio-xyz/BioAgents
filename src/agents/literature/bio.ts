@@ -27,6 +27,13 @@ type BioLiteratureResponse = {
   results?: unknown;
   job_id?: string;
   status?: string;
+  response?: {
+    formatted_answer?: string;
+    answer?: string;
+    references?: BioReference[];
+    context_passages?: BioContextPassage[];
+    [key: string]: unknown;
+  };
   output?: {
     response?: {
       formatted_answer?: string;
@@ -41,21 +48,63 @@ type BioLiteratureResponse = {
 };
 
 function extractAnswer(data: BioLiteratureResponse): string {
+  const directResponse = data.response;
   const nestedResponse = data.output?.response;
-  return (
-    (typeof nestedResponse?.formatted_answer === "string" &&
-      nestedResponse.formatted_answer.trim()) ||
-    (typeof nestedResponse?.answer === "string" &&
-      nestedResponse.answer.trim()) ||
-    (typeof data.formatted_answer === "string" &&
-      data.formatted_answer.trim()) ||
-    (typeof data.answer === "string" && data.answer.trim()) ||
-    ""
+
+  const directFormatted =
+    typeof directResponse?.formatted_answer === "string"
+      ? directResponse.formatted_answer.trim()
+      : "";
+  const directAnswer =
+    typeof directResponse?.answer === "string"
+      ? directResponse.answer.trim()
+      : "";
+  const nestedFormatted =
+    typeof nestedResponse?.formatted_answer === "string"
+      ? nestedResponse.formatted_answer.trim()
+      : "";
+  const nestedAnswer =
+    typeof nestedResponse?.answer === "string"
+      ? nestedResponse.answer.trim()
+      : "";
+  const dataFormatted =
+    typeof data.formatted_answer === "string"
+      ? data.formatted_answer.trim()
+      : "";
+  const dataAnswer = typeof data.answer === "string" ? data.answer.trim() : "";
+
+  const answer =
+    directFormatted ||
+    directAnswer ||
+    nestedFormatted ||
+    nestedAnswer ||
+    dataFormatted ||
+    dataAnswer ||
+    "";
+
+  // this is debugging purposes
+  logger.debug(
+    {
+      directFormattedLength: directFormatted.length,
+      directAnswerLength: directAnswer.length,
+      nestedFormattedLength: nestedFormatted.length,
+      nestedAnswerLength: nestedAnswer.length,
+      dataFormattedLength: dataFormatted.length,
+      dataAnswerLength: dataAnswer.length,
+      chosenAnswerLength: answer.length,
+      hasResponse: Boolean(directResponse),
+      hasNestedResponse: Boolean(nestedResponse),
+    },
+    "bioliterature_extract_answer_debug",
   );
+
+  return answer;
 }
 
 function extractReferences(data: BioLiteratureResponse): BioReference[] {
   if (Array.isArray(data.references)) return data.references;
+  const directReferences = data.response?.references;
+  if (Array.isArray(directReferences)) return directReferences;
   const nestedReferences = data.output?.response?.references;
   if (Array.isArray(nestedReferences)) return nestedReferences;
   return [];
@@ -65,6 +114,8 @@ function extractContextPassages(
   data: BioLiteratureResponse,
 ): BioContextPassage[] {
   if (Array.isArray(data.context_passages)) return data.context_passages;
+  const directPassages = data.response?.context_passages;
+  if (Array.isArray(directPassages)) return directPassages;
   const nestedPassages = data.output?.response?.context_passages;
   if (Array.isArray(nestedPassages)) return nestedPassages;
   return [];
@@ -75,15 +126,13 @@ async function pollBioLiteratureJob(
   apiKey: string,
   jobId: string,
 ): Promise<BioLiteratureResponse> {
-  const MAX_WAIT_TIME = 15 * 60 * 1000; // 15 minutes
+  const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes
   const POLL_INTERVAL = 5000; // 5 seconds
   const startTime = Date.now();
 
   while (true) {
     if (Date.now() - startTime > MAX_WAIT_TIME) {
-      throw new Error(
-        `BioLiterature job ${jobId} timed out after 15 minutes`,
-      );
+      throw new Error(`BioLiterature job ${jobId} timed out after 15 minutes`);
     }
 
     const response = await fetch(`${baseUrl}/query/jobs/${jobId}`, {
