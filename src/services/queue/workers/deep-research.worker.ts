@@ -262,7 +262,11 @@ async function processDeepResearchJob(
             await updateConversationState(conversationState.id, conversationState.values);
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error
+            ? error.message
+            : typeof error === 'object' && error !== null
+              ? JSON.stringify(error)
+              : String(error);
           task.output = `Analysis failed: ${errorMsg}`;
           logger.error(
             { error, jobId: job.id, taskObjective: task.objective },
@@ -444,7 +448,7 @@ export function startDeepResearchWorker(): Worker {
       concurrency,
       // Deep research can take 20-30+ minutes
       lockDuration: 1800000, // 30 minutes
-      stalledInterval: 300000, // Check stalled jobs every 5 minutes
+      stalledInterval: 60000, // Check stalled jobs every 1 minute
       lockRenewTime: 900000, // Renew lock every 15 minutes
     },
   );

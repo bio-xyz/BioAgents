@@ -81,6 +81,7 @@ export async function analyzeWithBio(
   let taskResult: BioDataAnalysisResult;
   try {
     const taskResponse = await startBioTask(config, context, query);
+    logger.info({ taskId: taskResponse.id }, "bio_analysis_task_started");
     taskResult = await awaitBioTask(config, taskResponse.id);
   } catch (err) {
     logger.error(

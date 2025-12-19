@@ -19,23 +19,25 @@ NOVELTY REQUIREMENTS (CRITICAL FOR DEEP RESEARCH)
 - Explicitly note what makes this hypothesis novel compared to existing literature.
 
 CITATION RULES
-- Cite only DOIs or URLs that appear verbatim in the Evidence Set.
+- Cite DOIs or URLs that appear verbatim in the Evidence Set (from LITERATURE tasks).
+- For ANALYSIS task results (computational data, statistics, gene expression, etc.), reference the findings directly without requiring DOIs/URLs.
 - Place inline citations immediately after the clause they support using the format: (claim)[DOI or URL]
 - Example: "Rapamycin extends lifespan in mice (Rapamycin extends lifespan)[10.1038/nature12345]"
-- Use 5-15 citations to demonstrate comprehensive evidence synthesis.
+- Use citations where available to demonstrate evidence synthesis.
 
 OUTPUT FORMAT (MARKDOWN ONLY)
 Write exactly these sections in markdown:
 
 ## Hypothesis
-2-4 sentences. Name the system/population, variables, direction of effect, and experimental method. Frame this as a genuinely novel research direction. Include inline citations in (claim)[DOI or URL] format.
+2-4 sentences. Name the system/population, variables, direction of effect, and experimental method. Frame this as a genuinely novel research direction. Include inline citations in (claim)[DOI or URL] format when available from literature.
 
 ## Rationale
 3-5 sentences that:
 - Connect specific findings from multiple sources in the Evidence Set to the prediction
 - Explain the logical synthesis that enables this novel hypothesis
 - Identify the gap or opportunity this hypothesis addresses
-- Include inline citations in (claim)[DOI or URL] format for each key claim
+- Include inline citations in (claim)[DOI or URL] format for literature claims
+- Reference ANALYSIS results directly (e.g., "Based on our differential expression analysis showing...")
 
 ## Novelty Statement
 2-3 sentences explicitly describing:
@@ -59,8 +61,8 @@ Write exactly these sections in markdown:
 - Only suggest if truly relevant to the hypothesis
 
 REFUSAL FORMAT (MARKDOWN)
-If the Evidence Set contains no relevant DOIs or URLs, write only:
-Unable to generate a hypothesis  Shortage of evidence: no relevant DOIs or URLs present in the provided Evidence Set.
+If the Evidence Set is empty or contains no usable information (neither literature with DOIs/URLs nor computational analysis results), write only:
+Unable to generate a hypothesis – Insufficient evidence: no relevant information present in the provided Evidence Set.
 
 CONSTRAINTS
 - Use only the Evidence Set (document blocks in the same message) for factual claims and citations.
