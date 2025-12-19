@@ -22,6 +22,7 @@ type DeepResearchStartResponse = {
   conversationId: string;
   userId: string; // Important: Return userId so external platforms can check status
   status: "processing";
+  pollUrl?: string; // Full URL for x402 users to check status
   error?: string;
 };
 
@@ -263,13 +264,22 @@ export async function deepResearchStartHandler(ctx: any) {
       "deep_research_job_enqueued",
     );
 
+    // Build pollUrl - use full URL for x402 users (external API consumers)
+    let pollUrl = `/api/deep-research/status/${createdMessage.id}`;
+    if (isX402User) {
+      const url = new URL(request.url);
+      const forwardedProto = request.headers.get("x-forwarded-proto");
+      const protocol = forwardedProto || url.protocol.replace(":", "");
+      pollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
+    }
+
     const response: DeepResearchQueuedResponse = {
       jobId: job.id!,
       messageId: createdMessage.id,
       conversationId,
       userId,
       status: "queued",
-      pollUrl: `/api/deep-research/status/${createdMessage.id}`,
+      pollUrl,
     };
 
     return new Response(JSON.stringify(response), {
@@ -290,11 +300,21 @@ export async function deepResearchStartHandler(ctx: any) {
 
   // Return immediately with message ID
   // Include userId so external platforms (x402) can check status later
+  // Build pollUrl for x402 users (external API consumers)
+  let statusPollUrl: string | undefined;
+  if (isX402User) {
+    const url = new URL(request.url);
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const protocol = forwardedProto || url.protocol.replace(":", "");
+    statusPollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
+  }
+
   const response: DeepResearchStartResponse = {
     messageId: createdMessage.id,
     conversationId,
     userId, // Important for x402 users who may not have provided one
     status: "processing",
+    ...(statusPollUrl && { pollUrl: statusPollUrl }),
   };
 
   // Run the actual deep research in the background
