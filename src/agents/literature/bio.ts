@@ -229,6 +229,8 @@ export async function searchBioLiterature(
   if (mode === "deep") {
     jobId = initialData.job_id ?? (initialData as { jobId?: string }).jobId;
 
+    logger.info({ jobId }, "bioliterature_job_id");
+
     if (jobId) {
       logger.info({ jobId }, "bioliterature_deep_job_created");
       finalData = await pollBioLiteratureJob(
