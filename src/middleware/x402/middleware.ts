@@ -18,7 +18,11 @@ export interface X402MiddlewareOptions {
 
 export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
-  const plugin = new Elysia({ name: "x402-middleware", scoped: false });
+  const plugin = new Elysia({ name: "x402-middleware" })
+    // Use state to pass data between middleware and route handlers
+    // This is more reliable than mutating the Request object
+    .state("x402Settlement", null as any)
+    .state("x402Requirement", null as any);
 
   if (!enabled) {
     if (logger) logger.info("x402_middleware_disabled");
@@ -28,7 +32,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
   // Use 'scoped' so this hook applies to routes in the parent that uses this plugin
-  plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set }: any) => {
+  plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set, store }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;
@@ -185,7 +189,10 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     }
 
     // Payment successful, allow request to continue
-    // Store settlement info in context for route handler
+    // Store settlement info in store AND request for compatibility
+    // Store is the preferred method in Elysia, but we also set on request for authResolver
+    store.x402Settlement = settlement;
+    store.x402Requirement = requirement;
     (request as any).x402Settlement = settlement;
     (request as any).x402Requirement = requirement;
 

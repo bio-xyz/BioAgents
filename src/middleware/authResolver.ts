@@ -100,10 +100,12 @@ export function authResolver(options: AuthResolverOptions = {}) {
     request,
     set,
     body,
+    store,
   }: {
     request: Request & { auth?: AuthContext; x402Settlement?: any };
     set: any;
     body?: any;
+    store?: { x402Settlement?: any; x402Requirement?: any };
   }) => {
     let auth: AuthContext | null = null;
     const path = new URL(request.url).pathname;
@@ -113,7 +115,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
         path,
         mode: config.mode,
         required,
-        hasX402Settlement: !!(request as any).x402Settlement,
+        hasX402Settlement: !!(store?.x402Settlement || (request as any).x402Settlement),
       },
       "auth_resolver_start"
     );
@@ -123,7 +125,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // =====================================================
     // x402 middleware runs before this and sets x402Settlement
     // This is the most secure - wallet signature = identity
-    const x402Settlement = (request as any).x402Settlement;
+    // Check both store (Elysia preferred) and request (fallback)
+    const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
     if (x402Settlement?.payer) {
       const userId = walletAddressToUUID(x402Settlement.payer);
       auth = {
@@ -340,7 +343,10 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  * @param request - The incoming request
  * @returns AuthContext with userId if authenticated
  */
-export async function resolveAuth(request: Request): Promise<{
+export async function resolveAuth(
+  request: Request,
+  store?: { x402Settlement?: any }
+): Promise<{
   authenticated: boolean;
   userId?: string;
   method?: string;
@@ -348,7 +354,8 @@ export async function resolveAuth(request: Request): Promise<{
   const config = getAuthConfig();
 
   // Check x402 settlement (set by x402 middleware)
-  const x402Settlement = (request as any).x402Settlement;
+  // Check both store (Elysia preferred) and request (fallback)
+  const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
   if (x402Settlement?.payer) {
     return {
       authenticated: true,

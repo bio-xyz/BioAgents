@@ -70,11 +70,12 @@ export const x402DeepResearchRoute = new Elysia()
     return generate402Response(request);
   })
   .post("/api/x402/deep-research/start", async (ctx: any) => {
-    const { request, set } = ctx;
+    const { request, set, store } = ctx;
 
     // Check if payment was provided and validated by x402Middleware
     // If no x402Settlement, return 402 (for x402scan compliance)
-    const x402Settlement = (request as any).x402Settlement;
+    // Check both store (Elysia preferred) and request (fallback)
+    const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
     if (!x402Settlement) {
       set.status = 402;
       return generate402Response(request);
