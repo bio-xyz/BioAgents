@@ -63,6 +63,23 @@ export const x402DeepResearchRoute = new Elysia()
   .use(x402Middleware())
   .onBeforeHandle(authResolver({ required: false }))
   .post("/api/x402/deep-research/start", async (ctx: any) => {
-    // Middleware validates payment - if we reach here, payment is valid
+    const { body, store, request } = ctx;
+
+    // Handle x402scan test requests (valid payment but no query)
+    // x402scan sends POST with payment to verify it works, but no actual body
+    const query = (body as any)?.query;
+    if (!query) {
+      // Payment was validated by middleware - return success for x402scan compliance
+      const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
+      return {
+        ok: true,
+        message: "Payment verified successfully",
+        payer: x402Settlement?.payer,
+        transaction: x402Settlement?.transaction,
+        network: x402Settlement?.network,
+      };
+    }
+
+    // Has query - process as normal deep research request
     return deepResearchStartHandler(ctx);
   });
