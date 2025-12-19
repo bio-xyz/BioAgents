@@ -20,12 +20,20 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
   const plugin = new Elysia({ name: "x402-middleware" });
 
-  if (!enabled) {
-    if (logger) logger.info("x402_middleware_disabled");
-    return plugin;
+  // Always log middleware status at initialization
+  if (logger) {
+    logger.info({
+      enabled,
+      environment: x402Config.environment,
+      network: x402Config.network,
+      paymentAddress: x402Config.paymentAddress,
+      X402_ENABLED_ENV: process.env.X402_ENABLED,
+    }, enabled ? "x402_middleware_ENABLED" : "x402_middleware_DISABLED");
   }
 
-  if (logger) logger.info("x402_middleware_enabled_and_active");
+  if (!enabled) {
+    return plugin;
+  }
 
   // Use 'scoped' so this hook applies to routes in the parent that uses this plugin
   plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set }: any) => {
