@@ -18,11 +18,7 @@ export interface X402MiddlewareOptions {
 
 export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
-  const plugin = new Elysia({ name: "x402-middleware" })
-    // Use state to pass data between middleware and route handlers
-    // This is more reliable than mutating the Request object
-    .state("x402Settlement", null as any)
-    .state("x402Requirement", null as any);
+  const plugin = new Elysia({ name: "x402-middleware" });
 
   if (!enabled) {
     if (logger) logger.info("x402_middleware_disabled");
@@ -32,7 +28,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
   if (logger) logger.info("x402_middleware_enabled_and_active");
 
   // Use 'scoped' so this hook applies to routes in the parent that uses this plugin
-  plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set, store }: any) => {
+  plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set }: any) => {
     // Check if request should bypass x402 (whitelisted users)
     if ((request as any).bypassX402) {
       const user = (request as any).authenticatedUser;
@@ -79,8 +75,19 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     // Check X-Forwarded-Proto header for correct protocol (ngrok, reverse proxies)
     const url = new URL(request.url);
     const forwardedProto = request.headers.get("x-forwarded-proto");
-    const protocol = forwardedProto || url.protocol.replace(':', '');
+    // Default to https in production if x-forwarded-proto is missing
+    const protocol = forwardedProto || (x402Config.environment === "mainnet" ? "https" : url.protocol.replace(':', ''));
     const resourceUrl = `${protocol}://${url.host}${pricing.route}`;
+
+    if (logger) {
+      logger.info({
+        path,
+        requestUrl: request.url,
+        forwardedProto,
+        resolvedProtocol: protocol,
+        resourceUrl,
+      }, "x402_resource_url_built");
+    }
     
     if (!paymentHeader) {
       if (logger) logger.warn(`Payment required for ${path}, none provided`);
@@ -203,10 +210,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     }
 
     // Payment successful, allow request to continue
-    // Store settlement info in store AND request for compatibility
-    // Store is the preferred method in Elysia, but we also set on request for authResolver
-    store.x402Settlement = settlement;
-    store.x402Requirement = requirement;
+    // Store settlement info on request for route handlers and authResolver
     (request as any).x402Settlement = settlement;
     (request as any).x402Requirement = requirement;
 

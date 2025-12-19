@@ -63,8 +63,8 @@ export const x402DeepResearchRoute = new Elysia()
   .use(x402Middleware())
   .onBeforeHandle(authResolver({ required: false }))
   .post("/api/x402/deep-research/start", async (ctx: any) => {
-    const { body, store, request } = ctx;
-    const x402Settlement = store?.x402Settlement || (request as any).x402Settlement;
+    const { body, request } = ctx;
+    const x402Settlement = (request as any).x402Settlement;
 
     // If no valid payment settlement, return 402 (x402scan compliance)
     // This handles cases where middleware is disabled or payment wasn't provided
