@@ -61,6 +61,20 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
     const paymentHeader = request.headers.get("X-PAYMENT");
 
+    // Debug: Log all request headers to diagnose payment header issues
+    if (logger) {
+      const headers: Record<string, string> = {};
+      request.headers.forEach((value: string, key: string) => {
+        // Redact sensitive headers
+        if (key.toLowerCase() === 'authorization' || key.toLowerCase() === 'x-payment') {
+          headers[key] = value ? `[present, ${value.length} chars]` : '[empty]';
+        } else {
+          headers[key] = value;
+        }
+      });
+      logger.info({ path, headers, hasPayment: !!paymentHeader }, "x402_request_headers");
+    }
+
     // Build full URL for resource field (x402 requires full URL, not just path)
     // Check X-Forwarded-Proto header for correct protocol (ngrok, reverse proxies)
     const url = new URL(request.url);
