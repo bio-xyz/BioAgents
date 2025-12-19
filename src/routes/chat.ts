@@ -515,13 +515,22 @@ export async function chatHandler(ctx: any) {
         "chat_job_enqueued",
       );
 
+      // Build pollUrl - use full URL for x402 users (external API consumers)
+      let pollUrl = `/api/chat/status/${job.id}`;
+      if (isX402User) {
+        const url = new URL(request.url);
+        const forwardedProto = request.headers.get("x-forwarded-proto");
+        const protocol = forwardedProto || url.protocol.replace(":", "");
+        pollUrl = `${protocol}://${url.host}/api/chat/status/${job.id}`;
+      }
+
       const response: ChatQueuedResponse = {
         jobId: job.id!,
         messageId: createdMessage.id,
         conversationId,
         userId,
         status: "queued",
-        pollUrl: `/api/chat/status/${job.id}`,
+        pollUrl,
       };
 
       return new Response(JSON.stringify(response), {

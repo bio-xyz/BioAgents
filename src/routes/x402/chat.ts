@@ -1,5 +1,8 @@
 import { Elysia } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
+import { x402Service } from "../../middleware/x402/service";
+import { routePricing } from "../../middleware/x402/pricing";
+import { authResolver } from "../../middleware/authResolver";
 import { chatHandler } from "../chat";
 
 /**
@@ -7,14 +10,46 @@ import { chatHandler } from "../chat";
  *
  * Uses x402 payment protocol instead of API key authentication.
  * Reuses the same chatHandler logic as the standard /api/chat route.
+ *
+ * Both GET and POST return proper x402 402 responses for x402scan compliance.
+ *
+ * Order matters:
+ * 1. x402Middleware - validates payment, sets request.x402Settlement
+ * 2. authResolver - reads x402Settlement, sets request.auth with method: "x402"
  */
 export const x402ChatRoute = new Elysia()
   .use(x402Middleware())
-  .get("/api/x402/chat", async () => {
-    return {
-      message: "This endpoint requires POST method with x402 payment.",
-      apiDocumentation: "https://your-docs-url.com/api",
-      paymentInfo: "Include X-PAYMENT header with valid payment proof",
-    };
+  .onBeforeHandle(authResolver({ required: false })) // Resolves x402Settlement to auth context
+  .get("/api/x402/chat", async ({ request, set }) => {
+    // Return proper x402 402 response for GET requests (x402scan compliance)
+    const pricing = routePricing.find((entry) => "/api/x402/chat".startsWith(entry.route));
+
+    // Build resource URL
+    const url = new URL(request.url);
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const protocol = forwardedProto || url.protocol.replace(':', '');
+    const resourceUrl = `${protocol}://${url.host}/api/x402/chat`;
+
+    const requirement = x402Service.generatePaymentRequirement(
+      resourceUrl,
+      pricing?.description || "Chat API access via x402 payment",
+      pricing?.priceUSD || "0.01",
+      {
+        includeOutputSchema: true,
+      }
+    );
+
+    set.status = 402;
+
+    return new Response(JSON.stringify({
+      x402Version: 1,
+      accepts: [requirement],
+      error: "Payment required",
+    }), {
+      status: 402,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    });
   })
   .post("/api/x402/chat", chatHandler);
