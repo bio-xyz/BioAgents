@@ -4,7 +4,14 @@ import { searchEdison } from "./edison";
 import { searchKnowledge } from "./knowledge";
 import { searchOpenScholar } from "./openscholar";
 
-type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON" | "BIOLIT";
+type LiteratureType =
+  | "OPENSCHOLAR"
+  | "KNOWLEDGE"
+  | "EDISON"
+  | "BIOLIT"
+  | "BIOLITDEEP";
+
+export type BioLiteratureMode = "fast" | "deep";
 
 type LiteratureResult = {
   objective: string;
@@ -54,7 +61,10 @@ export async function literatureAgent(input: {
         break;
       }
       case "BIOLIT":
-        output = await searchBioLiterature(objective);
+        output = await searchBioLiterature(objective, "fast");
+        break;
+      case "BIOLITDEEP":
+        output = await searchBioLiterature(objective, "deep");
         break;
       case "EDISON":
         output = await searchEdison(
