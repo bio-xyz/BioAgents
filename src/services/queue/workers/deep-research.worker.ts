@@ -129,15 +129,19 @@ async function processDeepResearchJob(
         ? Math.max(...currentPlan.map((t) => t.level || 0))
         : -1;
 
-    // Add new tasks with appropriate level
+    // Add new tasks with appropriate level and assign IDs
     const newLevel = maxLevel + 1;
-    const newTasks = plan.map((task: PlanTask) => ({
-      ...task,
-      level: newLevel,
-      start: undefined,
-      end: undefined,
-      output: undefined,
-    }));
+    const newTasks = plan.map((task: PlanTask) => {
+      const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+      return {
+        ...task,
+        id: taskId,
+        level: newLevel,
+        start: undefined,
+        end: undefined,
+        output: undefined,
+      };
+    });
 
     // Append to existing plan and update objective
     conversationState.values.plan = [...currentPlan, ...newTasks];
@@ -202,6 +206,10 @@ async function processDeepResearchJob(
           type: primaryLiteratureType,
         }).then(async (result) => {
           task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+          // Capture jobId from primary literature (Edison)
+          if (result.jobId) {
+            task.jobId = result.jobId;
+          }
           if (conversationState.id) {
             await updateConversationState(conversationState.id, conversationState.values);
           }
@@ -257,6 +265,7 @@ async function processDeepResearchJob(
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
           task.artifacts = analysisResult.artifacts || [];
+          task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
             await updateConversationState(conversationState.id, conversationState.values);
@@ -315,24 +324,67 @@ async function processDeepResearchJob(
     await job.updateProgress({ stage: "reflection", percent: 85 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reflection", 85);
 
-    // Step 4: Run reflection agent
-    logger.info({ jobId: job.id }, "deep_research_job_reflection");
+    // Step 4: Run reflection and discovery agents in parallel
+    logger.info({ jobId: job.id }, "deep_research_job_reflection_and_discovery");
 
     const { reflectionAgent } = await import("../../../agents/reflection");
+    const { discoveryAgent } = await import("../../../agents/discovery");
+    const { getMessagesByConversation } = await import("../../../db/operations");
+    const { getDiscoveryRunConfig } = await import("../../../utils/discovery");
 
-    const reflectionResult = await reflectionAgent({
-      conversationState,
-      message: messageRecord,
-      completedMaxTasks: tasksToExecute,
-      hypothesis: hypothesisResult.hypothesis,
-    });
+    // Determine if we should run discovery and which tasks to consider
+    let shouldRunDiscovery = false;
+    let tasksToConsider: PlanTask[] = [];
+
+    if (messageRecord.conversation_id) {
+      const allMessages = await getMessagesByConversation(
+        messageRecord.conversation_id,
+        100,
+      );
+      const messageCount = allMessages?.length || 1;
+
+      const discoveryConfig = getDiscoveryRunConfig(
+        messageCount,
+        conversationState.values.plan || [],
+        tasksToExecute,
+      );
+
+      shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
+      tasksToConsider = discoveryConfig.tasksToConsider;
+    }
+
+    // Run reflection and discovery in parallel
+    const [reflectionResult, discoveryResult] = await Promise.all([
+      reflectionAgent({
+        conversationState,
+        message: messageRecord,
+        completedMaxTasks: tasksToExecute,
+        hypothesis: hypothesisResult.hypothesis,
+      }),
+      shouldRunDiscovery
+        ? discoveryAgent({
+            conversationState,
+            message: messageRecord,
+            tasksToConsider,
+            hypothesis: hypothesisResult.hypothesis,
+          })
+        : Promise.resolve(null),
+    ]);
 
     // Update conversation state with reflection results
     conversationState.values.conversationTitle = reflectionResult.conversationTitle;
     conversationState.values.currentObjective = reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;
-    conversationState.values.discoveries = reflectionResult.discoveries;
     conversationState.values.methodology = reflectionResult.methodology;
+
+    // Update conversation state with discovery results if discovery ran
+    if (discoveryResult) {
+      conversationState.values.discoveries = discoveryResult.discoveries;
+      logger.info(
+        { jobId: job.id, discoveryCount: discoveryResult.discoveries.length },
+        "discoveries_updated",
+      );
+    }
 
     if (conversationState.id) {
       await updateConversationState(conversationState.id, conversationState.values);

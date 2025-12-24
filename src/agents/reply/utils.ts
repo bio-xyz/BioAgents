@@ -1,7 +1,7 @@
 import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMRequest } from "../../llm/types";
-import type { LLMProvider, PlanTask } from "../../types/core";
+import type { Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
 import { chatReplyPrompt, replyPrompt } from "./prompts";
 
@@ -10,7 +10,7 @@ export type ReplyContext = {
   hypothesis?: string;
   nextPlan: PlanTask[];
   keyInsights: string[];
-  discoveries: string[];
+  discoveries: Discovery[];
   methodology?: string;
   currentObjective?: string;
 };
@@ -64,6 +64,23 @@ export async function generateReply(
           .join("\n")
       : "No key insights yet.";
 
+  // Format discoveries
+  const discoveriesText =
+    context.discoveries.length > 0
+      ? context.discoveries
+          .map((discovery, i) => {
+            const evidenceText = discovery.evidenceArray
+              .map((ev) => `  - Task ${ev.taskId}: ${ev.explanation}`)
+              .join("\n");
+            return `${i + 1}. ${discovery.title}
+   Claim: ${discovery.claim}
+   Summary: ${discovery.summary}
+   Evidence:
+${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`;
+          })
+          .join("\n\n")
+      : "No scientific discoveries yet.";
+
   // Build the prompt
   const replyInstruction = replyPrompt
     .replace("{{question}}", question)
@@ -71,6 +88,7 @@ export async function generateReply(
     .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
     .replace("{{nextPlan}}", nextPlanText)
     .replace("{{keyInsights}}", keyInsightsText)
+    .replace("{{discoveries}}", discoveriesText)
     .replace("{{methodology}}", context.methodology || "Not specified")
     .replace(
       "{{currentObjective}}",

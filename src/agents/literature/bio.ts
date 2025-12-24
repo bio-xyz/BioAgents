@@ -189,7 +189,7 @@ async function pollBioLiteratureJob(
 export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
-): Promise<string> {
+): Promise<{ output: string; jobId?: string }> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
@@ -262,8 +262,14 @@ export async function searchBioLiterature(
   );
 
   if (!answer) {
-    return "No answer received from BioLiterature API";
+    return {
+      output: "No answer received from BioLiterature API",
+      jobId,
+    };
   }
 
-  return answer;
+  return {
+    output: answer,
+    jobId,
+  };
 }

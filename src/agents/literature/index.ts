@@ -17,6 +17,7 @@ type LiteratureResult = {
   objective: string;
   output: string;
   count?: number;
+  jobId?: string; // Job ID from Edison or BioLit
   start: string;
   end: string;
 };
@@ -45,6 +46,7 @@ export async function literatureAgent(input: {
 
   let output: string;
   let count: number | undefined;
+  let jobId: string | undefined;
 
   try {
     switch (type) {
@@ -60,18 +62,27 @@ export async function literatureAgent(input: {
         count = result.count;
         break;
       }
-      case "BIOLIT":
-        output = await searchBioLiterature(objective, "fast");
+      case "BIOLIT": {
+        const result = await searchBioLiterature(objective, "fast");
+        output = result.output;
+        jobId = result.jobId;
         break;
-      case "BIOLITDEEP":
-        output = await searchBioLiterature(objective, "deep");
+      }
+      case "BIOLITDEEP": {
+        const result = await searchBioLiterature(objective, "deep");
+        output = result.output;
+        jobId = result.jobId;
         break;
-      case "EDISON":
-        output = await searchEdison(
+      }
+      case "EDISON": {
+        const result = await searchEdison(
           objective +
             "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY FORMAT: Each claim should be in the following format: (claim goes in the parentheses)[DOI] or (claim goes in the parentheses)[URL]. If there are general statements, it is alright to not include citations for them. DOI URL is totally enough, you don't need to include formats like [pelaezvico2025integrativeanalysisof pages 1-4].\n\nMANDATORY CITATION COUNT: Do your absolute best to cite at least 5 sources in your answer.",
         );
+        output = result.output;
+        jobId = result.jobId;
         break;
+      }
       default:
         throw new Error(`Unknown literature type: ${type}`);
     }
@@ -91,6 +102,7 @@ export async function literatureAgent(input: {
     objective,
     output,
     count,
+    jobId,
     start,
     end,
   };

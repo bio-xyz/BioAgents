@@ -13,6 +13,9 @@ The following tasks were just completed in this iteration:
 KEY INSIGHTS (Cumulative understanding across all iterations):
 {{keyInsights}}
 
+SCIENTIFIC DISCOVERIES (Rigorous findings with evidence):
+{{discoveries}}
+
 CURRENT HYPOTHESIS
 {{hypothesis}}
 
@@ -22,11 +25,13 @@ UPCOMING PLAN (Next iteration tasks):
 TASK
 Generate a user-facing reply that:
 1. Summarizes what was done in this iteration
-2. Highlights key results and insights
+2. Highlights key results, insights, and scientific discoveries (if any)
 3. Presents the current hypothesis clearly
 4. Describes the current objective and outlines the plan for the next iteration together
 5. Provides a concise summary at the end (2-3 sentences)
 6. Asks the user for feedback on the plan
+
+NOTE: Scientific discoveries are different from key insights - they are rigorously evidence-based findings with supporting evidence from specific tasks. If discoveries are available, highlight them prominently as they represent novel or significant findings. Try to only talk about new or updated discoveries.
 
 CITATION PRESERVATION
 - IMPORTANT: Preserve ALL inline citations in the format (claim)[DOI or URL]

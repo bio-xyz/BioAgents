@@ -10,7 +10,6 @@ type ReflectionResult = {
   conversationTitle?: string;
   currentObjective?: string;
   keyInsights: string[];
-  discoveries: string[];
   methodology?: string;
   start: string;
   end: string;
@@ -23,8 +22,10 @@ type ReflectionResult = {
  * Flow:
  * 1. Take world (conversationState), message, completed MAX level tasks, and hypothesis
  * 2. Integrate results from all completed tasks
- * 3. Update world state: currentObjective, keyInsights, discoveries, methodology
+ * 3. Update world state: currentObjective, keyInsights, methodology
  * 4. Return updated world state with timing information
+ *
+ * Note: Discoveries are now handled by a separate discovery agent
  */
 export async function reflectionAgent(input: {
   conversationState: ConversationState;
@@ -41,7 +42,6 @@ export async function reflectionAgent(input: {
       taskCount: completedMaxTasks.length,
       hasHypothesis: !!hypothesis,
       currentInsights: conversationState.values.keyInsights?.length || 0,
-      currentDiscoveries: conversationState.values.discoveries?.length || 0,
     },
     "reflection_agent_started",
   );
@@ -103,11 +103,6 @@ export async function reflectionAgent(input: {
         `Existing Key Insights (${conversationState.values.keyInsights.length}):\n${conversationState.values.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")}`,
       );
     }
-    if (conversationState.values.discoveries?.length) {
-      worldContextParts.push(
-        `Existing Discoveries (${conversationState.values.discoveries.length}):\n${conversationState.values.discoveries.map((discovery, i) => `${i + 1}. ${discovery}`).join("\n")}`,
-      );
-    }
 
     if (worldContextParts.length > 0) {
       reflectionDocs.push({
@@ -123,7 +118,6 @@ export async function reflectionAgent(input: {
       return {
         currentObjective: conversationState.values.currentObjective,
         keyInsights: conversationState.values.keyInsights || [],
-        discoveries: conversationState.values.discoveries || [],
         methodology: conversationState.values.methodology,
         start,
         end,
