@@ -206,6 +206,10 @@ async function processDeepResearchJob(
           type: primaryLiteratureType,
         }).then(async (result) => {
           task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+          // Capture jobId from primary literature (Edison)
+          if (result.jobId) {
+            task.jobId = result.jobId;
+          }
           if (conversationState.id) {
             await updateConversationState(conversationState.id, conversationState.values);
           }
@@ -261,6 +265,7 @@ async function processDeepResearchJob(
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
           task.artifacts = analysisResult.artifacts || [];
+          task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
             await updateConversationState(conversationState.id, conversationState.values);

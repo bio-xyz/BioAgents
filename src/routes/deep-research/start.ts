@@ -528,6 +528,10 @@ async function runDeepResearch(params: {
         }).then(async (result) => {
           // Always append for Edison/BioLit (no count filtering)
           task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+          // Capture jobId from primary literature (Edison or BioLit)
+          if (result.jobId) {
+            task.jobId = result.jobId;
+          }
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
@@ -535,7 +539,7 @@ async function runDeepResearch(params: {
             );
           }
           logger.info(
-            { outputLength: result.output.length },
+            { outputLength: result.output.length, jobId: result.jobId },
             "primary_literature_result_received",
           );
         });
@@ -690,13 +694,14 @@ These molecular changes align with established longevity pathways (Converging nu
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
           task.artifacts = analysisResult.artifacts || [];
+          task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
               conversationState.values,
             );
-            logger.info("analysis_completed");
+            logger.info({ jobId: analysisResult.jobId }, "analysis_completed");
           }
 
           logger.info(
