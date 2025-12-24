@@ -79,7 +79,7 @@ export async function generateReply(
 ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`;
           })
           .join("\n\n")
-      : "No scientific discoveries yet.";
+      : "No formalized scientific discoveries yet. They will appear here as we progress our research.";
 
   // Build the prompt
   const replyInstruction = replyPrompt
