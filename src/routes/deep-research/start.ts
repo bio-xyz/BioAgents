@@ -567,7 +567,7 @@ async function runDeepResearch(params: {
         // Wait for all to complete
         await Promise.all([
           openScholarPromise,
-          // TEMPORARILY DISABLED: primaryLiteraturePromise,
+          primaryLiteraturePromise,
           knowledgePromise,
         ]);
 

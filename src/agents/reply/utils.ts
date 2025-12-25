@@ -70,7 +70,10 @@ export async function generateReply(
       ? context.discoveries
           .map((discovery, i) => {
             const evidenceText = discovery.evidenceArray
-              .map((ev) => `  - Task ${ev.taskId}: ${ev.explanation}`)
+              .map((ev) => {
+                const jobRef = ev.jobId ? ` (Job ID: ${ev.jobId})` : "";
+                return `  - Task ${ev.taskId}${jobRef}: ${ev.explanation}`;
+              })
               .join("\n");
             return `${i + 1}. ${discovery.title}
    Claim: ${discovery.claim}

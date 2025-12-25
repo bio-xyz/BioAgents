@@ -126,7 +126,8 @@ export type AnalysisArtifact = {
 };
 
 export type DiscoveryEvidence = {
-  taskId: string; // References PlanTask.id
+  taskId: string; // References PlanTask.id (e.g., "ana-1")
+  jobId?: string; // Actual job ID (edison/bio job ID) for referencing the execution
   explanation: string; // Textual explanation of how this task supports the discovery
 };
 

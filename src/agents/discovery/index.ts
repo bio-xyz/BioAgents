@@ -63,8 +63,8 @@ export async function discoveryAgent(input: {
       if (task.output && task.output.trim()) {
         discoveryDocs.push({
           title: task.objective,
-          text: `Task ID: ${task.id}\nTask Type: ${task.type}\n\nOutput:\n${task.output}`,
-          context: `Output from ${task.type} task (${task.id})`,
+          text: `Task ID: ${task.id}\nJob ID: ${task.jobId || "N/A"}\nTask Type: ${task.type}\n\nOutput:\n${task.output}`,
+          context: `Output from ${task.type} task (${task.id}, Job ID: ${task.jobId || "N/A"})`,
         });
       }
     });

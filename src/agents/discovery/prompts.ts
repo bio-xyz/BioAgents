@@ -76,6 +76,7 @@ Each discovery MUST have this exact structure:
   "evidenceArray": [
     {
       "taskId": "ana-1 or lit-1 (referencing specific task)",
+      "jobId": "actual job ID from the task (edison/bio job ID)",
       "explanation": "Specific explanation of how this task supports the claim with concrete details (numbers, patterns, specific findings)"
     }
   ],
@@ -144,6 +145,7 @@ Existing Discovery (Iteration 1):
   "evidenceArray": [
     {
       "taskId": "ana-1",
+      "jobId": "uuid",
       "explanation": "RNA-seq analysis identified 10 autophagy genes with log2FC > 1"
     }
   ],
@@ -159,14 +161,17 @@ Updated Discovery (Iteration 2, after new validation task):
   "evidenceArray": [
     {
       "taskId": "ana-1",
+      "jobId": "uuid-1",
       "explanation": "Initial RNA-seq differential expression analysis identified 10 autophagy genes with log2FC > 1 in rapamycin-treated vs control senescent cells"
     },
     {
       "taskId": "ana-2",
+      "jobId": "uuid-2",
       "explanation": "Extended analysis with stricter thresholds identified 15 autophagy genes with log2FC > 1 and FDR < 0.01"
     },
     {
       "taskId": "ana-3",
+      "jobId": "uuid-3",
       "explanation": "Pathway enrichment analysis showed autophagy pathway as top enriched (p = 1.2e-8) among upregulated genes"
     }
   ],
@@ -217,6 +222,7 @@ Good Discovery (Molecular Finding):
   "evidenceArray": [
     {
       "taskId": "ana-1",
+      "jobId": "uuid-4",
       "explanation": "Targeted lipidomics identified 15 significantly altered fatty acid amides, with C18 species showing highest fold-changes (C18:0: 3.2-fold, C18:1: 2.8-fold, FDR < 0.001)"
     }
   ],
@@ -235,6 +241,7 @@ Provide ONLY a valid JSON object (no markdown, no comments, no extra text):
       "evidenceArray": [
         {
           "taskId": "string",
+          "jobId": "string",
           "explanation": "string"
         }
       ],
