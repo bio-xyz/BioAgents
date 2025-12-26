@@ -1,14 +1,9 @@
-/**
- * BibTeX resolution and manipulation utilities
- */
-
 import logger from "../../../utils/logger";
 import { normalizeDOI, doiToCitekey, isValidDOI } from "./doi";
 import type { BibTeXEntry } from "../types";
 
 /**
- * Resolve a DOI to BibTeX entry
- * Tries doi.org first, then Crossref API as fallback
+ * Resolve DOI to BibTeX via doi.org or Crossref API fallback
  */
 export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
   const normalizedDOI = normalizeDOI(doi);
@@ -18,50 +13,32 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
     return null;
   }
 
-  // Try doi.org first
   try {
     const response = await fetch(`https://doi.org/${normalizedDOI}`, {
-      headers: {
-        Accept: "application/x-bibtex",
-      },
+      headers: { Accept: "application/x-bibtex" },
     });
-
-    if (response.ok) {
-      const bibtex = await response.text();
-      logger.info({ doi: normalizedDOI }, "doi_resolved_via_doi_org");
-      return bibtex;
-    }
+    if (response.ok) return await response.text();
   } catch (error) {
-    logger.warn({ doi: normalizedDOI, error }, "doi_org_resolution_failed");
+    logger.warn({ doi: normalizedDOI }, "doi_org_resolution_failed");
   }
 
-  // Fallback to Crossref API
   try {
     const response = await fetch(
       `https://api.crossref.org/works/${normalizedDOI}/transform/application/x-bibtex`,
     );
-
-    if (response.ok) {
-      const bibtex = await response.text();
-      logger.info({ doi: normalizedDOI }, "doi_resolved_via_crossref");
-      return bibtex;
-    }
+    if (response.ok) return await response.text();
   } catch (error) {
-    logger.warn({ doi: normalizedDOI, error }, "crossref_resolution_failed");
+    logger.warn({ doi: normalizedDOI }, "crossref_resolution_failed");
   }
 
   logger.error({ doi: normalizedDOI }, "doi_resolution_failed");
   return null;
 }
 
-/**
- * Resolve multiple DOIs to BibTeX entries in parallel
- */
 export async function resolveMultipleDOIs(
   dois: string[],
 ): Promise<BibTeXEntry[]> {
   const uniqueDOIs = Array.from(new Set(dois.map(normalizeDOI)));
-
   logger.info({ count: uniqueDOIs.length }, "resolving_dois_to_bibtex");
 
   const results = await Promise.all(
@@ -69,95 +46,181 @@ export async function resolveMultipleDOIs(
       const bibtex = await resolveDOIToBibTeX(doi);
       if (!bibtex) return null;
 
-      const citekey = doiToCitekey(doi);
-      return { doi, citekey, bibtex };
+      const result = extractAndSanitizeBibTeXEntry(bibtex);
+      if (!result) {
+        logger.warn({ doi }, "failed_to_extract_citekey_from_bibtex");
+        return null;
+      }
+
+      return { doi, citekey: result.citekey, bibtex: result.bibtex };
     }),
   );
 
   return results.filter((r): r is BibTeXEntry => r !== null);
 }
 
-/**
- * Rewrite BibTeX entry to use our custom citekey
- * Example: @article{original_key, => @article{doi_10_1234_nature,
- */
-export function rewriteBibTeXCitekey(
+export function sanitizeCitekey(citekey: string): string {
+  return citekey
+    .replace(/[^a-zA-Z0-9_\-]/g, "_")
+    .replace(/^[^a-zA-Z]/, "X")
+    .substring(0, 64);
+}
+
+export function extractCitekeyFromBibTeX(bibtex: string): string | null {
+  const patterns = [
+    /@\w+\s*\{\s*([^,\s}]+)/m,
+    /@\w+\s*\{\s*([^,}]+?)\s*,/m,
+  ];
+
+  for (const pattern of patterns) {
+    const match = bibtex.match(pattern);
+    if (match?.[1]) {
+      const key = match[1].trim();
+      if (key.length > 0) return key;
+    }
+  }
+
+  logger.warn({ bibtexPreview: bibtex.substring(0, 200) }, "failed_to_extract_citekey");
+  return null;
+}
+
+export function extractAndSanitizeBibTeXEntry(
   bibtex: string,
-  newCitekey: string,
-): string {
-  // Match @type{oldkey, and replace with @type{newkey,
+): { citekey: string; bibtex: string } | null {
+  const originalCitekey = extractCitekeyFromBibTeX(bibtex);
+  if (!originalCitekey) return null;
+
+  const sanitizedCitekey = sanitizeCitekey(originalCitekey);
+
+  if (sanitizedCitekey !== originalCitekey) {
+    const rewrittenBibtex = rewriteBibTeXCitekey(bibtex, sanitizedCitekey);
+    logger.info({ original: originalCitekey, sanitized: sanitizedCitekey }, "sanitized_citekey");
+    return { citekey: sanitizedCitekey, bibtex: rewrittenBibtex };
+  }
+
+  return { citekey: sanitizedCitekey, bibtex };
+}
+
+export function rewriteBibTeXCitekey(bibtex: string, newCitekey: string): string {
   return bibtex.replace(/^(@\w+\{)[^,]+,/m, `$1${newCitekey},`);
 }
 
-/**
- * Generate complete BibTeX file content from entries
- */
+export function deduplicateAndResolveCollisions(
+  entries: BibTeXEntry[],
+): BibTeXEntry[] {
+  const doiMap = new Map<string, BibTeXEntry>();
+  for (const entry of entries) {
+    const normalizedDOI = normalizeDOI(entry.doi);
+    if (!doiMap.has(normalizedDOI)) {
+      doiMap.set(normalizedDOI, entry);
+    }
+  }
+
+  const dedupedEntries = Array.from(doiMap.values());
+  const citekeyUsage = new Map<string, number>();
+  const finalEntries: BibTeXEntry[] = [];
+
+  for (const entry of dedupedEntries) {
+    let finalCitekey = entry.citekey;
+    const usageCount = citekeyUsage.get(finalCitekey) || 0;
+
+    if (usageCount > 0) {
+      finalCitekey = `${entry.citekey}_${usageCount + 1}`;
+      const updatedBibtex = rewriteBibTeXCitekey(entry.bibtex, finalCitekey);
+      logger.info({ original: entry.citekey, disambiguated: finalCitekey }, "citekey_collision");
+      finalEntries.push({ doi: entry.doi, citekey: finalCitekey, bibtex: updatedBibtex });
+    } else {
+      finalEntries.push(entry);
+    }
+
+    citekeyUsage.set(entry.citekey, usageCount + 1);
+  }
+
+  logger.info({ total: finalEntries.length }, "deduplicated_bibtex");
+  return finalEntries;
+}
+
 export function generateBibTeXFile(entries: BibTeXEntry[]): string {
-  const header = `% BibTeX references for Deep Research paper
-% Auto-generated from DOI resolution
-
-`;
-
+  const header = `% BibTeX references for Deep Research paper\n\n`;
   const bibContent = entries
-    .map((entry) => {
-      const rewrittenBib = rewriteBibTeXCitekey(entry.bibtex, entry.citekey);
-      return `% DOI: ${entry.doi}\n${rewrittenBib}\n`;
-    })
+    .map((entry) => `% DOI: ${entry.doi}\n${entry.bibtex}\n`)
     .join("\n");
-
   return header + bibContent;
 }
 
+function extractDOIFromCitation(citation: string): string | null {
+  if (citation.startsWith("doi:")) {
+    return normalizeDOI(citation.substring(4));
+  }
+
+  if (citation.startsWith("doi_")) {
+    const doiPart = citation.substring(4);
+    const reconstructed = doiPart.replace(/_/g, "/").replace(/^(\d+)\//, "$1.");
+    const fixed = reconstructed.replace(/^(10)\/(\d{4,})\//, "$1.$2/");
+    return normalizeDOI(fixed);
+  }
+
+  if (citation.match(/^10\.\d{4,}\//)) {
+    return normalizeDOI(citation);
+  }
+
+  return null;
+}
+
 /**
- * Rewrite LaTeX citations from doi: placeholders to citekeys
- * Example: \cite{doi:10.1234/nature} => \cite{doi_10_1234_nature}
+ * Rewrite LaTeX citations from DOI formats to author-year citekeys
  */
 export function rewriteLatexCitations(
   latexContent: string,
   doiToCitekeyMap: Map<string, string>,
 ): string {
-  let rewritten = latexContent;
-
-  // Match \cite{doi:...}, \citep{doi:...}, \citet{doi:...}
+  let totalRewrites = 0;
+  let failedRewrites = 0;
   const citeRegex = /(\\cite[pt]?\{)([^}]+)(\})/g;
 
-  rewritten = rewritten.replace(citeRegex, (match, prefix, citations, suffix) => {
+  const rewritten = latexContent.replace(citeRegex, (_match, prefix, citations, suffix) => {
     const citationList = citations.split(",").map((c: string) => c.trim());
 
     const rewrittenCitations = citationList.map((citation: string) => {
-      if (citation.startsWith("doi:")) {
-        const doi = normalizeDOI(citation.substring(4));
+      const doi = extractDOIFromCitation(citation);
+
+      if (doi) {
         const citekey = doiToCitekeyMap.get(doi);
-        return citekey || citation; // Keep original if not found
+        if (citekey) {
+          totalRewrites++;
+          return citekey;
+        } else {
+          failedRewrites++;
+          logger.warn({ citation, doi }, "citation_missing_mapping");
+          return citation;
+        }
       }
+
       return citation;
     });
 
     return prefix + rewrittenCitations.join(",") + suffix;
   });
 
+  logger.info({ totalRewrites, failedRewrites }, "citations_rewritten");
   return rewritten;
 }
 
-/**
- * Extract all citekeys used in LaTeX content
- */
 export function extractCitekeys(latexContent: string): string[] {
   const citeRegex = /\\cite[pt]?\{([^}]+)\}/g;
   const citekeys: string[] = [];
 
   let match;
   while ((match = citeRegex.exec(latexContent)) !== null) {
-    const citations = match[1].split(",").map((c) => c.trim());
-    citekeys.push(...citations);
+    if (match[1]) {
+      const citations = match[1].split(",").map((c) => c.trim());
+      citekeys.push(...citations);
+    }
   }
 
   return Array.from(new Set(citekeys));
 }
 
-/**
- * Check if a citekey exists in BibTeX entries
- */
 export function citekeyExistsInBibTeX(
   citekey: string,
   entries: BibTeXEntry[],

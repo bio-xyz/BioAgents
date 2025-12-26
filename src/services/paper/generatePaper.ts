@@ -5,48 +5,45 @@
  * compiles it to PDF, and uploads to storage.
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-import { randomUUID } from "crypto";
-import archiver from "archiver";
-import logger from "../../utils/logger";
-import { getStorageProvider } from "../../storage";
-import { LLM } from "../../llm/provider";
-import {
-  getConversation,
-  getConversationState,
-  type ConversationState,
-} from "../../db/operations";
 import { createClient } from "@supabase/supabase-js";
-import type { ConversationStateValues, PlanTask, Discovery } from "../../types/core";
+import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { getConversation, getConversationState } from "../../db/operations";
+import { LLM } from "../../llm/provider";
+import { getStorageProvider } from "../../storage";
 import type {
-  PaperGenerationResult,
-  FigureInfo,
-  DiscoverySection,
-  BibTeXEntry,
-  PaperMetadata,
-} from "./types";
-import { escapeLatex, truncateText, replaceUnicodeInLatex } from "./utils/escapeLatex";
-import {
-  extractDOICitations,
-  normalizeDOI,
-  doiToCitekey,
-  extractDOIsFromText,
-} from "./utils/doi";
-import {
-  resolveMultipleDOIs,
-  generateBibTeXFile,
-  rewriteLatexCitations,
-  extractCitekeys,
-  citekeyExistsInBibTeX,
-} from "./utils/bibtex";
-import { compileLatexToPDF, extractLastLines } from "./utils/compile";
-import { downloadDiscoveryFigures } from "./utils/artifacts";
+  ConversationStateValues,
+  Discovery,
+  PlanTask,
+} from "../../types/core";
+import logger from "../../utils/logger";
 import {
   generateDiscoverySectionPrompt,
-  generateRepairPrompt,
+  generateFrontMatterPrompt,
 } from "./prompts";
+import type {
+  DiscoverySection,
+  FigureInfo,
+  PaperGenerationResult,
+  PaperMetadata,
+} from "./types";
+import { downloadDiscoveryFigures } from "./utils/artifacts";
+import {
+  deduplicateAndResolveCollisions,
+  generateBibTeXFile,
+  resolveMultipleDOIs,
+  rewriteLatexCitations,
+} from "./utils/bibtex";
+import {
+  checkForUndefinedCitations,
+  compileLatexToPDF,
+  extractLastLines,
+} from "./utils/compile";
+import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
+import { escapeLatex, replaceUnicodeInLatex } from "./utils/escapeLatex";
+import { processInlineDOICitations } from "./utils/inlineDoiCitations";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -62,7 +59,6 @@ export async function generatePaperFromConversation(
 ): Promise<PaperGenerationResult> {
   logger.info({ conversationId, userId }, "paper_generation_started");
 
-  // 1. Load conversation and state
   const conversation = await getConversation(conversationId);
   if (!conversation) {
     throw new Error(`Conversation not found: ${conversationId}`);
@@ -84,7 +80,6 @@ export async function generatePaperFromConversation(
 
   const state = stateRecord.values as ConversationStateValues;
 
-  // 2. Create Paper DB record first to get paperId
   const paperId = randomUUID();
   const pdfPath = `papers/${paperId}/paper.pdf`;
 
@@ -102,7 +97,6 @@ export async function generatePaperFromConversation(
 
   logger.info({ paperId }, "paper_record_created");
 
-  // 3. Create temp workspace
   const workDir = path.join(os.tmpdir(), "paper", paperId);
   const latexDir = path.join(workDir, "latex");
   const figuresDir = path.join(latexDir, "figures");
@@ -112,21 +106,15 @@ export async function generatePaperFromConversation(
   fs.mkdirSync(figuresDir, { recursive: true });
 
   try {
-    // 4. Index plan tasks by jobId
     const tasksByJobId = indexTasksByJobId(state);
-
-    // 5. Map discoveries to tasks
     const discoveryContexts = mapDiscoveriesToTasks(state, tasksByJobId);
+    const metadata = await generatePaperMetadata(state);
 
-    // 6. Write deterministic sections
-    const metadata = generatePaperMetadata(state);
-
-    // 7. Download figures for all discoveries
     const allFigures: Map<number, FigureInfo[]> = new Map();
     for (let i = 0; i < discoveryContexts.length; i++) {
       const ctx = discoveryContexts[i];
       const figures = await downloadDiscoveryFigures(
-        ctx.allowedTasks,
+        ctx!.allowedTasks,
         i + 1,
         figuresDir,
         userId,
@@ -135,103 +123,93 @@ export async function generatePaperFromConversation(
       allFigures.set(i, figures);
     }
 
-    // 8. Generate discovery sections with LLM (parallel, limit concurrency)
     const discoverySections = await generateDiscoverySectionsParallel(
       discoveryContexts,
       allFigures,
-      3, // Max concurrency
+      3,
     );
 
-    // 9. Assemble main.tex
-    const mainTexContent = assembleMainTex(metadata, discoverySections);
-    fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+    let mainTexContent = assembleMainTex(metadata, discoverySections);
 
-    // 10. Extract DOIs and resolve to BibTeX
     const allDOIs = extractDOICitations(mainTexContent);
-    logger.info({ doiCount: allDOIs.length }, "extracting_dois");
+    const discoveryBibEntries = await resolveMultipleDOIs(allDOIs);
+    logger.info({ resolved: discoveryBibEntries.length, total: allDOIs.length }, "dois_resolved");
 
-    const bibEntries = await resolveMultipleDOIs(allDOIs);
-    logger.info(
-      { resolved: bibEntries.length, total: allDOIs.length },
-      "dois_resolved",
-    );
-
-    // 11. Generate references.bib
-    const bibContent = generateBibTeXFile(bibEntries);
-    fs.writeFileSync(path.join(latexDir, "references.bib"), bibContent);
-
-    // 12. Rewrite citations from doi: to citekeys
-    const doiToCitekeyMap = new Map(bibEntries.map((e) => [e.doi, e.citekey]));
-    let finalMainTex = rewriteLatexCitations(mainTexContent, doiToCitekeyMap);
-
-    // 13. Check for unresolved DOIs or missing citekeys
-    const unresolvedDOIs = allDOIs.filter((doi) => !doiToCitekeyMap.has(doi));
-    const usedCitekeys = extractCitekeys(finalMainTex);
-    const missingCitekeys = usedCitekeys.filter(
-      (ck) => !citekeyExistsInBibTeX(ck, bibEntries),
-    );
-
-    // 14. Repair pass if needed
-    if (unresolvedDOIs.length > 0 || missingCitekeys.length > 0) {
-      logger.warn(
-        { unresolvedDOIs, missingCitekeys },
-        "running_repair_pass",
-      );
-
-      const repairedTex = await repairLatexCitations(
-        finalMainTex,
-        unresolvedDOIs,
-        missingCitekeys,
-        bibEntries.map((e) => e.citekey),
-        bibEntries.map((e) => e.doi),
-      );
-
-      finalMainTex = repairedTex;
-      fs.writeFileSync(path.join(latexDir, "main.tex"), finalMainTex);
-    } else {
-      fs.writeFileSync(path.join(latexDir, "main.tex"), finalMainTex);
+    const inlineBibEntries: Array<{ doi: string; citekey: string; bibtex: string }> = [];
+    for (const [doi, citekey] of metadata.inlineDOIToCitekey.entries()) {
+      const entryPattern = new RegExp(`@\\w+\\{${citekey},[\\s\\S]*?\\n\\}`, "m");
+      const match = metadata.inlineBibliography.match(entryPattern);
+      if (match) {
+        inlineBibEntries.push({ doi, citekey, bibtex: match[0] });
+      } else {
+        logger.warn({ doi, citekey }, "inline_bibtex_entry_not_found");
+      }
     }
 
-    // 15. Compile PDF
-    logger.info("compiling_latex_to_pdf");
-    const compileResult = await compileLatexToPDF(workDir);
+    const allBibEntries = [...inlineBibEntries, ...discoveryBibEntries];
+    const dedupedBibEntries = deduplicateAndResolveCollisions(allBibEntries);
+    const doiToCitekeyMap = new Map(dedupedBibEntries.map((e) => [e.doi, e.citekey]));
+
+    mainTexContent = rewriteLatexCitations(mainTexContent, doiToCitekeyMap);
+    fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+
+    const mergedBibContent = generateBibTeXFile(dedupedBibEntries);
+    fs.writeFileSync(path.join(latexDir, "references.bib"), mergedBibContent);
+
+    const citekeysInMainTex = extractCitekeys(mainTexContent);
+    const citekeysInBib = extractCitekeyFromBibTeX(mergedBibContent);
+    const missingInBib = citekeysInMainTex.filter((key) => !citekeysInBib.includes(key));
+
+    validateCitations(mainTexContent, citekeysInMainTex, citekeysInBib, missingInBib);
+
+    logger.info("compiling_latex");
+    let compileResult = await compileLatexToPDF(workDir);
 
     if (!compileResult.success || !compileResult.pdfPath) {
       const errorLogs = extractLastLines(compileResult.logs, 200);
       logger.error({ errorLogs }, "latex_compilation_failed");
-
-      // Delete paper record on failure
       await supabase.from("paper").delete().eq("id", paperId);
-
       throw new Error(`LaTeX compilation failed:\n${errorLogs}`);
     }
 
-    // 16. Create source.zip
-    const sourceZipPath = path.join(workDir, "source.zip");
-    await createSourceZip(latexDir, sourceZipPath);
+    const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
+    if (undefinedCitations.length > 0) {
+      logger.warn({ undefinedCitations, count: undefinedCitations.length }, "removing_undefined_citations");
 
-    // 17. Upload to storage
+      mainTexContent = removeUndefinedCitations(mainTexContent, undefinedCitations);
+      fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+
+      logger.info("recompiling_latex");
+      compileResult = await compileLatexToPDF(workDir);
+
+      if (!compileResult.success || !compileResult.pdfPath) {
+        const errorLogs = extractLastLines(compileResult.logs, 200);
+        logger.error({ errorLogs }, "latex_recompilation_failed");
+        await supabase.from("paper").delete().eq("id", paperId);
+        throw new Error(`LaTeX recompilation failed:\n${errorLogs}`);
+      }
+
+      const remainingUndefined = checkForUndefinedCitations(compileResult.logs);
+      if (remainingUndefined.length > 0) {
+        logger.warn({ remainingUndefined }, "citations_still_undefined");
+      }
+    }
+
     const storage = getStorageProvider();
     if (!storage) {
       throw new Error("Storage provider not available");
     }
 
-    // Upload PDF
     const pdfBuffer = fs.readFileSync(compileResult.pdfPath);
     await storage.upload(pdfPath, pdfBuffer, "application/pdf");
-    logger.info({ pdfPath }, "pdf_uploaded");
 
-    // Upload source.zip
-    const sourceZipBuffer = fs.readFileSync(sourceZipPath);
-    const sourceZipKey = `papers/${paperId}/source.zip`;
-    await storage.upload(sourceZipKey, sourceZipBuffer, "application/zip");
-    logger.info({ sourceZipKey }, "source_zip_uploaded");
+    const rawLatexPath = `papers/${paperId}/main.tex`;
+    const rawLatexBuffer = Buffer.from(mainTexContent, "utf-8");
+    await storage.upload(rawLatexPath, rawLatexBuffer, "text/plain");
 
-    // 18. Generate signed URLs
     const pdfUrl = await storage.getPresignedUrl(pdfPath, 3600);
-    const sourceZipUrl = await storage.getPresignedUrl(sourceZipKey, 3600);
+    const rawLatexUrl = await storage.getPresignedUrl(rawLatexPath, 3600);
 
-    // 19. Cleanup
     cleanupWorkDir(workDir);
 
     logger.info({ paperId }, "paper_generation_completed");
@@ -242,7 +220,7 @@ export async function generatePaperFromConversation(
       conversationStateId,
       pdfPath,
       pdfUrl,
-      sourceZipUrl,
+      rawLatexUrl,
     };
   } catch (error) {
     // Cleanup on error
@@ -304,7 +282,9 @@ function mapDiscoveriesToTasks(
     let allowedJobIds: string[];
 
     if (discovery.evidenceArray && discovery.evidenceArray.length > 0) {
-      allowedJobIds = discovery.evidenceArray.map((ev) => ev.jobId || ev.taskId);
+      allowedJobIds = discovery.evidenceArray.map(
+        (ev) => ev.jobId || ev.taskId,
+      );
     } else {
       // Fallback to discovery.jobId
       const jobId = (discovery as any).jobId;
@@ -326,46 +306,104 @@ function mapDiscoveriesToTasks(
 }
 
 /**
- * Generate paper metadata (deterministic sections)
+ * Generate paper metadata (uses LLM for title/abstract/snapshot, deterministic for rest)
  */
-function generatePaperMetadata(state: ConversationStateValues): PaperMetadata {
-  const objective = state.objective || "Deep Research Objective";
+async function generatePaperMetadata(
+  state: ConversationStateValues,
+): Promise<PaperMetadata> {
+  logger.info("generating_paper_front_matter");
 
-  // Title: shortened objective
-  const title =
-    objective.length > 80
-      ? `Deep Research Discovery Report: ${truncateText(objective, 60)}`
-      : `Deep Research Discovery Report: ${objective}`;
+  // Use LLM to generate title, abstract, and research snapshot
+  const prompt = generateFrontMatterPrompt(state);
 
-  // Key Insights
+  const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
+  const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
+  const apiKey =
+    process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "";
+
+  if (!apiKey) {
+    throw new Error(
+      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
+    );
+  }
+
+  const llm = new LLM({
+    name: LLM_PROVIDER,
+    apiKey,
+  } as any);
+
+  const response = await llm.createChatCompletion({
+    messages: [{ role: "user", content: prompt }],
+    model: LLM_MODEL,
+    temperature: 0.3,
+    maxTokens: 2000,
+  });
+
+  const content = response.content || "";
+
+  // Parse JSON response
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(
+      `No JSON found in LLM response for front matter. Content preview: ${content.substring(0, 300)}`,
+    );
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  if (!parsed.title || !parsed.abstract || !parsed.researchSnapshot) {
+    throw new Error(
+      `Missing fields in front matter response. Keys found: ${Object.keys(parsed).join(", ")}`,
+    );
+  }
+
+  // Clean up Unicode in LLM-generated content
+  const title = replaceUnicodeInLatex(parsed.title);
+  const abstract = replaceUnicodeInLatex(parsed.abstract);
+  const researchSnapshot = replaceUnicodeInLatex(parsed.researchSnapshot);
+
+  // Generate deterministic sections
   const keyInsights = state.keyInsights || [];
 
-  // Research Snapshot
-  let researchSnapshot = "";
-  if (state.currentObjective) {
-    researchSnapshot += `**Current Objective:** ${state.currentObjective}\n\n`;
-  }
-  if (state.currentHypothesis) {
-    researchSnapshot += `**Current Hypothesis:** ${state.currentHypothesis}\n\n`;
-  }
-  if (state.methodology && state.methodology.length <= 800) {
-    researchSnapshot += `**Methodology:** ${state.methodology}\n\n`;
-  }
-
-  // Summary of Discoveries
+  // Summary of Discoveries - formatted as "Discovery 1 - Title: Claim"
   const summaryItems =
-    state.discoveries?.map((d) => {
-      const summary = d.summary || d.claim.substring(0, 150);
-      return `**${d.claim}** – ${summary}`;
+    state.discoveries?.map((d, i) => {
+      const discoveryTitle = d.title || `Discovery ${i + 1}`;
+      const claim = d.claim;
+      return `**Discovery ${i + 1} - ${discoveryTitle}:** ${claim}`;
     }) || [];
   const summaryOfDiscoveries = summaryItems.join("\n\n");
 
+  logger.info("paper_front_matter_generated");
+
+  // Escape plain text BEFORE processing DOIs (escape only text, not LaTeX commands)
+  const escapedKeyInsights = keyInsights.map(escapeLatex);
+  const escapedSummary = escapeLatex(summaryOfDiscoveries);
+
+  // Process inline DOI citations in key insights and summary
+  // This will convert (text)[doi] to (text) \cite{doi:10.xxxx/yyyy} format
+  const keyInsightsText = escapedKeyInsights.join("\n\n");
+  const combinedText = `${keyInsightsText}\n\n${escapedSummary}`;
+
+  const doiResult = await processInlineDOICitations(combinedText);
+
+  // Split back into key insights and summary
+  // DO NOT escape again - these now contain LaTeX \cite commands
+  const lines = doiResult.updatedText.split("\n\n");
+  const processedKeyInsights = lines.slice(0, keyInsights.length);
+  const processedSummary = lines.slice(keyInsights.length).join("\n\n");
+
   return {
     title: escapeLatex(title),
-    objective: escapeLatex(objective),
-    keyInsights: keyInsights.map(escapeLatex),
+    abstract: escapeLatex(abstract),
     researchSnapshot: escapeLatex(researchSnapshot),
-    summaryOfDiscoveries: escapeLatex(summaryOfDiscoveries),
+    keyInsights: processedKeyInsights, // Already escaped before DOI processing
+    summaryOfDiscoveries: processedSummary, // Already escaped before DOI processing
+    inlineBibliography: doiResult.referencesBib,
+    inlineDOIToCitekey: doiResult.doiToCitekey, // DOI → author-year citekey mapping
   };
 }
 
@@ -373,7 +411,11 @@ function generatePaperMetadata(state: ConversationStateValues): PaperMetadata {
  * Generate discovery sections in parallel with concurrency limit
  */
 async function generateDiscoverySectionsParallel(
-  contexts: Array<{ discovery: Discovery; index: number; allowedTasks: PlanTask[] }>,
+  contexts: Array<{
+    discovery: Discovery;
+    index: number;
+    allowedTasks: PlanTask[];
+  }>,
   allFigures: Map<number, FigureInfo[]>,
   maxConcurrency: number,
 ): Promise<DiscoverySection[]> {
@@ -420,7 +462,11 @@ async function generateDiscoverySection(
   const uniqueAllowedDOIs = Array.from(new Set(allowedDOIs));
 
   logger.info(
-    { discoveryIndex, taskCount: allowedTasks.length, figureCount: figures.length },
+    {
+      discoveryIndex,
+      taskCount: allowedTasks.length,
+      figureCount: figures.length,
+    },
     "generating_discovery_section",
   );
 
@@ -435,12 +481,16 @@ async function generateDiscoverySection(
   // Use PAPER_GEN_LLM_PROVIDER and PAPER_GEN_LLM_MODEL
   const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
-  const apiKey = process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
-                 process.env.ANTHROPIC_API_KEY ||
-                 process.env.OPENAI_API_KEY || "";
+  const apiKey =
+    process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "";
 
   if (!apiKey) {
-    throw new Error(`API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`);
+    throw new Error(
+      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
+    );
   }
 
   const llm = new LLM({
@@ -465,13 +515,17 @@ async function generateDiscoverySection(
       // Parse JSON response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error(`No JSON found in LLM response. Content preview: ${content.substring(0, 300)}`);
+        throw new Error(
+          `No JSON found in LLM response. Content preview: ${content.substring(0, 300)}`,
+        );
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
 
       if (!parsed.sectionLatex) {
-        throw new Error(`Missing sectionLatex in response. Keys found: ${Object.keys(parsed).join(", ")}`);
+        throw new Error(
+          `Missing sectionLatex in response. Keys found: ${Object.keys(parsed).join(", ")}`,
+        );
       }
 
       // Clean up Unicode characters in the LLM-generated LaTeX
@@ -514,7 +568,7 @@ function assembleMainTex(
   return `\\documentclass[11pt,a4paper]{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage{graphicx}
-\\usepackage{natbib}
+\\usepackage[numbers]{natbib}
 \\usepackage{hyperref}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
@@ -522,23 +576,24 @@ function assembleMainTex(
 \\graphicspath{{figures/}}
 
 \\title{${metadata.title}}
-\\author{Deep Research Agent}
+\\author{Aubrai}
 \\date{\\today}
 
 \\begin{document}
 
 \\maketitle
 
-\\section{Research Objective}
-${metadata.objective}
+\\begin{abstract}
+${metadata.abstract}
+\\end{abstract}
+
+\\section{Research Snapshot}
+${metadata.researchSnapshot}
 
 \\section{Key Insights}
 \\begin{itemize}
 ${metadata.keyInsights.map((insight) => `\\item ${insight}`).join("\n")}
 \\end{itemize}
-
-\\section{Research Snapshot}
-${metadata.researchSnapshot}
 
 \\section{Summary of Discoveries}
 ${metadata.summaryOfDiscoveries}
@@ -553,68 +608,138 @@ ${discoverySections.map((ds) => ds.sectionLatex).join("\n\n")}
 }
 
 /**
- * Repair LaTeX citations using LLM
+ * Remove specific undefined citations from LaTeX content
  */
-async function repairLatexCitations(
-  mainTexContent: string,
-  unresolvedDOIs: string[],
-  missingCitekeys: string[],
-  availableCitekeys: string[],
-  allowedDOIs: string[],
-): Promise<string> {
-  const prompt = generateRepairPrompt(
-    mainTexContent,
-    unresolvedDOIs,
-    missingCitekeys,
-    availableCitekeys,
-    allowedDOIs,
-  );
+function removeUndefinedCitations(
+  latexContent: string,
+  undefinedCitations: string[],
+): string {
+  if (undefinedCitations.length === 0) {
+    return latexContent;
+  }
 
-  const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
-  const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
-  const apiKey = process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
-                 process.env.ANTHROPIC_API_KEY ||
-                 process.env.OPENAI_API_KEY || "";
+  let cleaned = latexContent;
 
-  const llm = new LLM({
-    name: LLM_PROVIDER,
-    apiKey,
-  } as any);
+  // For each undefined citation, remove all occurrences
+  for (const citekey of undefinedCitations) {
+    // Escape special regex characters in the citekey
+    const escapedKey = citekey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  const response = await llm.createChatCompletion({
-    messages: [{ role: "user", content: prompt }],
-    model: LLM_MODEL,
-    temperature: 0.1,
-    maxTokens: 8000,
-  });
+    // Pattern to match this citation in any form:
+    // \cite{key}, \citep{key}, \citet{key}
+    // Also handle multiple citations: \cite{key1,key2,key3}
+    const patterns = [
+      // Standalone citation: \cite{key} or \citep{key}
+      new RegExp(`\\\\cite[pt]?\\{${escapedKey}\\}`, "g"),
+      // Citation at start of list: \cite{key,other}
+      new RegExp(`\\\\cite[pt]?\\{${escapedKey},([^}]+)\\}`, "g"),
+      // Citation in middle of list: \cite{other,key,another}
+      new RegExp(`(\\\\cite[pt]?\\{[^}]*),${escapedKey},([^}]+\\})`, "g"),
+      // Citation at end of list: \cite{other,key}
+      new RegExp(`(\\\\cite[pt]?\\{[^}]*),${escapedKey}\\}`, "g"),
+    ];
 
-  return response.content || mainTexContent;
+    // Apply patterns in order
+    // Pattern 0: Remove standalone \cite{key}
+    cleaned = cleaned.replace(patterns[0]!, "");
+    // Pattern 1: Remove key from start of list: \cite{key,other} => \cite{other}
+    cleaned = cleaned.replace(patterns[1]!, "\\cite{$1}");
+    // Pattern 2: Remove key from middle of list: \cite{a,key,b} => \cite{a,b}
+    cleaned = cleaned.replace(patterns[2]!, "$1,$2");
+    // Pattern 3: Remove key from end of list: \cite{other,key} => \cite{other}
+    cleaned = cleaned.replace(patterns[3]!, "$1}");
+
+    logger.info({ citekey, removed: true }, "removed_undefined_citation");
+  }
+
+  return cleaned;
 }
 
 /**
- * Create source.zip from latex directory
+ * Validate citations in LaTeX content
+ * Catches common citation formatting errors and missing citekeys before compilation
  */
-async function createSourceZip(
-  latexDir: string,
-  outputPath: string,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const output = fs.createWriteStream(outputPath);
-    const archive = archiver("zip", { zlib: { level: 9 } });
+function validateCitations(
+  latexContent: string,
+  citekeysInMainTex: string[],
+  citekeysInBib: string[],
+  missingInBib: string[],
+): void {
+  const errors: string[] = [];
 
-    output.on("close", () => {
-      logger.info({ size: archive.pointer() }, "source_zip_created");
-      resolve();
-    });
+  // Check 1: No \{}cite (escaped backslash)
+  if (latexContent.includes("\\{}cite")) {
+    errors.push(
+      "Invalid citation format: \\{}cite found. Citations should be \\cite{...}, not \\{}cite{...}",
+    );
+  }
 
-    archive.on("error", (err: Error) => {
-      reject(err);
-    });
+  // Check 2: No spaces inside cite braces
+  const spacesInCiteRegex = /\\cite[pt]?\{[^}]*\s+[^}]*\}/;
+  const spacesMatch = latexContent.match(spacesInCiteRegex);
+  if (spacesMatch) {
+    errors.push(
+      `Invalid citation format: spaces found inside citation braces: ${spacesMatch[0]}. ` +
+        `Citations must use format \\cite{key} with no spaces.`,
+    );
+  }
 
-    archive.pipe(output);
-    archive.directory(latexDir, false);
-    archive.finalize();
-  });
+  // Check 3: Warn about remaining doi: placeholders (but don't fail - we're debugging)
+  const placeholderRegex = /\\cite[pt]?\{[^}]*doi:[^}]*\}/;
+  const placeholderMatch = latexContent.match(placeholderRegex);
+  if (placeholderMatch) {
+    logger.warn(
+      { example: placeholderMatch[0] },
+      "unresolved_doi_placeholder_found_will_attempt_compilation",
+    );
+  }
+
+  // Check 4: Warn about remaining DOI patterns (but don't fail)
+  const doiUnderscoreRegex = /\\cite[pt]?\{[^}]*doi_[^}]*\}/;
+  const doiUnderscoreMatch = latexContent.match(doiUnderscoreRegex);
+  if (doiUnderscoreMatch) {
+    logger.warn(
+      { example: doiUnderscoreMatch[0] },
+      "unresolved_doi_underscore_format_found",
+    );
+  }
+
+  const rawDoiRegex = /\\cite[pt]?\{[^}]*10\.\d{4,}\/[^}]*\}/;
+  const rawDoiMatch = latexContent.match(rawDoiRegex);
+  if (rawDoiMatch) {
+    logger.warn({ example: rawDoiMatch[0] }, "raw_doi_found_in_citation");
+  }
+
+  // Check 5: Warn about missing citations (but don't fail - let LaTeX/BibTeX report it)
+  if (missingInBib.length > 0) {
+    logger.warn(
+      {
+        missingCitekeys: missingInBib.slice(0, 10),
+        total: missingInBib.length,
+      },
+      "citations_missing_from_bibliography_will_show_as_question_marks",
+    );
+  }
+
+  // If any errors, throw
+  if (errors.length > 0) {
+    const errorMessage =
+      "Citation validation failed:\n" +
+      errors.map((e, i) => `${i + 1}. ${e}`).join("\n");
+    logger.error(
+      { errors, citekeysInMainTex, citekeysInBib },
+      "citation_validation_failed",
+    );
+    throw new Error(errorMessage);
+  }
+
+  logger.info(
+    {
+      totalCitations: citekeysInMainTex.length,
+      totalBibEntries: citekeysInBib.length,
+    },
+    "citation_validation_passed",
+  );
 }
 
 /**
@@ -629,4 +754,39 @@ function cleanupWorkDir(workDir: string): void {
   } catch (error) {
     logger.warn({ workDir, error }, "failed_to_cleanup_temp_dir");
   }
+}
+
+/**
+ * Extract all citekeys from LaTeX \cite commands
+ */
+function extractCitekeys(latexContent: string): string[] {
+  const citekeys: string[] = [];
+  const citePattern = /\\cite[pt]?\{([^}]+)\}/g;
+
+  let match;
+  while ((match = citePattern.exec(latexContent)) !== null) {
+    if (match[1]) {
+      const keys = match[1].split(",").map((k) => k.trim());
+      citekeys.push(...keys);
+    }
+  }
+
+  return Array.from(new Set(citekeys)); // Remove duplicates
+}
+
+/**
+ * Extract citekeys from BibTeX entries (@article{citekey, ...})
+ */
+function extractCitekeyFromBibTeX(bibContent: string): string[] {
+  const citekeys: string[] = [];
+  const entryPattern = /@[a-zA-Z]+\{([^,\s]+)/g;
+
+  let match;
+  while ((match = entryPattern.exec(bibContent)) !== null) {
+    if (match[1]) {
+      citekeys.push(match[1]);
+    }
+  }
+
+  return citekeys;
 }

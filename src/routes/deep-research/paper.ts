@@ -9,9 +9,9 @@
 
 import { Elysia } from "elysia";
 import { authResolver } from "../../middleware/authResolver";
+import { generatePaperFromConversation } from "../../services/paper/generatePaper";
 import type { AuthContext } from "../../types/auth";
 import logger from "../../utils/logger";
-import { generatePaperFromConversation } from "../../services/paper/generatePaper";
 
 /**
  * Paper generation route with auth guard
@@ -86,7 +86,7 @@ async function paperGenerationHandler(ctx: any) {
       conversationStateId: result.conversationStateId,
       pdfPath: result.pdfPath,
       pdfUrl: result.pdfUrl,
-      sourceZipUrl: result.sourceZipUrl,
+      rawLatexUrl: result.rawLatexUrl,
     };
   } catch (error) {
     logger.error(
@@ -114,7 +114,8 @@ async function paperGenerationHandler(ctx: any) {
       set.status = 403;
       return {
         error: "Access denied",
-        message: "You do not have permission to generate a paper for this conversation",
+        message:
+          "You do not have permission to generate a paper for this conversation",
       };
     }
 

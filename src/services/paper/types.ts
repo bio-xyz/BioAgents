@@ -10,7 +10,7 @@ export type PaperGenerationResult = {
   conversationStateId: string;
   pdfPath: string;
   pdfUrl?: string;
-  sourceZipUrl?: string;
+  rawLatexUrl?: string; // URL to raw main.tex file
 };
 
 export type FigureInfo = {
@@ -41,8 +41,10 @@ export type DiscoveryContext = {
 
 export type PaperMetadata = {
   title: string;
-  objective: string;
-  keyInsights: string[];
+  abstract: string;
   researchSnapshot: string;
+  keyInsights: string[];
   summaryOfDiscoveries: string;
+  inlineBibliography: string; // BibTeX from inline DOI citations
+  inlineDOIToCitekey: Map<string, string>; // DOI → author-year citekey mapping for inline citations
 };

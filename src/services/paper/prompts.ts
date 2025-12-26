@@ -3,8 +3,81 @@
  */
 
 import { escapeLatex, truncateText } from "./utils/escapeLatex";
-import type { Discovery, PlanTask } from "../../types/core";
+import type { Discovery, PlanTask, ConversationStateValues } from "../../types/core";
 import type { FigureInfo } from "./types";
+
+/**
+ * Generate prompt for creating paper front matter (title, abstract, research snapshot)
+ */
+export function generateFrontMatterPrompt(
+  state: ConversationStateValues,
+): string {
+  const objective = state.objective || "Not specified";
+  const currentObjective = state.currentObjective || objective;
+  const currentHypothesis = state.currentHypothesis || "Not specified";
+  const methodology = state.methodology || "Not specified";
+  const keyInsights = state.keyInsights || [];
+  const discoveries = state.discoveries || [];
+
+  const discoverySummaries = discoveries
+    .map((d, i) => {
+      const title = d.title || `Discovery ${i + 1}`;
+      return `${i + 1}. ${title}: ${d.claim}`;
+    })
+    .join("\n");
+
+  return `You are writing the front matter for a scientific research paper conducted by Aubrai, an AI research agent.
+
+# Research Information
+
+Original Objective: ${objective}
+
+Current Objective: ${currentObjective}
+
+Current Hypothesis: ${currentHypothesis}
+
+Methodology: ${methodology}
+
+Key Insights:
+${keyInsights.length > 0 ? keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n") : "None provided"}
+
+Discoveries:
+${discoverySummaries || "None"}
+
+# Task
+
+Generate three components for the paper:
+
+1. **Title**: A concise, professional scientific title (max 15 words) that captures the essence of the research. Should be specific and informative, not generic.
+
+2. **Abstract**: A 150-200 word abstract following standard scientific structure:
+   - Background/Context (1-2 sentences)
+   - Objective (1 sentence)
+   - Methods/Approach (1-2 sentences)
+   - Key Findings (2-3 sentences)
+   - Significance (1 sentence)
+
+3. **Research Snapshot**: A brief 2-3 paragraph overview providing context about the current state of the research, including the current objective, hypothesis, and approach.
+
+# Output Format
+
+Return ONLY valid JSON with this structure:
+{
+  "title": "Your Scientific Title",
+  "abstract": "150-200 word abstract...",
+  "researchSnapshot": "2-3 paragraph research snapshot..."
+}
+
+# Requirements
+
+- Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
+- DO NOT include LaTeX formatting commands (\\section, \\textbf, etc.) - just plain text
+- Write in professional, scientific tone
+- Be specific and concrete, referencing actual discoveries
+- The content should be publication-quality
+
+Generate the front matter now:`;
+}
 
 /**
  * Generate prompt for creating a discovery section
@@ -25,7 +98,7 @@ export function generateDiscoverySectionPrompt(
       const truncatedOutput = output.length > 8000 ? truncateText(output, 8000) : output;
 
       return `### Task ${idx + 1}
-Job ID: ${task.jobId || task.id}
+Job ID: ${task.jobId}
 Type: ${task.type}
 Objective: ${task.objective}
 
@@ -45,9 +118,10 @@ ${truncatedOutput}
         .join("\n")
     : "(No figures available)";
 
-  // Prepare evidence explanations
+  // Prepare evidence explanations (only use jobId, not taskId)
   const evidenceExplanations = discovery.evidenceArray
-    ?.map((ev) => `- Task ${ev.jobId || ev.taskId}: ${ev.explanation || "(no explanation)"}`)
+    ?.filter((ev) => ev.jobId) // Only include evidence with jobId
+    ?.map((ev) => `- Job ID ${ev.jobId}: ${ev.explanation || "(no explanation)"}`)
     .join("\n") || "(No evidence explanations provided)";
 
   // Prepare allowed DOIs list
@@ -79,7 +153,14 @@ Set \\graphicspath{{figures/}} so LaTeX can find them.
 ${figureList}
 
 # Citation Guidelines
-You MUST cite sources using DOI placeholders in the format: \\cite{doi:10.xxxx/xxxxx}
+CRITICAL: You MUST cite sources using EXACT format: \\cite{doi:10.xxxx/xxxxx}
+
+Rules:
+- Format: \\cite{doi:10.1234/example} (NO SPACES in the citation key)
+- Multiple citations: \\cite{doi:10.1234/a,doi:10.5678/b} (comma-separated, NO SPACES)
+- DO NOT use spaces: \\cite{doi 10 1234} is INVALID
+- DO NOT use underscores: \\cite{doi_10_1234} is INVALID (that comes later)
+- Use the EXACT DOI from the list below (including case and punctuation)
 
 You may ONLY cite DOIs that appear verbatim in the task outputs above. Here are the DOIs found:
 ${doiList}
@@ -102,9 +183,14 @@ Generate a LaTeX section with EXACTLY this structure:
 [Explain what is novel about this discovery. Why is this new or important?]
 
 \\subsection{Tasks Used}
-[List the tasks that contributed to this discovery:]
-- Task ${(discovery as any).jobId || "N/A"} (primary)
-${discovery.evidenceArray?.map((ev) => `- Task ${ev.jobId || ev.taskId}: ${ev.explanation || ""}`).join("\n") || ""}
+[List the tasks that contributed to this discovery. IMPORTANT: Use ONLY the Job IDs provided below, NOT any abbreviated task IDs like "ana-3":]
+${discovery.evidenceArray && discovery.evidenceArray.length > 0
+  ? discovery.evidenceArray
+      .filter((ev) => ev.jobId) // Only include evidence with jobId
+      .map((ev) => `- Job ID: ${ev.jobId}: ${ev.explanation || ""}`)
+      .join("\n")
+  : "(No tasks with job IDs found)"
+}
 
 # Output Format
 Return ONLY valid JSON with this structure:
@@ -133,58 +219,3 @@ CRITICAL: Use proper LaTeX commands instead of Unicode characters:
 Generate the section now:`;
 }
 
-/**
- * Generate repair prompt when citations are broken
- */
-export function generateRepairPrompt(
-  mainTexContent: string,
-  unresolvedDOIs: string[],
-  missingCitekeys: string[],
-  availableCitekeys: string[],
-  allowedDOIs: string[],
-): string {
-  const issues: string[] = [];
-
-  if (unresolvedDOIs.length > 0) {
-    issues.push(
-      `Unresolved DOIs (could not fetch BibTeX): ${unresolvedDOIs.join(", ")}`,
-    );
-  }
-
-  if (missingCitekeys.length > 0) {
-    issues.push(
-      `Citations to citekeys not in references.bib: ${missingCitekeys.join(", ")}`,
-    );
-  }
-
-  return `You are fixing citation issues in a LaTeX research paper.
-
-# Issues Found
-${issues.join("\n")}
-
-# Available Citations
-You may cite these DOIs (they have valid BibTeX entries):
-${allowedDOIs.length > 0 ? allowedDOIs.map((doi) => `- ${doi}`).join("\n") : "(None available)"}
-
-Available citekeys in references.bib:
-${availableCitekeys.length > 0 ? availableCitekeys.join(", ") : "(None)"}
-
-# Task
-Fix the LaTeX document by:
-1. Removing citations to unresolved DOIs or replacing them with resolvable ones from the allowed list
-2. Removing citations to missing citekeys or replacing them with available ones
-3. DO NOT add new sections or change the structure
-4. DO NOT add DOIs that are not in the allowed list
-
-CRITICAL: Use proper LaTeX commands instead of Unicode characters:
-- Use $\\geq$ instead of ≥, $\\leq$ instead of ≤
-- Use $\\alpha$, $\\beta$, $\\mu$ etc. instead of Greek letter Unicode (α, β, μ)
-- DO NOT use any Unicode mathematical symbols or Greek letters directly
-
-Return ONLY the complete corrected main.tex content. No JSON, no markdown, just the LaTeX source.
-
-# Current main.tex
-${mainTexContent}
-
-Return the corrected LaTeX now:`;
-}
