@@ -147,6 +147,8 @@ These are the ONLY tasks you may reference in this section. You MUST use informa
 ${taskDetails}
 
 # Available Figures
+${figures.length > 0 ? "IMPORTANT: You have been provided with the actual figure images above. Carefully analyze each image and integrate insights from what you see into your writing. Reference specific patterns, trends, or visual elements from the images in your Results & Discussion." : ""}
+
 You may ONLY reference figures from this list. Use \\includegraphics[width=0.8\\textwidth]{filename} to include them.
 Set \\graphicspath{{figures/}} so LaTeX can find them.
 
@@ -176,8 +178,9 @@ Generate a LaTeX section with EXACTLY this structure:
 [Provide context and background for this discovery. What was known before? Why is this important?]
 
 \\subsection{Results \\& Discussion}
-[Present the main findings and results. Include figures if available. Discuss what these results mean.]
-[Use \\includegraphics to embed figures where appropriate]
+[Present the main findings and results.]
+${figures.length > 0 ? "[CRITICAL: You have been shown the actual figure images above. Analyze what you see in each image and integrate those visual insights here. Reference specific patterns, trends, data points, or visual elements you observe. Include the figures using \\includegraphics{filename} with \\caption{description based on what you see in the image}.]" : "[Include figures if available using \\includegraphics.]"}
+[Discuss what these results mean and how the visual evidence supports the claims.]
 
 \\subsection{Novelty}
 [Explain what is novel about this discovery. Why is this new or important?]

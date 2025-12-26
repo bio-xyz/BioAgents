@@ -126,6 +126,7 @@ export async function generatePaperFromConversation(
     const discoverySections = await generateDiscoverySectionsParallel(
       discoveryContexts,
       allFigures,
+      figuresDir,
       3,
     );
 
@@ -400,9 +401,6 @@ async function generatePaperMetadata(
   };
 }
 
-/**
- * Generate discovery sections in parallel with concurrency limit
- */
 async function generateDiscoverySectionsParallel(
   contexts: Array<{
     discovery: Discovery;
@@ -410,6 +408,7 @@ async function generateDiscoverySectionsParallel(
     allowedTasks: PlanTask[];
   }>,
   allFigures: Map<number, FigureInfo[]>,
+  figuresDir: string,
   maxConcurrency: number,
 ): Promise<DiscoverySection[]> {
   const results: DiscoverySection[] = [];
@@ -424,6 +423,7 @@ async function generateDiscoverySectionsParallel(
           ctx.index + 1,
           ctx.allowedTasks,
           allFigures.get(ctx.index) || [],
+          figuresDir,
         ),
       ),
     );
@@ -434,16 +434,13 @@ async function generateDiscoverySectionsParallel(
   return results;
 }
 
-/**
- * Generate a single discovery section using LLM
- */
 async function generateDiscoverySection(
   discovery: Discovery,
   discoveryIndex: number,
   allowedTasks: PlanTask[],
   figures: FigureInfo[],
+  figuresDir: string,
 ): Promise<DiscoverySection> {
-  // Extract allowed DOIs from task outputs
   const allowedDOIs: string[] = [];
   for (const task of allowedTasks) {
     if (task.output) {
@@ -454,14 +451,7 @@ async function generateDiscoverySection(
 
   const uniqueAllowedDOIs = Array.from(new Set(allowedDOIs));
 
-  logger.info(
-    {
-      discoveryIndex,
-      taskCount: allowedTasks.length,
-      figureCount: figures.length,
-    },
-    "generating_discovery_section",
-  );
+  logger.info({ discoveryIndex, taskCount: allowedTasks.length, figureCount: figures.length }, "generating_discovery_section");
 
   let prompt = generateDiscoverySectionPrompt(
     discovery,
@@ -471,7 +461,6 @@ async function generateDiscoverySection(
     uniqueAllowedDOIs,
   );
 
-  // Use PAPER_GEN_LLM_PROVIDER and PAPER_GEN_LLM_MODEL
   const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
   const apiKey =
@@ -481,9 +470,7 @@ async function generateDiscoverySection(
     "";
 
   if (!apiKey) {
-    throw new Error(
-      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
-    );
+    throw new Error(`API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`);
   }
 
   const llm = new LLM({
@@ -496,8 +483,58 @@ async function generateDiscoverySection(
 
   while (attempt < maxAttempts) {
     try {
+      // Build message content with images for vision-capable models
+      let messageContent: any;
+
+      if (LLM_PROVIDER === "anthropic" && figures.length > 0) {
+        // Anthropic vision support: encode images as base64
+        const contentBlocks: any[] = [];
+
+        for (const figure of figures) {
+          try {
+            const figPath = path.join(figuresDir, figure.filename);
+            if (fs.existsSync(figPath)) {
+              const imageBuffer = fs.readFileSync(figPath);
+              const base64Image = imageBuffer.toString("base64");
+              const mediaType = getImageMediaType(figure.filename);
+
+              contentBlocks.push({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mediaType,
+                  data: base64Image,
+                },
+              });
+            }
+          } catch (error) {
+            logger.warn({ figure: figure.filename, error }, "failed_to_encode_image");
+          }
+        }
+
+        contentBlocks.push({
+          type: "text",
+          text: prompt,
+        });
+
+        messageContent = contentBlocks;
+      } else if (LLM_PROVIDER === "openai" && figures.length > 0) {
+        // TODO: Add OpenAI vision support (gpt-4o, gpt-4-vision)
+        // OpenAI uses a different format:
+        // content: [
+        //   { type: "text", text: prompt },
+        //   { type: "image_url", image_url: { url: "data:image/jpeg;base64,..." } }
+        // ]
+        messageContent = prompt;
+      } else if (LLM_PROVIDER === "google" && figures.length > 0) {
+        // TODO: Add Google (Gemini) vision support
+        messageContent = prompt;
+      } else {
+        messageContent = prompt;
+      }
+
       const response = await llm.createChatCompletion({
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: messageContent }],
         model: LLM_MODEL,
         temperature: 0.3,
         maxTokens: 3000,
@@ -782,4 +819,24 @@ function extractCitekeyFromBibTeX(bibContent: string): string[] {
   }
 
   return citekeys;
+}
+
+/**
+ * Get image media type from filename
+ */
+function getImageMediaType(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    default:
+      return "image/png";
+  }
 }
