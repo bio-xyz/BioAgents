@@ -368,30 +368,23 @@ async function generatePaperMetadata(
   // Generate deterministic sections
   const keyInsights = state.keyInsights || [];
 
-  // Summary of Discoveries - formatted as "Discovery 1 - Title: Claim"
   const summaryItems =
     state.discoveries?.map((d, i) => {
-      const discoveryTitle = d.title || `Discovery ${i + 1}`;
-      const claim = d.claim;
-      return `**Discovery ${i + 1} - ${discoveryTitle}:** ${claim}`;
+      const discoveryTitle = escapeLatex(d.title || `Discovery ${i + 1}`);
+      const claim = escapeLatex(d.claim);
+      return `\\textbf{Discovery ${i + 1} - ${discoveryTitle}:} ${claim}`;
     }) || [];
   const summaryOfDiscoveries = summaryItems.join("\n\n");
 
   logger.info("paper_front_matter_generated");
 
-  // Escape plain text BEFORE processing DOIs (escape only text, not LaTeX commands)
   const escapedKeyInsights = keyInsights.map(escapeLatex);
-  const escapedSummary = escapeLatex(summaryOfDiscoveries);
 
-  // Process inline DOI citations in key insights and summary
-  // This will convert (text)[doi] to (text) \cite{doi:10.xxxx/yyyy} format
   const keyInsightsText = escapedKeyInsights.join("\n\n");
-  const combinedText = `${keyInsightsText}\n\n${escapedSummary}`;
+  const combinedText = `${keyInsightsText}\n\n${summaryOfDiscoveries}`;
 
   const doiResult = await processInlineDOICitations(combinedText);
 
-  // Split back into key insights and summary
-  // DO NOT escape again - these now contain LaTeX \cite commands
   const lines = doiResult.updatedText.split("\n\n");
   const processedKeyInsights = lines.slice(0, keyInsights.length);
   const processedSummary = lines.slice(keyInsights.length).join("\n\n");
