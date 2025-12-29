@@ -80,6 +80,124 @@ Generate the front matter now:`;
 }
 
 /**
+ * Generate prompt for creating Background/Introduction section
+ * @param state - Conversation state
+ * @param evidenceTasks - Tasks referenced in discovery evidence
+ */
+export function generateBackgroundPrompt(
+  state: ConversationStateValues,
+  evidenceTasks: PlanTask[],
+): string {
+  const objective = state.objective || "Not specified";
+  const currentObjective = state.currentObjective || objective;
+  const currentHypothesis = state.currentHypothesis || "Not specified";
+  const methodology = state.methodology || "Not specified";
+
+  // Prepare task details
+  const taskDetails = evidenceTasks
+    .map((task, idx) => {
+      const output = task.output || "(No output available)";
+      const truncatedOutput = output.length > 5000 ? truncateText(output, 5000) : output;
+
+      return `### Task ${idx + 1}
+Job ID: ${task.jobId}
+Type: ${task.type}
+Objective: ${task.objective}
+
+Output:
+${truncatedOutput}
+`;
+    })
+    .join("\n\n");
+
+  // Get discovery summaries for context
+  const discoveries = state.discoveries || [];
+  const discoverySummaries = discoveries
+    .map((d, i) => `${i + 1}. ${d.title || `Discovery ${i + 1}`}: ${d.claim}`)
+    .join("\n");
+
+  const literatureTaskCount = evidenceTasks.filter(t => t.type === "LITERATURE").length;
+  const analysisTaskCount = evidenceTasks.filter(t => t.type === "ANALYSIS").length;
+
+  return `You are writing the Background/Introduction section for a scientific research paper conducted by Aubrai, an AI research agent.
+
+# Research Context
+
+Original Research Objective: ${objective}
+
+Current Research Objective: ${currentObjective}
+
+Current Hypothesis: ${currentHypothesis}
+
+Methodology Approach: ${methodology}
+
+Key Discoveries Made:
+${discoverySummaries || "None yet"}
+
+# Available Tasks from Research
+You have access to ${evidenceTasks.length} tasks that contributed to this research (${literatureTaskCount} literature reviews, ${analysisTaskCount} analyses).
+
+${taskDetails}
+
+# Task
+
+Generate a comprehensive Background section that serves as the introduction to the paper. This section should:
+
+1. **Context & Motivation** (2-3 paragraphs):
+   - Provide broad scientific context for the research area
+   - Explain why this research is important and timely
+   - Build motivation for why this work was undertaken
+   - Use information from ALL available tasks to establish context
+
+2. **Problem Statement** (1-2 paragraphs):
+   - Clearly articulate the specific problem or knowledge gap
+   - Connect to the research objective
+   - Explain what is currently unknown or unresolved
+
+3. **Literature Overview** (2-3 paragraphs):
+   - **IMPORTANT: Focus primarily on LITERATURE tasks (type: LITERATURE) for this subsection**
+   - Synthesize key findings from the literature review tasks
+   - Provide a high-level overview of relevant prior work
+   - Show how existing literature supports or contextualizes this research
+   - Identify gaps or questions that this research addresses
+   - Cite sources using \\cite{doi:10.xxxx/xxxxx} format when referencing literature
+
+4. **Research Approach** (1 paragraph):
+   - Brief overview of how this research addresses the problem
+   - Connect the hypothesis to the gaps identified
+   - Can reference analysis tasks to preview the approach
+
+# Output Format
+
+Return ONLY valid JSON with this structure:
+{
+  "background": "The complete Background section content as plain text (4-7 paragraphs total)..."
+}
+
+# Requirements
+
+- Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
+- DO NOT include LaTeX formatting commands (\\section, \\subsection, \\textbf, etc.) - just plain text
+- Write in professional, scientific tone appropriate for a research paper introduction
+- For the Literature Overview subsection, focus on LITERATURE type tasks
+- The content should flow naturally as a cohesive introduction
+- Total length: 4-7 well-developed paragraphs (approximately 500-800 words)
+
+# Citation Guidelines
+
+CRITICAL: When referencing literature or prior work, you MUST cite sources using this EXACT format:
+- Format: \\cite{doi:10.xxxx/xxxxx} (with the actual DOI from the task outputs)
+- Example: \\cite{doi:10.1038/nature12345}
+- Multiple citations: \\cite{doi:10.1234/a,doi:10.5678/b} (comma-separated, NO SPACES)
+- DO NOT use spaces inside citations
+- DO NOT make up or hallucinate DOIs - only use DOIs that appear in the task outputs
+
+The DOIs are already present in the task outputs above. When you reference findings from literature tasks, include the DOI citation inline where it makes sense.
+
+Generate the Background section now:`;
+}
+
+/**
  * Generate prompt for creating a discovery section
  */
 export function generateDiscoverySectionPrompt(

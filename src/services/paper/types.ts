@@ -42,6 +42,7 @@ export type DiscoveryContext = {
 export type PaperMetadata = {
   title: string;
   abstract: string;
+  background: string; // Background/Introduction section
   researchSnapshot: string;
   keyInsights: string[];
   summaryOfDiscoveries: string;

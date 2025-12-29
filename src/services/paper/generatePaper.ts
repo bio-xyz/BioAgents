@@ -20,6 +20,7 @@ import type {
 } from "../../types/core";
 import logger from "../../utils/logger";
 import {
+  generateBackgroundPrompt,
   generateDiscoverySectionPrompt,
   generateFrontMatterPrompt,
 } from "./prompts";
@@ -108,7 +109,20 @@ export async function generatePaperFromConversation(
   try {
     const tasksByJobId = indexTasksByJobId(state);
     const discoveryContexts = mapDiscoveriesToTasks(state, tasksByJobId);
-    const metadata = await generatePaperMetadata(state);
+
+    // Collect all tasks referenced in discovery evidence
+    const evidenceTaskIds = new Set<string>();
+    for (const ctx of discoveryContexts) {
+      for (const task of ctx.allowedTasks) {
+        if (task.jobId) evidenceTaskIds.add(task.jobId);
+        if (task.id) evidenceTaskIds.add(task.id);
+      }
+    }
+    const evidenceTasks = Array.from(evidenceTaskIds)
+      .map(id => tasksByJobId.get(id))
+      .filter((task): task is PlanTask => task !== undefined);
+
+    const metadata = await generatePaperMetadata(state, evidenceTasks);
 
     const allFigures: Map<number, FigureInfo[]> = new Map();
     for (let i = 0; i < discoveryContexts.length; i++) {
@@ -307,15 +321,16 @@ function mapDiscoveriesToTasks(
 }
 
 /**
- * Generate paper metadata (uses LLM for title/abstract/snapshot, deterministic for rest)
+ * Generate paper metadata (uses LLM for title/abstract/background/snapshot, deterministic for rest)
  */
 async function generatePaperMetadata(
   state: ConversationStateValues,
+  evidenceTasks: PlanTask[],
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
   // Use LLM to generate title, abstract, and research snapshot
-  const prompt = generateFrontMatterPrompt(state);
+  const frontMatterPrompt = generateFrontMatterPrompt(state);
 
   const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
@@ -336,35 +351,67 @@ async function generatePaperMetadata(
     apiKey,
   } as any);
 
-  const response = await llm.createChatCompletion({
-    messages: [{ role: "user", content: prompt }],
+  // Generate front matter
+  const frontMatterResponse = await llm.createChatCompletion({
+    messages: [{ role: "user", content: frontMatterPrompt }],
     model: LLM_MODEL,
     temperature: 0.3,
     maxTokens: 2000,
   });
 
-  const content = response.content || "";
+  const frontMatterContent = frontMatterResponse.content || "";
 
-  // Parse JSON response
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  // Parse front matter JSON response
+  const frontMatterJsonMatch = frontMatterContent.match(/\{[\s\S]*\}/);
+  if (!frontMatterJsonMatch) {
     throw new Error(
-      `No JSON found in LLM response for front matter. Content preview: ${content.substring(0, 300)}`,
+      `No JSON found in LLM response for front matter. Content preview: ${frontMatterContent.substring(0, 300)}`,
     );
   }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  const frontMatterParsed = JSON.parse(frontMatterJsonMatch[0]);
 
-  if (!parsed.title || !parsed.abstract || !parsed.researchSnapshot) {
+  if (!frontMatterParsed.title || !frontMatterParsed.abstract || !frontMatterParsed.researchSnapshot) {
     throw new Error(
-      `Missing fields in front matter response. Keys found: ${Object.keys(parsed).join(", ")}`,
+      `Missing fields in front matter response. Keys found: ${Object.keys(frontMatterParsed).join(", ")}`,
     );
   }
 
   // Clean up Unicode in LLM-generated content
-  const title = replaceUnicodeInLatex(parsed.title);
-  const abstract = replaceUnicodeInLatex(parsed.abstract);
-  const researchSnapshot = replaceUnicodeInLatex(parsed.researchSnapshot);
+  const title = replaceUnicodeInLatex(frontMatterParsed.title);
+  const abstract = replaceUnicodeInLatex(frontMatterParsed.abstract);
+  const researchSnapshot = replaceUnicodeInLatex(frontMatterParsed.researchSnapshot);
+
+  // Generate background section
+  logger.info("generating_background_section");
+  const backgroundPrompt = generateBackgroundPrompt(state, evidenceTasks);
+
+  const backgroundResponse = await llm.createChatCompletion({
+    messages: [{ role: "user", content: backgroundPrompt }],
+    model: LLM_MODEL,
+    temperature: 0.3,
+    maxTokens: 3000,
+  });
+
+  const backgroundContent = backgroundResponse.content || "";
+
+  // Parse background JSON response
+  const backgroundJsonMatch = backgroundContent.match(/\{[\s\S]*\}/);
+  if (!backgroundJsonMatch) {
+    throw new Error(
+      `No JSON found in LLM response for background. Content preview: ${backgroundContent.substring(0, 300)}`,
+    );
+  }
+
+  const backgroundParsed = JSON.parse(backgroundJsonMatch[0]);
+
+  if (!backgroundParsed.background) {
+    throw new Error(
+      `Missing background field in response. Keys found: ${Object.keys(backgroundParsed).join(", ")}`,
+    );
+  }
+
+  const background = replaceUnicodeInLatex(backgroundParsed.background);
 
   // Generate deterministic sections
   const keyInsights = state.keyInsights || [];
@@ -380,19 +427,35 @@ async function generatePaperMetadata(
   logger.info("paper_front_matter_generated");
 
   const escapedKeyInsights = keyInsights.map(escapeLatex);
+  const escapedBackground = escapeLatex(background);
 
+  // Combine all text that needs DOI citation processing
   const keyInsightsText = escapedKeyInsights.join("\n\n");
-  const combinedText = `${keyInsightsText}\n\n${summaryOfDiscoveries}`;
+  const combinedText = `${escapedBackground}\n\n${keyInsightsText}\n\n${summaryOfDiscoveries}`;
 
+  // Process all inline DOI citations at once
   const doiResult = await processInlineDOICitations(combinedText);
 
-  const lines = doiResult.updatedText.split("\n\n");
-  const processedKeyInsights = lines.slice(0, keyInsights.length);
-  const processedSummary = lines.slice(keyInsights.length).join("\n\n");
+  // Split the processed text back into sections
+  const allLines = doiResult.updatedText.split("\n\n");
+
+  // Background may span multiple paragraphs, so count them
+  const backgroundParagraphCount = escapedBackground.split("\n\n").length;
+  const processedBackground = allLines.slice(0, backgroundParagraphCount).join("\n\n");
+
+  // Then key insights
+  const processedKeyInsights = allLines.slice(
+    backgroundParagraphCount,
+    backgroundParagraphCount + keyInsights.length
+  );
+
+  // Then summary of discoveries (everything remaining)
+  const processedSummary = allLines.slice(backgroundParagraphCount + keyInsights.length).join("\n\n");
 
   return {
     title: escapeLatex(title),
     abstract: escapeLatex(abstract),
+    background: processedBackground, // Now includes processed DOI citations
     researchSnapshot: escapeLatex(researchSnapshot),
     keyInsights: processedKeyInsights, // Already escaped before DOI processing
     summaryOfDiscoveries: processedSummary, // Already escaped before DOI processing
@@ -616,6 +679,9 @@ function assembleMainTex(
 \\begin{abstract}
 ${metadata.abstract}
 \\end{abstract}
+
+\\section{Background}
+${metadata.background}
 
 \\section{Research Snapshot}
 ${metadata.researchSnapshot}
