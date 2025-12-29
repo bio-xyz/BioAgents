@@ -8,15 +8,21 @@ CRITICAL: SCIENTIFIC RIGOR REQUIREMENTS
 - Discoveries MUST be novel findings, unexpected results, or significant patterns
 - If no scientifically rigorous discoveries exist, return an EMPTY array
 
-**CRITICAL: DISCOVERIES MUST COME FROM ANALYSIS TASKS**
-- Discoveries can ONLY be created from ANALYSIS tasks (task IDs starting with "ana-")
-- Literature tasks (task IDs starting with "lit-") CANNOT create discoveries on their own
-- Literature tasks can ONLY be used to:
-  - Enhance existing discoveries with additional context
-  - Provide supporting citations for analysis-derived discoveries
+**CRITICAL: DISCOVERIES PRIMARILY COME FROM ANALYSIS TASKS**
+- Discoveries USUALLY come from ANALYSIS tasks (task IDs starting with "ana-") that generate new data or insights
+- Analysis-based discoveries are the PRIMARY and EXPECTED source of discoveries
+- Literature tasks (task IDs starting with "lit-") typically SHOULD NOT create standalone discoveries
+- However, literature tasks MAY create discoveries in rare cases when ALL of these conditions are met:
+  - The finding is HIGHLY SPECIFIC (e.g., a particular molecular mechanism, a specific therapeutic target, a precise biomarker)
+  - The finding is directly relevant to the immediate research question and recent conversation context
+  - The finding represents a concrete, actionable insight (not a broad review or general knowledge)
+  - It's clear from the last few messages that this specific literature finding warrants highlighting
+  - You're not being spammy - avoid creating multiple literature-based discoveries
+- Literature tasks are primarily used to:
+  - Enhance existing analysis-derived discoveries with additional context
+  - Provide supporting citations for analysis findings
   - Help interpret analysis results
-- If there are NO analysis tasks, return an EMPTY array
-- Never create a discovery based solely on literature findings
+- DEFAULT BEHAVIOR: If you have analysis tasks available, focus on discoveries from those
 
 WHAT QUALIFIES AS A SCIENTIFIC DISCOVERY FOR A PAPER?
 
@@ -110,14 +116,16 @@ DISCOVERY UPDATE GUIDELINES
    - Merge discoveries if they're describing the same finding
    - Consolidate related discoveries to maintain clarity
 
-4. **Focus on Analysis Tasks**: Discoveries MUST come from ANALYSIS tasks
-   - Every discovery MUST have at least one ANALYSIS task (ana-*) in its evidenceArray
-   - Literature tasks (lit-*) can only provide supporting context to analysis findings
-   - If a discovery cannot cite an ANALYSIS task as primary evidence, it should not exist
+4. **Focus on Analysis Tasks**: Discoveries PRIMARILY come from ANALYSIS tasks
+   - Most discoveries should have at least one ANALYSIS task (ana-*) in their evidenceArray
+   - Literature tasks (lit-*) typically provide supporting context to analysis findings
+   - Literature-only discoveries are rare and should only be created when highly specific, directly relevant, and clearly warranted by recent conversation context
+   - When in doubt, prioritize analysis-based discoveries over literature-only discoveries
 
 5. **Evidence Quality**: Each evidence entry must:
-   - At least one evidence entry MUST be from an ANALYSIS task (ana-1, ana-2, etc.)
-   - Literature tasks (lit-1, lit-2, etc.) can be used as supplementary evidence only
+   - Most discoveries should have at least one evidence entry from an ANALYSIS task (ana-1, ana-2, etc.)
+   - Literature tasks (lit-1, lit-2, etc.) are typically used as supplementary evidence only
+   - In rare cases, literature tasks may be the sole evidence if the discovery meets the criteria: highly specific, directly relevant, contextually appropriate, and not spammy
    - Explain exactly what that task found with specifics
    - Include quantitative details when available (effect sizes, p-values, fold changes, etc.)
 
@@ -255,27 +263,31 @@ CONSTRAINTS
 - Output MUST be valid JSON only
 - Maximum 5 discoveries
 - Each discovery MUST be scientifically rigorous
-- Each discovery MUST have at least one evidence entry FROM AN ANALYSIS TASK
+- Most discoveries should have at least one evidence entry FROM AN ANALYSIS TASK
 - Evidence MUST reference specific task IDs
-- Return empty array if no qualifying discoveries exist OR if no ANALYSIS tasks exist
-- **CRITICAL**: Discoveries can ONLY be created from ANALYSIS tasks - if only LITERATURE tasks exist, return empty array
+- Return empty array if no scientifically rigorous discoveries exist
+- **CRITICAL**: Discoveries PRIMARILY come from ANALYSIS tasks
+  - Literature-only discoveries are rare and require: high specificity, direct relevance, clear contextual need, and no spam
+  - When both analysis and literature tasks exist, strongly prefer analysis-based discoveries
+  - Only create literature-only discoveries when it's clearly warranted by the recent conversation
 - ALWAYS check existing discoveries and update them when relevant
 - Preserve all previous evidence when updating discoveries
-- Literature tasks can supplement analysis-based discoveries but CANNOT create discoveries alone
+- Literature tasks typically supplement analysis-based discoveries; standalone literature discoveries should be exceptional
 
 SILENT SELF-CHECK (DO NOT OUTPUT)
 - Have I checked existing discoveries and updated them with new evidence?
-- Does EVERY discovery have at least one ANALYSIS task in its evidenceArray?
-- Have I returned an empty array if there are no ANALYSIS tasks?
+- Do MOST discoveries have at least one ANALYSIS task in their evidenceArray?
+- If I created a literature-only discovery, is it: highly specific, directly relevant, clearly warranted by context, and not spammy?
+- Have I prioritized analysis-based discoveries when both analysis and literature tasks are available?
 - Is each discovery about MOLECULAR/BIOLOGICAL findings, not data quality issues?
 - Would each discovery belong in the Results/Discussion section of a Nature paper?
 - Have I avoided including dataset descriptions, missing variables, or methodological notes?
-- Does each discovery have specific quantitative details (fold changes, p-values, etc.)?
+- Does each discovery have specific quantitative details (fold changes, p-values, etc.) when available?
 - Are artifacts properly linked with correct type (FILE or FOLDER)?
 - Is the novelty field EMPTY unless explicitly assessed against literature?
 - Have I avoided speculating about novelty without literature evidence?
 - Would a reviewer consider these discoveries significant and novel contributions?
-- Have I avoided creating discoveries from LITERATURE tasks alone?
+- Have I been conservative with literature-only discoveries (they should be rare)?
 - Have I preserved all previous evidence when updating discoveries?
 
 Reminder:

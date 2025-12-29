@@ -11,7 +11,7 @@ const DISCOVERY_MESSAGE_COUNT = 4;
 /**
  * Determines if discovery agent should run and which tasks to consider
  * Discovery runs only in deep research mode when there are 3+ previous messages (messageCount >= 4)
- * AND at least one ANALYSIS task has been completed
+ * and there are completed tasks with outputs
  *
  * @param messageCount - Total number of messages in conversation (including current)
  * @param allTasks - All tasks in the plan
@@ -43,18 +43,18 @@ export function getDiscoveryRunConfig(
     tasksToConsider = newTasks;
   }
 
-  // Check if there are any ANALYSIS tasks in the tasks to consider
-  const hasAnalysisTasks = tasksToConsider.some(
-    (task) => task.type === "ANALYSIS" && task.output && task.output.trim(),
+  // Check if there are any tasks with outputs to consider
+  const tasksWithOutput = tasksToConsider.filter(
+    (task) => task.output && task.output.trim(),
   );
 
-  if (!hasAnalysisTasks) {
+  if (tasksWithOutput.length === 0) {
     logger.info(
       {
         taskCount: tasksToConsider.length,
-        hasAnalysisTasks: false,
+        tasksWithOutput: 0,
       },
-      "skipping_discovery_no_analysis_tasks",
+      "skipping_discovery_no_task_outputs",
     );
     return {
       shouldRunDiscovery: false,
@@ -64,10 +64,9 @@ export function getDiscoveryRunConfig(
 
   logger.info(
     {
-      taskCount: tasksToConsider.length,
-      analysisTasks: tasksToConsider.filter((t) => t.type === "ANALYSIS")
-        .length,
-      literatureTasks: tasksToConsider.filter((t) => t.type === "LITERATURE")
+      taskCount: tasksWithOutput.length,
+      analysisTasks: tasksWithOutput.filter((t) => t.type === "ANALYSIS").length,
+      literatureTasks: tasksWithOutput.filter((t) => t.type === "LITERATURE")
         .length,
       isFirstRun: messageCount === 4,
     },
@@ -76,6 +75,6 @@ export function getDiscoveryRunConfig(
 
   return {
     shouldRunDiscovery: true,
-    tasksToConsider,
+    tasksToConsider: tasksWithOutput,
   };
 }
