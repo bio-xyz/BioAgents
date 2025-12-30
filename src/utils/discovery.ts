@@ -6,11 +6,11 @@ type DiscoveryRunConfig = {
   tasksToConsider: PlanTask[];
 };
 
-const DISCOVERY_MESSAGE_COUNT = 4;
+const DISCOVERY_MESSAGE_COUNT = 3;
 
 /**
  * Determines if discovery agent should run and which tasks to consider
- * Discovery runs only in deep research mode when there are 3+ previous messages (messageCount >= 4)
+ * Discovery runs only in deep research mode when there are 2+ previous messages (messageCount >= 3)
  * and there are completed tasks with outputs
  *
  * @param messageCount - Total number of messages in conversation (including current)
@@ -23,7 +23,7 @@ export function getDiscoveryRunConfig(
   allTasks: PlanTask[],
   newTasks: PlanTask[],
 ): DiscoveryRunConfig {
-  // Run discovery if messageCount >= 4 (current + 3 previous)
+  // Run discovery if messageCount >= 3 (current + 2 previous)
   const hasEnoughMessages = messageCount >= DISCOVERY_MESSAGE_COUNT;
 
   if (!hasEnoughMessages) {
@@ -34,10 +34,10 @@ export function getDiscoveryRunConfig(
     };
   }
 
-  // If this is the first discovery run (exactly 4 messages), consider all tasks
+  // If this is the first discovery run (exactly 3 messages), consider all tasks
   // Otherwise, consider only new tasks from current iteration
   let tasksToConsider: PlanTask[];
-  if (messageCount === 4) {
+  if (messageCount === DISCOVERY_MESSAGE_COUNT) {
     tasksToConsider = allTasks;
   } else {
     tasksToConsider = newTasks;
@@ -65,10 +65,11 @@ export function getDiscoveryRunConfig(
   logger.info(
     {
       taskCount: tasksWithOutput.length,
-      analysisTasks: tasksWithOutput.filter((t) => t.type === "ANALYSIS").length,
+      analysisTasks: tasksWithOutput.filter((t) => t.type === "ANALYSIS")
+        .length,
       literatureTasks: tasksWithOutput.filter((t) => t.type === "LITERATURE")
         .length,
-      isFirstRun: messageCount === 4,
+      isFirstRun: messageCount === DISCOVERY_MESSAGE_COUNT,
     },
     "discovery_run_configured",
   );
