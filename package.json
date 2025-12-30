@@ -54,6 +54,8 @@
     "pino-pretty": "^13.1.2",
     "postgres": "^3.4.7",
     "preact": "^10.27.2",
+    "preact-router": "^4.1.2",
+    "tesseract.js": "^7.0.0",
     "viem": "^2.21.26",
     "x402": "^0.7.1",
     "x402-fetch": "^0.7.0",

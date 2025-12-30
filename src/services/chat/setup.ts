@@ -33,18 +33,20 @@ export async function ensureUserAndConversation(
   // Create user if not exists (skip for x402 users who are already created)
   if (!options?.skipUserCreation) {
     try {
-      await createUser({
+      const user = await createUser({
         id: userId,
         username: `user_${userId.slice(0, 8)}`,
         email: `${userId}@temp.local`,
       });
-      if (logger) logger.info({ userId }, "user_created");
-    } catch (err: any) {
-      // Ignore duplicate key errors (user already exists)
-      if (err.code !== "23505") {
-        if (logger) logger.error({ err, userId }, "create_user_failed");
-        return { success: false, error: "Failed to create user" };
+      if (user) {
+        if (logger) logger.info({ userId }, "user_created");
+      } else {
+        // User already exists (createUser returns null for duplicates)
+        if (logger) logger.debug({ userId }, "user_already_exists");
       }
+    } catch (err: any) {
+      if (logger) logger.error({ err, userId }, "create_user_failed");
+      return { success: false, error: "Failed to create user" };
     }
   } else {
     if (logger) logger.info({ userId }, "user_creation_skipped_x402");

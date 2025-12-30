@@ -6,6 +6,33 @@ export function Message({ message }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
+  // Format timestamp for display
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return null;
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (isNaN(date.getTime())) return null;
+
+    // Format: "12:34 PM" for today, "Dec 29, 12:34 PM" for other days
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    const timeStr = date.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    if (isToday) {
+      return timeStr;
+    }
+
+    const dateStr = date.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric'
+    });
+    return `${dateStr}, ${timeStr}`;
+  };
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -38,28 +65,51 @@ export function Message({ message }) {
     return "file";
   };
 
+  const timestamp = formatTimestamp(message.timestamp);
+
   const renderContent = () => {
     if (isUser) {
+      const files = message.files || [];
+      const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
+      const showCompact = files.length > 3;
+
       return (
         <div className="message-content-wrapper">
-          {message.files && message.files.length > 0 && (
+          {files.length > 0 && (
             <div className="message-files">
-              {message.files.map((file, index) => (
-                <div key={index} className="message-file-badge">
-                  <Icon name={getFileIcon(file.mimeType)} size={14} />
+              {showCompact ? (
+                // Compact view for many files
+                <div className="message-file-badge message-file-summary">
+                  <Icon name="folder" size={14} />
                   <span className="file-name">
-                    {file.name || file.filename}
+                    {files.length} files attached
                   </span>
-                  {file.size && (
-                    <span className="file-size">
-                      {formatFileSize(file.size)}
-                    </span>
-                  )}
+                  <span className="file-size">
+                    {formatFileSize(totalSize)}
+                  </span>
                 </div>
-              ))}
+              ) : (
+                // Show individual files when 3 or fewer
+                files.map((file, index) => (
+                  <div key={index} className="message-file-badge">
+                    <Icon name={getFileIcon(file.mimeType)} size={14} />
+                    <span className="file-name">
+                      {file.name || file.filename}
+                    </span>
+                    {file.size && (
+                      <span className="file-size">
+                        {formatFileSize(file.size)}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           )}
           <div className="message-content">{message.content}</div>
+          {timestamp && (
+            <div className="message-timestamp">{timestamp}</div>
+          )}
         </div>
       );
     } else {
@@ -68,7 +118,11 @@ export function Message({ message }) {
           {/* Use InlineCitationText component for citation support */}
           <InlineCitationText content={message.content} />
 
-          <div className="message-actions">
+          <div className="message-footer">
+            {timestamp && (
+              <div className="message-timestamp">{timestamp}</div>
+            )}
+            <div className="message-actions">
             <button
               onClick={handleCopy}
               className="message-action-icon-btn"
@@ -111,6 +165,7 @@ export function Message({ message }) {
             >
               <Icon name="menu" size={18} />
             </button>
+            </div>
           </div>
         </div>
       );

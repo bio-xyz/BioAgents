@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { route } from 'preact-router';
 import { Button, IconButton } from './ui';
 
 export function Sidebar({ sessions, currentSessionId, onSessionSelect, onNewSession, onDeleteSession, isMobileOpen, onMobileClose }) {
@@ -201,8 +202,8 @@ export function Sidebar({ sessions, currentSessionId, onSessionSelect, onNewSess
                     method: 'POST',
                     credentials: 'include'
                   });
-                  // Reload to show login screen
-                  window.location.reload();
+                  // Navigate to login page
+                  route('/login', true);
                 } catch (error) {
                   console.error('Logout failed:', error);
                 }

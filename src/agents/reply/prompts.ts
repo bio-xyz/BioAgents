@@ -114,9 +114,11 @@ CONTEXT
 - Literature Search Results: {{completedTasks}}
 - Key Insights: {{keyInsights}}
 - Hypothesis (if generated): {{hypothesis}}
+- Uploaded Datasets: {{uploadedDatasets}}
 
 TASK
 Generate a clear, concise answer to the user's question based on the available evidence.
+If the user has uploaded datasets and asks about data analysis, acknowledge the datasets and provide analysis guidance or insights based on the file.
 
 CITATION PRESERVATION (CRITICAL)
 - IMPORTANT: Preserve ALL inline citations in the format (claim)[DOI or URL]

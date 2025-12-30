@@ -1,18 +1,48 @@
 // Polyfills for pdfjs-dist DOM APIs (needed for pdf-parse@2.x in server environments)
 
+import * as nodeUrl from "url";
+import * as nodeFs from "fs";
+import nodeFsPromises from "fs/promises";
+import * as nodePath from "path";
+import * as nodeHttp from "http";
+import * as nodeHttps from "https";
+import * as nodeZlib from "zlib";
+
+// Ensure fs.promises is available (some bundlers strip it)
+const fsWithPromises = {
+  ...nodeFs,
+  promises: nodeFsPromises,
+};
+
 // Stub process.getBuiltinModule to prevent Bun runtime warning
 // This must be first, before any imports
 if (typeof process.getBuiltinModule !== "function") {
   (process as any).getBuiltinModule = (name: string) => {
-    if (name === "module") {
-      return {
-        createRequire: () => {
-          // Return a dummy require that returns empty objects
-          return () => ({});
-        },
-      };
+    switch (name) {
+      case "module":
+        return {
+          createRequire: () => {
+            // Return a dummy require that returns empty objects
+            return () => ({});
+          },
+        };
+      case "url":
+        return nodeUrl;
+      case "fs":
+        return fsWithPromises;
+      case "fs/promises":
+        return nodeFsPromises;
+      case "path":
+        return nodePath;
+      case "http":
+        return nodeHttp;
+      case "https":
+        return nodeHttps;
+      case "zlib":
+        return nodeZlib;
+      default:
+        return undefined;
     }
-    return undefined;
   };
 }
 

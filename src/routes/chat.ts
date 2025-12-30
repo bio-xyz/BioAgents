@@ -906,6 +906,7 @@ export async function chatHandler(ctx: any) {
         completedTasksCount: completedTasks.length,
         hasHypothesis: !!hypothesisText,
         keyInsightsCount: conversationState.values.keyInsights?.length || 0,
+        uploadedDatasetsCount: conversationState.values.uploadedDatasets?.length || 0,
       },
       "starting_chat_reply_generation",
     );
@@ -922,6 +923,7 @@ export async function chatHandler(ctx: any) {
         discoveries: conversationState.values.discoveries || [],
         methodology: conversationState.values.methodology,
         currentObjective: conversationState.values.currentObjective,
+        uploadedDatasets: conversationState.values.uploadedDatasets || [],
       },
       {
         maxTokens: 1024,

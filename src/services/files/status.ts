@@ -158,6 +158,52 @@ export async function deleteFileStatus(fileId: string): Promise<void> {
 }
 
 /**
+ * Get all pending/processing file IDs for a conversation state
+ * Used by chat worker to wait for file processing to complete
+ */
+export async function getPendingFileIds(conversationStateId: string): Promise<string[]> {
+  const redis = await getRedisClient();
+
+  if (redis) {
+    // In queue mode, scan Redis for file status keys
+    const pendingFileIds: string[] = [];
+    let cursor = "0";
+
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "file:status:*", "COUNT", 100);
+      cursor = nextCursor;
+
+      for (const key of keys) {
+        const data = await redis.get(key);
+        if (data) {
+          const record = JSON.parse(data) as FileStatusRecord;
+          if (
+            record.conversationStateId === conversationStateId &&
+            (record.status === "pending" || record.status === "uploaded" || record.status === "processing")
+          ) {
+            pendingFileIds.push(record.fileId);
+          }
+        }
+      }
+    } while (cursor !== "0");
+
+    return pendingFileIds;
+  } else {
+    // In-memory mode
+    const pendingFileIds: string[] = [];
+    for (const [fileId, record] of fileStatusMap) {
+      if (
+        record.conversationStateId === conversationStateId &&
+        (record.status === "pending" || record.status === "uploaded" || record.status === "processing")
+      ) {
+        pendingFileIds.push(fileId);
+      }
+    }
+    return pendingFileIds;
+  }
+}
+
+/**
  * Clean up expired in-memory status records
  * Call this periodically in non-queue mode
  */

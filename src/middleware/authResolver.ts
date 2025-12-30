@@ -338,9 +338,10 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  * Can be called directly without Elysia middleware context
  *
  * @param request - The incoming request
+ * @param body - Optional parsed request body (for userId extraction in dev mode)
  * @returns AuthContext with userId if authenticated
  */
-export async function resolveAuth(request: Request): Promise<{
+export async function resolveAuth(request: Request, body?: any): Promise<{
   authenticated: boolean;
   userId?: string;
   method?: string;
@@ -372,11 +373,21 @@ export async function resolveAuth(request: Request): Promise<{
     }
   }
 
+  // Helper to get userId from body (same logic as authResolver middleware)
+  const getUserIdFromBody = () => {
+    const providedUserId = body?.userId;
+    return providedUserId &&
+      typeof providedUserId === "string" &&
+      providedUserId.length > 0
+      ? providedUserId
+      : generateUUID();
+  };
+
   // Check API key (legacy)
   if (isValidApiKey(request)) {
     return {
       authenticated: true,
-      userId: generateUUID(),
+      userId: getUserIdFromBody(),
       method: "api_key",
     };
   }
@@ -385,7 +396,7 @@ export async function resolveAuth(request: Request): Promise<{
   if (config.mode === "none") {
     return {
       authenticated: true,
-      userId: generateUUID(),
+      userId: getUserIdFromBody(),
       method: "anonymous",
     };
   }

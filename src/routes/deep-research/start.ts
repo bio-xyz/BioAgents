@@ -870,11 +870,27 @@ These molecular changes align with established longevity pathways (Converging nu
       },
       "message_content_saved",
     );
-    const responseTime = 0; // TODO: Calculate response time
+
+    // Notify client that message is ready via WebSocket
+    // This is essential for the UI to display the response
+    const { notifyMessageUpdated } = await import("../../services/queue/notify");
+    await notifyMessageUpdated(
+      `in-process-${createdMessage.id}`, // Use a synthetic job ID for in-process mode
+      createdMessage.conversation_id,
+      createdMessage.id,
+    );
+
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        conversationId: createdMessage.conversation_id,
+      },
+      "message_updated_notification_sent",
+    );
 
     if (logger) {
       logger.info(
-        { messageId: createdMessage.id, responseTime },
+        { messageId: createdMessage.id },
         "deep_research_completed",
       );
     }

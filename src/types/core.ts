@@ -60,6 +60,7 @@ export interface ConversationStateValues extends StateValues {
     id: string;
     description: string;
     path?: string;
+    content?: string; // Parsed text content (for PDFs, extracted text; for CSVs, preview rows)
   }>;
 }
 
