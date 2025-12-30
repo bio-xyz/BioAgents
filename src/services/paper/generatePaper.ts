@@ -66,12 +66,16 @@ export async function generatePaperFromConversation(
   }
 
   if (conversation.user_id !== userId) {
-    throw new Error(`User ${userId} does not own conversation ${conversationId}`);
+    throw new Error(
+      `User ${userId} does not own conversation ${conversationId}`,
+    );
   }
 
   const conversationStateId = conversation.conversation_state_id;
   if (!conversationStateId) {
-    throw new Error(`Conversation ${conversationId} has no conversation_state_id`);
+    throw new Error(
+      `Conversation ${conversationId} has no conversation_state_id`,
+    );
   }
 
   const stateRecord = await getConversationState(conversationStateId);
@@ -119,7 +123,7 @@ export async function generatePaperFromConversation(
       }
     }
     const evidenceTasks = Array.from(evidenceTaskIds)
-      .map(id => tasksByJobId.get(id))
+      .map((id) => tasksByJobId.get(id))
       .filter((task): task is PlanTask => task !== undefined);
 
     const metadata = await generatePaperMetadata(state, evidenceTasks);
@@ -148,11 +152,21 @@ export async function generatePaperFromConversation(
 
     const allDOIs = extractDOICitations(mainTexContent);
     const discoveryBibEntries = await resolveMultipleDOIs(allDOIs);
-    logger.info({ resolved: discoveryBibEntries.length, total: allDOIs.length }, "dois_resolved");
+    logger.info(
+      { resolved: discoveryBibEntries.length, total: allDOIs.length },
+      "dois_resolved",
+    );
 
-    const inlineBibEntries: Array<{ doi: string; citekey: string; bibtex: string }> = [];
+    const inlineBibEntries: Array<{
+      doi: string;
+      citekey: string;
+      bibtex: string;
+    }> = [];
     for (const [doi, citekey] of metadata.inlineDOIToCitekey.entries()) {
-      const entryPattern = new RegExp(`@\\w+\\{${citekey},[\\s\\S]*?\\n\\}`, "m");
+      const entryPattern = new RegExp(
+        `@\\w+\\{${citekey},[\\s\\S]*?\\n\\}`,
+        "m",
+      );
       const match = metadata.inlineBibliography.match(entryPattern);
       if (match) {
         inlineBibEntries.push({ doi, citekey, bibtex: match[0] });
@@ -163,7 +177,9 @@ export async function generatePaperFromConversation(
 
     const allBibEntries = [...inlineBibEntries, ...discoveryBibEntries];
     const dedupedBibEntries = deduplicateAndResolveCollisions(allBibEntries);
-    const doiToCitekeyMap = new Map(dedupedBibEntries.map((e) => [e.doi, e.citekey]));
+    const doiToCitekeyMap = new Map(
+      dedupedBibEntries.map((e) => [e.doi, e.citekey]),
+    );
 
     mainTexContent = rewriteLatexCitations(mainTexContent, doiToCitekeyMap);
     fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
@@ -173,9 +189,16 @@ export async function generatePaperFromConversation(
 
     const citekeysInMainTex = extractCitekeys(mainTexContent);
     const citekeysInBib = extractCitekeyFromBibTeX(mergedBibContent);
-    const missingInBib = citekeysInMainTex.filter((key) => !citekeysInBib.includes(key));
+    const missingInBib = citekeysInMainTex.filter(
+      (key) => !citekeysInBib.includes(key),
+    );
 
-    validateCitations(mainTexContent, citekeysInMainTex, citekeysInBib, missingInBib);
+    validateCitations(
+      mainTexContent,
+      citekeysInMainTex,
+      citekeysInBib,
+      missingInBib,
+    );
 
     logger.info("compiling_latex");
     let compileResult = await compileLatexToPDF(workDir);
@@ -189,9 +212,15 @@ export async function generatePaperFromConversation(
 
     const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
     if (undefinedCitations.length > 0) {
-      logger.warn({ undefinedCitations, count: undefinedCitations.length }, "removing_undefined_citations");
+      logger.warn(
+        { undefinedCitations, count: undefinedCitations.length },
+        "removing_undefined_citations",
+      );
 
-      mainTexContent = removeUndefinedCitations(mainTexContent, undefinedCitations);
+      mainTexContent = removeUndefinedCitations(
+        mainTexContent,
+        undefinedCitations,
+      );
       fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
 
       logger.info("recompiling_latex");
@@ -371,7 +400,11 @@ async function generatePaperMetadata(
 
   const frontMatterParsed = JSON.parse(frontMatterJsonMatch[0]);
 
-  if (!frontMatterParsed.title || !frontMatterParsed.abstract || !frontMatterParsed.researchSnapshot) {
+  if (
+    !frontMatterParsed.title ||
+    !frontMatterParsed.abstract ||
+    !frontMatterParsed.researchSnapshot
+  ) {
     throw new Error(
       `Missing fields in front matter response. Keys found: ${Object.keys(frontMatterParsed).join(", ")}`,
     );
@@ -380,7 +413,9 @@ async function generatePaperMetadata(
   // Clean up Unicode in LLM-generated content
   const title = replaceUnicodeInLatex(frontMatterParsed.title);
   const abstract = replaceUnicodeInLatex(frontMatterParsed.abstract);
-  const researchSnapshot = replaceUnicodeInLatex(frontMatterParsed.researchSnapshot);
+  const researchSnapshot = replaceUnicodeInLatex(
+    frontMatterParsed.researchSnapshot,
+  );
 
   // Generate background section
   logger.info("generating_background_section");
@@ -441,16 +476,20 @@ async function generatePaperMetadata(
 
   // Background may span multiple paragraphs, so count them
   const backgroundParagraphCount = escapedBackground.split("\n\n").length;
-  const processedBackground = allLines.slice(0, backgroundParagraphCount).join("\n\n");
+  const processedBackground = allLines
+    .slice(0, backgroundParagraphCount)
+    .join("\n\n");
 
   // Then key insights
   const processedKeyInsights = allLines.slice(
     backgroundParagraphCount,
-    backgroundParagraphCount + keyInsights.length
+    backgroundParagraphCount + keyInsights.length,
   );
 
   // Then summary of discoveries (everything remaining)
-  const processedSummary = allLines.slice(backgroundParagraphCount + keyInsights.length).join("\n\n");
+  const processedSummary = allLines
+    .slice(backgroundParagraphCount + keyInsights.length)
+    .join("\n\n");
 
   return {
     title: escapeLatex(title),
@@ -514,7 +553,14 @@ async function generateDiscoverySection(
 
   const uniqueAllowedDOIs = Array.from(new Set(allowedDOIs));
 
-  logger.info({ discoveryIndex, taskCount: allowedTasks.length, figureCount: figures.length }, "generating_discovery_section");
+  logger.info(
+    {
+      discoveryIndex,
+      taskCount: allowedTasks.length,
+      figureCount: figures.length,
+    },
+    "generating_discovery_section",
+  );
 
   let prompt = generateDiscoverySectionPrompt(
     discovery,
@@ -533,7 +579,9 @@ async function generateDiscoverySection(
     "";
 
   if (!apiKey) {
-    throw new Error(`API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`);
+    throw new Error(
+      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
+    );
   }
 
   const llm = new LLM({
@@ -571,7 +619,10 @@ async function generateDiscoverySection(
               });
             }
           } catch (error) {
-            logger.warn({ figure: figure.filename, error }, "failed_to_encode_image");
+            logger.warn(
+              { figure: figure.filename, error },
+              "failed_to_encode_image",
+            );
           }
         }
 
@@ -600,7 +651,7 @@ async function generateDiscoverySection(
         messages: [{ role: "user", content: messageContent }],
         model: LLM_MODEL,
         temperature: 0.3,
-        maxTokens: 3000,
+        maxTokens: 6000,
       });
 
       const content = response.content || "";

@@ -186,13 +186,14 @@ Return ONLY valid JSON with this structure:
 # Citation Guidelines
 
 CRITICAL: When referencing literature or prior work, you MUST cite sources using this EXACT format:
-- Format: \\cite{doi:10.xxxx/xxxxx} (with the actual DOI from the task outputs)
-- Example: \\cite{doi:10.1038/nature12345}
-- Multiple citations: \\cite{doi:10.1234/a,doi:10.5678/b} (comma-separated, NO SPACES)
-- DO NOT use spaces inside citations
+- Format: [doi:10.xxxx/xxxxx] (with the actual DOI from the task outputs, wrapped in square brackets)
+- Example: [doi:10.1038/nature12345] or (Smith et al., 2023) [doi:10.1038/nature12345]
+- Multiple citations: [doi:10.1234/a,doi:10.5678/b] (comma-separated, NO SPACES, all in one set of brackets)
+- DO NOT use LaTeX \\cite{} commands directly - use square brackets with [doi:...]
+- DO NOT use spaces inside the brackets
 - DO NOT make up or hallucinate DOIs - only use DOIs that appear in the task outputs
 
-The DOIs are already present in the task outputs above. When you reference findings from literature tasks, include the DOI citation inline where it makes sense.
+The DOIs are already present in the task outputs above. When you reference findings from literature tasks, include the DOI citation inline where it makes sense. The system will automatically convert [doi:...] to proper LaTeX \\cite{} commands.
 
 Generate the Background section now:`;
 }
