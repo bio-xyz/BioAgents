@@ -440,15 +440,20 @@ async function runDeepResearch(params: {
         ? Math.max(...currentPlan.map((t) => t.level || 0))
         : -1;
 
-    // Add new tasks with appropriate level
+    // Add new tasks with appropriate level and assign IDs
     const newLevel = maxLevel + 1;
-    const newTasks = plan.map((task: PlanTask) => ({
-      ...task,
-      level: newLevel,
-      start: undefined,
-      end: undefined,
-      output: undefined,
-    }));
+    const newTasks = plan.map((task: PlanTask) => {
+      const taskId =
+        task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+      return {
+        ...task,
+        id: taskId,
+        level: newLevel,
+        start: undefined,
+        end: undefined,
+        output: undefined,
+      };
+    });
 
     // Append to existing plan and update objective
     conversationState.values.plan = [...currentPlan, ...newTasks];
@@ -492,8 +497,12 @@ async function runDeepResearch(params: {
           "executing_literature_task",
         );
 
-        const primaryLiteratureType = "EDISON";
-        const primaryLiteratureLabel = "Edison";
+        const primaryLiteratureType =
+          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
+            ? "BIOLITDEEP"
+            : "EDISON";
+        const primaryLiteratureLabel =
+          primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
         // Run OpenScholar and update state when done
         const openScholarPromise = literatureAgent({
@@ -522,6 +531,10 @@ async function runDeepResearch(params: {
         }).then(async (result) => {
           // Always append for Edison/BioLit (no count filtering)
           task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+          // Capture jobId from primary literature (Edison or BioLit)
+          if (result.jobId) {
+            task.jobId = result.jobId;
+          }
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
@@ -529,7 +542,7 @@ async function runDeepResearch(params: {
             );
           }
           logger.info(
-            { outputLength: result.output.length },
+            { outputLength: result.output.length, jobId: result.jobId },
             "primary_literature_result_received",
           );
         });
@@ -684,13 +697,14 @@ These molecular changes align with established longevity pathways (Converging nu
 
           task.output = `Analysis results:\n${analysisResult.output}\n\n`;
           task.artifacts = analysisResult.artifacts || [];
+          task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
               conversationState.values,
             );
-            logger.info("analysis_completed");
+            logger.info({ jobId: analysisResult.jobId }, "analysis_completed");
           }
 
           logger.info(
@@ -698,11 +712,12 @@ These molecular changes align with established longevity pathways (Converging nu
             "analysis_result_received",
           );
         } catch (error) {
-          const errorMsg = error instanceof Error
-            ? error.message
-            : typeof error === 'object' && error !== null
-              ? JSON.stringify(error)
-              : String(error);
+          const errorMsg =
+            error instanceof Error
+              ? error.message
+              : typeof error === "object" && error !== null
+                ? JSON.stringify(error)
+                : String(error);
           task.output = `Analysis failed: ${errorMsg}`;
           logger.error(
             { error, taskObjective: task.objective },
@@ -752,17 +767,52 @@ These molecular changes align with established longevity pathways (Converging nu
       );
     }
 
-    // Step 4: Run reflection agent to update world state
-    logger.info("running_reflection_agent_to_update_world");
+    // Step 4: Run reflection and discovery agents in parallel
+    logger.info("running_reflection_and_discovery_agents");
 
     const { reflectionAgent } = await import("../../agents/reflection");
+    const { discoveryAgent } = await import("../../agents/discovery");
+    const { getMessagesByConversation } = await import("../../db/operations");
+    const { getDiscoveryRunConfig } = await import("../../utils/discovery");
 
-    const reflectionResult = await reflectionAgent({
-      conversationState,
-      message: createdMessage,
-      completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
-      hypothesis: hypothesisResult.hypothesis,
-    });
+    // Determine if we should run discovery and which tasks to consider
+    let shouldRunDiscovery = false;
+    let tasksToConsider: PlanTask[] = [];
+
+    if (createdMessage.conversation_id) {
+      const allMessages = await getMessagesByConversation(
+        createdMessage.conversation_id,
+        100,
+      );
+      const messageCount = allMessages?.length || 1;
+
+      const discoveryConfig = getDiscoveryRunConfig(
+        messageCount,
+        conversationState.values.plan || [],
+        tasksToExecute,
+      );
+
+      shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
+      tasksToConsider = discoveryConfig.tasksToConsider;
+    }
+
+    // Run reflection and discovery in parallel
+    const [reflectionResult, discoveryResult] = await Promise.all([
+      reflectionAgent({
+        conversationState,
+        message: createdMessage,
+        completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
+        hypothesis: hypothesisResult.hypothesis,
+      }),
+      shouldRunDiscovery
+        ? discoveryAgent({
+            conversationState,
+            message: createdMessage,
+            tasksToConsider,
+            hypothesis: hypothesisResult.hypothesis,
+          })
+        : Promise.resolve(null),
+    ]);
 
     // Update conversation state with reflection results
     conversationState.values.conversationTitle =
@@ -770,8 +820,18 @@ These molecular changes align with established longevity pathways (Converging nu
     conversationState.values.currentObjective =
       reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;
-    conversationState.values.discoveries = reflectionResult.discoveries;
     conversationState.values.methodology = reflectionResult.methodology;
+
+    // Update conversation state with discovery results if discovery ran
+    if (discoveryResult) {
+      conversationState.values.discoveries = discoveryResult.discoveries;
+      logger.info(
+        {
+          discoveryCount: discoveryResult.discoveries.length,
+        },
+        "discoveries_updated",
+      );
+    }
 
     if (conversationState.id) {
       await updateConversationState(
@@ -781,10 +841,10 @@ These molecular changes align with established longevity pathways (Converging nu
       logger.info(
         {
           insights: reflectionResult.keyInsights,
-          discoveries: reflectionResult.discoveries,
+          discoveries: conversationState.values.discoveries?.length || 0,
           currentObjective: reflectionResult.currentObjective,
         },
-        "world_state_updated_via_reflection",
+        "world_state_updated_via_reflection_and_discovery",
       );
     }
 

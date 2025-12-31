@@ -6,7 +6,6 @@ Given the research question, current world state, completed MAX level tasks, and
 - **conversationTitle**: A concise title for the conversation (5-7 words max, capturing the current research focus). Only update if there's a major shift in research direction - keep existing title if focus remains similar.
 - **currentObjective**: The next immediate research goal (1-2 sentences)
 - **keyInsights**: Maximum 10 most important insights from the entire research (prioritize quality over quantity)
-- **discoveries**: Significant new findings or breakthroughs discovered in this iteration
 - **methodology**: Current research approach or methodology being employed
 
 CITATION RULES (CRITICAL)
@@ -71,15 +70,6 @@ WORLD STATE UPDATE GUIDELINES
   - Open new research directions
   - Connect multiple findings together
 
-**discoveries**:
-- What genuinely NEW findings emerged from this iteration?
-- Focus on surprises, breakthroughs, or unexpected results
-- Should be specific and tied to evidence
-- Empty array if no significant new discoveries
-- These are distinct from keyInsights - discoveries are what's NEW, insights are cumulative understanding
-- Discoveries come only from the ANALYSIS tasks
-- You should keep at maximum 5 discoveries, prioritizing quality over quantity
-
 **methodology**:
 - What research approach is currently being used?
 - May include: literature synthesis, computational analysis, molecular analysis, etc.
@@ -93,7 +83,6 @@ Before (Initial):
   "conversationTitle": "Senescence and Aging Research",
   "currentObjective": "Gather comprehensive literature on senescence and aging",
   "keyInsights": [],
-  "discoveries": [],
   "methodology": "Literature review"
 }
 
@@ -106,10 +95,6 @@ After (Post-MAX tasks):
     "mTOR pathway dysregulation appears to be a common upstream regulator in senescent cells",
     "Autophagy markers show consistent downregulation in aging tissues"
   ],
-  "discoveries": [
-    "Three independent studies show autophagy-lysosomal pathway disruption precedes other senescence markers",
-    "Novel link identified between mitochondrial dysfunction and autophagy failure in senescence"
-  ],
   "methodology": "Systematic literature synthesis with focus on molecular pathways, preparing for computational pathway analysis"
 }
 
@@ -120,14 +105,12 @@ Provide ONLY a valid JSON object with these fields (no markdown, no comments, no
   "conversationTitle": "string (5-7 words max)",
   "currentObjective": "string (1-2 sentences)",
   "keyInsights": ["string (1-2 sentences each)", "..."],
-  "discoveries": ["string", "..."],
   "methodology": "string"
 }
 
 CONSTRAINTS
 - Output MUST be valid JSON only
 - keyInsights: Maximum 10 items
-- discoveries: Only genuinely new findings from this iteration
 - All fields should integrate information from the provided documents
 - Be specific and evidence-based
 - Remove outdated or less important information
@@ -136,7 +119,6 @@ CONSTRAINTS
 SILENT SELF-CHECK (DO NOT OUTPUT)
 - Did I integrate findings from all MAX level tasks?
 - Are keyInsights limited to 10 most important?
-- Do discoveries represent what's NEW in this iteration?
 - Is currentObjective specific and actionable?
 - Have I removed outdated/redundant information?
 - Is the output valid JSON?

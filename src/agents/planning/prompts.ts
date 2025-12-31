@@ -167,6 +167,21 @@ You are planning tasks for the NEXT iteration based on completed work (hypothesi
 - Consider what gaps remain, what follow-up questions emerged, or what deeper analysis is needed
 - Return an EMPTY plan only if you believe with 100% certainty that the main objective has been achieved and the research is complete
 
+DISCOVERY-DRIVEN PLANNING:
+If discoveries exist in the CURRENT RESEARCH STATE, consider planning tasks to:
+- **Validate discoveries**: Additional ANALYSIS to confirm findings with different methods
+- **Assess novelty**: LITERATURE tasks to determine if discoveries are novel or already known
+- **Extend discoveries**: ANALYSIS or LITERATURE to explore mechanisms, related pathways, or broader implications
+- **Support with literature**: LITERATURE tasks to find papers that support or contextualize the discoveries
+- **Fill evidence gaps**: If a discovery has limited evidence, plan tasks to strengthen it
+
+Examples:
+- Discovery about gene upregulation → Literature search for that gene's known roles OR pathway analysis
+- Discovery about metabolite changes → Literature on metabolite function OR correlation analysis with phenotypes
+- Discovery needs validation → Independent analytical approach OR literature supporting similar findings
+
+Use both LITERATURE and ANALYSIS tasks strategically - don't tunnel vision on just one type.
+
 IMPORTANT INSTRUCTIONS:
 - Focus on planning the NEXT steps
 - DO NOT plan too far into the future - keep it focused and actionable

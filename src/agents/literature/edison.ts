@@ -7,7 +7,9 @@ import {
 /**
  * Search using Edison AI agent for deep literature search
  */
-export async function searchEdison(objective: string): Promise<string> {
+export async function searchEdison(
+  objective: string,
+): Promise<{ output: string; jobId: string }> {
   const EDISON_API_URL = process.env.EDISON_API_URL;
   const EDISON_API_KEY = process.env.EDISON_API_KEY;
 
@@ -46,5 +48,8 @@ export async function searchEdison(objective: string): Promise<string> {
     "edison_literature_search_completed",
   );
 
-  return result.answer || "No answer received from Edison";
+  return {
+    output: result.answer || "No answer received from Edison",
+    jobId: taskResponse.task_id,
+  };
 }
