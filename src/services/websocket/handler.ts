@@ -62,16 +62,60 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
 
   // Handle incoming messages
   async message(ws, message) {
-    const userId = (ws.data as any).userId;
-
-    // Reject if not authenticated
-    if (!userId) {
-      ws.send(JSON.stringify({ type: "error", message: "Not authenticated" }));
-      return;
-    }
-
     try {
       const data = typeof message === "string" ? JSON.parse(message) : message;
+
+      // Handle authentication first
+      if (data.action === "auth") {
+        const authMode = process.env.AUTH_MODE || "none";
+
+        if (authMode === "none" && data.userId) {
+          // Dev mode: accept userId directly (no JWT required)
+          (ws.data as any).userId = data.userId;
+
+          // Clear auth timeout
+          const timeout = authTimeouts.get(ws);
+          if (timeout) {
+            clearTimeout(timeout);
+            authTimeouts.delete(ws);
+          }
+
+          ws.send(JSON.stringify({ type: "authenticated", userId: data.userId }));
+          logger.info({ userId: data.userId }, "ws_client_authenticated_dev_mode");
+          return;
+        } else if (data.token) {
+          // Production mode: verify JWT
+          const result = await verifyJWT(data.token);
+          if (result.valid && result.payload) {
+            (ws.data as any).userId = result.payload.sub;
+
+            // Clear auth timeout
+            const timeout = authTimeouts.get(ws);
+            if (timeout) {
+              clearTimeout(timeout);
+              authTimeouts.delete(ws);
+            }
+
+            ws.send(JSON.stringify({ type: "authenticated", userId: result.payload.sub }));
+            logger.info({ userId: result.payload.sub }, "ws_client_authenticated");
+            return;
+          } else {
+            ws.send(JSON.stringify({ type: "error", message: result.error || "Invalid token" }));
+            return;
+          }
+        } else {
+          ws.send(JSON.stringify({ type: "error", message: "Missing credentials" }));
+          return;
+        }
+      }
+
+      const userId = (ws.data as any).userId;
+
+      // Reject if not authenticated
+      if (!userId) {
+        ws.send(JSON.stringify({ type: "error", message: "Not authenticated. Send auth message first." }));
+        return;
+      }
 
       switch (data.action) {
         case "subscribe": {

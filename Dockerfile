@@ -4,8 +4,14 @@ FROM oven/bun:latest AS base
 # Set working directory
 WORKDIR /app
 
-# Install ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# Install ca-certificates and LaTeX (for paper generation)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  texlive-latex-base \
+  texlive-latex-extra \
+  texlive-fonts-recommended \
+  texlive-bibtex-extra \
+  latexmk \
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 

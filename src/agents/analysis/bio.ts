@@ -57,7 +57,7 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-): Promise<{ output: string; artifacts: Array<AnalysisArtifact> }> {
+): Promise<{ output: string; artifacts: Array<AnalysisArtifact>; jobId: string }> {
   if (!objective) {
     logger.error("No question provided to Data Analysis Agent");
     throw new Error("No question provided to Data Analysis Agent");
@@ -79,10 +79,12 @@ export async function analyzeWithBio(
   );
 
   let taskResult: BioDataAnalysisResult;
+  let taskId: string | undefined;
   try {
     const taskResponse = await startBioTask(config, context, query);
-    logger.info({ taskId: taskResponse.id }, "bio_analysis_task_started");
-    taskResult = await awaitBioTask(config, taskResponse.id);
+    taskId = taskResponse.id;
+    logger.info({ taskId }, "bio_analysis_task_started");
+    taskResult = await awaitBioTask(config, taskId);
   } catch (err) {
     logger.error(
       { err, objective, datasetCount: datasets.length },
@@ -93,12 +95,14 @@ export async function analyzeWithBio(
         err instanceof Error ? err.message : "Unknown error"
       }`,
       artifacts: [],
+      jobId: taskId || "unknown",
     };
   }
 
   return {
     output: taskResult.answer,
     artifacts: taskResult.artifacts || [],
+    jobId: taskId!,
   };
 }
 

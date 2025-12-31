@@ -32,6 +32,8 @@ export interface StateValues {
 }
 
 export type PlanTask = {
+  id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
+  jobId?: string; // Actual job run id (edison id or bio id)
   objective: string;
   datasets: Array<{ filename: string; id: string; description: string }>;
   type: "LITERATURE" | "ANALYSIS";
@@ -52,7 +54,7 @@ export interface ConversationStateValues extends StateValues {
   keyInsights?: string[];
   methodology?: string; // Methodology for the current goal
   currentHypothesis?: string;
-  discoveries?: string[];
+  discoveries?: Discovery[]; // Structured scientific discoveries (only in deep research mode)
   plan?: Array<PlanTask>; // Actual plan being executed or already executed
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
   uploadedDatasets?: Array<{
@@ -60,6 +62,7 @@ export interface ConversationStateValues extends StateValues {
     id: string;
     description: string;
     path?: string;
+    content?: string; // Parsed text content (for PDFs, extracted text; for CSVs, preview rows)
   }>;
 }
 
@@ -121,4 +124,19 @@ export type AnalysisArtifact = {
   content?: string;
   name: string;
   path?: string;
+};
+
+export type DiscoveryEvidence = {
+  taskId: string; // References PlanTask.id (e.g., "ana-1")
+  jobId?: string; // Actual job ID (edison/bio job ID) for referencing the execution
+  explanation: string; // Textual explanation of how this task supports the discovery
+};
+
+export type Discovery = {
+  title: string; // Title of the discovery
+  claim: string; // The main scientific claim
+  summary: string; // Detailed summary of the discovery
+  evidenceArray: DiscoveryEvidence[]; // Evidence from tasks supporting this discovery
+  artifacts: AnalysisArtifact[]; // Relevant artifacts (e.g., figures, data files)
+  novelty: string; // Explanation of novelty, can be empty if not assessed
 };

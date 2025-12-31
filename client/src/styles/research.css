@@ -580,6 +580,34 @@
   margin-right: 8px;
 }
 
+/* Loading State */
+.research-loading-state {
+  padding: 16px;
+}
+
+.research-loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+}
+
+.research-loading-indicator .research-step-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  margin-right: 0;
+}
+
+.research-loading-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 /* ============================================
    Suggested Steps Component
    ============================================ */

@@ -1,18 +1,27 @@
 import character from "../../character";
 import { LLM } from "../../llm/provider";
 import type { LLMRequest } from "../../llm/types";
-import type { LLMProvider, PlanTask } from "../../types/core";
+import type { Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
 import { chatReplyPrompt, replyPrompt } from "./prompts";
+
+export type UploadedDataset = {
+  id: string;
+  filename: string;
+  description: string;
+  path?: string;
+  content?: string;
+};
 
 export type ReplyContext = {
   completedTasks: PlanTask[];
   hypothesis?: string;
   nextPlan: PlanTask[];
   keyInsights: string[];
-  discoveries: string[];
+  discoveries: Discovery[];
   methodology?: string;
   currentObjective?: string;
+  uploadedDatasets?: UploadedDataset[];
 };
 
 export type ReplyOptions = {
@@ -64,13 +73,35 @@ export async function generateReply(
           .join("\n")
       : "No key insights yet.";
 
+  // Format discoveries
+  const discoveriesText =
+    context.discoveries.length > 0
+      ? context.discoveries
+          .map((discovery, i) => {
+            const evidenceText = discovery.evidenceArray
+              .map((ev) => {
+                const jobRef = ev.jobId ? ` (Job ID: ${ev.jobId})` : "";
+                return `  - Task ${ev.taskId}${jobRef}: ${ev.explanation}`;
+              })
+              .join("\n");
+            return `${i + 1}. ${discovery.title}
+   Claim: ${discovery.claim}
+   Summary: ${discovery.summary}
+   Evidence:
+${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`;
+          })
+          .join("\n\n")
+      : "No formalized scientific discoveries yet. They will appear here as we progress our research.";
+
   // Build the prompt
+  // Note: uploadedDatasets not included - deep research analyzes files via ANALYSIS tasks
   const replyInstruction = replyPrompt
     .replace("{{question}}", question)
     .replace("{{completedTasks}}", completedTasksText)
     .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
     .replace("{{nextPlan}}", nextPlanText)
     .replace("{{keyInsights}}", keyInsightsText)
+    .replace("{{discoveries}}", discoveriesText)
     .replace("{{methodology}}", context.methodology || "Not specified")
     .replace(
       "{{currentObjective}}",
@@ -153,12 +184,35 @@ export async function generateChatReply(
           .join("\n")
       : "No key insights available.";
 
+  // Format uploaded datasets with content if available (for chat mode)
+  // Files are ordered newest-first, so first file is most recently uploaded
+  const uploadedDatasetsText =
+    context.uploadedDatasets && context.uploadedDatasets.length > 0
+      ? context.uploadedDatasets
+          .map((dataset, i) => {
+            const recentTag = i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
+            let text = `${i + 1}. File: ${dataset.filename}${recentTag}\n   Description: ${dataset.description}`;
+            if (dataset.content) {
+              // Include content for chat mode (up to 30KB per file)
+              const contentPreview = dataset.content.slice(0, 30000);
+              text += `\n\n--- File Content ---\n${contentPreview}`;
+              if (dataset.content.length > 30000) {
+                text += "\n[Content truncated...]";
+              }
+              text += "\n--- End File Content ---";
+            }
+            return text;
+          })
+          .join("\n\n")
+      : "No datasets uploaded.";
+
   // Build the prompt
   const replyInstruction = chatReplyPrompt
     .replace("{{question}}", question)
     .replace("{{completedTasks}}", completedTasksText)
     .replace("{{keyInsights}}", keyInsightsText)
-    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated");
+    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
+    .replace("{{uploadedDatasets}}", uploadedDatasetsText);
 
   const REPLY_LLM_PROVIDER: LLMProvider =
     (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
@@ -198,6 +252,7 @@ export async function generateChatReply(
         replyLength: response.content.length,
         completedTaskCount: context.completedTasks.length,
         hasHypothesis: !!context.hypothesis,
+        uploadedDatasetsCount: context.uploadedDatasets?.length || 0,
       },
       "chat_reply_generated",
     );

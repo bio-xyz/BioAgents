@@ -12,6 +12,7 @@ export interface Message {
   dbMessageId?: string; // Database UUID for matching with states
   role: "user" | "assistant";
   content: string;
+  timestamp?: Date; // When the message was sent/received
   file?: {
     name: string;
     size: number;
@@ -51,6 +52,7 @@ export interface UseSessionsReturn {
   createNewSession: () => Session;
   deleteSession: (sessionId: string) => void;
   switchSession: (sessionId: string) => void;
+  refetchMessages: () => Promise<void>;
 }
 
 // Convert DB messages to UI messages
@@ -61,12 +63,15 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
   let idCounter = 0;
 
   for (const dbMsg of dbMessages) {
+    const msgTimestamp = dbMsg.created_at ? new Date(dbMsg.created_at) : new Date();
+
     // Add user message (question) with files if present
     if (dbMsg.question) {
       uiMessages.push({
         id: Date.now() + idCounter++,
         role: "user",
         content: dbMsg.question,
+        timestamp: msgTimestamp,
         files: dbMsg.files
           ? dbMsg.files.map((f: any) => ({
               name: f.name,
@@ -84,6 +89,7 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
         id: Date.now() + idCounter++,
         role: "assistant",
         content: dbMsg.content,
+        timestamp: dbMsg.updated_at ? new Date(dbMsg.updated_at) : msgTimestamp,
       });
     }
   }
@@ -125,8 +131,9 @@ function getOrCreateDevUserId(): string {
  *
  * @param walletUserId - The actual user ID (deterministic UUID from wallet or dev user ID)
  * @param x402Enabled - Whether x402 payment mode is enabled (affects fallback behavior)
+ * @param wsConnected - Whether WebSocket is connected (if true, Supabase Realtime is disabled as WS is primary)
  */
-export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSessionsReturn {
+export function useSessions(walletUserId?: string, x402Enabled?: boolean, wsConnected?: boolean): UseSessionsReturn {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -321,17 +328,82 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSe
   }, [userId]);
 
   /**
+   * Polling for message updates
+   * Always active to ensure messages appear in realtime (same as research state)
+   * Polls every 2 seconds for consistency with research state polling
+   */
+  useEffect(() => {
+    if (!currentSessionId || !userId) return;
+
+    console.log("[useSessions] Message polling enabled");
+
+    let mounted = true;
+    let pollCount = 0;
+    const maxPolls = 900; // 30 minutes max polling (900 * 2s)
+
+    const pollForUpdates = async () => {
+      if (!mounted || pollCount >= maxPolls) return;
+      pollCount++;
+
+      try {
+        const messages = await getMessagesByConversation(currentSessionId);
+        if (!mounted) return;
+
+        const uiMessages = convertDBMessagesToUIMessages(messages);
+
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.id !== currentSessionId) return session;
+
+            // Count assistant messages
+            const currentAssistantMsgs = session.messages.filter(m => m.role === "assistant");
+            const newAssistantMsgs = uiMessages.filter(m => m.role === "assistant");
+
+            // Build set of existing content for duplicate detection
+            const existingContents = new Set(currentAssistantMsgs.map(m => m.content.trim()));
+
+            // Only add messages that don't already exist
+            const trulyNewMsgs = newAssistantMsgs.filter(m => !existingContents.has(m.content.trim()));
+
+            if (trulyNewMsgs.length > 0) {
+              console.log("[Polling] Found truly new messages:", trulyNewMsgs.length);
+              return { ...session, messages: [...session.messages, ...trulyNewMsgs] };
+            }
+
+            return session;
+          })
+        );
+      } catch (err) {
+        // Silently ignore polling errors
+      }
+    };
+
+    // Poll every 2 seconds (same as research state)
+    const pollInterval = setInterval(pollForUpdates, 2000);
+
+    return () => {
+      mounted = false;
+      clearInterval(pollInterval);
+    };
+  }, [currentSessionId, userId]);
+
+  /**
    * Subscribe to real-time message updates for current conversation
    *
-   * IMPORTANT: We need careful duplicate detection here because:
-   * 1. UI manually adds messages when user sends (App.tsx)
-   * 2. Backend creates/updates DB records → triggers INSERT/UPDATE events
-   * 3. We must prevent adding the same messages again
-   *
-   * Strategy: Check if message content already exists before adding
+   * This is the FALLBACK when WebSocket is not connected.
+   * WebSocket (/api/ws) is the PRIMARY real-time channel.
+   * When wsConnected=true, this effect does nothing to avoid duplicates.
    */
   useEffect(() => {
     if (!currentSessionId) return;
+
+    // If WebSocket is connected, don't use Supabase Realtime (WS is primary)
+    if (wsConnected) {
+      console.log("[useSessions] WebSocket connected - Supabase Realtime disabled");
+      return;
+    }
+
+    console.log("[useSessions] WebSocket not connected - using Supabase Realtime as fallback");
 
     const channel = supabase
       .channel(`messages:${currentSessionId}`)
@@ -447,6 +519,22 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSe
 
               const messages = [...session.messages];
               const updatedContent = updatedMessage.content.trim();
+
+              // FIRST: Check if this exact content already exists ANYWHERE
+              // This handles the case where App.tsx already added the message
+              const contentAlreadyExists = messages.some(
+                (m) =>
+                  m.role === "assistant" &&
+                  m.content.trim() === updatedContent,
+              );
+
+              if (contentAlreadyExists) {
+                console.log(
+                  "[Realtime] UPDATE: Content already exists globally, skipping:",
+                  updatedContent.slice(0, 50),
+                );
+                return session;
+              }
 
               // Find the user message with this question
               let userMsgIndex = -1;
@@ -574,7 +662,7 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSe
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentSessionId]);
+  }, [currentSessionId, wsConnected]);
 
   /**
    * Update messages for a specific session
@@ -682,6 +770,52 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSe
     setCurrentSessionId(sessionId);
   };
 
+  /**
+   * Refetch messages for current session from database
+   * Used as a "soft refresh" when polling doesn't catch updates
+   */
+  const refetchMessages = async () => {
+    if (!currentSessionId) return;
+
+    try {
+      const messages = await getMessagesByConversation(currentSessionId);
+      const uiMessages = convertDBMessagesToUIMessages(messages);
+
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== currentSessionId) return session;
+
+          // Only update if there are new messages we don't have
+          const currentAssistantCount = session.messages.filter(m => m.role === "assistant").length;
+          const newAssistantCount = uiMessages.filter(m => m.role === "assistant").length;
+
+          if (newAssistantCount > currentAssistantCount) {
+            console.log("[useSessions] refetchMessages: Found new messages, updating session");
+            return { ...session, messages: uiMessages };
+          }
+
+          // Also check if any assistant message has content that we're missing
+          const hasNewContent = uiMessages.some(newMsg => {
+            if (newMsg.role !== "assistant" || !newMsg.content) return false;
+            const existingMsg = session.messages.find(
+              m => m.role === "assistant" && m.content === newMsg.content
+            );
+            return !existingMsg;
+          });
+
+          if (hasNewContent) {
+            console.log("[useSessions] refetchMessages: Found new content, updating session");
+            return { ...session, messages: uiMessages };
+          }
+
+          return session;
+        })
+      );
+    } catch (err) {
+      console.error("[useSessions] refetchMessages error:", err);
+    }
+  };
+
   return {
     sessions,
     currentSession,
@@ -695,5 +829,6 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean): UseSe
     createNewSession,
     deleteSession,
     switchSession,
+    refetchMessages,
   };
 }

@@ -61,7 +61,26 @@ NOTES:
 - For ANALYSIS tasks: Only include if datasets are mentioned in the user's message
   - If there's an open source dataset linked in the message, DO NOT put it in the datasets array. Instead use the task objective to let the data scientist agent know that it should download and use the open source dataset.
 - Update the currentObjective to reflect what you're currently doing
-- Be specific and actionable
+- Make sure to listen to the what the user requests, here are some key examples:
+
+LITERATURE user request examples (search/synthesis constraints)
+- If the user specifies a time window or recency requirement (“2025 only”, “last 3 years”, “since 2018”), state the exact date filter in the LITERATURE objective and exclude out-of-window citations unless asked for historical context.
+- If the user specifies a scope boundary (population/species/strain/cell line/tissue), explicitly encode it as a hard filter in the task objective (e.g., “humans only”, “C57BL/6J”, “primary hepatocytes”, “mouse liver”, “PBMCs”).
+- If the user specifies evidence tier/study type constraints, enforce them in the task objective (e.g., “RCTs only / clinical only / preclinical only / in vitro mechanisms only / reviews only / meta-analyses only”).
+  - If “mechanism” is requested, require pathway/target-level evidence (not just phenotype).
+- If the user specifies allowed sources (PubMed vs Embase; ClinicalTrials.gov; bioRxiv; patents; FDA/EMA labels; UniProt/PubChem), encode source priorities/requirements in the LITERATURE task objective and ask for missing sources only if necessary.
+- If the user specifies peer-reviewed-only vs allowing preprints, encode that as a rule (and require clear labeling of preprints if included).
+- If the user specifies geography/regulatory jurisdiction (FDA/EMA/PMDA, US/EU-only), constrain regulatory/safety claims to that jurisdiction and require labeling by agency.
+- If the user requests “clinical trial data”, ensure the LITERATURE objective requires trial registry IDs (e.g., NCT numbers), phases, sample sizes, endpoints, and status; avoid narrative-only summaries.
+- If the user provides exact identifiers (genes/proteins/variants; UniProt IDs; CAS numbers; trial IDs; GEO/SRA accessions), require using them verbatim in queries and reporting them verbatim in outputs.
+- If the user requests a specific output format (e.g., “table of key studies”, “ranked list with effect sizes”, “protocol summary”, “decision matrix”, “BibTeX/DOI/PMID required”, “PRISMA-style inclusion/exclusion counts”), encode it as a deliverable in the LITERATURE objective.
+- If the user asks for open source datasets for later analysis, the LITERATURE objective must require dataset accession IDs/links + license/access notes + what the dataset contains (assay, tissue, conditions).
+- If the user’s message contains explicit constraints (“don’t include animal data”, “exclude cancer studies”, “only female subjects”), treat them as hard constraints and restate them in the task objective to prevent drift.
+
+ANALYSIS user request examples (data/compute constraints)
+- If the user asks for a specific dataset (e.g., uploaded files), include it in the datasets array (and include only what the user provided; don’t invent filenames).
+- If the user requests a specific output format for analysis (CSV tables, figures, notebook cells, a summary report, volcano plot, heatmap, Kaplan–Meier), make sure to include it in the ANALYSIS objective OUTPUT: section.
+- If the user explicitly forbids certain analyses (e.g., “no ML”, “no pathway analysis”, “no imputation”), treat as hard constraints and restate them in the ANALYSIS objective to prevent drift.
 
 CRUCIAL: You absolutely MUST only output the JSON object, no additional text or explanation.`;
 
@@ -151,6 +170,26 @@ NOTES:
 - If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration). You can express what you're planning to do next in the currentObjective field.
 - Update the currentObjective to reflect what you're currently doing and what comes after these tasks
 - Be specific and actionable
+- Make sure to listen to the what the user requests, here are some key examples:
+
+LITERATURE user request examples (search/synthesis constraints)
+- If the user specifies a time window or recency requirement (“2025 only”, “last 3 years”, “since 2018”), state the exact date filter in the LITERATURE objective and exclude out-of-window citations unless asked for historical context.
+- If the user specifies a scope boundary (population/species/strain/cell line/tissue), explicitly encode it as a hard filter in the task objective (e.g., “humans only”, “C57BL/6J”, “primary hepatocytes”, “mouse liver”, “PBMCs”).
+- If the user specifies evidence tier/study type constraints, enforce them in the task objective (e.g., “RCTs only / clinical only / preclinical only / in vitro mechanisms only / reviews only / meta-analyses only”).
+  - If “mechanism” is requested, require pathway/target-level evidence (not just phenotype).
+- If the user specifies allowed sources (PubMed vs Embase; ClinicalTrials.gov; bioRxiv; patents; FDA/EMA labels; UniProt/PubChem), encode source priorities/requirements in the LITERATURE task objective and ask for missing sources only if necessary.
+- If the user specifies peer-reviewed-only vs allowing preprints, encode that as a rule (and require clear labeling of preprints if included).
+- If the user specifies geography/regulatory jurisdiction (FDA/EMA/PMDA, US/EU-only), constrain regulatory/safety claims to that jurisdiction and require labeling by agency.
+- If the user requests “clinical trial data”, ensure the LITERATURE objective requires trial registry IDs (e.g., NCT numbers), phases, sample sizes, endpoints, and status; avoid narrative-only summaries.
+- If the user provides exact identifiers (genes/proteins/variants; UniProt IDs; CAS numbers; trial IDs; GEO/SRA accessions), require using them verbatim in queries and reporting them verbatim in outputs.
+- If the user requests a specific output format (e.g., “table of key studies”, “ranked list with effect sizes”, “protocol summary”, “decision matrix”, “BibTeX/DOI/PMID required”, “PRISMA-style inclusion/exclusion counts”), encode it as a deliverable in the LITERATURE objective.
+- If the user asks for open source datasets for later analysis, the LITERATURE objective must require dataset accession IDs/links + license/access notes + what the dataset contains (assay, tissue, conditions).
+- If the user’s message contains explicit constraints (“don’t include animal data”, “exclude cancer studies”, “only female subjects”), treat them as hard constraints and restate them in the task objective to prevent drift.
+
+ANALYSIS user request examples (data/compute constraints)
+- If the user asks for a specific dataset (e.g., uploaded files), include it in the datasets array (and include only what the user provided; don’t invent filenames).
+- If the user requests a specific output format for analysis (CSV tables, figures, notebook cells, a summary report, volcano plot, heatmap, Kaplan–Meier), make sure to include it in the ANALYSIS objective OUTPUT: section.
+- If the user explicitly forbids certain analyses (e.g., “no ML”, “no pathway analysis”, “no imputation”), treat as hard constraints and restate them in the ANALYSIS objective to prevent drift.
 
 CRUCIAL: You absolutely MUST only output the JSON object, no additional text or explanation.`;
 
@@ -166,6 +205,21 @@ You are planning tasks for the NEXT iteration based on completed work (hypothesi
 - Now plan what should happen NEXT to advance the research
 - Consider what gaps remain, what follow-up questions emerged, or what deeper analysis is needed
 - Return an EMPTY plan only if you believe with 100% certainty that the main objective has been achieved and the research is complete
+
+DISCOVERY-DRIVEN PLANNING:
+If discoveries exist in the CURRENT RESEARCH STATE, consider planning tasks to:
+- **Validate discoveries**: Additional ANALYSIS to confirm findings with different methods
+- **Assess novelty**: LITERATURE tasks to determine if discoveries are novel or already known
+- **Extend discoveries**: ANALYSIS or LITERATURE to explore mechanisms, related pathways, or broader implications
+- **Support with literature**: LITERATURE tasks to find papers that support or contextualize the discoveries
+- **Fill evidence gaps**: If a discovery has limited evidence, plan tasks to strengthen it
+
+Examples:
+- Discovery about gene upregulation → Literature search for that gene's known roles OR pathway analysis
+- Discovery about metabolite changes → Literature on metabolite function OR correlation analysis with phenotypes
+- Discovery needs validation → Independent analytical approach OR literature supporting similar findings
+
+Use both LITERATURE and ANALYSIS tasks strategically - don't tunnel vision on just one type.
 
 IMPORTANT INSTRUCTIONS:
 - Focus on planning the NEXT steps
@@ -191,7 +245,7 @@ AVAILABLE TASK TYPES (only these two):
   - Search for molecular mechanisms
   - Search patent databases
   - Search Regulatory and Safety Databases (FDA, EMA, etc.)
-  - Search for open source datasets (it's enough to find the dataset name/link and later pass it to the ANALYSIS task)
+  - Search for open source datasets (it's enough to find the dataset name/link and later pass it to the ANALYSIS task in the subsequent iteration)
   - And other similar tasks
 
 - ANALYSIS: Perform computational/data analysis on datasets (which are included in the world state). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
@@ -231,6 +285,9 @@ NOTES:
 - Plan only 1-3 tasks maximum
 - If tasks depend on each other, only plan the first ones (next ones will be handled in the next iteration). You can express what you're planning to do next in the currentObjective field.
 - Update the currentObjective to reflect what you're currently doing and what comes after these tasks
-- Be specific and actionable
+- NEXT MODE PLANNING HEURISTICS:
+  - Make analysis task objectives specific: name the key entity (gene/compound/pathway), the context (cohort/species/tissue), and the concrete deliverable (table/plot/citations).
+  - Constraints from user request must still apply to the next tasks planned, do not plan something that contradicts the user's request.
+  - Choose next steps that best reduce uncertainty: early on, prioritize scoped exploration/mapping to identify candidates; once a specific claim/signal exists, prioritize validation/replication, robustness checks, and novelty/prior-art checks.
 
 CRUCIAL: You absolutely MUST only output the JSON object, no additional text or explanation.`;

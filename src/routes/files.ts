@@ -27,8 +27,8 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
   .post(
     "/upload-url",
     async ({ body, request }) => {
-      // Resolve authentication
-      const authResult = await resolveAuth(request);
+      // Resolve authentication (pass body for userId in dev mode)
+      const authResult = await resolveAuth(request, body);
       if (!authResult.authenticated || !authResult.userId) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
@@ -69,6 +69,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
         contentType: t.String(),
         size: t.Number({ minimum: 1 }),
         conversationId: t.Optional(t.String()),
+        userId: t.Optional(t.String()), // For dev mode authentication
       }),
     },
   )
@@ -80,8 +81,8 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
   .post(
     "/confirm",
     async ({ body, request }) => {
-      // Resolve authentication
-      const authResult = await resolveAuth(request);
+      // Resolve authentication (pass body for userId in dev mode)
+      const authResult = await resolveAuth(request, body);
       if (!authResult.authenticated || !authResult.userId) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
@@ -104,10 +105,19 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
 
         return result;
       } catch (error) {
-        logger.error({ error, fileId }, "upload_confirm_failed");
+        // Enhanced error logging to capture non-Error objects
+        const errorInfo = {
+          fileId,
+          errorType: error?.constructor?.name || typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorKeys: error && typeof error === 'object' ? Object.keys(error) : [],
+          errorString: String(error),
+        };
+        logger.error(errorInfo, "upload_confirm_failed");
+
         return new Response(
           JSON.stringify({
-            error: error instanceof Error ? error.message : "Failed to confirm upload",
+            error: error instanceof Error ? error.message : String(error) || "Failed to confirm upload",
           }),
           { status: 500, headers: { "Content-Type": "application/json" } },
         );
@@ -116,6 +126,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
     {
       body: t.Object({
         fileId: t.String({ minLength: 1 }),
+        userId: t.Optional(t.String()), // For dev mode authentication
       }),
     },
   )

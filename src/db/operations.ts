@@ -56,11 +56,17 @@ export interface Message {
 export async function createUser(userData: User) {
   const { data, error } = await supabase
     .from("users")
-    .insert(userData)
+    .upsert(userData, { onConflict: "id", ignoreDuplicates: true })
     .select()
     .single();
 
   if (error) {
+    // PGRST116 = not found (can happen with ignoreDuplicates when no row returned)
+    // 23505 = duplicate key (shouldn't happen with upsert but handle gracefully)
+    if (error.code === "PGRST116" || error.code === "23505") {
+      // User already exists, return null (caller should handle)
+      return null;
+    }
     logger.error(`[createUser] Error creating user: ${error.message}`);
     throw error;
   }
@@ -495,12 +501,13 @@ function cleanValues(values: any): any {
     }));
   }
 
-  // Strip buffers from datasets if present
+  // Strip binary buffers from datasets if present, but PRESERVE content (text)
+  // Content is the parsed text we want to pass to the LLM
   if (cleanedValues.uploadedDatasets?.length) {
     cleanedValues.uploadedDatasets = cleanedValues.uploadedDatasets.map(
       (d: any) => ({
         ...d,
-        content: undefined,
+        buffer: undefined, // Strip binary buffer, but keep content (text)
       }),
     );
   }

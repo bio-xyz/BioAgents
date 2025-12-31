@@ -27,6 +27,15 @@ export abstract class StorageProvider {
   abstract download(path: string): Promise<Buffer>;
 
   /**
+   * Download a range of bytes from a file (efficient for previews of large files)
+   * @param path - The path of the file to download
+   * @param start - Start byte (0-indexed)
+   * @param end - End byte (inclusive)
+   * @returns The file content range as a Buffer
+   */
+  abstract downloadRange(path: string, start: number, end: number): Promise<Buffer>;
+
+  /**
    * Delete a file from storage
    * @param path - The path of the file to delete
    */

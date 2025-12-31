@@ -16,8 +16,10 @@ export { useToast } from './useToast';
 export { useEmbeddedWallet } from './useEmbeddedWallet';
 export { useEmbeddedWalletClient } from './useEmbeddedWalletClient';
 export { useStates } from './useStates';
+export { useWebSocket } from './useWebSocket';
 
 export type { Message, Session, UseSessionsReturn } from './useSessions';
+export type { UseWebSocketReturn, WebSocketMessage } from './useWebSocket';
 export type { SendMessageParams, UseChatAPIReturn } from './useChatAPI';
 export type { UseFileUploadReturn } from './useFileUpload';
 export type { UsePresignedUploadReturn, UploadedFile } from './usePresignedUpload';

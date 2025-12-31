@@ -611,6 +611,26 @@ body {
   letter-spacing: -0.01em;
 }
 
+.message-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+.message-timestamp {
+  font-size: 11px;
+  color: var(--accent-color, #10b981);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.message.user .message-timestamp {
+  text-align: right;
+  margin-top: 6px;
+}
+
 .message-actions {
   display: flex;
   gap: 4px;
@@ -791,6 +811,15 @@ body {
 .message-file-badge .file-size {
   color: var(--text-tertiary);
   font-size: 10px;
+}
+
+.message-file-summary {
+  background: rgba(var(--accent-rgb), 0.15);
+  border-color: var(--accent-color);
+}
+
+.message-file-summary .file-name {
+  max-width: none;
 }
 
 .message-content blockquote {
@@ -1349,6 +1378,80 @@ textarea::placeholder {
   color: var(--bg-primary);
 }
 
+/* Mode Switcher - Segmented Control */
+.mode-switcher {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: "Inter", inherit;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.mode-option:hover:not(:disabled):not(.mode-option-active) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.mode-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mode-option-active {
+  background: var(--accent-color);
+  color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.mode-option-active:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.mode-option svg {
+  flex-shrink: 0;
+}
+
+/* Mode Indicator - Shows current mode for existing conversations (non-interactive) */
+.mode-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.mode-indicator svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .input-send-btn {
   display: flex;
   align-items: center;
@@ -1432,6 +1535,166 @@ textarea::placeholder {
 .file-remove-inline:hover {
   background: var(--bg-hover);
   color: var(--accent-color);
+}
+
+/* Enhanced file upload styles */
+.file-preview-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.file-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.file-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.file-total-size {
+  margin-left: 8px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.clear-all-files {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.clear-all-files:hover {
+  background: var(--bg-hover);
+  color: var(--accent-color);
+}
+
+.file-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.file-chips-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.file-chips-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-chips-container::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.file-chips-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.file-chip .file-size {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Upload menu dropdown */
+.upload-button-container {
+  position: relative;
+}
+
+.upload-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 160px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.upload-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.upload-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.upload-menu-item svg {
+  color: var(--text-secondary);
+}
+
+.upload-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* Drag and drop overlay */
+.input-container {
+  position: relative;
+}
+
+.input-container.drag-over {
+  border-color: var(--accent-color);
+}
+
+.input-container.drag-over .input-wrapper {
+  opacity: 0.5;
+}
+
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 185, 129, 0.1);
+  border: 2px dashed var(--accent-color);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  z-index: 10;
+  color: var(--accent-color);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.drag-overlay svg {
+  opacity: 0.8;
 }
 
 /* Toast Messages - Modern error/warning/info notifications */

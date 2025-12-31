@@ -83,6 +83,73 @@ async function processChatJob(
       values: conversationStateRecord.values,
     };
 
+    // Wait for any pending file processing jobs BEFORE planning
+    // This ensures files uploaded with the chat message are available
+    const { getPendingFileIds, getFileStatus } = await import("../../files/status");
+    const { getFileProcessQueue } = await import("../queues");
+
+    const conversationStateId = conversationState.id;
+    if (conversationStateId) {
+      const pendingFileIds = await getPendingFileIds(conversationStateId);
+
+      if (pendingFileIds.length > 0) {
+        logger.info(
+          { jobId: job.id, pendingFileIds, conversationStateId },
+          "chat_job_waiting_for_file_processing",
+        );
+
+        const fileProcessQueue = getFileProcessQueue();
+        const maxWaitMs = 120000; // 2 minute max wait
+        const pollIntervalMs = 500;
+        const startWait = Date.now();
+
+        // Wait for all pending files to complete
+        for (const fileId of pendingFileIds) {
+          while (Date.now() - startWait < maxWaitMs) {
+            // Check if file-process job completed
+            const fileJob = await fileProcessQueue.getJob(fileId);
+            const fileJobState = fileJob ? await fileJob.getState() : null;
+
+            // Also check file status directly (job may have completed and cleaned up)
+            const fileStatus = await getFileStatus(fileId);
+
+            if (
+              fileJobState === "completed" ||
+              fileStatus?.status === "ready" ||
+              !fileJob // Job doesn't exist (already completed/cleaned)
+            ) {
+              logger.info(
+                { jobId: job.id, fileId, fileJobState, fileStatus: fileStatus?.status },
+                "chat_job_file_ready",
+              );
+              break;
+            }
+
+            if (fileJobState === "failed" || fileStatus?.status === "error") {
+              logger.warn(
+                { jobId: job.id, fileId, fileJobState, fileStatus: fileStatus?.status },
+                "chat_job_file_failed_continuing",
+              );
+              break;
+            }
+
+            // Wait and poll again
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          }
+        }
+
+        // Refresh conversation state to get updated uploadedDatasets
+        const freshConversationState = await getConversationState(conversationStateId);
+        if (freshConversationState) {
+          conversationState.values = freshConversationState.values;
+          logger.info(
+            { jobId: job.id, uploadedDatasetsCount: freshConversationState.values.uploadedDatasets?.length || 0 },
+            "chat_job_refreshed_conversation_state_for_planning",
+          );
+        }
+      }
+    }
+
     // Update progress: Planning
     await job.updateProgress({ stage: "planning", percent: 10 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "planning", 10);
@@ -163,9 +230,6 @@ async function processChatJob(
       "chat_job_literature_completed",
     );
 
-    // Notify message updated (literature results available)
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
-
     // Update progress: Hypothesis
     await job.updateProgress({ stage: "hypothesis", percent: 60 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "hypothesis", 60);
@@ -228,6 +292,19 @@ async function processChatJob(
 
     const { generateChatReply } = await import("../../../agents/reply/utils");
 
+    // Log uploaded datasets info for debugging
+    const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+    logger.info({
+      jobId: job.id,
+      uploadedDatasetsCount: uploadedDatasets.length,
+      datasetsInfo: uploadedDatasets.map((d: any) => ({
+        filename: d.filename,
+        hasContent: !!d.content,
+        contentLength: d.content?.length || 0,
+        contentPreview: d.content?.slice(0, 100) || "no content",
+      })),
+    }, "chat_job_uploaded_datasets");
+
     const replyText = await generateChatReply(
       message,
       {
@@ -238,6 +315,7 @@ async function processChatJob(
         discoveries: conversationState.values.discoveries || [],
         methodology: conversationState.values.methodology,
         currentObjective: conversationState.values.currentObjective,
+        uploadedDatasets,
       },
       {
         maxTokens: 1024,
@@ -250,6 +328,9 @@ async function processChatJob(
     // Calculate and update response time
     const responseTime = Date.now() - startTime;
     await updateMessageResponseTime(messageId, responseTime);
+
+    // Notify: Message updated (content is now available)
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
 
     logger.info(
       {

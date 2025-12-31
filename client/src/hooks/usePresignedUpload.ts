@@ -45,8 +45,8 @@ export interface UsePresignedUploadReturn {
   uploadedFiles: UploadedFile[];
   isUploading: boolean;
   uploadError: string | null;
-  uploadFile: (file: File, conversationId?: string) => Promise<UploadedFile | null>;
-  uploadFiles: (files: File[], conversationId?: string) => Promise<UploadedFile[]>;
+  uploadFile: (file: File, conversationId?: string, userId?: string) => Promise<UploadedFile | null>;
+  uploadFiles: (files: File[], conversationId?: string, userId?: string) => Promise<UploadedFile[]>;
   clearUploadedFiles: () => void;
   removeUploadedFile: (fileId: string) => void;
   pollFileStatus: (fileId: string) => Promise<UploadedFile | null>;
@@ -85,7 +85,8 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
    */
   const uploadFile = useCallback(async (
     file: File,
-    conversationId?: string
+    conversationId?: string,
+    userId?: string
   ): Promise<UploadedFile | null> => {
     setUploadError(null);
 
@@ -110,6 +111,7 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
           contentType: file.type || 'application/octet-stream',
           size: file.size,
           conversationId,
+          userId, // Include userId for dev mode authentication
         }),
       });
 
@@ -156,6 +158,7 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
         credentials: 'include',
         body: JSON.stringify({
           fileId: uploadUrlData.fileId,
+          userId, // Include userId for dev mode authentication
         }),
       });
 
@@ -167,12 +170,12 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
       const confirmData: ConfirmUploadResponse = await confirmResponse.json();
       console.log('[usePresignedUpload] Upload confirmed:', confirmData);
 
-      // Update file status
+      // Return immediately - chat worker will wait for file processing
       const completedFile: UploadedFile = {
         fileId: uploadUrlData.fileId,
         filename: confirmData.filename,
         size: confirmData.size,
-        status: confirmData.status,
+        status: confirmData.status, // Will be 'processing' in queue mode
         description: confirmData.description,
       };
 
@@ -201,27 +204,163 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
   }, [getAuthHeaders]);
 
   /**
-   * Upload multiple files
+   * Upload multiple files with fully parallel flow
+   *
+   * Flow:
+   * 1. Get presigned URLs for ALL files in parallel
+   * 2. Upload ALL files to S3 in parallel
+   * 3. Confirm ALL uploads in parallel
+   * 4. Poll ALL files in parallel until ready
+   *
+   * This maximizes parallelism for fastest possible upload
    */
   const uploadFiles = useCallback(async (
     files: File[],
-    conversationId?: string
+    conversationId?: string,
+    userId?: string
   ): Promise<UploadedFile[]> => {
+    if (files.length === 0) return [];
+
     setIsUploading(true);
     setUploadError(null);
+    console.log(`[usePresignedUpload] Starting upload of ${files.length} files`);
 
-    const results: UploadedFile[] = [];
+    try {
+      // Step 1: Get presigned URLs
+      // First file is sequential (may create conversation), rest are parallel
+      console.log(`[usePresignedUpload] Getting presigned URLs...`);
 
-    for (const file of files) {
-      const result = await uploadFile(file, conversationId);
-      if (result) {
-        results.push(result);
+      const getPresignedUrl = async (file: File) => {
+        const response = await fetch('/api/files/upload-url', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+            size: file.size,
+            conversationId,
+            userId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Failed to get upload URL for ${file.name}`);
+        }
+
+        const urlData: UploadUrlResponse = await response.json();
+
+        // Add to state as pending
+        const pendingFile: UploadedFile = {
+          fileId: urlData.fileId,
+          filename: file.name,
+          size: file.size,
+          status: 'pending',
+        };
+        setUploadedFiles(prev => [...prev, pendingFile]);
+
+        return { file, urlData };
+      };
+
+      // First file sequential (creates conversation if needed)
+      const firstResult = await getPresignedUrl(files[0]);
+      const urlResults: { file: File; urlData: UploadUrlResponse }[] = [firstResult];
+
+      // Remaining files in parallel (conversation now exists)
+      if (files.length > 1) {
+        const remainingPromises = files.slice(1).map(getPresignedUrl);
+        const remainingResults = await Promise.all(remainingPromises);
+        urlResults.push(...remainingResults);
       }
-    }
 
-    setIsUploading(false);
-    return results;
-  }, [uploadFile]);
+      console.log(`[usePresignedUpload] Got ${urlResults.length} presigned URLs`);
+
+      // Step 2: Upload ALL files to S3 in parallel
+      console.log(`[usePresignedUpload] Uploading to S3...`);
+      const s3UploadPromises = urlResults.map(async ({ file, urlData }) => {
+        // Update state to uploading
+        setUploadedFiles(prev =>
+          prev.map(f => f.fileId === urlData.fileId ? { ...f, status: 'uploading' as const } : f)
+        );
+
+        const s3Response = await fetch(urlData.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        });
+
+        if (!s3Response.ok) {
+          throw new Error(`S3 upload failed for ${file.name}: ${s3Response.status}`);
+        }
+
+        console.log(`[usePresignedUpload] S3 upload complete: ${file.name}`);
+        return { file, urlData };
+      });
+
+      const s3Results = await Promise.all(s3UploadPromises);
+      console.log(`[usePresignedUpload] All ${s3Results.length} files uploaded to S3`);
+
+      // Step 3: Confirm ALL uploads in parallel
+      console.log(`[usePresignedUpload] Confirming uploads...`);
+      const confirmPromises = s3Results.map(async ({ file, urlData }) => {
+        const confirmResponse = await fetch('/api/files/confirm', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+          body: JSON.stringify({ fileId: urlData.fileId, userId }),
+        });
+
+        if (!confirmResponse.ok) {
+          const errorData = await confirmResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || `Failed to confirm upload: ${file.name}`);
+        }
+
+        const confirmData: ConfirmUploadResponse = await confirmResponse.json();
+        console.log(`[usePresignedUpload] Confirmed: ${file.name}, status: ${confirmData.status}`);
+
+        // Update state to processing
+        setUploadedFiles(prev =>
+          prev.map(f => f.fileId === urlData.fileId ? { ...f, status: 'processing' as const } : f)
+        );
+
+        return { file, urlData, confirmData };
+      });
+
+      const confirmResults = await Promise.all(confirmPromises);
+      console.log(`[usePresignedUpload] All ${confirmResults.length} uploads confirmed`);
+
+      // Step 4: Return immediately after confirmation
+      // Chat worker will wait for file processing before generating reply
+      // This eliminates UI polling delay
+      console.log(`[usePresignedUpload] Files confirmed, returning immediately (${new Date().toISOString()})`);
+      const results = confirmResults.map(({ file, urlData, confirmData }) => {
+        const completedFile: UploadedFile = {
+          fileId: urlData.fileId,
+          filename: confirmData.filename,
+          size: confirmData.size,
+          status: confirmData.status, // Will be 'processing' in queue mode
+          description: confirmData.description,
+        };
+
+        setUploadedFiles(prev =>
+          prev.map(f => f.fileId === urlData.fileId ? completedFile : f)
+        );
+
+        return completedFile;
+      });
+
+      console.log(`[usePresignedUpload] All uploads confirmed: ${results.length}/${files.length} (${new Date().toISOString()})`);
+
+      setIsUploading(false);
+      return results;
+    } catch (error) {
+      console.error('[usePresignedUpload] Upload failed:', error);
+      setUploadError(error instanceof Error ? error.message : 'Upload failed');
+      setIsUploading(false);
+      return [];
+    }
+  }, [getAuthHeaders]);
 
   /**
    * Poll for file processing status

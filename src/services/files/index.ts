@@ -8,6 +8,7 @@ import {
   updateConversationState,
   createConversation,
   createConversationState,
+  createUser,
 } from "../../db/operations";
 import {
   getFileUploadPath,
@@ -109,25 +110,70 @@ export async function requestUploadUrl(
       "created_new_conversation_for_upload",
     );
   } else {
-    // Get existing conversation state
-    const { getConversation } = await import("../../db/operations");
-    const conversation = await getConversation(conversationId);
-    if (!conversation) {
-      throw new Error(`Conversation not found: ${conversationId}`);
+    // Try to get existing conversation
+    const { getConversation, updateConversation } = await import("../../db/operations");
+    let conversation;
+    try {
+      conversation = await getConversation(conversationId);
+    } catch (error) {
+      // Conversation doesn't exist yet (happens when uploading before first message)
+      conversation = null;
     }
-    if (conversation.user_id !== userId) {
-      throw new Error("Unauthorized: conversation belongs to different user");
-    }
-    conversationStateId = conversation.conversation_state_id || "";
 
-    // If no state exists, create one
-    if (!conversationStateId) {
+    if (!conversation) {
+      // Create the conversation with the provided ID
+      logger.info(
+        { conversationId, userId },
+        "conversation_not_found_creating_for_upload",
+      );
+
+      // First ensure user exists (required for foreign key constraint)
+      try {
+        const user = await createUser({
+          id: userId,
+          username: `user_${userId.slice(0, 8)}`,
+          email: `${userId}@temp.local`,
+        });
+        if (user) {
+          logger.info({ userId }, "user_created_for_upload");
+        }
+      } catch (err: any) {
+        // User might already exist - that's fine
+        if (err.code !== "23505") {
+          logger.error({ err, userId }, "create_user_failed_for_upload");
+          throw err;
+        }
+      }
+
+      // Create conversation state and conversation
       const newState = await createConversationState({ values: { objective: "" } });
       conversationStateId = newState.id!;
-      const { updateConversation } = await import("../../db/operations");
-      await updateConversation(conversationId, {
+
+      await createConversation({
+        id: conversationId,
+        user_id: userId,
         conversation_state_id: conversationStateId,
       });
+
+      logger.info(
+        { conversationId, conversationStateId },
+        "created_conversation_for_upload",
+      );
+    } else {
+      // Verify ownership
+      if (conversation.user_id !== userId) {
+        throw new Error("Unauthorized: conversation belongs to different user");
+      }
+      conversationStateId = conversation.conversation_state_id || "";
+
+      // If no state exists, create one
+      if (!conversationStateId) {
+        const newState = await createConversationState({ values: { objective: "" } });
+        conversationStateId = newState.id!;
+        await updateConversation(conversationId, {
+          conversation_state_id: conversationStateId,
+        });
+      }
     }
   }
 
@@ -186,30 +232,43 @@ export async function confirmUpload(
 ): Promise<ConfirmUploadResult> {
   const { fileId, userId } = params;
 
+  logger.info({ fileId, userId }, "confirm_upload_started");
+
   // Get file status
   const status = await getFileStatus(fileId);
   if (!status) {
+    logger.error({ fileId }, "confirm_file_status_not_found");
     throw new Error(`File not found: ${fileId}`);
   }
 
+  logger.info({ fileId, statusUserId: status.userId, requestUserId: userId }, "confirm_status_found");
+
   if (status.userId !== userId) {
+    logger.error({ fileId, statusUserId: status.userId, requestUserId: userId }, "confirm_user_mismatch");
     throw new Error("Unauthorized: file belongs to different user");
   }
 
   if (status.status !== "pending") {
+    logger.error({ fileId, currentStatus: status.status }, "confirm_invalid_status");
     throw new Error(`Invalid file status: ${status.status}. Expected: pending`);
   }
 
   // Verify file exists in S3
   const storageProvider = getStorageProvider();
   if (!storageProvider) {
+    logger.error({ fileId }, "confirm_no_storage_provider");
     throw new Error("Storage provider not configured");
   }
 
+  logger.info({ fileId, s3Key: status.s3Key }, "confirm_checking_s3_exists");
+
   const exists = await storageProvider.exists(status.s3Key);
   if (!exists) {
+    logger.error({ fileId, s3Key: status.s3Key }, "confirm_file_not_in_s3");
     throw new Error("File not found in storage. Upload may not be complete.");
   }
+
+  logger.info({ fileId }, "confirm_s3_check_passed");
 
   // Update status to uploaded
   await updateFileStatus(fileId, { status: "uploaded" });
@@ -252,28 +311,71 @@ export async function confirmUpload(
 export async function processFile(
   status: FileStatusRecord,
 ): Promise<{ description: string }> {
-  const { fileId, s3Key, filename, contentType, conversationStateId } = status;
+  const { fileId, s3Key, filename, contentType, conversationStateId, size } = status;
 
-  logger.info({ fileId, filename }, "processing_file");
+  logger.info({ fileId, filename, size }, "processing_file");
 
   const storageProvider = getStorageProvider();
   if (!storageProvider) {
     throw new Error("Storage provider not configured");
   }
 
-  // Download preview for description generation
+  const ext = filename.split(".").pop()?.toLowerCase();
+  const isPDF = ext === "pdf" || contentType === "application/pdf";
+  const isImage = contentType.startsWith("image/");
+  const isExcel = ["xlsx", "xls"].includes(ext || "");
+  const isText = contentType.startsWith("text/") ||
+    ["csv", "json", "md", "txt", "tsv", "xml", "yaml", "yml"].includes(ext || "");
+
+  // Download full file for types that need complete content
+  // - PDFs: need full file for text extraction
+  // - Images: need full file for OCR
+  // - Excel: need full file for sheet extraction
+  // - Text files: need full content for analysis
   let preview = "";
   try {
-    const buffer = await storageProvider.download(s3Key);
-    const previewBuffer = buffer.slice(0, PREVIEW_SIZE);
+    let previewBuffer: Buffer;
+    const needsFullFile = isPDF || isImage || isExcel || isText;
+
+    if (needsFullFile) {
+      // Limit based on file type to prevent memory issues
+      const maxFileSize = isPDF || isImage || isExcel ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for PDF/image/Excel, 10MB for text
+      if (size > maxFileSize) {
+        logger.warn({ fileId, filename, size, maxFileSize }, "file_too_large_for_full_download");
+        previewBuffer = await storageProvider.downloadRange(s3Key, 0, maxFileSize - 1);
+      } else {
+        previewBuffer = await storageProvider.download(s3Key);
+      }
+      const fileType = isPDF ? "pdf" : isImage ? "image" : "text";
+      logger.info({ fileId, filename, downloadedBytes: previewBuffer.length, type: fileType }, "full_file_downloaded");
+    } else {
+      // For unknown/binary files, just download preview
+      previewBuffer = await storageProvider.downloadRange(s3Key, 0, PREVIEW_SIZE - 1);
+      logger.info({ fileId, filename, previewBytes: previewBuffer.length }, "preview_downloaded");
+    }
+
     preview = await parseFilePreview(previewBuffer, filename, contentType);
   } catch (error) {
-    logger.warn({ fileId, error }, "failed_to_download_preview");
+    logger.warn({ fileId, error }, "failed_to_download_file");
     preview = `[File: ${filename}]`;
   }
 
   // Generate AI description
   const description = await generateFileDescription(filename, contentType, preview);
+
+  // Store content (truncate to reasonable size for context window)
+  // Keep up to 50KB of content for PDFs/text files
+  const maxContentSize = 50 * 1024;
+  const content = preview.slice(0, maxContentSize);
+
+  // Log content being stored
+  logger.info({
+    fileId,
+    filename,
+    previewLength: preview.length,
+    contentLength: content.length,
+    contentPreview: content.slice(0, 200),
+  }, "file_content_to_store");
 
   // Update conversation state
   await addFileToConversationState(conversationStateId, {
@@ -281,6 +383,7 @@ export async function processFile(
     filename,
     description,
     path: s3Key,
+    content, // Store parsed content for agent access
   });
 
   // Update status to ready
@@ -296,7 +399,7 @@ export async function processFile(
  */
 async function addFileToConversationState(
   conversationStateId: string,
-  file: { id: string; filename: string; description: string; path: string },
+  file: { id: string; filename: string; description: string; path: string; content?: string },
 ): Promise<void> {
   const state = await getConversationState(conversationStateId);
   if (!state) {
@@ -306,9 +409,10 @@ async function addFileToConversationState(
   const existingDatasets = state.values.uploadedDatasets || [];
 
   // Replace if same filename exists, otherwise append
+  // New file goes FIRST so it's most prominent in LLM context
   const uploadedDatasets = [
+    { ...file, uploadedAt: new Date().toISOString() }, // Mark upload time
     ...existingDatasets.filter((f: any) => f.filename !== file.filename),
-    file,
   ];
 
   await updateConversationState(conversationStateId, {

@@ -91,13 +91,8 @@ async function build() {
 
   let htmlContent = readFileSync(htmlSource, 'utf-8');
 
-  // Find the CSS output file
-  const cssOutput = buildResult.outputs.find(output => output.path.endsWith('.css'));
-  if (cssOutput) {
-    const cssFileName = cssOutput.path.split('/').pop();
-    // Inject CSS link before closing </head>
-    htmlContent = htmlContent.replace('</head>', `    <link rel="stylesheet" href="./${cssFileName}">\n</head>`);
-  }
+  // Note: CSS link is already in the HTML template with absolute path (/index.css)
+  // No need to inject it here
 
   writeFileSync(htmlDest, htmlContent);
 
