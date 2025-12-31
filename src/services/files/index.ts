@@ -396,33 +396,80 @@ export async function processFile(
 
 /**
  * Add file to conversation state uploadedDatasets
+ * Uses retry with deduplication check to handle concurrent uploads
+ *
+ * Race condition scenario:
+ * - Worker A reads state (files: [])
+ * - Worker B reads state (files: [])
+ * - Worker A writes (files: [fileA])
+ * - Worker B writes (files: [fileB]) <- overwrites fileA!
+ *
+ * Solution: Retry loop with deduplication check by file ID
+ * - If file already exists (by ID), skip (another worker added it)
+ * - If write succeeds but file is missing on re-read, retry
  */
 async function addFileToConversationState(
   conversationStateId: string,
   file: { id: string; filename: string; description: string; path: string; content?: string },
+  maxRetries = 5,
 ): Promise<void> {
-  const state = await getConversationState(conversationStateId);
-  if (!state) {
-    throw new Error(`Conversation state not found: ${conversationStateId}`);
+  const fileWithTimestamp = { ...file, uploadedAt: new Date().toISOString() };
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const state = await getConversationState(conversationStateId);
+    if (!state) {
+      throw new Error(`Conversation state not found: ${conversationStateId}`);
+    }
+
+    const existingDatasets = state.values.uploadedDatasets || [];
+
+    // Check if file already exists by ID (another worker may have added it)
+    if (existingDatasets.some((f: any) => f.id === file.id)) {
+      logger.info(
+        { conversationStateId, fileId: file.id, filename: file.filename, attempt },
+        "file_already_in_conversation_state_skipping",
+      );
+      return;
+    }
+
+    // Build new array: new file first, then existing (excluding same filename)
+    const uploadedDatasets = [
+      fileWithTimestamp,
+      ...existingDatasets.filter((f: any) => f.filename !== file.filename),
+    ];
+
+    // Try to update
+    await updateConversationState(conversationStateId, {
+      ...state.values,
+      uploadedDatasets,
+    });
+
+    // Verify the write succeeded by re-reading
+    const verifyState = await getConversationState(conversationStateId);
+    const verifyDatasets = verifyState?.values?.uploadedDatasets || [];
+
+    if (verifyDatasets.some((f: any) => f.id === file.id)) {
+      // Success - our file is in the state
+      logger.info(
+        { conversationStateId, fileId: file.id, filename: file.filename, attempt },
+        "file_added_to_conversation_state",
+      );
+      return;
+    }
+
+    // Our write was overwritten by another worker, retry
+    logger.warn(
+      { conversationStateId, fileId: file.id, filename: file.filename, attempt },
+      "file_add_overwritten_retrying",
+    );
+
+    // Small delay before retry with exponential backoff
+    await new Promise(resolve => setTimeout(resolve, 50 * Math.pow(2, attempt)));
   }
 
-  const existingDatasets = state.values.uploadedDatasets || [];
-
-  // Replace if same filename exists, otherwise append
-  // New file goes FIRST so it's most prominent in LLM context
-  const uploadedDatasets = [
-    { ...file, uploadedAt: new Date().toISOString() }, // Mark upload time
-    ...existingDatasets.filter((f: any) => f.filename !== file.filename),
-  ];
-
-  await updateConversationState(conversationStateId, {
-    ...state.values,
-    uploadedDatasets,
-  });
-
-  logger.info(
-    { conversationStateId, fileId: file.id, filename: file.filename },
-    "file_added_to_conversation_state",
+  // If we get here, all retries failed
+  throw new Error(
+    `Failed to add file ${file.filename} to conversation state after ${maxRetries} attempts`,
   );
 }
 
