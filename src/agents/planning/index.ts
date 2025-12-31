@@ -300,8 +300,26 @@ async function buildContextFromState(
 
   if (conversationState.values.keyInsights?.length) {
     contextParts.push(
-      `Key Insights (from the deep research conversation): ${conversationState.values.keyInsights.length}`,
+      `Key Insights:\n${conversationState.values.keyInsights.map((insight, i) => `  ${i + 1}. ${insight}`).join("\n")}`,
     );
+  }
+
+  // Add discoveries if available
+  if (conversationState.values.discoveries?.length) {
+    const discoveriesText = conversationState.values.discoveries
+      .map((discovery, i) => {
+        let text = `  ${i + 1}. ${discovery.title}\n     Claim: ${discovery.claim}\n     Summary: ${discovery.summary}`;
+        if (discovery.evidenceArray?.length) {
+          text += `\n     Evidence: ${discovery.evidenceArray.length} supporting task(s)`;
+        }
+        if (discovery.novelty) {
+          text += `\n     Novelty: ${discovery.novelty}`;
+        }
+        return text;
+      })
+      .join("\n\n");
+
+    contextParts.push(`Discoveries:\n${discoveriesText}`);
   }
 
   if (conversationState.values.uploadedDatasets?.length) {

@@ -15,6 +15,7 @@ export type Dataset = {
 export type AnalysisResult = {
   objective: string;
   output: string;
+  jobId?: string; // Edison task_id or Bio task id
   start?: string;
   end?: string;
   artifacts?: Array<AnalysisArtifact>;
@@ -58,17 +59,18 @@ export async function analysisAgent(input: {
   try {
     switch (type) {
       case "EDISON": {
-        const { output } = await analyzeWithEdison(
+        const { output, jobId } = await analyzeWithEdison(
           objective,
           datasets,
           userId,
           conversationStateId,
         );
         result.output = output;
+        result.jobId = jobId;
         break;
       }
       case "BIO": {
-        const { output, artifacts } = await analyzeWithBio(
+        const { output, artifacts, jobId } = await analyzeWithBio(
           objective,
           datasets,
           userId,
@@ -76,6 +78,7 @@ export async function analysisAgent(input: {
         );
         result.output = output;
         result.artifacts = artifacts;
+        result.jobId = jobId;
         break;
       }
       default:

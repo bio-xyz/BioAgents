@@ -13,6 +13,9 @@ The following tasks were just completed in this iteration:
 KEY INSIGHTS (Cumulative understanding across all iterations):
 {{keyInsights}}
 
+SCIENTIFIC DISCOVERIES (Rigorous findings with evidence):
+{{discoveries}}
+
 CURRENT HYPOTHESIS
 {{hypothesis}}
 
@@ -22,11 +25,20 @@ UPCOMING PLAN (Next iteration tasks):
 TASK
 Generate a user-facing reply that:
 1. Summarizes what was done in this iteration
-2. Highlights key results and insights
-3. Presents the current hypothesis clearly
-4. Describes the current objective and outlines the plan for the next iteration together
-5. Provides a concise summary at the end (2-3 sentences)
-6. Asks the user for feedback on the plan
+2. Presents Scientific Discoveries section (separate from Key Insights)
+   - If discoveries exist: present each discovery with evidence
+   - If no discoveries yet: say "No formal discoveries yet. All insights are in the Key Insights section below."
+3. Presents Key Insights section (separate from Scientific Discoveries)
+   - Always include important findings and observations from this iteration
+4. Presents the current hypothesis clearly
+5. Describes the current objective and outlines the plan for the next iteration together
+6. Provides a concise summary at the end (2-3 sentences)
+7. Asks the user for feedback on the plan
+
+IMPORTANT NOTES:
+- Scientific discoveries are rigorously evidence-based findings with specific supporting evidence
+- Only show discoveries that are new or were updated in this iteration
+- When presenting discoveries, describe evidence naturally without referencing task IDs (e.g., "Analysis revealed..." not "Task ana-1 found...")
 
 CITATION PRESERVATION
 - IMPORTANT: Preserve ALL inline citations in the format (claim)[DOI or URL]
@@ -50,9 +62,28 @@ Use this structure (adapt as needed):
 
 [Brief summary of the completed tasks and what you investigated]
 
-## Key Findings
+## Scientific Discoveries
 
-[Highlight the most important results and insights from this iteration. Focus on what's new and significant.]
+Check the SCIENTIFIC DISCOVERIES section provided at the beginning of this message.
+
+If discoveries are listed there (not "No formalized scientific discoveries yet. They will appear here as we progress our research."):
+[Present each discovery:
+- State the main finding/claim
+- Provide brief summary
+- Mention key evidence (e.g., "Analysis revealed...", "Data showed...")
+
+Example format:
+**1. [Discovery Title]**
+[Summary of the discovery in 1-2 sentences]
+*Evidence: [Describe what was found without task IDs]*
+]
+
+If no discoveries were provided:
+No formalized scientific discoveries yet. They will appear here as we progress our research. All insights are in the Key Insights section below.
+
+## Key Insights
+
+[Always include - list important findings and observations from this iteration provided in the Key Insights section above]
 
 ## Current Hypothesis
 
