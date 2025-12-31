@@ -323,21 +323,23 @@ export async function processFile(
   const ext = filename.split(".").pop()?.toLowerCase();
   const isPDF = ext === "pdf" || contentType === "application/pdf";
   const isImage = contentType.startsWith("image/");
+  const isExcel = ["xlsx", "xls"].includes(ext || "");
   const isText = contentType.startsWith("text/") ||
     ["csv", "json", "md", "txt", "tsv", "xml", "yaml", "yml"].includes(ext || "");
 
   // Download full file for types that need complete content
   // - PDFs: need full file for text extraction
   // - Images: need full file for OCR
+  // - Excel: need full file for sheet extraction
   // - Text files: need full content for analysis
   let preview = "";
   try {
     let previewBuffer: Buffer;
-    const needsFullFile = isPDF || isImage || isText;
+    const needsFullFile = isPDF || isImage || isExcel || isText;
 
     if (needsFullFile) {
       // Limit based on file type to prevent memory issues
-      const maxFileSize = isPDF || isImage ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for PDF/image, 10MB for text
+      const maxFileSize = isPDF || isImage || isExcel ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for PDF/image/Excel, 10MB for text
       if (size > maxFileSize) {
         logger.warn({ fileId, filename, size, maxFileSize }, "file_too_large_for_full_download");
         previewBuffer = await storageProvider.downloadRange(s3Key, 0, maxFileSize - 1);

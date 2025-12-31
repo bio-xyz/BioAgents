@@ -111,10 +111,9 @@ export async function parseFilePreview(
       return buffer.toString("utf-8");
     }
 
-    // For Excel files, try to extract basic info
+    // For Excel files, extract data as CSV-like text
     if (["xlsx", "xls"].includes(ext || "")) {
-      // Return a placeholder - full parsing would require xlsx library
-      return `[Excel file: ${filename}]`;
+      return await extractExcelContent(buffer, filename);
     }
 
     // For PDFs, extract text content
@@ -219,5 +218,63 @@ async function extractImageContent(buffer: Buffer, filename: string, contentType
       stack: error?.stack
     }, "image_ocr_failed");
     return `[Image file: ${filename} - OCR error: ${error?.message || 'unknown'}]`;
+  }
+}
+
+/**
+ * Extract content from Excel files (xlsx, xls) using xlsx library
+ */
+async function extractExcelContent(buffer: Buffer, filename: string): Promise<string> {
+  logger.info({ filename, bufferSize: buffer.length }, "excel_extraction_starting");
+
+  try {
+    const XLSX = await import("xlsx");
+
+    // Read workbook from buffer
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+
+    const sheetNames = workbook.SheetNames;
+    const results: string[] = [];
+
+    // Process each sheet
+    for (const sheetName of sheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      // Convert to CSV format
+      const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+
+      if (csv.trim()) {
+        // Count rows
+        const rows = csv.split("\n").filter(row => row.trim().length > 0);
+        const rowCount = rows.length - 1; // Subtract header
+
+        results.push(`--- Sheet: ${sheetName} (${rowCount} rows) ---\n${csv}`);
+      }
+    }
+
+    const text = results.join("\n\n");
+
+    logger.info({
+      filename,
+      sheetCount: sheetNames.length,
+      textLength: text.length,
+      textPreview: text.slice(0, 200),
+    }, "excel_content_extracted");
+
+    if (text.length === 0) {
+      logger.warn({ filename }, "excel_extracted_empty_content");
+      return `[Excel file: ${filename} - no extractable content]`;
+    }
+
+    // Return up to 50KB of content
+    return text.slice(0, 50000);
+  } catch (error: any) {
+    logger.error({
+      filename,
+      error: error?.message,
+      stack: error?.stack
+    }, "excel_extraction_failed");
+    return `[Excel file: ${filename} - extraction error: ${error?.message || 'unknown'}]`;
   }
 }

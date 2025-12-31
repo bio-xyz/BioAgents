@@ -165,6 +165,43 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
 
+  // Ref for messages to avoid stale closures
+  const messagesRef = useRef(currentSession.messages);
+  useEffect(() => {
+    messagesRef.current = currentSession.messages;
+  }, [currentSession.messages]);
+
+  /**
+   * Atomically check if message was already processed and mark it if not.
+   * Returns true if we should add the message (not yet processed).
+   * Returns false if message was already processed (skip adding).
+   */
+  const tryMarkAsProcessed = useCallback((messageId: string | undefined, content?: string): boolean => {
+    if (!messageId) return true; // No ID to track, allow adding
+
+    // Check if already processed
+    if (processedMessageIds.current.has(messageId)) {
+      console.log(`[ChatPage] Message already processed (by ID): ${messageId}`);
+      return false;
+    }
+
+    // Check if content already in UI (using ref for fresh data)
+    if (content) {
+      const existsInUI = messagesRef.current.some(
+        (m: any) => m.dbMessageId === messageId || m.content === content
+      );
+      if (existsInUI) {
+        console.log(`[ChatPage] Message already in UI: ${messageId}`);
+        processedMessageIds.current.add(messageId); // Mark to prevent future attempts
+        return false;
+      }
+    }
+
+    // Mark as processed IMMEDIATELY (atomic with check)
+    processedMessageIds.current.add(messageId);
+    return true;
+  }, []);
+
   // Clear processed messages when switching conversations
   useEffect(() => {
     processedMessageIds.current.clear();
@@ -175,30 +212,13 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     // Use ref to get latest currentSessionId (avoid stale closure)
     if (conversationId !== currentSessionIdRef.current) return;
 
-    // Check if we've already processed this message (prevents duplicates)
-    if (processedMessageIds.current.has(messageId)) {
-      // Still clear loading states
-      setIsDeepResearch(false);
-      setLoadingConversationId(null);
-      setLoadingMessageId(null);
-      setPendingMessageData(null);
-      return;
-    }
-
-    // Mark as processed IMMEDIATELY to prevent race conditions
-    processedMessageIds.current.add(messageId);
-
     try {
       const dbMessages = await getMessagesByConversation(conversationId);
       const updatedMsg = dbMessages.find((m: any) => m.id === messageId);
 
       if (updatedMsg?.content) {
-        // Double-check: verify message not already in UI (race condition protection)
-        const existsInUI = currentSession.messages.some(
-          (m: any) => m.dbMessageId === messageId || m.content === updatedMsg.content
-        );
-
-        if (!existsInUI) {
+        // Atomic check-and-mark to prevent duplicates
+        if (tryMarkAsProcessed(messageId, updatedMsg.content)) {
           addMessage({
             id: Date.now(),
             dbMessageId: messageId,
@@ -206,8 +226,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
             content: updatedMsg.content,
             timestamp: new Date(),
           });
-        } else {
-          console.log(`[ChatPage] WebSocket: Message already in UI, skipping: ${messageId}`);
         }
 
         // Clear all loading states
@@ -217,10 +235,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         setPendingMessageData(null);
       }
     } catch (err) {
-      // Remove from processed on error so it can be retried
-      processedMessageIds.current.delete(messageId);
+      console.error("[ChatPage] WebSocket handler error:", err);
     }
-  }, [addMessage, currentSession.messages]);
+  }, [addMessage, tryMarkAsProcessed]);
 
   // WebSocket state handler
   const handleStateUpdated = useCallback(async (_stateId: string, conversationId: string) => {
@@ -513,42 +530,19 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         const targetMsg = dbMessages.find((m: any) => m.id === messageId);
 
         if (targetMsg?.content && mounted) {
-          // Check if already processed (prevents duplicates)
-          if (processedMessageIds.current.has(messageId)) {
-            // Message already added, just clear loading states
-            setIsDeepResearch(false);
-            setLoadingConversationId(null);
-            setLoadingMessageId(null);
-            setPendingMessageData(null);
-            return;
+          // Atomic check-and-mark to prevent duplicates
+          if (tryMarkAsProcessed(messageId, targetMsg.content)) {
+            console.log("[ChatPage] Poll: Found message content, adding to UI:", messageId);
+            addMessage({
+              id: Date.now(),
+              dbMessageId: messageId,
+              role: "assistant" as const,
+              content: targetMsg.content,
+              timestamp: new Date(),
+            });
           }
 
-          // Double-check: verify message not already in UI (race condition protection)
-          const existsInUI = currentSession.messages.some(
-            (m: any) => m.dbMessageId === messageId || m.content === targetMsg.content
-          );
-
-          if (existsInUI) {
-            console.log("[ChatPage] Poll: Message already in UI, skipping:", messageId);
-            setIsDeepResearch(false);
-            setLoadingConversationId(null);
-            setLoadingMessageId(null);
-            setPendingMessageData(null);
-            return;
-          }
-
-          // Mark as processed and add message
-          processedMessageIds.current.add(messageId);
-          console.log("[ChatPage] Poll: Found message content, adding to UI:", messageId);
-
-          addMessage({
-            id: Date.now(),
-            dbMessageId: messageId,
-            role: "assistant" as const,
-            content: targetMsg.content,
-            timestamp: new Date(),
-          });
-
+          // Clear loading states regardless
           setIsDeepResearch(false);
           setLoadingConversationId(null);
           setLoadingMessageId(null);
@@ -567,7 +561,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
       mounted = false;
       clearInterval(pollInterval);
     };
-  }, [loadingConversationId, currentSessionId, addMessage]);
+  }, [loadingConversationId, currentSessionId, addMessage, tryMarkAsProcessed]);
 
   // Integrate embedded wallet with x402 payments
   useEffect(() => {
@@ -759,22 +753,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         });
 
         if (response.text) {
-          // Check if WebSocket already added this message
-          const alreadyProcessed = response.messageId && processedMessageIds.current.has(response.messageId);
-
-          // Double-check: verify message not already in UI (race condition protection)
-          const existsInUI = messages.some(
-            (m: any) => m.dbMessageId === response.messageId || m.content === response.text
-          );
-
-          if (alreadyProcessed || existsInUI) {
-            console.log(`[ChatPage] Message already added, skipping: ${response.messageId}`);
-          } else {
-            // Add message from poll result
-            if (response.messageId) {
-              processedMessageIds.current.add(response.messageId);
-              console.log(`[ChatPage] Adding message from poll result: ${response.messageId}`);
-            }
+          // Atomic check-and-mark to prevent duplicates
+          if (tryMarkAsProcessed(response.messageId, response.text)) {
+            console.log(`[ChatPage] HTTP: Adding message from response: ${response.messageId}`);
             addMessage({
               id: Date.now() + 1,
               dbMessageId: response.messageId,
