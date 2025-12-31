@@ -363,27 +363,19 @@ export async function processFile(
   // Generate AI description
   const description = await generateFileDescription(filename, contentType, preview);
 
-  // Store content (truncate to reasonable size for context window)
-  // Keep up to 50KB of content for PDFs/text files
-  const maxContentSize = 50 * 1024;
-  const content = preview.slice(0, maxContentSize);
-
-  // Log content being stored
+  // Log file being stored (content NOT saved to Supabase - files accessed via S3 path)
   logger.info({
     fileId,
     filename,
     previewLength: preview.length,
-    contentLength: content.length,
-    contentPreview: content.slice(0, 200),
-  }, "file_content_to_store");
+  }, "file_processed_for_storage");
 
-  // Update conversation state
+  // Update conversation state (no content - deep research accesses files via S3)
   await addFileToConversationState(conversationStateId, {
     id: fileId,
     filename,
     description,
     path: s3Key,
-    content, // Store parsed content for agent access
   });
 
   // Update status to ready
@@ -485,10 +477,11 @@ async function addFileDirectly(
     ...existingDatasets.filter((f: any) => f.filename !== file.filename),
   ];
 
-  await updateConversationState(conversationStateId, {
-    ...state.values,
-    uploadedDatasets,
-  });
+  await updateConversationState(
+    conversationStateId,
+    { ...state.values, uploadedDatasets },
+    { preserveUploadedDatasets: false }, // Allow file operations to update uploadedDatasets
+  );
 
   logger.info(
     { conversationStateId, fileId: file.id, filename: file.filename },
@@ -549,10 +542,11 @@ export async function deleteFile(fileId: string, userId: string): Promise<void> 
       const uploadedDatasets = state.values.uploadedDatasets.filter(
         (f: any) => f.id !== fileId,
       );
-      await updateConversationState(status.conversationStateId, {
-        ...state.values,
-        uploadedDatasets,
-      });
+      await updateConversationState(
+        status.conversationStateId,
+        { ...state.values, uploadedDatasets },
+        { preserveUploadedDatasets: false }, // Allow file deletion to update uploadedDatasets
+      );
     }
   } catch (error) {
     logger.warn({ fileId, error }, "failed_to_remove_file_from_state");

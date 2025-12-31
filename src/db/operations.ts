@@ -399,8 +399,27 @@ export async function createConversationState(stateData: { values: any }) {
   return data;
 }
 
-export async function updateConversationState(id: string, values: any) {
-  const cleanedValues = cleanValues(values);
+export async function updateConversationState(
+  id: string,
+  values: any,
+  options?: { preserveUploadedDatasets?: boolean },
+) {
+  const { preserveUploadedDatasets = true } = options || {};
+
+  let finalValues = { ...values };
+
+  // IMPORTANT: By default, always preserve uploadedDatasets from the database
+  // This prevents race conditions where chat/deep-research workers
+  // overwrite files added by file-process workers running concurrently
+  if (preserveUploadedDatasets) {
+    const currentState = await getConversationState(id);
+    const currentUploadedDatasets = currentState?.values?.uploadedDatasets;
+    if (currentUploadedDatasets !== undefined) {
+      finalValues.uploadedDatasets = currentUploadedDatasets;
+    }
+  }
+
+  const cleanedValues = cleanValues(finalValues);
   const { data, error } = await supabase
     .from("conversation_states")
     .update({ values: cleanedValues })
