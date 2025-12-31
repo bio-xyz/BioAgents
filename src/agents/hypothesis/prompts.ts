@@ -11,7 +11,7 @@ Using the Evidence Set (literature, prior work, and research context), produce o
 - suggests follow-up analyses (molecular, computational, or precedent checks) where appropriate.
 
 NOVELTY REQUIREMENTS (CRITICAL FOR DEEP RESEARCH)
-- This is deep researchaim for HIGH novelty. Don't just restate existing findings.
+- This is deep research; aim for HIGH novelty. Don't just restate existing findings.
 - Synthesize across multiple papers/sources to identify gaps, contradictions, or unexplored combinations.
 - Propose new mechanistic links, intervention strategies, biomarker approaches, or translational pathways.
 - If combining interventions, explain synergistic rationale with evidence.
@@ -20,7 +20,7 @@ NOVELTY REQUIREMENTS (CRITICAL FOR DEEP RESEARCH)
 
 CITATION RULES
 - Cite DOIs or URLs that appear verbatim in the Evidence Set (from LITERATURE tasks).
-- For ANALYSIS task results (computational data, statistics, gene expression, etc.), reference the findings directly without requiring DOIs/URLs.
+- For ANALYSIS task results (computational data, statistics, gene expression, etc.), reference the findings directly without requiring DOIs/URLs, noting that they come from the data analysis tasks.
 - Place inline citations immediately after the clause they support using the format: (claim)[DOI or URL]
 - Example: "Rapamycin extends lifespan in mice (Rapamycin extends lifespan)[10.1038/nature12345]"
 - Use citations where available to demonstrate evidence synthesis.

@@ -104,7 +104,7 @@ DISCOVERY UPDATE GUIDELINES
    - If a new task provides additional evidence for an existing discovery, ADD to its evidenceArray
    - Update the summary if new evidence strengthens or refines the discovery
    - Add new artifacts that support the discovery
-   - Preserve all previous evidence - the evidenceArray grows over time
+   - Preserve all previous evidence - the evidenceArray grows over time. Only exception to this rule is if we find contradicting evidence to some of the evidence in the discovery, in which case we should remove the contradicting evidence and keep the rest of the evidence.
 
 2. **Creating New Discoveries**:
    - Only create new discoveries for genuinely distinct findings
@@ -189,14 +189,16 @@ Updated Discovery (Iteration 2, after new validation task):
       "description": "Volcano plot showing differential expression of autophagy genes",
       "type": "FILE",
       "name": "volcano_plot_autophagy.png",
-      "path": "/artifacts/volcano_plot_autophagy.png"
+      "path": "/artifacts/volcano_plot_autophagy.png",
+      "sourceJobId": "uuid-1" // according job id of the analysis task that generated this artifact
     },
     {
       "id": "pathway-diagram-456",
       "description": "Pathway enrichment visualization",
       "type": "FILE",
       "name": "pathway_enrichment.png",
-      "path": "/artifacts/pathway_enrichment.png"
+      "path": "/artifacts/pathway_enrichment.png",
+      "sourceJobId": "uuid-2"
     }
   ],
   "novelty": "While rapamycin is known to inhibit mTOR, the magnitude of autophagy gene upregulation in senescent cells specifically (>2-fold for 15 genes) has not been previously quantified"

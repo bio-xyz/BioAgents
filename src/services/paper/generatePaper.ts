@@ -457,11 +457,33 @@ async function generatePaperMetadata(
       const claim = escapeLatex(d.claim);
       return `\\textbf{Discovery ${i + 1} - ${discoveryTitle}:} ${claim}`;
     }) || [];
-  const summaryOfDiscoveries = summaryItems.join("\n\n");
+  const summaryOfDiscoveries = summaryItems.join("\n\n\\vspace{0.5em}\n\n");
 
   logger.info("paper_front_matter_generated");
 
-  const escapedKeyInsights = keyInsights.map(escapeLatex);
+  // Convert parenthesized DOI URLs to square bracket format for processing
+  // e.g., (https://doi.org/10.1234/abcd) → [doi:10.1234/abcd]
+  // e.g., (https://doi.org/10.1234/a; https://doi.org/10.5678/b) → [doi:10.1234/a,doi:10.5678/b]
+  // IMPORTANT: Must run BEFORE escapeLatex to avoid corrupting DOIs with special chars
+  const normalizeKeyInsightDOIs = (text: string): string => {
+    return text.replace(
+      /\((https?:\/\/doi\.org\/[^)]+)\)/g,
+      (match, urlContent) => {
+        const dois = urlContent
+          .split(/[;,]/)
+          .map((url: string) => {
+            const doiMatch = url.trim().match(/10\.\d{4,}[^\s;,)]+/);
+            return doiMatch ? `doi:${doiMatch[0].replace(/[\.\s]+$/, "")}` : null;
+          })
+          .filter(Boolean);
+        return dois.length > 0 ? `[${dois.join(",")}]` : match;
+      }
+    );
+  };
+
+  // Normalize key insight DOIs BEFORE escaping (to match background flow)
+  const normalizedKeyInsights = keyInsights.map(normalizeKeyInsightDOIs);
+  const escapedKeyInsights = normalizedKeyInsights.map(escapeLatex);
   const escapedBackground = escapeLatex(background);
 
   // Combine all text that needs DOI citation processing
