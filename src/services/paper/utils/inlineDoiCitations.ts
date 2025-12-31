@@ -1,6 +1,7 @@
 import logger from "../../../utils/logger";
 import { normalizeDOI, doiToCitekey, isValidDOI } from "./doi";
 import { resolveDOIToBibTeX, extractAndSanitizeBibTeXEntry } from "./bibtex";
+import { replaceUnicodeInLatex } from "./escapeLatex";
 import type { BibTeXEntry } from "../types";
 
 export interface InlineDOIResult {
@@ -104,8 +105,10 @@ export async function processInlineDOICitations(
         bibEntries.push({ doi, citekey: result.citekey, bibtex: result.bibtex });
       } else {
         const fallbackKey = doiToCitekey(doi);
+        // Sanitize Unicode even in fallback path to prevent LaTeX errors
+        const sanitizedBibtex = replaceUnicodeInLatex(bibtex);
         logger.warn({ doi, fallbackKey }, "inline_doi_fallback_citekey");
-        bibEntries.push({ doi, citekey: fallbackKey, bibtex });
+        bibEntries.push({ doi, citekey: fallbackKey, bibtex: sanitizedBibtex });
       }
     } else {
       unresolvedDOIs.push(doi);

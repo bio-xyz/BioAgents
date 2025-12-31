@@ -1,5 +1,6 @@
 import logger from "../../../utils/logger";
 import { normalizeDOI, doiToCitekey, isValidDOI } from "./doi";
+import { replaceUnicodeInLatex } from "./escapeLatex";
 import type { BibTeXEntry } from "../types";
 
 /**
@@ -92,13 +93,16 @@ export function extractAndSanitizeBibTeXEntry(
 
   const sanitizedCitekey = sanitizeCitekey(originalCitekey);
 
+  // Sanitize Unicode characters in BibTeX content (e.g., β → $\beta$)
+  // This prevents LaTeX compilation errors from Unicode in titles/abstracts
+  let sanitizedBibtex = replaceUnicodeInLatex(bibtex);
+
   if (sanitizedCitekey !== originalCitekey) {
-    const rewrittenBibtex = rewriteBibTeXCitekey(bibtex, sanitizedCitekey);
+    sanitizedBibtex = rewriteBibTeXCitekey(sanitizedBibtex, sanitizedCitekey);
     logger.info({ original: originalCitekey, sanitized: sanitizedCitekey }, "sanitized_citekey");
-    return { citekey: sanitizedCitekey, bibtex: rewrittenBibtex };
   }
 
-  return { citekey: sanitizedCitekey, bibtex };
+  return { citekey: sanitizedCitekey, bibtex: sanitizedBibtex };
 }
 
 export function rewriteBibTeXCitekey(bibtex: string, newCitekey: string): string {

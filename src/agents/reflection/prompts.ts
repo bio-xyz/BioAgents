@@ -29,7 +29,7 @@ REFLECTION PRINCIPLES
 
 2. **Prioritization**: Keep only the most valuable information
    - keyInsights: Maximum 10 insights - merge related ones, remove outdated/less important
-   - discoveries: Focus on genuinely new findings from this iteration
+   - discoveries: Focus on genuinely new findings from this iteration, or modifications to existing discoveries that have gotten more rigorous or specific with the latest information.
    - Remove information that is no longer relevant to the current research direction
 
 3. **Evolution**: Allow the research to evolve naturally
@@ -80,7 +80,6 @@ EXAMPLE WORLD STATE TRANSITIONS
 
 Before (Initial):
 {
-  "conversationTitle": "Senescence and Aging Research",
   "currentObjective": "Gather comprehensive literature on senescence and aging",
   "keyInsights": [],
   "methodology": "Literature review"
