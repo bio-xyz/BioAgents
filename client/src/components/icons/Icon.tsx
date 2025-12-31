@@ -21,6 +21,7 @@ import {
   File,
   FileCode,
   FlaskConical,
+  Folder,
   GitMerge,
   Globe,
   GraduationCap,
@@ -47,6 +48,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  Upload,
   User,
   X,
   Zap,
@@ -106,6 +108,8 @@ const iconMap: Record<string, any> = {
   code: Code,
   play: Play,
   sparkles: Sparkles,
+  folder: Folder,
+  upload: Upload,
 };
 
 /**

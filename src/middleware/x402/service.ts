@@ -8,7 +8,7 @@ import type {
 } from "x402/types";
 import { useFacilitator } from "x402/verify";
 import { processPriceToAtomicAmount } from "x402/shared";
-import { createCdpAuthHeaders, createFacilitatorConfig } from "@coinbase/x402";
+import { createFacilitatorConfig } from "@coinbase/x402";
 import logger from "../../utils/logger";
 import { x402Config } from "./config";
 
@@ -75,6 +75,7 @@ function createExactPaymentRequirements(
   description = "",
   options?: {
     includeOutputSchema?: boolean;
+    discoverable?: boolean;
     metadata?: Record<string, any>;
   },
 ): PaymentRequirements {
@@ -101,13 +102,14 @@ function createExactPaymentRequirements(
     },
   };
 
-  // Only include outputSchema for external API consumers (x402scan compliance)
+  // Include outputSchema and config for x402scan + Bazaar discovery
   if (options?.includeOutputSchema) {
+    // Input/Output schema for x402scan compliance
     requirement.outputSchema = {
       input: {
         type: "http",
         method: "POST",
-        bodyType: "json",  // Use JSON for x402scan compatibility (no files for now)
+        bodyType: "json",
         bodyFields: {
           message: {
             type: "string",
@@ -143,6 +145,46 @@ function createExactPaymentRequirements(
         },
       },
     };
+
+    // Bazaar discovery config - stored in 'extra' per x402scan schema
+    // The 'extra' field is for custom provider data
+    if (options?.discoverable !== false) {
+      requirement.extra = {
+        ...requirement.extra,
+        // Bazaar discovery metadata
+        discoverable: true,
+        bazaar: {
+          inputSchema: {
+            bodyFields: {
+              message: {
+                type: "string",
+                description: "User's question or message to the AI assistant",
+                required: true,
+              },
+              conversationId: {
+                type: "string",
+                description: "Optional conversation ID for multi-turn conversations",
+                required: false,
+              },
+              userId: {
+                type: "string",
+                description: "Optional user ID for tracking",
+                required: false,
+              },
+            },
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              text: { type: "string", description: "AI-generated response text" },
+              userId: { type: "string", description: "User identifier" },
+              conversationId: { type: "string", description: "Conversation identifier" },
+              pollUrl: { type: "string", description: "URL to poll for async job status" },
+            },
+          },
+        },
+      };
+    }
   }
 
   return requirement;
@@ -213,6 +255,7 @@ export class X402Service {
     amountUSD: string,
     options?: {
       includeOutputSchema?: boolean;
+      discoverable?: boolean;
       metadata?: Record<string, any>;
     },
   ): PaymentRequirements {

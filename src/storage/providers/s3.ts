@@ -109,6 +109,54 @@ export class S3StorageProvider extends StorageProvider {
     }
   }
 
+  /**
+   * Download only a range of bytes from a file (efficient for previews)
+   * @param path - S3 key
+   * @param start - Start byte (0-indexed)
+   * @param end - End byte (inclusive)
+   */
+  async downloadRange(path: string, start: number, end: number): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: path,
+        Range: `bytes=${start}-${end}`,
+      });
+
+      const response = await this.client.send(command);
+
+      if (!response.Body) {
+        throw new Error("No data received from S3");
+      }
+
+      const byteArray = await response.Body.transformToByteArray();
+
+      if (logger) {
+        logger.info(
+          { path, requestedRange: `${start}-${end}`, receivedBytes: byteArray.length },
+          "s3_range_download_success",
+        );
+      }
+
+      return Buffer.from(byteArray);
+    } catch (error: any) {
+      if (logger) {
+        logger.error(
+          {
+            path,
+            bucket: this.bucket,
+            range: `${start}-${end}`,
+            errorName: error?.name,
+            errorCode: error?.$metadata?.httpStatusCode,
+            errorMessage: error?.message,
+          },
+          "s3_range_download_failed",
+        );
+      }
+      throw new Error(`S3 range download failed: ${error?.name || "UnknownError"} - ${path}`);
+    }
+  }
+
   async delete(path: string): Promise<void> {
     try {
       const command = new DeleteObjectCommand({

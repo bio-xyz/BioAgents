@@ -38,15 +38,17 @@ interface ResearchState {
 }
 
 interface Props {
-  state: ResearchState;
+  state: ResearchState | null;
   isExpanded?: boolean;
   onToggle?: () => void;
+  isLoading?: boolean;
 }
 
 export function ResearchStatePanel({
   state,
   isExpanded = false,
   onToggle,
+  isLoading = false,
 }: Props) {
   const [expandedSections, setExpandedSections] = useState<
     Record<string, boolean>
@@ -136,8 +138,11 @@ export function ResearchStatePanel({
     );
   };
 
-  const completedSteps = state.plan?.filter((step) => step.end) || [];
-  const currentStep = state.plan?.find((step) => step.start && !step.end);
+  const completedSteps = state?.plan?.filter((step) => step.end) || [];
+  const currentStep = state?.plan?.find((step) => step.start && !step.end);
+
+  // Show loading state when deep research is starting but no state yet
+  const showLoadingState = isLoading && (!state || !state.currentObjective);
 
   return (
     <div className={`research-state-panel ${isExpanded ? "expanded" : ""}`}>
@@ -157,21 +162,31 @@ export function ResearchStatePanel({
 
       {isExpanded && (
         <div className="research-state-content">
+          {/* Loading State */}
+          {showLoadingState && (
+            <div className="research-section research-loading-state">
+              <div className="research-loading-indicator">
+                <span className="research-step-spinner" />
+                <span className="research-loading-text">Initializing deep research...</span>
+              </div>
+            </div>
+          )}
+
           {/* Current Objective */}
-          {state.currentObjective && (
+          {state?.currentObjective && (
             <div className="research-section research-current-objective">
               <div className="research-section-label">
                 <span className="research-section-icon">🎯</span>
                 Current Objective
               </div>
               <p className="research-objective-text">
-                {state.currentObjective}
+                {state?.currentObjective}
               </p>
             </div>
           )}
 
           {/* Hypothesis */}
-          {state.currentHypothesis && (
+          {state?.currentHypothesis && (
             <div className="research-section">
               <button
                 className="research-section-toggle"
@@ -190,7 +205,7 @@ export function ResearchStatePanel({
               {expandedSections.hypothesis && (
                 <div className="research-section-body research-hypothesis">
                   <div className="research-hypothesis-content">
-                    {state.currentHypothesis.split("\n").map((line, i) => {
+                    {state?.currentHypothesis?.split("\n").map((line, i) => {
                       if (line.startsWith("## ")) {
                         return (
                           <h4 key={i} className="research-hypothesis-heading">
@@ -214,7 +229,7 @@ export function ResearchStatePanel({
           )}
 
           {/* Discoveries */}
-          {state.discoveries && state.discoveries.length > 0 && (
+          {state?.discoveries && state.discoveries.length > 0 && (
             <div className="research-section">
               <button
                 className="research-section-toggle"
@@ -245,7 +260,7 @@ export function ResearchStatePanel({
           )}
 
           {/* Key Insights */}
-          {state.keyInsights && state.keyInsights.length > 0 && (
+          {state?.keyInsights && state.keyInsights.length > 0 && (
             <div className="research-section">
               <button
                 className="research-section-toggle"
@@ -276,7 +291,7 @@ export function ResearchStatePanel({
           )}
 
           {/* Methodology */}
-          {state.methodology && (
+          {state?.methodology && (
             <div className="research-section">
               <button
                 className="research-section-toggle"
@@ -295,7 +310,7 @@ export function ResearchStatePanel({
               {expandedSections.methodology && (
                 <div className="research-section-body">
                   <p className="research-methodology-text">
-                    {state.methodology}
+                    {state?.methodology}
                   </p>
                 </div>
               )}
@@ -303,7 +318,7 @@ export function ResearchStatePanel({
           )}
 
           {/* Uploaded Datasets */}
-          {state.uploadedDatasets && state.uploadedDatasets.length > 0 && (
+          {state?.uploadedDatasets && state.uploadedDatasets.length > 0 && (
             <div className="research-section">
               <button
                 className="research-section-toggle"

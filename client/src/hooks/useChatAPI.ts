@@ -31,6 +31,7 @@ export interface SendMessageParams {
 
 export interface ChatResponse {
   text: string;
+  messageId?: string; // For deduplication with WebSocket
   files?: Array<{
     filename: string;
     mimeType: string;
@@ -90,6 +91,65 @@ export function useChatAPI(
     decodePaymentResponse,
     config: x402Config,
   } = x402Context ?? useX402Payment();
+
+  /**
+   * Poll for job result (queue mode)
+   * Used when USE_JOB_QUEUE=true - server returns job ID and we poll until complete
+   *
+   * @param pollUrl - The URL to poll for status
+   * @param _jobId - Job ID (for logging)
+   * @param maxAttempts - Max polling attempts (default: 180 = 3 min for chat)
+   * @param intervalMs - Interval between polls in ms (default: 1000 = 1s)
+   */
+  const pollForResult = async (
+    pollUrl: string,
+    messageId: string,
+    maxAttempts = 180, // 3 minutes for regular chat
+    intervalMs = 1000,
+  ): Promise<{ text: string; messageId: string; files?: any[] }> => {
+    const apiSecret = getApiSecret();
+    const headers: Record<string, string> = {};
+    if (apiSecret) {
+      headers["Authorization"] = `Bearer ${apiSecret}`;
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(pollUrl, {
+          method: "GET",
+          headers,
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Poll failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`[useChatAPI] Poll attempt ${attempt + 1}:`, data.status);
+
+        if (data.status === "completed" && data.result) {
+          return {
+            text: data.result.text || data.result.response || "",
+            messageId,
+            files: data.result.files,
+          };
+        }
+
+        if (data.status === "failed") {
+          throw new Error(data.error || "Job failed");
+        }
+
+        // Still processing, wait and retry
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      } catch (err) {
+        console.error(`[useChatAPI] Poll error:`, err);
+        throw err;
+      }
+    }
+
+    throw new Error("Job timed out waiting for result");
+  };
 
   /**
    * Internal function to actually send the message (after confirmation if needed)
@@ -253,6 +313,17 @@ export function useChatAPI(
       if (!response.ok || (data.ok === false && data.error)) {
         const errorMsg = data.error || `HTTP error! status: ${response.status}`;
         throw new Error(errorMsg);
+      }
+
+      // Handle queue mode response (USE_JOB_QUEUE=true)
+      if (data.status === "queued" && data.pollUrl) {
+        console.log("[useChatAPI] Queue mode detected, polling for result...", data);
+        const result = await pollForResult(data.pollUrl, data.messageId);
+        return {
+          text: result.text,
+          messageId: result.messageId,
+          files: result.files,
+        };
       }
 
       if (!data.text) {
@@ -501,6 +572,17 @@ export function useChatAPI(
       if (!response.ok) {
         const errorMsg = data.error || `HTTP error! status: ${response.status}`;
         throw new Error(errorMsg);
+      }
+
+      // Handle queue mode response (USE_JOB_QUEUE=true)
+      // For deep research, "queued" is equivalent to "processing" - results come via message polling
+      if (data.status === "queued") {
+        console.log("[useChatAPI] Deep research queued:", data);
+        return {
+          messageId: data.messageId,
+          conversationId: data.conversationId,
+          status: "processing",
+        };
       }
 
       // Success - research is processing

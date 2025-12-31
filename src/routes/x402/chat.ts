@@ -11,45 +11,75 @@ import { chatHandler } from "../chat";
  * Uses x402 payment protocol instead of API key authentication.
  * Reuses the same chatHandler logic as the standard /api/chat route.
  *
- * Both GET and POST return proper x402 402 responses for x402scan compliance.
- *
- * Order matters:
- * 1. x402Middleware - validates payment, sets request.x402Settlement
- * 2. authResolver - reads x402Settlement, sets request.auth with method: "x402"
+ * Flow:
+ * - GET: Returns 402 with payment requirements (x402scan discovery)
+ * - POST without payment: Middleware returns 402
+ * - POST with valid payment: Middleware validates, then chatHandler processes
  */
-export const x402ChatRoute = new Elysia()
-  .use(x402Middleware())
-  .onBeforeHandle(authResolver({ required: false })) // Resolves x402Settlement to auth context
-  .get("/api/x402/chat", async ({ request, set }) => {
-    // Return proper x402 402 response for GET requests (x402scan compliance)
-    const pricing = routePricing.find((entry) => "/api/x402/chat".startsWith(entry.route));
 
-    // Build resource URL
-    const url = new URL(request.url);
-    const forwardedProto = request.headers.get("x-forwarded-proto");
-    const protocol = forwardedProto || url.protocol.replace(':', '');
-    const resourceUrl = `${protocol}://${url.host}/api/x402/chat`;
+/**
+ * Generate 402 response with x402-compliant schema for discovery
+ */
+function generate402Response(request: Request) {
+  const pricing = routePricing.find((entry) => "/api/x402/chat".startsWith(entry.route));
 
-    const requirement = x402Service.generatePaymentRequirement(
-      resourceUrl,
-      pricing?.description || "Chat API access via x402 payment",
-      pricing?.priceUSD || "0.01",
-      {
-        includeOutputSchema: true,
-      }
-    );
+  // Build resource URL with correct protocol
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const protocol = forwardedProto || url.protocol.replace(":", "");
+  const resourceUrl = `${protocol}://${url.host}/api/x402/chat`;
 
-    set.status = 402;
+  const requirement = x402Service.generatePaymentRequirement(
+    resourceUrl,
+    pricing?.description || "Chat API access via x402 payment",
+    pricing?.priceUSD || "0.01",
+    { includeOutputSchema: true }
+  );
 
-    return new Response(JSON.stringify({
+  return new Response(
+    JSON.stringify({
       x402Version: 1,
       accepts: [requirement],
       error: "Payment required",
-    }), {
+    }),
+    {
       status: 402,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-      },
-    });
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    }
+  );
+}
+
+export const x402ChatRoute = new Elysia()
+  // GET endpoint for x402scan discovery - returns 402 with schema
+  .get("/api/x402/chat", async ({ request }) => {
+    return generate402Response(request);
   })
-  .post("/api/x402/chat", chatHandler);
+  // POST endpoint with payment validation
+  .use(x402Middleware())
+  .onBeforeHandle(authResolver({ required: false }))
+  .post("/api/x402/chat", async (ctx: any) => {
+    const { body, request } = ctx;
+    const x402Settlement = (request as any).x402Settlement;
+
+    // If no valid payment settlement, return 402 (x402scan compliance)
+    // This handles cases where middleware is disabled or payment wasn't provided
+    if (!x402Settlement) {
+      return generate402Response(request);
+    }
+
+    // Handle x402scan test requests (valid payment but no message)
+    // x402scan sends POST with payment to verify it works, but no actual body
+    const message = (body as any)?.message;
+    if (!message) {
+      // Payment was validated - return success matching outputSchema
+      return {
+        text: `Payment verified successfully. Transaction: ${x402Settlement.transaction}`,
+        userId: x402Settlement.payer,
+        conversationId: null,
+        pollUrl: null,
+      };
+    }
+
+    // Has message - process as normal chat request
+    return chatHandler(ctx);
+  });

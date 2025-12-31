@@ -89,7 +89,7 @@ export async function deepResearchStartHandler(ctx: any) {
   // Get userId from auth context (set by authResolver middleware)
   // Auth context handles: x402 wallet > JWT token > API key > body.userId > anonymous
   const auth = (request as any).auth as AuthContext | undefined;
-  const userId = auth?.userId || generateUUID();
+  let userId = auth?.userId || generateUUID();
   const source = auth?.method === "x402" ? "x402" : "api";
   const isX402User = auth?.method === "x402";
 
@@ -104,10 +104,13 @@ export async function deepResearchStartHandler(ctx: any) {
     "deep_research_user_identified_via_auth",
   );
 
-  // For x402 users, ensure wallet user record exists
+  // For x402 users, ensure wallet user record exists and use the actual user ID
   if (isX402User && auth?.externalId) {
     const { getOrCreateUserByWallet } = await import("../../db/operations");
     const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
+
+    // Use the actual database user ID (may differ from auth.userId)
+    userId = user.id;
 
     logger.info(
       {
@@ -927,11 +930,27 @@ These molecular changes align with established longevity pathways (Converging nu
       },
       "message_content_saved",
     );
-    const responseTime = 0; // TODO: Calculate response time
+
+    // Notify client that message is ready via WebSocket
+    // This is essential for the UI to display the response
+    const { notifyMessageUpdated } = await import("../../services/queue/notify");
+    await notifyMessageUpdated(
+      `in-process-${createdMessage.id}`, // Use a synthetic job ID for in-process mode
+      createdMessage.conversation_id,
+      createdMessage.id,
+    );
+
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        conversationId: createdMessage.conversation_id,
+      },
+      "message_updated_notification_sent",
+    );
 
     if (logger) {
       logger.info(
-        { messageId: createdMessage.id, responseTime },
+        { messageId: createdMessage.id },
         "deep_research_completed",
       );
     }

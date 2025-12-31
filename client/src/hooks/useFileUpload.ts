@@ -11,8 +11,7 @@ export interface UseFileUploadReturn {
   clearFiles: () => void;
 }
 
-const MAX_FILES = 5;
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB (matches backend limit)
+const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB total limit
 
 /**
  * Custom hook for file upload handling
@@ -27,8 +26,8 @@ export function useFileUpload(): UseFileUploadReturn {
    */
   const selectFile = (file: File) => {
     console.log('[useFileUpload.selectFile] File selected:', file.name, file.size);
-    if (file.size > MAX_FILE_SIZE) {
-      alert(`File ${file.name} is too large. Maximum size is 500MB.`);
+    if (file.size > MAX_TOTAL_SIZE) {
+      alert(`File ${file.name} is too large. Maximum total size is 500MB.`);
       return;
     }
     setSelectedFile(file);
@@ -40,33 +39,26 @@ export function useFileUpload(): UseFileUploadReturn {
    * Handle multiple file selection
    */
   const selectFiles = (files: File[]) => {
-    const validFiles = files.filter(file => {
-      if (file.size > MAX_FILE_SIZE) {
-        alert(`File ${file.name} is too large. Maximum size is 500MB.`);
-        return false;
-      }
-      return true;
-    }).slice(0, MAX_FILES);
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
-    if (files.length > MAX_FILES) {
-      alert(`You can only upload up to ${MAX_FILES} files at once.`);
+    if (totalSize > MAX_TOTAL_SIZE) {
+      alert(`Total file size (${(totalSize / (1024 * 1024)).toFixed(1)}MB) exceeds the 500MB limit.`);
+      return;
     }
 
-    setSelectedFiles(validFiles);
-    setSelectedFile(validFiles[0] || null);
+    setSelectedFiles(files);
+    setSelectedFile(files[0] || null);
   };
 
   /**
    * Add a file to the existing selection
    */
   const addFile = (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
-      alert(`File ${file.name} is too large. Maximum size is 500MB.`);
-      return;
-    }
+    const currentTotalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+    const newTotalSize = currentTotalSize + file.size;
 
-    if (selectedFiles.length >= MAX_FILES) {
-      alert(`You can only upload up to ${MAX_FILES} files at once.`);
+    if (newTotalSize > MAX_TOTAL_SIZE) {
+      alert(`Adding this file would exceed the 500MB total limit.`);
       return;
     }
 

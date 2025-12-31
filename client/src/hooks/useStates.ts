@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { getConversationState, supabase } from "../lib/supabase";
 
 export interface ToolState {
@@ -56,6 +56,7 @@ export interface UseStatesReturn {
   conversationState: ConversationState | null;
   isLoading: boolean;
   error: string | null;
+  refetchConversationState: () => Promise<void>;
 }
 
 /**
@@ -72,6 +73,13 @@ export function useStates(
     useState<ConversationState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Ref to track current conversation state values for polling comparison
+  // (avoids stale closure issue in setInterval)
+  const conversationStateRef = useRef<ConversationState | null>(null);
+  useEffect(() => {
+    conversationStateRef.current = conversationState;
+  }, [conversationState]);
 
   // Reset states when conversation changes
   useEffect(() => {
@@ -166,6 +174,39 @@ export function useStates(
     }
 
     fetchLatestState();
+
+    // Polling for state updates - polls every 2 seconds
+    // This is essential for research state updates in both queue mode and in-process mode
+    let pollCount = 0;
+    const maxPolls = 900; // 30 minutes max polling (900 * 2s)
+
+    const pollForState = async () => {
+      if (!mounted || pollCount >= maxPolls) return;
+      pollCount++;
+
+      try {
+        // Poll for conversation state updates (research state)
+        const convState = await getConversationState(conversationId);
+        if (mounted && convState) {
+          // Only update if values changed (use ref to avoid stale closure)
+          const currentValues = JSON.stringify(conversationStateRef.current?.values || {});
+          const newValues = JSON.stringify(convState.values || {});
+          if (currentValues !== newValues) {
+            console.log("[useStates Polling] Conversation state updated!", {
+              hadPrevious: !!conversationStateRef.current,
+              newKeys: Object.keys(convState.values || {}),
+            });
+            setConversationState(convState as ConversationState);
+          }
+        }
+      } catch (err) {
+        // Silently ignore polling errors
+      }
+    };
+
+    // Poll immediately on mount, then every 2 seconds
+    pollForState();
+    const pollInterval = setInterval(pollForState, 2000);
 
     // Subscribe to real-time updates for message states
     const statesChannel = supabase
@@ -287,15 +328,31 @@ export function useStates(
 
     return () => {
       mounted = false;
+      clearInterval(pollInterval);
       supabase.removeChannel(statesChannel);
       supabase.removeChannel(convStatesChannel);
     };
   }, [userId, conversationId]);
+
+  // Manual refetch function for WebSocket-triggered updates
+  const refetchConversationState = async () => {
+    try {
+      console.log("[useStates] Manual refetch triggered");
+      const convState = await getConversationState(conversationId);
+      if (convState) {
+        console.log("[useStates] Refetched conversation state:", convState.id);
+        setConversationState(convState as ConversationState);
+      }
+    } catch (err) {
+      console.error("[useStates] Error refetching conversation state:", err);
+    }
+  };
 
   return {
     currentState,
     conversationState,
     isLoading,
     error,
+    refetchConversationState,
   };
 }

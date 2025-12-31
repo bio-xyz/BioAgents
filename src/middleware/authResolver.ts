@@ -121,7 +121,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // =====================================================
     // Priority 1: x402 Payment Proof (Cryptographic)
     // =====================================================
-    // x402 middleware runs before this and sets x402Settlement
+    // x402 middleware runs before this and sets x402Settlement on request
     // This is the most secure - wallet signature = identity
     const x402Settlement = (request as any).x402Settlement;
     if (x402Settlement?.payer) {
@@ -338,16 +338,17 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  * Can be called directly without Elysia middleware context
  *
  * @param request - The incoming request
+ * @param body - Optional parsed request body (for userId extraction in dev mode)
  * @returns AuthContext with userId if authenticated
  */
-export async function resolveAuth(request: Request): Promise<{
+export async function resolveAuth(request: Request, body?: any): Promise<{
   authenticated: boolean;
   userId?: string;
   method?: string;
 }> {
   const config = getAuthConfig();
 
-  // Check x402 settlement (set by x402 middleware)
+  // Check x402 settlement (set by x402 middleware on request)
   const x402Settlement = (request as any).x402Settlement;
   if (x402Settlement?.payer) {
     return {
@@ -372,11 +373,21 @@ export async function resolveAuth(request: Request): Promise<{
     }
   }
 
+  // Helper to get userId from body (same logic as authResolver middleware)
+  const getUserIdFromBody = () => {
+    const providedUserId = body?.userId;
+    return providedUserId &&
+      typeof providedUserId === "string" &&
+      providedUserId.length > 0
+      ? providedUserId
+      : generateUUID();
+  };
+
   // Check API key (legacy)
   if (isValidApiKey(request)) {
     return {
       authenticated: true,
-      userId: generateUUID(),
+      userId: getUserIdFromBody(),
       method: "api_key",
     };
   }
@@ -385,7 +396,7 @@ export async function resolveAuth(request: Request): Promise<{
   if (config.mode === "none") {
     return {
       authenticated: true,
-      userId: generateUUID(),
+      userId: getUserIdFromBody(),
       method: "anonymous",
     };
   }

@@ -13,53 +13,78 @@ import { deepResearchStatusHandler } from "../deep-research/status";
  * Reuses the same handler logic as the standard deep-research routes.
  *
  * Security:
- * - POST /start: Requires x402 payment
+ * - GET /start: Returns 402 with payment requirements (x402scan discovery)
+ * - POST /start: Requires x402 payment (handled by x402Middleware)
  * - GET /status: Free (no payment), but requires userId query param
- *   Handler validates ownership (message.user_id === userId)
- *
- * Both GET and POST on /start return proper x402 402 responses for x402scan compliance.
- *
- * Order matters:
- * 1. x402Middleware - validates payment, sets request.x402Settlement
- * 2. authResolver - reads x402Settlement, sets request.auth with method: "x402"
  */
-export const x402DeepResearchRoute = new Elysia()
-  // Status endpoint - NO payment required, but has ownership validation in handler
-  // Must be registered BEFORE x402Middleware to avoid payment requirement
-  .get("/api/x402/deep-research/status/:messageId", deepResearchStatusHandler)
-  // Payment-gated endpoints
-  .use(x402Middleware())
-  .onBeforeHandle(authResolver({ required: false })) // Resolves x402Settlement to auth context
-  .get("/api/x402/deep-research/start", async ({ request, set }) => {
-    // Return proper x402 402 response for GET requests (x402scan compliance)
-    const pricing = routePricing.find((entry) => "/api/x402/deep-research/start".startsWith(entry.route));
 
-    // Build resource URL
-    const url = new URL(request.url);
-    const forwardedProto = request.headers.get("x-forwarded-proto");
-    const protocol = forwardedProto || url.protocol.replace(':', '');
-    const resourceUrl = `${protocol}://${url.host}/api/x402/deep-research/start`;
+/**
+ * Generate 402 response with x402-compliant schema for discovery
+ */
+function generate402Response(request: Request) {
+  const pricing = routePricing.find((entry) =>
+    "/api/x402/deep-research/start".startsWith(entry.route)
+  );
 
-    const requirement = x402Service.generatePaymentRequirement(
-      resourceUrl,
-      pricing?.description || "Deep research initiation via x402 payment",
-      pricing?.priceUSD || "0.025",
-      {
-        includeOutputSchema: true,
-      }
-    );
+  // Build resource URL with correct protocol
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const protocol = forwardedProto || url.protocol.replace(":", "");
+  const resourceUrl = `${protocol}://${url.host}/api/x402/deep-research/start`;
 
-    set.status = 402;
+  const requirement = x402Service.generatePaymentRequirement(
+    resourceUrl,
+    pricing?.description || "Deep research initiation via x402 payment",
+    pricing?.priceUSD || "0.025",
+    { includeOutputSchema: true }
+  );
 
-    return new Response(JSON.stringify({
+  return new Response(
+    JSON.stringify({
       x402Version: 1,
       accepts: [requirement],
       error: "Payment required",
-    }), {
+    }),
+    {
       status: 402,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-      },
-    });
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    }
+  );
+}
+
+export const x402DeepResearchRoute = new Elysia()
+  // Status endpoint - FREE, no payment required (ownership validated in handler)
+  .get("/api/x402/deep-research/status/:messageId", deepResearchStatusHandler)
+  // GET /start for x402scan discovery - returns 402 with schema
+  .get("/api/x402/deep-research/start", async ({ request }) => {
+    return generate402Response(request);
   })
-  .post("/api/x402/deep-research/start", deepResearchStartHandler);
+  // POST /start with payment validation
+  .use(x402Middleware())
+  .onBeforeHandle(authResolver({ required: false }))
+  .post("/api/x402/deep-research/start", async (ctx: any) => {
+    const { body, request } = ctx;
+    const x402Settlement = (request as any).x402Settlement;
+
+    // If no valid payment settlement, return 402 (x402scan compliance)
+    // This handles cases where middleware is disabled or payment wasn't provided
+    if (!x402Settlement) {
+      return generate402Response(request);
+    }
+
+    // Handle x402scan test requests (valid payment but no query)
+    // x402scan sends POST with payment to verify it works, but no actual body
+    const query = (body as any)?.query;
+    if (!query) {
+      // Payment was validated - return success matching outputSchema
+      return {
+        text: `Payment verified successfully. Transaction: ${x402Settlement.transaction}`,
+        userId: x402Settlement.payer,
+        conversationId: null,
+        pollUrl: null,
+      };
+    }
+
+    // Has query - process as normal deep research request
+    return deepResearchStartHandler(ctx);
+  });

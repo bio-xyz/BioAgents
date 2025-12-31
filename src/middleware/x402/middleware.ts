@@ -18,14 +18,22 @@ export interface X402MiddlewareOptions {
 
 export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
-  const plugin = new Elysia({ name: "x402-middleware", scoped: false });
+  const plugin = new Elysia({ name: "x402-middleware" });
 
-  if (!enabled) {
-    if (logger) logger.info("x402_middleware_disabled");
-    return plugin;
+  // Always log middleware status at initialization
+  if (logger) {
+    logger.info({
+      enabled,
+      environment: x402Config.environment,
+      network: x402Config.network,
+      paymentAddress: x402Config.paymentAddress,
+      X402_ENABLED_ENV: process.env.X402_ENABLED,
+    }, enabled ? "x402_middleware_ENABLED" : "x402_middleware_DISABLED");
   }
 
-  if (logger) logger.info("x402_middleware_enabled_and_active");
+  if (!enabled) {
+    return plugin;
+  }
 
   // Use 'scoped' so this hook applies to routes in the parent that uses this plugin
   plugin.onBeforeHandle({ as: "scoped" }, async ({ request, path, set }: any) => {
@@ -57,12 +65,37 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
     const paymentHeader = request.headers.get("X-PAYMENT");
 
+    // Debug: Log all request headers to diagnose payment header issues
+    if (logger) {
+      const headers: Record<string, string> = {};
+      request.headers.forEach((value: string, key: string) => {
+        // Redact sensitive headers
+        if (key.toLowerCase() === 'authorization' || key.toLowerCase() === 'x-payment') {
+          headers[key] = value ? `[present, ${value.length} chars]` : '[empty]';
+        } else {
+          headers[key] = value;
+        }
+      });
+      logger.info({ path, headers, hasPayment: !!paymentHeader }, "x402_request_headers");
+    }
+
     // Build full URL for resource field (x402 requires full URL, not just path)
     // Check X-Forwarded-Proto header for correct protocol (ngrok, reverse proxies)
     const url = new URL(request.url);
     const forwardedProto = request.headers.get("x-forwarded-proto");
-    const protocol = forwardedProto || url.protocol.replace(':', '');
+    // Default to https in production if x-forwarded-proto is missing
+    const protocol = forwardedProto || (x402Config.environment === "mainnet" ? "https" : url.protocol.replace(':', ''));
     const resourceUrl = `${protocol}://${url.host}${pricing.route}`;
+
+    if (logger) {
+      logger.info({
+        path,
+        requestUrl: request.url,
+        forwardedProto,
+        resolvedProtocol: protocol,
+        resourceUrl,
+      }, "x402_resource_url_built");
+    }
     
     if (!paymentHeader) {
       if (logger) logger.warn(`Payment required for ${path}, none provided`);
@@ -185,7 +218,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
     }
 
     // Payment successful, allow request to continue
-    // Store settlement info in context for route handler
+    // Store settlement info on request for route handlers and authResolver
     (request as any).x402Settlement = settlement;
     (request as any).x402Requirement = requirement;
 

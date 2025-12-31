@@ -49,6 +49,8 @@ export async function replyAgent(input: {
 
   try {
     // Generate reply
+    // Note: uploadedDatasets not passed here - deep research has already analyzed
+    // the files via ANALYSIS tasks, results are in completedTasks
     const reply = await generateReply(
       message.question || conversationState.values.objective || "",
       {
