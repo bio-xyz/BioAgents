@@ -154,6 +154,7 @@ export async function fileUploadAgent(input: {
       await updateConversationState(
         conversationState.id,
         conversationState.values,
+        { preserveUploadedDatasets: false }, // Allow file upload to update uploadedDatasets
       );
       logger.info(
         {
