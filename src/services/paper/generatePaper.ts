@@ -308,6 +308,15 @@ function indexTasksByJobId(
 }
 
 /**
+ * Check if a job ID is valid (not a placeholder or invalid value)
+ */
+function isValidJobId(jobId: string | undefined | null): jobId is string {
+  if (!jobId) return false;
+  const invalid = ["N/A", "undefined", "null", ""];
+  return !invalid.includes(jobId.trim());
+}
+
+/**
  * Map discoveries to their allowed tasks
  */
 function mapDiscoveriesToTasks(
@@ -322,27 +331,57 @@ function mapDiscoveriesToTasks(
     throw new Error("No discoveries found in conversation state");
   }
 
+  // Get all tasks as fallback for legacy conversations
+  const allTasks = state.plan || [];
+
   return state.discoveries.map((discovery, index) => {
-    let allowedJobIds: string[];
+    let allJobIds: string[] = [];
+    let hasInvalidJobIds = false;
 
     if (discovery.evidenceArray && discovery.evidenceArray.length > 0) {
-      allowedJobIds = discovery.evidenceArray.map(
-        (ev) => ev.jobId || ev.taskId,
-      );
-    } else {
-      // Fallback to discovery.jobId
-      const jobId = (discovery as any).jobId;
-      allowedJobIds = jobId ? [jobId] : [];
+      allJobIds = discovery.evidenceArray.map((ev) => ev.jobId || ev.taskId);
+      // Check if any evidence has invalid job IDs (legacy bug)
+      hasInvalidJobIds = allJobIds.some((id) => !isValidJobId(id));
+      allJobIds = allJobIds.filter(isValidJobId);
     }
 
-    const allowedTasks = allowedJobIds
+    // Fallback to discovery.jobId if evidenceArray didn't yield valid IDs
+    if (allJobIds.length === 0) {
+      const jobId = (discovery as any).jobId;
+      if (isValidJobId(jobId)) {
+        allJobIds = [jobId];
+      } else if (jobId) {
+        hasInvalidJobIds = true;
+      }
+    }
+
+    const allowedTasks = allJobIds
       .map((jobId) => tasksByJobId.get(jobId))
       .filter((task): task is PlanTask => task !== undefined);
 
-    if (allowedTasks.length === 0) {
-      throw new Error(
-        `Discovery ${index + 1} has no valid tasks. JobIds: ${allowedJobIds.join(", ")}`,
+    // If any evidence had invalid job IDs, include all tasks as fallback
+    // This ensures we don't miss figures/context from legacy evidence
+    if (hasInvalidJobIds) {
+      logger.warn(
+        { discoveryIndex: index + 1, validJobIds: allJobIds },
+        "discovery_has_invalid_job_ids_including_all_tasks",
       );
+      // Merge: specific tasks + all tasks (deduplicated)
+      const taskIds = new Set(allowedTasks.map((t) => t.jobId || t.id));
+      for (const task of allTasks) {
+        if (!taskIds.has(task.jobId) && !taskIds.has(task.id)) {
+          allowedTasks.push(task);
+        }
+      }
+    }
+
+    // If still no tasks, use all tasks
+    if (allowedTasks.length === 0) {
+      logger.warn(
+        { discoveryIndex: index + 1 },
+        "discovery_no_valid_tasks_using_all",
+      );
+      return { discovery, index, allowedTasks: allTasks };
     }
 
     return { discovery, index, allowedTasks };
