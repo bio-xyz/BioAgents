@@ -1,15 +1,18 @@
 /**
  * Escape special LaTeX characters in text
  *
- * This is a deterministic function that ensures text can be safely embedded in LaTeX documents.
- * Handles: \ & % $ # _ { } ~ ^
- * Also converts Unicode mathematical symbols and Greek letters to LaTeX equivalents
+ * This function escapes problematic plain-text characters for LaTeX documents.
+ * It does NOT escape: \ $ { } (these are valid LaTeX syntax used by math mode)
+ * It DOES escape: & % # ~ ^ (these cause LaTeX errors in plain text)
+ *
+ * Note: Underscores are only escaped outside of math mode to preserve subscripts.
+ * Unicode symbols are converted to LaTeX equivalents.
  */
 export function escapeLatex(text: string): string {
   if (!text) return "";
 
   return text
-    // Unicode mathematical symbols (must be before backslash escaping)
+    // Unicode mathematical symbols
     .replace(/≥/g, "$\\geq$")
     .replace(/≤/g, "$\\leq$")
     .replace(/≠/g, "$\\neq$")
@@ -22,6 +25,10 @@ export function escapeLatex(text: string): string {
     .replace(/←/g, "$\\leftarrow$")
     .replace(/↔/g, "$\\leftrightarrow$")
     .replace(/∞/g, "$\\infty$")
+    // Comparison operators (including corrupted variants)
+    .replace(/¿/g, "$>$") // Inverted question mark often appears as corrupted >
+    .replace(/»/g, "$>>$")
+    .replace(/«/g, "$<<$")
     // Greek letters
     .replace(/α/g, "$\\alpha$")
     .replace(/β/g, "$\\beta$")
@@ -35,22 +42,20 @@ export function escapeLatex(text: string): string {
     .replace(/σ/g, "$\\sigma$")
     .replace(/τ/g, "$\\tau$")
     .replace(/φ/g, "$\\phi$")
+    .replace(/ψ/g, "$\\psi$")
     .replace(/ω/g, "$\\omega$")
     .replace(/Δ/g, "$\\Delta$")
     .replace(/Σ/g, "$\\Sigma$")
     .replace(/Ω/g, "$\\Omega$")
-    // Backslash must come after Unicode replacements (to avoid double-escaping)
-    .replace(/\\/g, "\\textbackslash{}")
-    // Special chars that need escaping
+    // Special chars that need escaping (NOT \ $ { } - these are valid LaTeX)
     .replace(/&/g, "\\&")
     .replace(/%/g, "\\%")
-    .replace(/\$/g, "\\$")
     .replace(/#/g, "\\#")
-    .replace(/_/g, "\\_")
-    .replace(/\{/g, "\\{")
-    .replace(/\}/g, "\\}")
     .replace(/~/g, "\\textasciitilde{}")
-    .replace(/\^/g, "\\textasciicircum{}");
+    // Escape underscores only outside math mode
+    .replace(/([^$])_([^$])/g, "$1\\_$2")
+    // Handle standalone ^ outside math mode
+    .replace(/([^$\\])\^([^{$])/g, "$1\\textasciicircum{}$2");
 }
 
 /**
@@ -85,6 +90,10 @@ export function replaceUnicodeInLatex(latex: string): string {
     .replace(/≤/g, "$\\leq$")
     .replace(/≠/g, "$\\neq$")
     .replace(/≈/g, "$\\approx$")
+    // Corrupted/alternate comparison operators
+    .replace(/¿/g, "$>$") // Inverted question mark often appears as corrupted >
+    .replace(/»/g, "$>>$")
+    .replace(/«/g, "$<<$")
     // Mathematical operators
     .replace(/±/g, "$\\pm$")
     .replace(/×/g, "$\\times$")

@@ -86,7 +86,7 @@ export async function generatePaperFromConversation(
   const state = stateRecord.values as ConversationStateValues;
 
   const paperId = randomUUID();
-  const pdfPath = `papers/${paperId}/paper.pdf`;
+  const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
 
   const { error: insertError } = await supabase.from("paper").insert({
     id: paperId,
@@ -247,7 +247,7 @@ export async function generatePaperFromConversation(
     const pdfBuffer = fs.readFileSync(compileResult.pdfPath);
     await storage.upload(pdfPath, pdfBuffer, "application/pdf");
 
-    const rawLatexPath = `papers/${paperId}/main.tex`;
+    const rawLatexPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/main.tex`;
     const rawLatexBuffer = Buffer.from(mainTexContent, "utf-8");
     await storage.upload(rawLatexPath, rawLatexBuffer, "text/plain");
 
