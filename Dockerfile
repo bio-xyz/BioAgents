@@ -5,12 +5,14 @@ FROM oven/bun:latest AS base
 WORKDIR /app
 
 # Install ca-certificates and LaTeX (for paper generation)
+# Using XeLaTeX for native Unicode support (handles β, ′, accented chars, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   texlive-latex-base \
   texlive-latex-extra \
   texlive-fonts-recommended \
   texlive-bibtex-extra \
+  texlive-xetex \
   latexmk \
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*

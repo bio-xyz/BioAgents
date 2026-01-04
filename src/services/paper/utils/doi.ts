@@ -2,8 +2,6 @@
  * DOI extraction and normalization utilities
  */
 
-import logger from "../../../utils/logger";
-
 /**
  * Extract DOI citations from LaTeX content
  * Matches patterns like \cite{doi:10.xxxx/xxxx} or \citep{doi:10.xxxx/xxxx}
@@ -14,7 +12,7 @@ export function extractDOICitations(latexContent: string): string[] {
 
   let match;
   while ((match = citeRegex.exec(latexContent)) !== null) {
-    const citations = match[1].split(",").map((c) => c.trim());
+    const citations = match[1]!.split(",").map((c) => c.trim());
 
     for (const citation of citations) {
       if (citation.startsWith("doi:")) {
@@ -28,12 +26,15 @@ export function extractDOICitations(latexContent: string): string[] {
 }
 
 /**
- * Normalize DOI (lowercase, strip trailing punctuation)
+ * Normalize DOI (lowercase, strip trailing punctuation, unescape LaTeX)
  */
 export function normalizeDOI(doi: string): string {
   return doi
     .toLowerCase()
     .trim()
+    .replace(/\\_/g, "_") // Unescape LaTeX-escaped underscores
+    .replace(/\\&/g, "&") // Unescape LaTeX-escaped ampersands
+    .replace(/\\%/g, "%") // Unescape LaTeX-escaped percent signs
     .replace(/[.,;:]+$/, ""); // Remove trailing punctuation
 }
 

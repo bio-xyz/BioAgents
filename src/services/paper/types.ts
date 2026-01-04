@@ -46,6 +46,7 @@ export type PaperMetadata = {
   researchSnapshot: string;
   keyInsights: string[];
   summaryOfDiscoveries: string;
-  inlineBibliography: string; // BibTeX from inline DOI citations
+  inlineBibliography: string; // BibTeX from inline DOI citations (for reference)
+  inlineBibEntries: BibTeXEntry[]; // Structured BibTeX entries from inline DOI citations
   inlineDOIToCitekey: Map<string, string>; // DOI → author-year citekey mapping for inline citations
 };

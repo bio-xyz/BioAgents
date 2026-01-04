@@ -32,7 +32,7 @@ async function tryLatexmk(
 ): Promise<{ success: boolean; pdfPath?: string; logs: string }> {
   return new Promise((resolve) => {
     const args = [
-      "-pdf",
+      "-xelatex", // Use XeLaTeX for native Unicode support
       "-bibtex",
       "-interaction=nonstopmode",
       "-halt-on-error",
@@ -86,13 +86,14 @@ async function tryManualCompilation(
 
   logger.info("running_manual_compilation");
 
-  const pass1 = await runCommand("pdflatex", [
+  // Using XeLaTeX for native Unicode support (handles β, ′, accented chars, etc.)
+  const pass1 = await runCommand("xelatex", [
     "-interaction=nonstopmode",
     "-halt-on-error",
     "-file-line-error",
     mainTexFile,
   ], latexDir);
-  allLogs += "=== PDFLATEX PASS 1 ===\n" + pass1.logs + "\n\n";
+  allLogs += "=== XELATEX PASS 1 ===\n" + pass1.logs + "\n\n";
 
   if (!pass1.success) return { success: false, logs: allLogs };
 
@@ -102,23 +103,23 @@ async function tryManualCompilation(
     allLogs += "=== BIBTEX ===\n" + bibtexResult.logs + "\n\n";
   }
 
-  const pass2 = await runCommand("pdflatex", [
+  const pass2 = await runCommand("xelatex", [
     "-interaction=nonstopmode",
     "-halt-on-error",
     "-file-line-error",
     mainTexFile,
   ], latexDir);
-  allLogs += "=== PDFLATEX PASS 2 ===\n" + pass2.logs + "\n\n";
+  allLogs += "=== XELATEX PASS 2 ===\n" + pass2.logs + "\n\n";
 
   if (!pass2.success) return { success: false, logs: allLogs };
 
-  const pass3 = await runCommand("pdflatex", [
+  const pass3 = await runCommand("xelatex", [
     "-interaction=nonstopmode",
     "-halt-on-error",
     "-file-line-error",
     mainTexFile,
   ], latexDir);
-  allLogs += "=== PDFLATEX PASS 3 ===\n" + pass3.logs + "\n\n";
+  allLogs += "=== XELATEX PASS 3 ===\n" + pass3.logs + "\n\n";
 
   const pdfPath = path.join(latexDir, `${baseFilename}.pdf`);
 
