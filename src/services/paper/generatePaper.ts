@@ -679,11 +679,23 @@ async function generateDiscoverySection(
 
   const uniqueAllowedDOIs = Array.from(new Set(allowedDOIs));
 
+  // Calculate task output stats for logging
+  const taskOutputStats = allowedTasks.map((task) => ({
+    jobId: task.jobId,
+    type: task.type,
+    outputLength: task.output?.length || 0,
+  }));
+  const totalTaskOutputChars = taskOutputStats.reduce((sum, t) => sum + t.outputLength, 0);
+
   logger.info(
     {
       discoveryIndex,
       taskCount: allowedTasks.length,
       figureCount: figures.length,
+      figureFilenames: figures.map((f) => f.filename),
+      taskTypes: allowedTasks.map((t) => t.type),
+      totalTaskOutputChars,
+      taskOutputStats,
     },
     "generating_discovery_section",
   );
@@ -694,6 +706,16 @@ async function generateDiscoverySection(
     allowedTasks,
     figures,
     uniqueAllowedDOIs,
+  );
+
+  // Log prompt size
+  logger.info(
+    {
+      discoveryIndex,
+      promptLength: prompt.length,
+      promptLengthKB: Math.round(prompt.length / 1024),
+    },
+    "discovery_prompt_generated",
   );
 
   const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
@@ -726,6 +748,8 @@ async function generateDiscoverySection(
       if (LLM_PROVIDER === "anthropic" && figures.length > 0) {
         // Anthropic vision support: encode images as base64
         const contentBlocks: any[] = [];
+        const figureSizes: Array<{ filename: string; sizeKB: number }> = [];
+        let totalImageSizeBytes = 0;
 
         for (const figure of figures) {
           try {
@@ -734,6 +758,12 @@ async function generateDiscoverySection(
               const imageBuffer = fs.readFileSync(figPath);
               const base64Image = imageBuffer.toString("base64");
               const mediaType = getImageMediaType(figure.filename);
+
+              figureSizes.push({
+                filename: figure.filename,
+                sizeKB: Math.round(imageBuffer.length / 1024),
+              });
+              totalImageSizeBytes += imageBuffer.length;
 
               contentBlocks.push({
                 type: "image",
@@ -751,6 +781,18 @@ async function generateDiscoverySection(
             );
           }
         }
+
+        // Log figure sizes being sent to LLM
+        logger.info(
+          {
+            discoveryIndex,
+            figureCount: figureSizes.length,
+            figureSizes,
+            totalImageSizeKB: Math.round(totalImageSizeBytes / 1024),
+            totalImageSizeMB: (totalImageSizeBytes / (1024 * 1024)).toFixed(2),
+          },
+          "discovery_figures_encoded_for_llm",
+        );
 
         contentBlocks.push({
           type: "text",
@@ -773,6 +815,8 @@ async function generateDiscoverySection(
         messageContent = prompt;
       }
 
+      const llmStartTime = Date.now();
+
       const response = await llm.createChatCompletion({
         messages: [{ role: "user", content: messageContent }],
         model: LLM_MODEL,
@@ -780,7 +824,20 @@ async function generateDiscoverySection(
         maxTokens: 6000,
       });
 
+      const llmDurationMs = Date.now() - llmStartTime;
       const content = response.content || "";
+
+      // Log LLM call duration and response size
+      logger.info(
+        {
+          discoveryIndex,
+          llmDurationMs,
+          llmDurationSec: (llmDurationMs / 1000).toFixed(1),
+          responseLength: content.length,
+          responseLengthKB: Math.round(content.length / 1024),
+        },
+        "discovery_llm_call_completed",
+      );
 
       // Parse JSON response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
