@@ -43,7 +43,7 @@ import {
   extractLastLines,
 } from "./utils/compile";
 import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
-import { escapeLatex, replaceUnicodeInLatex } from "./utils/escapeLatex";
+import { escapeLatex } from "./utils/escapeLatex";
 import { processInlineDOICitations } from "./utils/inlineDoiCitations";
 
 const supabase = createClient(
@@ -157,23 +157,17 @@ export async function generatePaperFromConversation(
       "dois_resolved",
     );
 
-    const inlineBibEntries: Array<{
-      doi: string;
-      citekey: string;
-      bibtex: string;
-    }> = [];
-    for (const [doi, citekey] of metadata.inlineDOIToCitekey.entries()) {
-      const entryPattern = new RegExp(
-        `@\\w+\\{${citekey},[\\s\\S]*?\\n\\}`,
-        "m",
-      );
-      const match = metadata.inlineBibliography.match(entryPattern);
-      if (match) {
-        inlineBibEntries.push({ doi, citekey, bibtex: match[0] });
-      } else {
-        logger.warn({ doi, citekey }, "inline_bibtex_entry_not_found");
-      }
-    }
+    // Use the structured BibTeX entries directly from metadata
+    // This avoids fragile regex parsing of the string bibliography
+    const inlineBibEntries = metadata.inlineBibEntries;
+
+    logger.info(
+      {
+        inlineBibEntriesCount: inlineBibEntries.length,
+        doiToCitekeyCount: metadata.inlineDOIToCitekey.size,
+      },
+      "inline_bib_entries_loaded",
+    );
 
     const allBibEntries = [...inlineBibEntries, ...discoveryBibEntries];
     const dedupedBibEntries = deduplicateAndResolveCollisions(allBibEntries);
@@ -182,6 +176,11 @@ export async function generatePaperFromConversation(
     );
 
     mainTexContent = rewriteLatexCitations(mainTexContent, doiToCitekeyMap);
+
+    // Sanitize any remaining unresolved DOI citations to prevent LaTeX errors
+    // Convert \cite{doi:10.xxx/yyy} to inline text (DOI: 10.xxx/yyy)
+    mainTexContent = sanitizeUnresolvedCitations(mainTexContent);
+
     fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
 
     const mergedBibContent = generateBibTeXFile(dedupedBibEntries);
@@ -202,41 +201,108 @@ export async function generatePaperFromConversation(
 
     logger.info("compiling_latex");
     let compileResult = await compileLatexToPDF(workDir);
+    let usedLastResortFallback = false;
 
+    // First compilation attempt failed - try recovery strategies
     if (!compileResult.success || !compileResult.pdfPath) {
       const errorLogs = extractLastLines(compileResult.logs, 200);
-      logger.error({ errorLogs }, "latex_compilation_failed");
-      await supabase.from("paper").delete().eq("id", paperId);
-      throw new Error(`LaTeX compilation failed:\n${errorLogs}`);
+      logger.warn({ errorLogs }, "latex_compilation_failed_attempting_recovery");
+
+      // Check for undefined citations and remove them
+      const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
+      if (undefinedCitations.length > 0) {
+        logger.warn(
+          { undefinedCitations, count: undefinedCitations.length },
+          "removing_undefined_citations",
+        );
+
+        mainTexContent = removeUndefinedCitations(
+          mainTexContent,
+          undefinedCitations,
+        );
+        fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+
+        logger.info("recompiling_latex_after_removing_undefined_citations");
+        compileResult = await compileLatexToPDF(workDir);
+      }
+
+      // If still failing, try last-resort: strip ALL citations
+      if (!compileResult.success || !compileResult.pdfPath) {
+        logger.warn(
+          "compilation_still_failing_using_last_resort_strip_all_citations",
+        );
+
+        mainTexContent = stripAllCitations(mainTexContent);
+        fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+        // Also clear the references.bib since we're not using it
+        fs.writeFileSync(path.join(latexDir, "references.bib"), "");
+
+        logger.info("recompiling_latex_without_citations");
+        compileResult = await compileLatexToPDF(workDir);
+        usedLastResortFallback = true;
+
+        // If STILL failing after stripping citations, we have a non-citation problem
+        if (!compileResult.success || !compileResult.pdfPath) {
+          const finalErrorLogs = extractLastLines(compileResult.logs, 200);
+          logger.error(
+            { errorLogs: finalErrorLogs },
+            "latex_compilation_failed_even_without_citations",
+          );
+          await supabase.from("paper").delete().eq("id", paperId);
+          throw new Error(
+            `LaTeX compilation failed (even without citations):\n${finalErrorLogs}`,
+          );
+        }
+      }
+    } else {
+      // First compilation succeeded - check for undefined citations anyway
+      const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
+      if (undefinedCitations.length > 0) {
+        logger.warn(
+          { undefinedCitations, count: undefinedCitations.length },
+          "removing_undefined_citations",
+        );
+
+        mainTexContent = removeUndefinedCitations(
+          mainTexContent,
+          undefinedCitations,
+        );
+        fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+
+        logger.info("recompiling_latex");
+        compileResult = await compileLatexToPDF(workDir);
+
+        if (!compileResult.success || !compileResult.pdfPath) {
+          // Try last-resort fallback
+          logger.warn("recompilation_failed_using_last_resort");
+          mainTexContent = stripAllCitations(mainTexContent);
+          fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
+          fs.writeFileSync(path.join(latexDir, "references.bib"), "");
+
+          compileResult = await compileLatexToPDF(workDir);
+          usedLastResortFallback = true;
+
+          if (!compileResult.success || !compileResult.pdfPath) {
+            const errorLogs = extractLastLines(compileResult.logs, 200);
+            logger.error({ errorLogs }, "latex_recompilation_failed");
+            await supabase.from("paper").delete().eq("id", paperId);
+            throw new Error(`LaTeX recompilation failed:\n${errorLogs}`);
+          }
+        }
+
+        const remainingUndefined = checkForUndefinedCitations(
+          compileResult.logs,
+        );
+        if (remainingUndefined.length > 0) {
+          logger.warn({ remainingUndefined }, "citations_still_undefined");
+        }
+      }
     }
 
-    const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
-    if (undefinedCitations.length > 0) {
+    if (usedLastResortFallback) {
       logger.warn(
-        { undefinedCitations, count: undefinedCitations.length },
-        "removing_undefined_citations",
+        "paper_generated_without_bibliography_due_to_citation_errors",
       );
-
-      mainTexContent = removeUndefinedCitations(
-        mainTexContent,
-        undefinedCitations,
-      );
-      fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
-
-      logger.info("recompiling_latex");
-      compileResult = await compileLatexToPDF(workDir);
-
-      if (!compileResult.success || !compileResult.pdfPath) {
-        const errorLogs = extractLastLines(compileResult.logs, 200);
-        logger.error({ errorLogs }, "latex_recompilation_failed");
-        await supabase.from("paper").delete().eq("id", paperId);
-        throw new Error(`LaTeX recompilation failed:\n${errorLogs}`);
-      }
-
-      const remainingUndefined = checkForUndefinedCitations(compileResult.logs);
-      if (remainingUndefined.length > 0) {
-        logger.warn({ remainingUndefined }, "citations_still_undefined");
-      }
     }
 
     const storage = getStorageProvider();
@@ -449,12 +515,10 @@ async function generatePaperMetadata(
     );
   }
 
-  // Clean up Unicode in LLM-generated content
-  const title = replaceUnicodeInLatex(frontMatterParsed.title);
-  const abstract = replaceUnicodeInLatex(frontMatterParsed.abstract);
-  const researchSnapshot = replaceUnicodeInLatex(
-    frontMatterParsed.researchSnapshot,
-  );
+  // XeLaTeX handles Unicode natively - no conversion needed
+  const title = frontMatterParsed.title;
+  const abstract = frontMatterParsed.abstract;
+  const researchSnapshot = frontMatterParsed.researchSnapshot;
 
   // Generate background section
   logger.info("generating_background_section");
@@ -485,7 +549,7 @@ async function generatePaperMetadata(
     );
   }
 
-  const background = replaceUnicodeInLatex(backgroundParsed.background);
+  const background = backgroundParsed.background;
 
   // Generate deterministic sections
   const keyInsights = state.keyInsights || [];
@@ -560,6 +624,7 @@ async function generatePaperMetadata(
     keyInsights: processedKeyInsights, // Already escaped before DOI processing
     summaryOfDiscoveries: processedSummary, // Already escaped before DOI processing
     inlineBibliography: doiResult.referencesBib,
+    inlineBibEntries: doiResult.bibEntries, // Structured entries - no re-parsing needed!
     inlineDOIToCitekey: doiResult.doiToCitekey, // DOI → author-year citekey mapping
   };
 }
@@ -733,12 +798,10 @@ async function generateDiscoverySection(
         );
       }
 
-      // Clean up Unicode characters in the LLM-generated LaTeX
-      const cleanedLatex = replaceUnicodeInLatex(parsed.sectionLatex);
-
+      // XeLaTeX handles Unicode natively - no conversion needed
       return {
         discoveryIndex,
-        sectionLatex: cleanedLatex,
+        sectionLatex: parsed.sectionLatex,
         usedDois: parsed.usedDois || [],
       };
     } catch (error) {
@@ -770,8 +833,9 @@ function assembleMainTex(
   metadata: PaperMetadata,
   discoverySections: DiscoverySection[],
 ): string {
+  // XeLaTeX template - native Unicode support (no inputenc needed)
   return `\\documentclass[11pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
+\\usepackage{fontspec}  % XeLaTeX font handling
 \\usepackage{graphicx}
 \\usepackage[numbers]{natbib}
 \\usepackage{hyperref}
@@ -813,6 +877,111 @@ ${discoverySections.map((ds) => ds.sectionLatex).join("\n\n")}
 
 \\end{document}
 `;
+}
+
+/**
+ * Sanitize unresolved DOI citations to prevent LaTeX compilation errors
+ * Converts \cite{doi:10.xxx/yyy} to inline text (DOI: 10.xxx/yyy)
+ * This prevents crashes from escaped underscores in unresolved DOI citations
+ */
+function sanitizeUnresolvedCitations(latexContent: string): string {
+  let sanitized = latexContent;
+  let sanitizedCount = 0;
+
+  // Match \cite{...} or \citep{...} or \citet{...} containing unresolved DOI patterns
+  // Pattern matches citations containing doi: or doi_ that weren't resolved to proper citekeys
+  const unresolvedCiteRegex = /\\cite[pt]?\{([^}]*(?:doi:|doi_|10\.\d{4,}\/)[^}]*)\}/g;
+
+  sanitized = latexContent.replace(unresolvedCiteRegex, (_match, citations) => {
+    // Split multiple citations in the same \cite{} command
+    const citationList = citations.split(",").map((c: string) => c.trim());
+
+    const resolvedCites: string[] = [];
+    const inlineDOIs: string[] = [];
+
+    for (const citation of citationList) {
+      // Check if this citation is an unresolved DOI pattern
+      const isDOICitation =
+        citation.startsWith("doi:") ||
+        citation.startsWith("doi_") ||
+        /^10\.\d{4,}\//.test(citation);
+
+      if (isDOICitation) {
+        // Extract the DOI part
+        let doi = citation;
+        if (citation.startsWith("doi:")) {
+          doi = citation.substring(4);
+        } else if (citation.startsWith("doi_")) {
+          // Convert doi_10_xxxx_yyyy back to 10.xxxx/yyyy
+          doi = citation
+            .substring(4)
+            .replace(/_/g, "/")
+            .replace(/^(\d+)\//, "$1.");
+        }
+        // Remove any LaTeX escapes that might have been introduced
+        doi = doi.replace(/\\_/g, "_").replace(/\\&/g, "&");
+        inlineDOIs.push(doi);
+        sanitizedCount++;
+      } else {
+        // Keep resolved citations
+        resolvedCites.push(citation);
+      }
+    }
+
+    // Build result
+    let result = "";
+
+    // If we have resolved citations, keep them in a \cite{}
+    if (resolvedCites.length > 0) {
+      result += `\\cite{${resolvedCites.join(",")}}`;
+    }
+
+    // Add inline DOIs as text
+    if (inlineDOIs.length > 0) {
+      const doiText = inlineDOIs.map((d) => `DOI: ${d}`).join("; ");
+      if (result) {
+        result += ` (${doiText})`;
+      } else {
+        result = `(${doiText})`;
+      }
+    }
+
+    return result;
+  });
+
+  if (sanitizedCount > 0) {
+    logger.info(
+      { sanitizedCount },
+      "sanitized_unresolved_doi_citations_to_inline_text",
+    );
+  }
+
+  return sanitized;
+}
+
+/**
+ * Strip ALL citations from LaTeX content (last-resort fallback)
+ * Used when compilation fails even after sanitization
+ */
+function stripAllCitations(latexContent: string): string {
+  let stripped = latexContent;
+
+  // Remove all \cite{...}, \citep{...}, \citet{...} commands
+  stripped = stripped.replace(/\\cite[pt]?\{[^}]*\}/g, "");
+
+  // Remove bibliography commands
+  stripped = stripped.replace(/\\bibliographystyle\{[^}]*\}/g, "");
+  stripped = stripped.replace(/\\bibliography\{[^}]*\}/g, "");
+
+  // Clean up any double spaces or awkward punctuation left behind
+  stripped = stripped.replace(/\s+\./g, ".");
+  stripped = stripped.replace(/\s+,/g, ",");
+  stripped = stripped.replace(/\(\s*\)/g, ""); // Remove empty parentheses
+  stripped = stripped.replace(/\s{2,}/g, " "); // Multiple spaces to single
+
+  logger.warn("stripped_all_citations_for_last_resort_compilation");
+
+  return stripped;
 }
 
 /**
