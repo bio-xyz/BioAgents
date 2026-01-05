@@ -1,9 +1,16 @@
 import { useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { Button, IconButton } from './ui';
+import { useAuth } from '../hooks';
 
 export function Sidebar({ sessions, currentSessionId, onSessionSelect, onNewSession, onDeleteSession, isMobileOpen, onMobileClose }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { logout, isLoggingOut } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    route('/login', true);
+  };
 
   // Group sessions by time period
   const groupSessions = () => {
@@ -196,22 +203,12 @@ export function Sidebar({ sessions, currentSessionId, onSessionSelect, onNewSess
             <Button
               variant="ghost"
               icon="logout"
-              onClick={async () => {
-                try {
-                  await fetch('/api/auth/logout', {
-                    method: 'POST',
-                    credentials: 'include'
-                  });
-                  // Navigate to login page
-                  route('/login', true);
-                } catch (error) {
-                  console.error('Logout failed:', error);
-                }
-              }}
+              onClick={handleLogout}
+              disabled={isLoggingOut}
               className="sidebar-logout-btn"
               title="Logout"
             >
-              Logout
+              {isLoggingOut ? 'Logging out...' : 'Logout'}
             </Button>
           </div>
         </>
