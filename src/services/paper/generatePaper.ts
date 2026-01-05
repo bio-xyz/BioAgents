@@ -10,7 +10,11 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { getConversation, getConversationState } from "../../db/operations";
+import {
+  getConversation,
+  getConversationState,
+  getUser,
+} from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import { getStorageProvider } from "../../storage";
 import type {
@@ -85,6 +89,27 @@ export async function generatePaperFromConversation(
 
   const state = stateRecord.values as ConversationStateValues;
 
+  // Fetch user to check if they have an email for authorship
+  const user = await getUser(userId);
+  const userEmail = user?.email;
+
+  // Generate authors string: User + Aubrai if user has real email, otherwise just Aubrai
+  // Skip auto-generated emails (x402.local, temp.local, etc.)
+  const isRealEmail =
+    userEmail &&
+    !userEmail.endsWith("@x402.local") &&
+    !userEmail.endsWith("@temp.local") &&
+    userEmail.includes("@");
+  const aubraiAuthor = "Aubrai (aubrai@bio.xyz)";
+  const authors = isRealEmail
+    ? `${userEmail} \\and ${aubraiAuthor}`
+    : aubraiAuthor;
+
+  logger.info(
+    { userId, hasEmail: !!userEmail, isRealEmail, authors },
+    "paper_authors_determined",
+  );
+
   const paperId = randomUUID();
   const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
 
@@ -126,7 +151,7 @@ export async function generatePaperFromConversation(
       .map((id) => tasksByJobId.get(id))
       .filter((task): task is PlanTask => task !== undefined);
 
-    const metadata = await generatePaperMetadata(state, evidenceTasks);
+    const metadata = await generatePaperMetadata(state, evidenceTasks, authors);
 
     const allFigures: Map<number, FigureInfo[]> = new Map();
     for (let i = 0; i < discoveryContexts.length; i++) {
@@ -206,7 +231,10 @@ export async function generatePaperFromConversation(
     // First compilation attempt failed - try recovery strategies
     if (!compileResult.success || !compileResult.pdfPath) {
       const errorLogs = extractLastLines(compileResult.logs, 200);
-      logger.warn({ errorLogs }, "latex_compilation_failed_attempting_recovery");
+      logger.warn(
+        { errorLogs },
+        "latex_compilation_failed_attempting_recovery",
+      );
 
       // Check for undefined citations and remove them
       const undefinedCitations = checkForUndefinedCitations(compileResult.logs);
@@ -394,7 +422,7 @@ function mapDiscoveriesToTasks(
   allowedTasks: PlanTask[];
 }> {
   if (!state.discoveries || state.discoveries.length === 0) {
-    throw new Error("No discoveries found in conversation state");
+    state.discoveries = [];
   }
 
   // Get all tasks as fallback for legacy conversations
@@ -460,6 +488,7 @@ function mapDiscoveriesToTasks(
 async function generatePaperMetadata(
   state: ConversationStateValues,
   evidenceTasks: PlanTask[],
+  authors: string,
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
@@ -576,11 +605,13 @@ async function generatePaperMetadata(
           .split(/[;,]/)
           .map((url: string) => {
             const doiMatch = url.trim().match(/10\.\d{4,}[^\s;,)]+/);
-            return doiMatch ? `doi:${doiMatch[0].replace(/[\.\s]+$/, "")}` : null;
+            return doiMatch
+              ? `doi:${doiMatch[0].replace(/[\.\s]+$/, "")}`
+              : null;
           })
           .filter(Boolean);
         return dois.length > 0 ? `[${dois.join(",")}]` : match;
-      }
+      },
     );
   };
 
@@ -618,6 +649,7 @@ async function generatePaperMetadata(
 
   return {
     title: escapeLatex(title),
+    authors, // User + Aubrai if user has email, otherwise just Aubrai
     abstract: escapeLatex(abstract),
     background: processedBackground, // Now includes processed DOI citations
     researchSnapshot: escapeLatex(researchSnapshot),
@@ -685,7 +717,10 @@ async function generateDiscoverySection(
     type: task.type,
     outputLength: task.output?.length || 0,
   }));
-  const totalTaskOutputChars = taskOutputStats.reduce((sum, t) => sum + t.outputLength, 0);
+  const totalTaskOutputChars = taskOutputStats.reduce(
+    (sum, t) => sum + t.outputLength,
+    0,
+  );
 
   logger.info(
     {
@@ -902,7 +937,7 @@ function assembleMainTex(
 \\graphicspath{{figures/}}
 
 \\title{${metadata.title}}
-\\author{Aubrai}
+\\author{${metadata.authors}}
 \\date{\\today}
 
 \\begin{document}
@@ -947,7 +982,8 @@ function sanitizeUnresolvedCitations(latexContent: string): string {
 
   // Match \cite{...} or \citep{...} or \citet{...} containing unresolved DOI patterns
   // Pattern matches citations containing doi: or doi_ that weren't resolved to proper citekeys
-  const unresolvedCiteRegex = /\\cite[pt]?\{([^}]*(?:doi:|doi_|10\.\d{4,}\/)[^}]*)\}/g;
+  const unresolvedCiteRegex =
+    /\\cite[pt]?\{([^}]*(?:doi:|doi_|10\.\d{4,}\/)[^}]*)\}/g;
 
   sanitized = latexContent.replace(unresolvedCiteRegex, (_match, citations) => {
     // Split multiple citations in the same \cite{} command
