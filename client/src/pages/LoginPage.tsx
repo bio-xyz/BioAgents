@@ -1,3 +1,4 @@
+import { useEffect } from 'preact/hooks';
 import { route } from 'preact-router';
 import { LoginScreen } from '../components/LoginScreen';
 import { useAuth } from '../hooks';
@@ -11,11 +12,18 @@ interface LoginPageProps {
  * Handles authentication and redirects to chat on success
  */
 export function LoginPage(_props: LoginPageProps) {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, isLoggingOut, login } = useAuth();
 
-  // If already authenticated, redirect to chat
-  if (isAuthenticated) {
-    route('/chat', true);
+  // Redirect to chat if already authenticated (use effect to avoid flickering)
+  useEffect(() => {
+    // Don't redirect while logout is in progress
+    if (isAuthenticated && !isLoggingOut) {
+      route('/chat', true);
+    }
+  }, [isAuthenticated, isLoggingOut]);
+
+  // Show nothing while redirecting to prevent flash
+  if (isAuthenticated && !isLoggingOut) {
     return null;
   }
 
