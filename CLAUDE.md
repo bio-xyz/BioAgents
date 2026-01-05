@@ -2,6 +2,126 @@
 
 AI-powered research assistant for bioscience literature and data analysis.
 
+## Related Documentation
+
+- [AUTH.md](documentation/docs/AUTH.md) - Authentication (JWT, x402/b402 payments)
+- [SETUP.md](documentation/docs/SETUP.md) - Environment setup and LLM configuration
+- [JOB_QUEUE.md](documentation/docs/JOB_QUEUE.md) - BullMQ queue system architecture
+- [FILE_UPLOAD.md](documentation/docs/FILE_UPLOAD.md) - S3 presigned URL file upload flow
+
+---
+
+## Deep Research: The AI Scientist Framework
+
+We are building the **BEST AI scientist framework**. Deep Research is the PRIMARY way to use this agent - it is more important than basic chat. The agent MUST behave like a real scientist: iterative, methodical, and hypothesis-driven.
+
+### Philosophy & Mission
+
+**IMPORTANT**: This system enables real scientific discovery through iterative human-AI collaboration. Every research cycle builds on accumulated knowledge - YOU MUST NEVER treat queries in isolation.
+
+Core principles:
+1. **Iterative Investigation** - Research unfolds across multiple cycles, each deepening understanding
+2. **Human-in-the-Loop Steering** - Users guide the research direction at every iteration
+3. **Persistent World State** - All discoveries, hypotheses, and insights accumulate across the conversation
+4. **Evidence-Grounded Claims** - Every discovery links to supporting tasks and data
+
+### The Iterative Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DEEP RESEARCH CYCLE                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
+│  │ PLANNING │───▶│ EXECUTE  │───▶│HYPOTHESIS│───▶│REFLECTION│  │
+│  │  Agent   │    │  Tasks   │    │  Agent   │    │  Agent   │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
+│       │                                               │         │
+│       │              ┌──────────┐                     │         │
+│       │              │DISCOVERY │◀────────────────────┘         │
+│       │              │  Agent   │                               │
+│       │              └────┬─────┘                               │
+│       │                   │                                     │
+│       ▼                   ▼                                     │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │              WORLD STATE (Accumulated Knowledge)        │    │
+│  │  • currentObjective  • keyInsights  • discoveries      │    │
+│  │  • methodology       • hypothesis   • datasets         │    │
+│  └────────────────────────────────────────────────────────┘    │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌──────────────────┐                                          │
+│  │ HUMAN STEERING   │ ◀── User approves/redirects              │
+│  └────────┬─────────┘                                          │
+│           │                                                     │
+│           └──────────────── NEXT CYCLE ─────────────────────▶  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Each cycle:
+1. **Planning** - Decides WHAT tasks to run based on current state and user input
+2. **Execution** - Runs LITERATURE and ANALYSIS tasks in parallel
+3. **Hypothesis** - Synthesizes outputs into scientific claims
+4. **Reflection** - Updates world state with insights, evolves objectives
+5. **Discovery** - Identifies novel claims and links them to evidence
+6. **Human Steering** - User reviews, approves, or redirects
+
+### Mini-Agent Collaboration
+
+| Agent | Role | State Updates |
+|-------|------|---------------|
+| **Planning** | Decides WHAT tasks to run, plans next iterations | Returns suggestions (no state mutation) |
+| **Hypothesis** | Synthesizes task outputs into scientific claims | `currentHypothesis` |
+| **Reflection** | Extracts insights, evolves research objectives | `currentObjective`, `keyInsights`, `methodology`, `conversationTitle` |
+| **Discovery** | Identifies novel claims with evidence links | `discoveries[]` |
+
+**IMPORTANT**: Each agent reads the world state but only updates specific fields. This prevents conflicts and maintains clear causality.
+
+### External Services
+
+**IMPORTANT**: LITERATURE and ANALYSIS tasks are executed by EXTERNAL services (OpenScholar, Edison, BioAgents API). This repository CANNOT control their execution - we can only consume their outputs.
+
+YOU MUST:
+- Handle external service outputs gracefully
+- Extract maximum value from returned data
+- Never crash the workflow due to external service failures
+- Properly attribute evidence from external sources
+
+### Behavioral Mandates
+
+**YOU MUST follow these rules to build a world-class AI scientist:**
+
+#### World State Management
+- YOU MUST update the world state after every task completion
+- YOU MUST NEVER lose accumulated discoveries
+- YOU MUST maintain complete traceability: claims → evidence → tasks → jobIds
+
+#### Human Steering
+- The user's input ALWAYS overrides agent suggestions
+- YOU MUST present clear next steps for user approval before execution
+- NEVER proceed with major direction changes without user consent
+- When the user provides feedback, incorporate it into the next planning cycle
+
+#### Scientific Rigor
+- Every discovery MUST link to supporting evidence (taskId, jobId)
+- Novelty claims MUST be validated against literature
+- Hypotheses MUST evolve based on new findings - they are not static
+- Maintain DOI citations for all literature references
+
+#### Iteration Quality
+- Each cycle MUST build meaningfully on prior work
+- NEVER treat a research query in isolation
+- Summarize accumulated context - don't dump raw conversation history
+- The world state should grow richer and more nuanced over time
+
+#### Paper Generation
+- When generating papers, ensure complete traceability from claims to source data
+- Include all DOI-backed citations in the bibliography
+- Link figures and artifacts to their source analysis tasks
+
+---
+
 ## Tech Stack
 
 - **Runtime**: Bun (not Node.js)
@@ -126,6 +246,11 @@ B402_ENABLED=false         # BNB/USDT payments
 - `POST /api/deep-research/start` - Start deep research job
 - `GET /api/deep-research/status/:messageId` - Check job status
 - `GET /api/health` - Health check with queue status
+
+### Paper Generation
+- `POST /api/deep-research/conversations/:conversationId/paper` - Generate LaTeX paper from conversation
+- `GET /api/deep-research/paper/:paperId` - Get paper with fresh presigned URLs
+- `GET /api/deep-research/conversations/:conversationId/papers` - List all papers for a conversation
 
 ### Payment-Gated (x402/b402)
 - `POST /api/x402/chat` - Payment-gated chat (Base/USDC)
