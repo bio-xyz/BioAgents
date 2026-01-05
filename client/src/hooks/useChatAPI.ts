@@ -4,19 +4,20 @@ import { useToast } from "./useToast";
 import { useX402Payment, type UseX402PaymentReturn } from "./useX402Payment";
 
 /**
- * Get the API secret for authentication
- * Priority: localStorage > environment variable
+ * Get the JWT auth token for API authentication
+ * Returns the JWT token issued by the server after successful login
+ *
+ * SECURITY NOTE:
+ * - The JWT is signed by the server using BIOAGENTS_SECRET
+ * - BIOAGENTS_SECRET never leaves the server
+ * - Only the signed JWT token is stored on the client
+ * - The token contains userId and expiration, verified by signature
  */
-function getApiSecret(): string | null {
-  // Check localStorage first (allows runtime configuration)
-  const localSecret = localStorage.getItem("bioagents_secret");
-  if (localSecret) return localSecret;
-  
-  // Fall back to build-time environment variable
-  // @ts-ignore - Vite injects this at build time
-  const envSecret = import.meta.env?.BIOAGENTS_SECRET;
-  if (envSecret) return envSecret;
-  
+function getAuthToken(): string | null {
+  // Get JWT token from UI auth flow
+  const authToken = localStorage.getItem("bioagents_auth_token");
+  if (authToken) return authToken;
+
   return null;
 }
 
@@ -107,10 +108,10 @@ export function useChatAPI(
     maxAttempts = 180, // 3 minutes for regular chat
     intervalMs = 1000,
   ): Promise<{ text: string; messageId: string; files?: any[] }> => {
-    const apiSecret = getApiSecret();
+    const authToken = getAuthToken();
     const headers: Record<string, string> = {};
-    if (apiSecret) {
-      headers["Authorization"] = `Bearer ${apiSecret}`;
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
     }
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -188,9 +189,9 @@ export function useChatAPI(
 
       // Build headers with auth
       const headers: Record<string, string> = {};
-      const apiSecret = getApiSecret();
-      if (apiSecret) {
-        headers["Authorization"] = `Bearer ${apiSecret}`;
+      const authToken = getAuthToken();
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
       }
 
       // Determine endpoint based on x402 payment status
@@ -436,9 +437,9 @@ export function useChatAPI(
 
       // Build headers with auth
       const headers: Record<string, string> = {};
-      const apiSecret = getApiSecret();
-      if (apiSecret) {
-        headers["Authorization"] = `Bearer ${apiSecret}`;
+      const authToken = getAuthToken();
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
       }
 
       // Determine endpoint based on x402 payment status

@@ -16,6 +16,7 @@ import { ConversationProvider } from "../providers/ConversationProvider";
 
 // Custom hooks
 import {
+  useAuth,
   useAutoScroll,
   useChatAPI,
   useEmbeddedWallet,
@@ -45,6 +46,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // Toast notifications
   const toast = useToast();
 
+  // Auth context - provides userId from JWT
+  const { userId: authUserId } = useAuth();
+
   // x402 payment state (only if enabled)
   const x402 = useX402Payment();
   const {
@@ -63,33 +67,23 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     walletClient: embeddedWalletClient,
   } = useEmbeddedWallet(x402ConfigData?.network, x402Enabled);
 
-  // Get or create dev user ID (only used when x402 is disabled)
-  const getDevUserId = () => {
-    if (x402Enabled) return null;
-
+  // Fallback user ID for when auth is not required
+  // Uses localStorage to persist across sessions
+  const getFallbackUserId = () => {
     const stored = localStorage.getItem("dev_user_id");
-
-    if (stored && stored.startsWith("dev_user_")) {
-      console.log("[ChatPage] Migrating old dev user ID to UUID format:", stored);
-      localStorage.removeItem("dev_user_id");
-    } else if (stored) {
-      return stored;
-    }
-
+    if (stored) return stored;
     const newId = generateConversationId();
     localStorage.setItem("dev_user_id", newId);
-    console.log("[ChatPage] Created new dev user ID (UUID):", newId);
     return newId;
   };
 
-  const devUserId = getDevUserId();
-
   // Determine which user ID to use
+  // Priority: x402 wallet > JWT auth userId > localStorage fallback
   const actualUserId = x402Enabled
     ? embeddedWalletAddress
       ? walletAddressToUUID(embeddedWalletAddress)
       : null
-    : devUserId;
+    : authUserId || getFallbackUserId();
 
   // WebSocket connection state
   const [wsConnected, setWsConnected] = useState(false);
