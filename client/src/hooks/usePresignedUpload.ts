@@ -1,16 +1,17 @@
 import { useState, useCallback } from 'preact/hooks';
 
 /**
- * Get the API secret for authentication
+ * Get the JWT auth token for API authentication
+ * Returns the JWT token issued by the server after successful login
+ *
+ * SECURITY NOTE:
+ * - The JWT is signed by the server using BIOAGENTS_SECRET
+ * - BIOAGENTS_SECRET never leaves the server
+ * - Only the signed JWT token is stored on the client
  */
-function getApiSecret(): string | null {
-  const localSecret = localStorage.getItem("bioagents_secret");
-  if (localSecret) return localSecret;
-
-  // @ts-ignore - Vite injects this at build time
-  const envSecret = import.meta.env?.BIOAGENTS_SECRET;
-  if (envSecret) return envSecret;
-
+function getAuthToken(): string | null {
+  const authToken = localStorage.getItem("bioagents_auth_token");
+  if (authToken) return authToken;
   return null;
 }
 
@@ -73,9 +74,9 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    const apiSecret = getApiSecret();
-    if (apiSecret) {
-      headers['Authorization'] = `Bearer ${apiSecret}`;
+    const authToken = getAuthToken();
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
     return headers;
   }, []);
