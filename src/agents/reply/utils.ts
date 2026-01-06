@@ -65,14 +65,6 @@ export async function generateReply(
           .join("\n")
       : "No further tasks planned. The research may be complete or awaiting your feedback.";
 
-  // Format key insights
-  const keyInsightsText =
-    context.keyInsights.length > 0
-      ? context.keyInsights
-          .map((insight, i) => `${i + 1}. ${insight}`)
-          .join("\n")
-      : "No key insights yet.";
-
   // Format discoveries
   const discoveriesText =
     context.discoveries.length > 0
@@ -95,12 +87,12 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
 
   // Build the prompt
   // Note: uploadedDatasets not included - deep research analyzes files via ANALYSIS tasks
+  // Note: keyInsights not included - shown separately in UI above the message
   const replyInstruction = replyPrompt
     .replace("{{question}}", question)
     .replace("{{completedTasks}}", completedTasksText)
     .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
     .replace("{{nextPlan}}", nextPlanText)
-    .replace("{{keyInsights}}", keyInsightsText)
     .replace("{{discoveries}}", discoveriesText)
     .replace("{{methodology}}", context.methodology || "Not specified")
     .replace(
@@ -131,7 +123,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
         content: replyInstruction,
       },
     ],
-    maxTokens: options.maxTokens ?? 2000,
+    maxTokens: options.maxTokens ?? 5500,
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 1024)
       : undefined,
@@ -190,7 +182,8 @@ export async function generateChatReply(
     context.uploadedDatasets && context.uploadedDatasets.length > 0
       ? context.uploadedDatasets
           .map((dataset, i) => {
-            const recentTag = i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
+            const recentTag =
+              i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
             let text = `${i + 1}. File: ${dataset.filename}${recentTag}\n   Description: ${dataset.description}`;
             if (dataset.content) {
               // Include content for chat mode (up to 30KB per file)

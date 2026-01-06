@@ -63,7 +63,7 @@ export async function replyAgent(input: {
         currentObjective: conversationState.values.currentObjective,
       },
       {
-        maxTokens: 3200,
+        maxTokens: 5500,
         thinking: true,
         thinkingBudget: 1024,
       },
