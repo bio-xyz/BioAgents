@@ -10,9 +10,6 @@ COMPLETED WORK
 The following tasks were just completed in this iteration:
 {{completedTasks}}
 
-KEY INSIGHTS (Cumulative understanding across all iterations):
-{{keyInsights}}
-
 SCIENTIFIC DISCOVERIES (Rigorous findings with evidence):
 {{discoveries}}
 
@@ -25,15 +22,12 @@ UPCOMING PLAN (Next iteration tasks):
 TASK
 Generate a user-facing reply that:
 1. Summarizes what was done in this iteration
-2. Presents Scientific Discoveries section (separate from Key Insights)
+2. Presents Scientific Discoveries section
    - If discoveries exist: present each discovery with evidence
-   - If no discoveries yet: say "No formal discoveries yet. All insights are in the Key Insights section below."
-3. Presents Key Insights section (separate from Scientific Discoveries)
-   - Always include important findings and observations from this iteration
-4. Presents the current hypothesis clearly
-5. Describes the current objective and outlines the plan for the next iteration together
-6. Provides a concise summary at the end (2-3 sentences)
-7. Asks the user for feedback on the plan
+   - If no discoveries yet: say "No formalized scientific discoveries yet. Key Insights are shown above this message."
+3. Presents the current hypothesis clearly
+4. Describes the current objective and outlines the plan for the next iteration together
+5. Asks the user for feedback on the plan
 
 IMPORTANT NOTES:
 - Scientific discoveries are rigorously evidence-based findings with specific supporting evidence
@@ -79,11 +73,7 @@ Example format:
 ]
 
 If no discoveries were provided:
-No formalized scientific discoveries yet. They will appear here as we progress our research. All insights are in the Key Insights section below.
-
-## Key Insights
-
-[Always include - list important findings and observations from this iteration provided in the Key Insights section above]
+No formalized scientific discoveries yet. Key Insights are shown above this message.
 
 ## Current Hypothesis
 
