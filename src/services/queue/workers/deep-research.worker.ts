@@ -186,9 +186,12 @@ async function processDeepResearchJob(
           "deep_research_job_executing_literature_task",
         );
 
-        // Use Edison only for deep research literature
-        const primaryLiteratureType = "EDISON";
-        const primaryLiteratureLabel = "Edison";
+        const primaryLiteratureType =
+          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
+            ? "BIOLITDEEP"
+            : "EDISON";
+        const primaryLiteratureLabel =
+          primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
         // Run literature searches in parallel
         const openScholarPromise = literatureAgent({
