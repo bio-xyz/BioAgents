@@ -99,6 +99,46 @@ export interface FileProcessJobResult {
 }
 
 /**
+ * Job data for paper generation queue
+ * Sent to /api/deep-research/conversations/:id/paper/async, processed by paper-generation worker
+ */
+export interface PaperGenerationJobData {
+  paperId: string;
+  userId: string;
+  conversationId: string;
+  authMethod: AuthMethod;
+  requestedAt: string;
+}
+
+/**
+ * Result returned by paper generation worker on completion
+ */
+export interface PaperGenerationJobResult {
+  paperId: string;
+  conversationId: string;
+  pdfPath: string;
+  pdfUrl?: string;
+  rawLatexUrl?: string;
+  status: "completed" | "failed";
+  error?: string;
+  responseTime: number;
+}
+
+/**
+ * Paper generation progress stages
+ */
+export type PaperGenerationStage =
+  | "validating"
+  | "metadata"
+  | "figures"
+  | "discoveries"
+  | "bibliography"
+  | "latex_assembly"
+  | "compilation"
+  | "upload"
+  | "cleanup";
+
+/**
  * Notification types sent via Redis Pub/Sub
  */
 export type NotificationType =
@@ -109,7 +149,11 @@ export type NotificationType =
   | "message:updated"
   | "state:updated"
   | "file:ready"
-  | "file:error";
+  | "file:error"
+  | "paper:started"
+  | "paper:progress"
+  | "paper:completed"
+  | "paper:failed";
 
 /**
  * Notification payload structure
@@ -122,6 +166,7 @@ export interface Notification {
   messageId?: string;
   stateId?: string;
   fileId?: string;
+  paperId?: string;
   progress?: { stage: string; percent: number };
   description?: string;
   error?: string;

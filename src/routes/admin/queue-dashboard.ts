@@ -5,7 +5,7 @@
  * Access at /admin/queues when USE_JOB_QUEUE=true
  *
  * Features:
- * - View all queues (chat, deep-research)
+ * - View all queues (chat, deep-research, paper-generation, file-process)
  * - Monitor job states (waiting, active, completed, failed)
  * - Inspect job data and results
  * - Retry failed jobs
@@ -17,7 +17,7 @@ import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ElysiaAdapter } from "@bull-board/elysia";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { getChatQueue, getDeepResearchQueue, getFileProcessQueue } from "../../services/queue/queues";
+import { getChatQueue, getDeepResearchQueue, getFileProcessQueue, getPaperGenerationQueue } from "../../services/queue/queues";
 import logger from "../../utils/logger";
 
 /**
@@ -35,6 +35,7 @@ export function createQueueDashboard(): Elysia | null {
     const chatQueue = getChatQueue();
     const deepResearchQueue = getDeepResearchQueue();
     const fileProcessQueue = getFileProcessQueue();
+    const paperGenerationQueue = getPaperGenerationQueue();
 
     // Create Bull Board server adapter
     const serverAdapter = new ElysiaAdapter("/admin/queues");
@@ -43,6 +44,7 @@ export function createQueueDashboard(): Elysia | null {
     const queueAdapters = [
       new BullMQAdapter(chatQueue),
       new BullMQAdapter(deepResearchQueue),
+      new BullMQAdapter(paperGenerationQueue),
     ];
 
     // Add file-process queue if available

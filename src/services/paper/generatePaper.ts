@@ -49,6 +49,7 @@ import {
 import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
 import { escapeLatex } from "./utils/escapeLatex";
 import { processInlineDOICitations } from "./utils/inlineDoiCitations";
+import type { PaperGenerationStage } from "../queue/types";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -56,13 +57,28 @@ const supabase = createClient(
 );
 
 /**
+ * Progress callback type for async paper generation
+ */
+export type ProgressCallback = (stage: PaperGenerationStage) => Promise<void>;
+
+/**
  * Main entry point: Generate paper from conversation
+ *
+ * @param conversationId - The conversation to generate a paper from
+ * @param userId - The user requesting the paper
+ * @param existingPaperId - Optional pre-created paper ID (for async queue flow)
+ * @param onProgress - Optional callback for progress updates (for async queue flow)
  */
 export async function generatePaperFromConversation(
   conversationId: string,
   userId: string,
+  existingPaperId?: string,
+  onProgress?: ProgressCallback,
 ): Promise<PaperGenerationResult> {
-  logger.info({ conversationId, userId }, "paper_generation_started");
+  logger.info({ conversationId, userId, existingPaperId }, "paper_generation_started");
+
+  // Report validating progress
+  await onProgress?.("validating");
 
   const conversation = await getConversation(conversationId);
   if (!conversation) {
@@ -110,22 +126,28 @@ export async function generatePaperFromConversation(
     "paper_authors_determined",
   );
 
-  const paperId = randomUUID();
+  // Use existing paperId if provided (async flow), otherwise generate new one
+  const paperId = existingPaperId || randomUUID();
   const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
 
-  const { error: insertError } = await supabase.from("paper").insert({
-    id: paperId,
-    user_id: userId,
-    conversation_id: conversationId,
-    pdf_path: pdfPath,
-  });
+  // Only create paper record if not using an existing paperId (sync flow)
+  if (!existingPaperId) {
+    const { error: insertError } = await supabase.from("paper").insert({
+      id: paperId,
+      user_id: userId,
+      conversation_id: conversationId,
+      pdf_path: pdfPath,
+    });
 
-  if (insertError) {
-    logger.error({ insertError }, "failed_to_create_paper_record");
-    throw new Error(`Failed to create paper record: ${insertError.message}`);
+    if (insertError) {
+      logger.error({ insertError }, "failed_to_create_paper_record");
+      throw new Error(`Failed to create paper record: ${insertError.message}`);
+    }
+
+    logger.info({ paperId }, "paper_record_created");
+  } else {
+    logger.info({ paperId: existingPaperId }, "using_existing_paper_record");
   }
-
-  logger.info({ paperId }, "paper_record_created");
 
   const workDir = path.join(os.tmpdir(), "paper", paperId);
   const latexDir = path.join(workDir, "latex");
@@ -151,7 +173,13 @@ export async function generatePaperFromConversation(
       .map((id) => tasksByJobId.get(id))
       .filter((task): task is PlanTask => task !== undefined);
 
+    // Report metadata progress
+    await onProgress?.("metadata");
+
     const metadata = await generatePaperMetadata(state, evidenceTasks, authors);
+
+    // Report figures progress
+    await onProgress?.("figures");
 
     const allFigures: Map<number, FigureInfo[]> = new Map();
     for (let i = 0; i < discoveryContexts.length; i++) {
@@ -166,6 +194,9 @@ export async function generatePaperFromConversation(
       allFigures.set(i, figures);
     }
 
+    // Report discoveries progress
+    await onProgress?.("discoveries");
+
     const discoverySections = await generateDiscoverySectionsParallel(
       discoveryContexts,
       allFigures,
@@ -174,6 +205,9 @@ export async function generatePaperFromConversation(
     );
 
     let mainTexContent = assembleMainTex(metadata, discoverySections);
+
+    // Report bibliography progress
+    await onProgress?.("bibliography");
 
     const allDOIs = extractDOICitations(mainTexContent);
     const discoveryBibEntries = await resolveMultipleDOIs(allDOIs);
@@ -206,6 +240,9 @@ export async function generatePaperFromConversation(
     // Convert \cite{doi:10.xxx/yyy} to inline text (DOI: 10.xxx/yyy)
     mainTexContent = sanitizeUnresolvedCitations(mainTexContent);
 
+    // Report latex_assembly progress
+    await onProgress?.("latex_assembly");
+
     fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
 
     const mergedBibContent = generateBibTeXFile(dedupedBibEntries);
@@ -223,6 +260,9 @@ export async function generatePaperFromConversation(
       citekeysInBib,
       missingInBib,
     );
+
+    // Report compilation progress
+    await onProgress?.("compilation");
 
     logger.info("compiling_latex");
     let compileResult = await compileLatexToPDF(workDir);
@@ -276,7 +316,10 @@ export async function generatePaperFromConversation(
             { errorLogs: finalErrorLogs },
             "latex_compilation_failed_even_without_citations",
           );
-          await supabase.from("paper").delete().eq("id", paperId);
+          // Only delete paper record if we created it (sync flow)
+          if (!existingPaperId) {
+            await supabase.from("paper").delete().eq("id", paperId);
+          }
           throw new Error(
             `LaTeX compilation failed (even without citations):\n${finalErrorLogs}`,
           );
@@ -313,7 +356,10 @@ export async function generatePaperFromConversation(
           if (!compileResult.success || !compileResult.pdfPath) {
             const errorLogs = extractLastLines(compileResult.logs, 200);
             logger.error({ errorLogs }, "latex_recompilation_failed");
-            await supabase.from("paper").delete().eq("id", paperId);
+            // Only delete paper record if we created it (sync flow)
+            if (!existingPaperId) {
+              await supabase.from("paper").delete().eq("id", paperId);
+            }
             throw new Error(`LaTeX recompilation failed:\n${errorLogs}`);
           }
         }
@@ -333,6 +379,9 @@ export async function generatePaperFromConversation(
       );
     }
 
+    // Report upload progress
+    await onProgress?.("upload");
+
     const storage = getStorageProvider();
     if (!storage) {
       throw new Error("Storage provider not available");
@@ -347,6 +396,9 @@ export async function generatePaperFromConversation(
 
     const pdfUrl = await storage.getPresignedUrl(pdfPath, 3600);
     const rawLatexUrl = await storage.getPresignedUrl(rawLatexPath, 3600);
+
+    // Report cleanup progress
+    await onProgress?.("cleanup");
 
     cleanupWorkDir(workDir);
 
@@ -364,8 +416,11 @@ export async function generatePaperFromConversation(
     // Cleanup on error
     cleanupWorkDir(workDir);
 
-    // Delete paper record on error
-    await supabase.from("paper").delete().eq("id", paperId);
+    // Only delete paper record if we created it (sync flow)
+    // In async flow (existingPaperId provided), the worker handles status updates
+    if (!existingPaperId) {
+      await supabase.from("paper").delete().eq("id", paperId);
+    }
 
     logger.error(
       {

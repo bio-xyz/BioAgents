@@ -14,6 +14,7 @@ import "./utils/canvas-polyfill";
 import { startChatWorker } from "./services/queue/workers/chat.worker";
 import { startDeepResearchWorker } from "./services/queue/workers/deep-research.worker";
 import { createFileProcessWorker } from "./services/queue/workers/file-process.worker";
+import { startPaperGenerationWorker } from "./services/queue/workers/paper-generation.worker";
 import { closeConnections } from "./services/queue/connection";
 import logger from "./utils/logger";
 
@@ -24,12 +25,14 @@ async function main() {
   const chatWorker = startChatWorker();
   const deepResearchWorker = startDeepResearchWorker();
   const fileProcessWorker = createFileProcessWorker();
+  const paperGenerationWorker = startPaperGenerationWorker();
 
   logger.info(
     {
       chatConcurrency: process.env.CHAT_QUEUE_CONCURRENCY || 5,
       deepResearchConcurrency: process.env.DEEP_RESEARCH_QUEUE_CONCURRENCY || 3,
       fileProcessConcurrency: process.env.FILE_PROCESS_CONCURRENCY || 5,
+      paperGenerationConcurrency: process.env.PAPER_GENERATION_CONCURRENCY || 1,
       redisUrl: process.env.REDIS_URL ? "[REDACTED]" : "redis://localhost:6379",
     },
     "workers_started",
@@ -47,6 +50,9 @@ async function main() {
 
     logger.info("Closing file process worker...");
     await fileProcessWorker.close();
+
+    logger.info("Closing paper generation worker...");
+    await paperGenerationWorker.close();
 
     logger.info("Closing Redis connections...");
     await closeConnections();

@@ -192,5 +192,74 @@ export async function notifyFileError(
   });
 }
 
+/**
+ * Helper to create and send a paper:started notification
+ */
+export async function notifyPaperStarted(
+  jobId: string,
+  conversationId: string,
+  paperId: string,
+): Promise<void> {
+  await notify({
+    type: "paper:started",
+    jobId,
+    conversationId,
+    paperId,
+  });
+}
+
+/**
+ * Helper to create and send a paper:progress notification
+ */
+export async function notifyPaperProgress(
+  jobId: string,
+  conversationId: string,
+  paperId: string,
+  stage: string,
+  percent: number,
+): Promise<void> {
+  await notify({
+    type: "paper:progress",
+    jobId,
+    conversationId,
+    paperId,
+    progress: { stage, percent },
+  });
+}
+
+/**
+ * Helper to create and send a paper:completed notification
+ */
+export async function notifyPaperCompleted(
+  jobId: string,
+  conversationId: string,
+  paperId: string,
+): Promise<void> {
+  await notify({
+    type: "paper:completed",
+    jobId,
+    conversationId,
+    paperId,
+  });
+}
+
+/**
+ * Helper to create and send a paper:failed notification
+ */
+export async function notifyPaperFailed(
+  jobId: string,
+  conversationId: string,
+  paperId: string,
+  error: string,
+): Promise<void> {
+  await notify({
+    type: "paper:failed",
+    jobId,
+    conversationId,
+    paperId,
+    error,
+  });
+}
+
 // Alias for backwards compatibility
 export { notify as publishNotification };
