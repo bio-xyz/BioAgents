@@ -23,12 +23,23 @@ import logger from "../../../utils/logger";
 /**
  * Process a deep research job
  * This is the core deep research processing logic extracted from runDeepResearch
+ *
+ * Supports autonomous continuation:
+ * - fullyAutonomous=false (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
+ * - fullyAutonomous=true: Continues until research is done or hard cap of 20 iterations
  */
 async function processDeepResearchJob(
   job: Job<DeepResearchJobData, DeepResearchJobResult>,
 ): Promise<DeepResearchJobResult> {
   const startTime = Date.now();
-  const { userId, conversationId, messageId, stateId, conversationStateId } = job.data;
+  const {
+    userId,
+    conversationId,
+    messageId,
+    stateId,
+    conversationStateId,
+    fullyAutonomous = false,
+  } = job.data;
 
   // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
@@ -93,6 +104,39 @@ async function processDeepResearchJob(
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
+
+    // =========================================================================
+    // AUTONOMOUS ITERATION LOOP
+    // Continues until: research is done, max iterations reached, or agent decides to ask user
+    // =========================================================================
+    const maxAutoIterations = fullyAutonomous
+      ? 20 // Hard cap for fully autonomous mode
+      : parseInt(process.env.MAX_AUTO_ITERATIONS || "5");
+
+    let iterationCount = 0;
+    let shouldContinueLoop = true;
+
+    // Variables that need to be accessible after the loop
+    let tasksToExecute: PlanTask[] = [];
+    let hypothesisResult: { hypothesis: string; mode: string } = {
+      hypothesis: "",
+      mode: "create",
+    };
+
+    // Track the current message being updated (changes when auto-continuing)
+    let currentMessage = messageRecord;
+
+    logger.info(
+      { jobId: job.id, fullyAutonomous, maxAutoIterations },
+      "starting_autonomous_research_loop",
+    );
+
+    while (shouldContinueLoop && iterationCount < maxAutoIterations) {
+      iterationCount++;
+      logger.info(
+        { jobId: job.id, iterationCount, maxAutoIterations },
+        "starting_iteration",
+      );
 
     // Update progress: Planning
     await job.updateProgress({ stage: "planning", percent: 5 } as JobProgress);
@@ -167,7 +211,7 @@ async function processDeepResearchJob(
     const { literatureAgent } = await import("../../../agents/literature");
     const { analysisAgent } = await import("../../../agents/analysis");
 
-    const tasksToExecute = conversationState.values.plan.filter(
+    tasksToExecute = conversationState.values.plan.filter(
       (t) => t.level === newLevel,
     );
 
@@ -308,7 +352,7 @@ async function processDeepResearchJob(
 
     const { hypothesisAgent } = await import("../../../agents/hypothesis");
 
-    const hypothesisResult = await hypothesisAgent({
+    hypothesisResult = await hypothesisAgent({
       objective: currentObjective,
       message: messageRecord,
       conversationState,
@@ -409,37 +453,187 @@ async function processDeepResearchJob(
       if (conversationState.id) {
         await updateConversationState(conversationState.id, conversationState.values);
       }
+    } else {
+      // No suggested next steps means research is complete - exit loop
+      shouldContinueLoop = false;
     }
 
-    // Update progress: Reply
+    // =========================================================================
+    // GENERATE REPLY FOR THIS ITERATION
+    // Each iteration gets its own reply, saved to the current message
+    // =========================================================================
     await job.updateProgress({ stage: "reply", percent: 95 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
 
-    // Step 6: Generate reply
-    logger.info({ jobId: job.id }, "deep_research_job_generating_reply");
+    logger.info(
+      { jobId: job.id, iterationCount, messageId: currentMessage.id },
+      "generating_reply_for_iteration",
+    );
 
     const { replyAgent } = await import("../../../agents/reply");
 
     const replyResult = await replyAgent({
       conversationState,
-      message: messageRecord,
+      message: currentMessage,
       completedMaxTasks: tasksToExecute,
       hypothesis: hypothesisResult.hypothesis,
       nextPlan: conversationState.values.suggestedNextSteps || [],
     });
 
-    // Save reply to message
-    await updateMessage(messageId, { content: replyResult.reply });
+    // Update the current message with the reply
+    await updateMessage(currentMessage.id, {
+      content: replyResult.reply,
+      summary: replyResult.summary,
+    });
+
+    logger.info(
+      {
+        jobId: job.id,
+        messageId: currentMessage.id,
+        iterationCount,
+        contentLength: replyResult.reply.length,
+      },
+      "iteration_reply_saved",
+    );
 
     // Notify message updated
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
+    await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
 
+    // =========================================================================
+    // CONTINUE RESEARCH DECISION
+    // Decide whether to continue autonomously or ask user for feedback
+    // =========================================================================
+    if (shouldContinueLoop && conversationState.values.suggestedNextSteps?.length) {
+      const { continueResearchAgent } = await import(
+        "../../../agents/continueResearch"
+      );
+
+      const continueResult = await continueResearchAgent({
+        conversationState,
+        message: currentMessage,
+        completedTasks: tasksToExecute,
+        hypothesis: hypothesisResult.hypothesis,
+        suggestedNextSteps: conversationState.values.suggestedNextSteps,
+        iterationCount,
+      });
+
+      logger.info(
+        {
+          jobId: job.id,
+          shouldContinue: continueResult.shouldContinue,
+          confidence: continueResult.confidence,
+          reasoning: continueResult.reasoning,
+          triggerReason: continueResult.triggerReason,
+          iterationCount,
+        },
+        "continue_research_decision",
+      );
+
+      if (continueResult.shouldContinue) {
+        // CONTINUE: Promote suggestedNextSteps to plan for next iteration
+        logger.info(
+          { jobId: job.id, iterationCount },
+          "auto_continuing_to_next_iteration",
+        );
+
+        // Get current max level
+        const currentPlan = conversationState.values.plan || [];
+        const currentMaxLevel =
+          currentPlan.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : -1;
+        const nextLevel = currentMaxLevel + 1;
+
+        // Promote suggested steps to plan with new level and IDs
+        const promotedTasks = conversationState.values.suggestedNextSteps.map(
+          (task: PlanTask) => {
+            const taskId =
+              task.type === "ANALYSIS"
+                ? `ana-${nextLevel}`
+                : `lit-${nextLevel}`;
+            return {
+              ...task,
+              id: taskId,
+              level: nextLevel,
+              start: undefined,
+              end: undefined,
+              output: undefined,
+            };
+          },
+        );
+
+        // Add to plan and clear suggestions
+        conversationState.values.plan = [...currentPlan, ...promotedTasks];
+        conversationState.values.suggestedNextSteps = [];
+        conversationState.values.currentLevel = nextLevel;
+
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+          logger.info(
+            {
+              jobId: job.id,
+              nextLevel,
+              promotedTaskCount: promotedTasks.length,
+            },
+            "suggested_steps_promoted_to_plan",
+          );
+        }
+
+        // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
+        const { createMessage } = await import("../../../db/operations");
+
+        const agentMessage = await createMessage({
+          conversation_id: currentMessage.conversation_id,
+          user_id: currentMessage.user_id,
+          question: "", // Empty question indicates agent-initiated continuation
+          content: "", // Will be filled with next iteration's reply
+          source: currentMessage.source,
+          state_id: stateId,
+        });
+
+        logger.info(
+          {
+            jobId: job.id,
+            newMessageId: agentMessage.id,
+            previousMessageId: currentMessage.id,
+            iterationCount: iterationCount + 1,
+          },
+          "created_agent_continuation_message",
+        );
+
+        // Update currentMessage to point to the new message for next iteration
+        currentMessage = agentMessage;
+
+        // Loop will continue to next iteration
+      } else {
+        // ASK USER: Exit loop - reply already generated above
+        logger.info(
+          { jobId: job.id, triggerReason: continueResult.triggerReason, iterationCount },
+          "stopping_for_user_feedback",
+        );
+        shouldContinueLoop = false;
+      }
+    } else {
+      // No suggested next steps - research complete, exit loop
+      shouldContinueLoop = false;
+    }
+
+    } // END OF WHILE LOOP
+
+    // =========================================================================
+    // END OF AUTONOMOUS LOOP
+    // =========================================================================
     const responseTime = Date.now() - startTime;
 
     logger.info(
       {
         jobId: job.id,
-        messageId,
+        originalMessageId: messageId,
+        finalMessageId: currentMessage.id,
+        totalIterations: iterationCount,
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
       },
@@ -447,10 +641,10 @@ async function processDeepResearchJob(
     );
 
     // Notify: Job completed
-    await notifyJobCompleted(job.id!, conversationId, messageId, stateId);
+    await notifyJobCompleted(job.id!, conversationId, currentMessage.id, stateId);
 
     return {
-      messageId,
+      messageId: currentMessage.id,
       status: "completed",
       responseTime,
     };
