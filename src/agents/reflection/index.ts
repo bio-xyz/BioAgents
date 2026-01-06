@@ -116,6 +116,7 @@ export async function reflectionAgent(input: {
       logger.warn("No data available for reflection, returning current state");
       const end = new Date().toISOString();
       return {
+        conversationTitle: conversationState.values.conversationTitle,
         currentObjective: conversationState.values.currentObjective,
         keyInsights: conversationState.values.keyInsights || [],
         methodology: conversationState.values.methodology,

@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import Router, { route } from 'preact-router';
 import { CDPProvider } from './providers/CDPProvider';
+import { AuthProvider } from './contexts';
 import { LoginPage, ChatPage } from './pages';
 import { useAuth } from './hooks';
 import './styles/global.css';
@@ -11,12 +12,12 @@ import './styles/global.css';
  * Includes auth check and redirects
  */
 function AppShell() {
-  const { isAuthenticated, isAuthRequired, isChecking } = useAuth();
+  const { isAuthenticated, isAuthRequired, isChecking, isLoggingOut } = useAuth();
 
   // Handle auth redirects
   useEffect(() => {
-    // Skip during initial auth check
-    if (isChecking) return;
+    // Skip during initial auth check or during logout
+    if (isChecking || isLoggingOut) return;
 
     const currentPath = window.location.pathname;
 
@@ -29,14 +30,14 @@ function AppShell() {
     if (isAuthenticated && currentPath === '/login') {
       route('/chat', true);
     }
-  }, [isAuthenticated, isAuthRequired, isChecking]);
+  }, [isAuthenticated, isAuthRequired, isChecking, isLoggingOut]);
 
   // Handle route changes for auth protection
   const handleRouteChange = (e) => {
     const { url } = e;
 
-    // Skip during auth check
-    if (isChecking) return;
+    // Skip during auth check or logout
+    if (isChecking || isLoggingOut) return;
 
     // If auth is required and user is not authenticated, redirect to login
     if (isAuthRequired && !isAuthenticated && url !== '/login') {
@@ -136,13 +137,19 @@ function Root() {
 
   if (x402Enabled) {
     return (
-      <CDPProvider>
-        <AppShell />
-      </CDPProvider>
+      <AuthProvider>
+        <CDPProvider>
+          <AppShell />
+        </CDPProvider>
+      </AuthProvider>
     );
   }
 
-  return <AppShell />;
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
 }
 
 const root = document.getElementById('app');

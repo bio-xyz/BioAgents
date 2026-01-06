@@ -41,6 +41,7 @@ export type DiscoveryContext = {
 
 export type PaperMetadata = {
   title: string;
+  authors: string; // LaTeX-formatted author string
   abstract: string;
   background: string; // Background/Introduction section
   researchSnapshot: string;

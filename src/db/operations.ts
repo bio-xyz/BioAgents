@@ -53,6 +53,20 @@ export interface Message {
 }
 
 // User operations
+export async function getUser(userId: string) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if (error && error.code !== "PGRST116") {
+    logger.error(`[getUser] Error getting user: ${error.message}`);
+    throw error;
+  } // PGRST116 = not found
+  return data;
+}
+
 export async function createUser(userData: User) {
   const { data, error } = await supabase
     .from("users")

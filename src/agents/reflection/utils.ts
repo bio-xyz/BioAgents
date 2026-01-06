@@ -18,6 +18,7 @@ export type ReflectionOptions = {
 
 export type ReflectionResult = {
   text: {
+    conversationTitle?: string;
     currentObjective?: string;
     keyInsights: string[];
     discoveries: string[];
@@ -107,6 +108,7 @@ export async function reflectOnWorld(
 
     logger.info(
       {
+        conversationTitle: parsedResponse.conversationTitle,
         insightsCount: parsedResponse.keyInsights.length,
         discoveriesCount: parsedResponse.discoveries.length,
         hasObjective: !!parsedResponse.currentObjective,
@@ -118,6 +120,7 @@ export async function reflectOnWorld(
 
     return {
       text: {
+        conversationTitle: parsedResponse.conversationTitle,
         currentObjective: parsedResponse.currentObjective,
         keyInsights: parsedResponse.keyInsights,
         discoveries: parsedResponse.discoveries,
