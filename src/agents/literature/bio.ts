@@ -126,13 +126,13 @@ async function pollBioLiteratureJob(
   apiKey: string,
   jobId: string,
 ): Promise<BioLiteratureResponse> {
-  const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes
-  const POLL_INTERVAL = 5000; // 5 seconds
+  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes
+  const POLL_INTERVAL = 10000; // 10 seconds
   const startTime = Date.now();
 
   while (true) {
     if (Date.now() - startTime > MAX_WAIT_TIME) {
-      throw new Error(`BioLiterature job ${jobId} timed out after 15 minutes`);
+      throw new Error(`BioLiterature job ${jobId} timed out after 60 minutes`);
     }
 
     const response = await fetch(`${baseUrl}/query/jobs/${jobId}`, {
