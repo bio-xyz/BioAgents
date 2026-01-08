@@ -382,7 +382,7 @@ async function runDeepResearch(params: {
       values: conversationStateRecord.values,
     };
 
-    // Step 1: Process files if any
+    // Step 1: Process files if any (direct upload via request body)
     if (files.length > 0) {
       const { fileUploadAgent } = await import("../../agents/fileUpload");
 
@@ -400,6 +400,68 @@ async function runDeepResearch(params: {
         },
         "file_upload_agent_result",
       );
+    }
+
+    // Step 1b: Wait for any pending file processing jobs (presigned URL uploads)
+    // Files uploaded via presigned URL are processed asynchronously - we must wait
+    const { getPendingFileIds, getFileStatus } = await import(
+      "../../services/files/status"
+    );
+    const { getConversationState } = await import("../../db/operations");
+
+    const conversationStateId = conversationState.id;
+    if (conversationStateId) {
+      const pendingFileIds = await getPendingFileIds(conversationStateId);
+
+      if (pendingFileIds.length > 0) {
+        logger.info(
+          { pendingFileIds, conversationStateId },
+          "deep_research_waiting_for_file_processing",
+        );
+
+        const maxWaitMs = 120000; // 2 minute max wait
+        const pollIntervalMs = 500;
+        const startWait = Date.now();
+
+        // Wait for all pending files to complete
+        for (const fileId of pendingFileIds) {
+          while (Date.now() - startWait < maxWaitMs) {
+            const fileStatus = await getFileStatus(fileId);
+
+            if (fileStatus?.status === "ready") {
+              logger.info(
+                { fileId, status: fileStatus.status },
+                "deep_research_file_ready",
+              );
+              break;
+            }
+
+            if (fileStatus?.status === "error") {
+              logger.warn(
+                { fileId, status: fileStatus.status, error: fileStatus.error },
+                "deep_research_file_failed_continuing",
+              );
+              break;
+            }
+
+            // Wait and poll again
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          }
+        }
+
+        // Refresh conversation state to get updated uploadedDatasets
+        const freshState = await getConversationState(conversationStateId);
+        if (freshState) {
+          conversationState.values = freshState.values;
+          logger.info(
+            {
+              uploadedDatasetsCount:
+                freshState.values.uploadedDatasets?.length || 0,
+            },
+            "deep_research_refreshed_conversation_state",
+          );
+        }
+      }
     }
 
     // Step 2: Execute deep research planning agent (v2)
@@ -442,11 +504,23 @@ async function runDeepResearch(params: {
 
     // Add new tasks with appropriate level and assign IDs
     const newLevel = maxLevel + 1;
+    const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+
     const newTasks = plan.map((task: PlanTask) => {
       const taskId =
         task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+
+      // Enrich datasets with path from uploadedDatasets (LLM doesn't output path)
+      const enrichedDatasets = (task.datasets || []).map((ds: any) => {
+        const uploadedDs = uploadedDatasets.find(
+          (u: any) => u.id === ds.id || u.filename === ds.filename
+        );
+        return uploadedDs ? { ...ds, path: uploadedDs.path } : ds;
+      });
+
       return {
         ...task,
+        datasets: enrichedDatasets,
         id: taskId,
         level: newLevel,
         start: undefined,

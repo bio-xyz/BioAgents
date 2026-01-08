@@ -4,7 +4,7 @@ import {
   startEdisonTask,
   awaitEdisonTask,
 } from "../../utils/edison";
-import type { Dataset } from "./index";
+import type { Dataset } from "./types";
 
 /**
  * Analyze data using Edison AI agent for deep analysis
@@ -96,9 +96,9 @@ async function uploadFilesToEdison(
 
   for (const dataset of datasets) {
     try {
-      // Fetch file from storage
+      // Fetch file from storage - use stored path if available (new format), fallback to filename (legacy)
       const fileBuffer = await fetchFileBufferFromStorage(
-        dataset.filename,
+        (dataset as any).path || dataset.filename,
         userId,
         conversationStateId,
       );

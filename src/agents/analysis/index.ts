@@ -1,25 +1,11 @@
-import type { AnalysisArtifact } from "../../types/core";
 import logger from "../../utils/logger";
 import { analyzeWithBio } from "./bio";
 import { analyzeWithEdison } from "./edison";
+import type { AnalysisResult, Dataset } from "./types";
+
+export type { AnalysisResult, Dataset } from "./types";
 
 type AnalysisType = "EDISON" | "BIO";
-
-export type Dataset = {
-  filename: string;
-  id: string;
-  description: string;
-  content?: Buffer;
-};
-
-export type AnalysisResult = {
-  objective: string;
-  output: string;
-  jobId?: string; // Edison task_id or Bio task id
-  start?: string;
-  end?: string;
-  artifacts?: Array<AnalysisArtifact>;
-};
 
 /**
  * Analysis agent for deep research

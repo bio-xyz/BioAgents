@@ -240,11 +240,27 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     await refetchConversationState();
   }, [refetchConversationState]); // Using ref for currentSessionId
 
+  // WebSocket job failed handler - clears loading state when job fails
+  const handleJobFailed = useCallback((jobId: string, conversationId: string, error?: string) => {
+    if (conversationId !== currentSessionIdRef.current) return;
+    console.error("[ChatPage] Job failed:", jobId, error);
+
+    // Clear all loading states
+    setIsDeepResearch(false);
+    setLoadingConversationId(null);
+    setLoadingMessageId(null);
+    setPendingMessageData(null);
+
+    // Show error toast
+    toast.error(error || "Research job failed. Please try again.", 6000);
+  }, []);
+
   // WebSocket for real-time notifications
   const { isConnected: wsIsConnected, subscribe: wsSubscribe, unsubscribe: wsUnsubscribe } = useWebSocket(
     userId,
     handleMessageUpdated,
     handleStateUpdated,
+    handleJobFailed,
   );
 
   // Sync WebSocket connection state
@@ -728,6 +744,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           setLoadingConversationId(null);
           setLoadingMessageId(null);
           setPendingMessageData(null);
+          clearLoading(); // Clear API loading state
         } else if (response.status === "processing") {
           if (response.error === "PAYMENT_REQUIRED") {
             console.log("[ChatPage] Deep research payment required - modal will show");
@@ -775,6 +792,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
       setPendingMessageData(null);
       setLoadingConversationId(null);
       setLoadingMessageId(null);
+      clearLoading(); // Clear API loading state on error
 
       if (err.message?.includes("upload") || err.message?.includes("Upload")) {
         toast.error(`File upload failed: ${err.message}`, 6000);

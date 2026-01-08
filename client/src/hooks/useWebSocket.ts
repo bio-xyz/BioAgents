@@ -25,11 +25,13 @@ export interface UseWebSocketReturn {
  * @param userId - User ID for authentication (required for dev mode)
  * @param onMessageUpdated - Callback when message is updated
  * @param onStateUpdated - Callback when state is updated
+ * @param onJobFailed - Callback when a job fails
  */
 export function useWebSocket(
   userId: string | null,
   onMessageUpdated?: (messageId: string, conversationId: string) => void,
   onStateUpdated?: (stateId: string, conversationId: string) => void,
+  onJobFailed?: (jobId: string, conversationId: string, error?: string) => void,
 ): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -41,6 +43,7 @@ export function useWebSocket(
   // Use refs for callbacks to avoid stale closures in WebSocket handlers
   const onMessageUpdatedRef = useRef(onMessageUpdated);
   const onStateUpdatedRef = useRef(onStateUpdated);
+  const onJobFailedRef = useRef(onJobFailed);
 
   // Keep refs updated
   useEffect(() => {
@@ -54,6 +57,10 @@ export function useWebSocket(
   useEffect(() => {
     onStateUpdatedRef.current = onStateUpdated;
   }, [onStateUpdated]);
+
+  useEffect(() => {
+    onJobFailedRef.current = onJobFailed;
+  }, [onJobFailed]);
 
   const connect = useCallback(() => {
     // Don't connect without userId
@@ -133,6 +140,13 @@ export function useWebSocket(
             case "job:progress":
               // Can be used for progress indicators
               console.log("[WebSocket] Job progress:", message.type, message.progress);
+              break;
+
+            case "job:failed":
+              console.error("[WebSocket] Job failed:", message.jobId, message.error);
+              if (message.jobId && message.conversationId) {
+                onJobFailedRef.current?.(message.jobId, message.conversationId, message.error);
+              }
               break;
           }
         } catch (err) {

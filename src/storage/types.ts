@@ -79,19 +79,21 @@ export abstract class StorageProvider {
    * Download a file from a user's conversation storage
    * @param userId - ID of the user
    * @param conversationStateId - ID of the conversation state
-   * @param filename - Name of the file to fetch
+   * @param filenameOrPath - Filename (legacy) or full S3 path (new format)
    * @returns
    */
   async fetchFileFromUserStorage(
     userId: string,
     conversationStateId: string,
-    filename: string,
+    filenameOrPath: string,
   ): Promise<Buffer> {
-    const basePath = getConversationBasePath(userId, conversationStateId);
-    const uploadPath = getUploadPath(filename);
-    const fullPath = `${basePath}/${uploadPath}`;
+    // If it's a full S3 path (starts with "user/"), use it directly
+    // Otherwise, reconstruct path from filename (legacy format)
+    const fullPath = filenameOrPath.startsWith("user/")
+      ? filenameOrPath
+      : `${getConversationBasePath(userId, conversationStateId)}/${getUploadPath(filenameOrPath)}`;
 
-    logger.info({ filename, fullPath }, "fetching_file_from_storage");
+    logger.info({ filenameOrPath, fullPath }, "fetching_file_from_storage");
 
     return await this.download(fullPath);
   }

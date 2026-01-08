@@ -6,7 +6,7 @@ import {
 } from "../../storage";
 import { type AnalysisArtifact } from "../../types/core";
 import logger from "../../utils/logger";
-import type { Dataset } from "./index";
+import type { Dataset } from "./types";
 
 type BioDataAnalysisResult = {
   id: string;
@@ -141,10 +141,11 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
   await Promise.all(
     datasets.map(async (dataset) => {
       try {
+        // Use stored path if available (new format), fallback to filename (legacy)
         const fileBuffer = await storageProvider.fetchFileFromUserStorage(
           userId,
           conversationStateId,
-          dataset.filename,
+          (dataset as any).path || dataset.filename,
         );
         dataset.content = fileBuffer;
       } catch (err) {
@@ -173,8 +174,31 @@ function buildTaskFormData(
   if (config.supportsSharedStorage) {
     const basePath = getConversationBasePath(userId, conversationStateId);
     formData.append("base_path", basePath);
+    logger.info({ basePath }, "bio_task_base_path");
     for (const dataset of datasets) {
-      formData.append("file_paths", getUploadPath(dataset.filename));
+      // Use stored path if available (new format with fileId), fallback to filename (legacy)
+      // Extract relative path by removing basePath prefix if present
+      let relativePath: string;
+      if (dataset.path) {
+        const fullPath = dataset.path;
+        // Remove basePath prefix if present to get relative path
+        relativePath = fullPath.startsWith(basePath + "/")
+          ? fullPath.slice(basePath.length + 1)
+          : fullPath.startsWith("user/")
+            ? fullPath.split("/").slice(4).join("/") // Extract after conversation/{id}/
+            : getUploadPath(dataset.filename);
+        logger.info(
+          { filename: dataset.filename, fullPath, relativePath, basePath },
+          "bio_task_path_computed_from_stored_path",
+        );
+      } else {
+        relativePath = getUploadPath(dataset.filename);
+        logger.info(
+          { filename: dataset.filename, relativePath },
+          "bio_task_path_computed_from_filename_fallback",
+        );
+      }
+      formData.append("file_paths", relativePath);
     }
   } else {
     for (const dataset of datasets) {

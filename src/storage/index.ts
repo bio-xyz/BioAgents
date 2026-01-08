@@ -82,16 +82,38 @@ export const getUploadPath = (filename: string): string =>
   `uploads/${filename}`;
 
 /**
+ * Sanitize filename for S3 to avoid URL encoding issues with special characters.
+ * Replaces spaces, parentheses, and other problematic chars with underscores.
+ */
+function sanitizeFilename(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  const ext = lastDot > 0 ? filename.slice(lastDot) : "";
+  const name = lastDot > 0 ? filename.slice(0, lastDot) : filename;
+
+  const sanitized = name
+    .replace(/[^a-zA-Z0-9._-]/g, "_")  // Replace special chars with underscore
+    .replace(/_+/g, "_")               // Collapse multiple underscores
+    .replace(/^_|_$/g, "");            // Trim leading/trailing underscores
+
+  return (sanitized || "file") + ext;
+}
+
+/**
  * Full storage path for a file upload
- * Format: user/{userId}/conversation/{conversationId}/uploads/{filename}
- * Note: Uses same structure as old upload system for compatibility
+ * Format: user/{userId}/conversation/{conversationId}/uploads/{fileId}/{sanitizedFilename}
+ *
+ * Uses fileId in path to ensure uniqueness and avoid collisions.
+ * Filename is sanitized to prevent URL encoding issues with special characters.
  */
 export const getFileUploadPath = (
   userId: string,
   conversationId: string,
-  _fileId: string, // Kept for API compatibility but not used in path
+  fileId: string,
   filename: string,
-): string => `user/${userId}/conversation/${conversationId}/uploads/${filename}`;
+): string => {
+  const safeName = sanitizeFilename(filename);
+  return `user/${userId}/conversation/${conversationId}/uploads/${fileId}/${safeName}`;
+};
 
 /**
  * Simple helper to guess MIME type from filename
