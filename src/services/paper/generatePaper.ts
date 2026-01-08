@@ -48,6 +48,53 @@ import {
 } from "./utils/compile";
 import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
 import { escapeLatex } from "./utils/escapeLatex";
+
+/**
+ * Sanitize a JSON string by escaping invalid backslash sequences.
+ * JSON only allows: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+ * LLMs often produce invalid sequences like \g, \p, \s from LaTeX or text.
+ */
+function sanitizeJsonString(jsonStr: string): string {
+  // Replace invalid escape sequences: any backslash not followed by valid escape chars
+  // Valid escapes: ", \, /, b, f, n, r, t, u (for \uXXXX)
+  return jsonStr.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+}
+
+/**
+ * Safely parse JSON from LLM response, handling invalid escape sequences
+ */
+function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
+  try {
+    return JSON.parse(jsonStr);
+  } catch (firstError) {
+    // Try with sanitized JSON
+    try {
+      const sanitized = sanitizeJsonString(jsonStr);
+      logger.warn(
+        {
+          context,
+          originalError: firstError instanceof Error ? firstError.message : String(firstError),
+        },
+        "json_parse_sanitized",
+      );
+      return JSON.parse(sanitized);
+    } catch (secondError) {
+      // Log both errors and rethrow with context
+      logger.error(
+        {
+          context,
+          originalError: firstError instanceof Error ? firstError.message : String(firstError),
+          sanitizedError: secondError instanceof Error ? secondError.message : String(secondError),
+          jsonPreview: jsonStr.substring(0, 500),
+        },
+        "json_parse_failed_after_sanitization",
+      );
+      throw new Error(
+        `Failed to parse JSON for ${context}: ${secondError instanceof Error ? secondError.message : String(secondError)}`,
+      );
+    }
+  }
+}
 import { processInlineDOICitations } from "./utils/inlineDoiCitations";
 import type { PaperGenerationStage } from "../queue/types";
 
@@ -587,7 +634,11 @@ async function generatePaperMetadata(
     );
   }
 
-  const frontMatterParsed = JSON.parse(frontMatterJsonMatch[0]);
+  const frontMatterParsed = safeJsonParse<{
+    title?: string;
+    abstract?: string;
+    researchSnapshot?: string;
+  }>(frontMatterJsonMatch[0], "front_matter");
 
   if (
     !frontMatterParsed.title ||
@@ -625,7 +676,10 @@ async function generatePaperMetadata(
     );
   }
 
-  const backgroundParsed = JSON.parse(backgroundJsonMatch[0]);
+  const backgroundParsed = safeJsonParse<{
+    background?: string;
+    keyInsights?: string;
+  }>(backgroundJsonMatch[0], "background");
 
   if (!backgroundParsed.background) {
     throw new Error(
@@ -937,7 +991,10 @@ async function generateDiscoverySection(
         );
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = safeJsonParse<{
+        sectionLatex?: string;
+        usedDois?: string[];
+      }>(jsonMatch[0], `discovery_section_${discoveryIndex}`);
 
       if (!parsed.sectionLatex) {
         throw new Error(
