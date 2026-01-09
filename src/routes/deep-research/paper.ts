@@ -2,7 +2,13 @@
  * Paper Routes for Deep Research
  *
  * POST /api/deep-research/conversations/:conversationId/paper
- *   - Generates a LaTeX paper from a Deep Research conversation
+ *   - Generates a LaTeX paper from a Deep Research conversation (sync)
+ *
+ * POST /api/deep-research/conversations/:conversationId/paper/async
+ *   - Queues paper generation job (async, returns immediately)
+ *
+ * GET /api/deep-research/paper/:paperId/status
+ *   - Gets the status of a paper generation job
  *
  * GET /api/deep-research/paper/:paperId
  *   - Gets a fresh presigned URL for an existing paper
@@ -12,9 +18,11 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 import { Elysia } from "elysia";
 import { getConversation } from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
+import { isJobQueueEnabled } from "../../services/queue/connection";
 import { generatePaperFromConversation } from "../../services/paper/generatePaper";
 import { getStorageProvider } from "../../storage";
 import type { AuthContext } from "../../types/auth";
@@ -38,11 +46,21 @@ export const deepResearchPaperRoute = new Elysia().guard(
   },
   (app) =>
     app
+      // Sync paper generation (blocking)
       .post(
         "/api/deep-research/conversations/:conversationId/paper",
         paperGenerationHandler,
       )
+      // Async paper generation (queue-based)
+      .post(
+        "/api/deep-research/conversations/:conversationId/paper/async",
+        asyncPaperGenerationHandler,
+      )
+      // Paper job status
+      .get("/api/deep-research/paper/:paperId/status", paperStatusHandler)
+      // Get paper with fresh presigned URLs
       .get("/api/deep-research/paper/:paperId", getPaperHandler)
+      // List all papers for a conversation
       .get(
         "/api/deep-research/conversations/:conversationId/papers",
         listPapersHandler,
@@ -313,7 +331,7 @@ async function listPapersHandler(ctx: any) {
     // Fetch all papers for this conversation
     const { data: papers, error: papersError } = await supabase
       .from("paper")
-      .select("id, pdf_path, created_at")
+      .select("id, pdf_path, created_at, status")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false });
 
@@ -334,6 +352,7 @@ async function listPapersHandler(ctx: any) {
           paperId: p.id,
           pdfPath: p.pdf_path,
           createdAt: p.created_at,
+          status: p.status,
         })) || [],
     };
   } catch (error) {
@@ -349,6 +368,311 @@ async function listPapersHandler(ctx: any) {
     set.status = 500;
     return {
       error: "Failed to list papers",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Check if user has any concurrent paper generation jobs
+ */
+async function checkUserHasConcurrentPaperJob(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("paper")
+    .select("id")
+    .eq("user_id", userId)
+    .in("status", ["pending", "processing"])
+    .limit(1);
+
+  if (error) {
+    logger.error({ error, userId }, "failed_to_check_concurrent_paper_jobs");
+    return false; // Allow on error (fail open)
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * Check if global concurrent paper job limit is reached
+ */
+async function checkGlobalConcurrentPaperLimit(): Promise<{ exceeded: boolean; current: number }> {
+  const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_PAPER_JOBS || "3");
+
+  const { count, error } = await supabase
+    .from("paper")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["pending", "processing"]);
+
+  if (error) {
+    logger.error({ error }, "failed_to_check_global_concurrent_paper_jobs");
+    return { exceeded: false, current: 0 }; // Allow on error (fail open)
+  }
+
+  const current = count ?? 0;
+  return { exceeded: current >= maxConcurrent, current };
+}
+
+/**
+ * Async paper generation handler - queues job and returns immediately
+ */
+async function asyncPaperGenerationHandler(ctx: any) {
+  const { params, set, request } = ctx;
+  const conversationId = params.conversationId;
+
+  // Get authenticated user from auth context
+  const auth = (request as any).auth as AuthContext | undefined;
+  const userId = auth?.userId;
+
+  if (!userId) {
+    set.status = 401;
+    return {
+      error: "Authentication required",
+      message: "Valid authentication is required to generate papers",
+    };
+  }
+
+  if (!conversationId) {
+    set.status = 400;
+    return {
+      error: "Missing conversationId",
+      message: "conversationId must be provided in the route",
+    };
+  }
+
+  // Check if queue is enabled
+  if (!isJobQueueEnabled()) {
+    set.status = 503;
+    return {
+      error: "Async paper generation unavailable",
+      message: "Job queue is not enabled. Use the sync endpoint instead.",
+      syncEndpoint: `/api/deep-research/conversations/${conversationId}/paper`,
+    };
+  }
+
+  logger.info(
+    {
+      conversationId,
+      userId,
+      authMethod: auth?.method,
+    },
+    "async_paper_generation_request",
+  );
+
+  try {
+    // Verify conversation ownership
+    const conversation = await getConversation(conversationId);
+    if (!conversation) {
+      set.status = 404;
+      return {
+        error: "Conversation not found",
+        message: `Conversation with id ${conversationId} not found`,
+      };
+    }
+
+    if (conversation.user_id !== userId) {
+      set.status = 403;
+      return {
+        error: "Access denied",
+        message: "You do not have permission to generate a paper for this conversation",
+      };
+    }
+
+    // Check for concurrent paper jobs for this user
+    const hasConcurrentJob = await checkUserHasConcurrentPaperJob(userId);
+    if (hasConcurrentJob) {
+      set.status = 429;
+      return {
+        error: "Concurrent paper limit exceeded",
+        message: "You already have a paper generation job in progress. Please wait for it to complete.",
+      };
+    }
+
+    // Check global concurrent paper job limit
+    const globalLimit = await checkGlobalConcurrentPaperLimit();
+    if (globalLimit.exceeded) {
+      const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_PAPER_JOBS || "3");
+      set.status = 429;
+      return {
+        error: "System busy",
+        message: `The system is currently processing ${globalLimit.current} paper generation jobs. Maximum allowed is ${maxConcurrent}. Please try again later.`,
+      };
+    }
+
+    // Create paper record with 'pending' status
+    const paperId = randomUUID();
+    const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
+
+    const { error: insertError } = await supabase.from("paper").insert({
+      id: paperId,
+      user_id: userId,
+      conversation_id: conversationId,
+      pdf_path: pdfPath,
+      status: "pending",
+    });
+
+    if (insertError) {
+      logger.error({ insertError }, "failed_to_create_paper_record");
+      set.status = 500;
+      return {
+        error: "Failed to create paper record",
+        message: insertError.message,
+      };
+    }
+
+    // Enqueue job
+    const { getPaperGenerationQueue } = await import("../../services/queue/queues");
+    const queue = getPaperGenerationQueue();
+
+    const job = await queue.add(
+      `paper-${paperId}`,
+      {
+        paperId,
+        userId,
+        conversationId,
+        authMethod: auth?.method || "anonymous",
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        jobId: paperId, // Use paperId as job ID for easy lookup
+      },
+    );
+
+    logger.info(
+      { jobId: job.id, paperId, conversationId },
+      "paper_generation_job_enqueued",
+    );
+
+    // Return 202 Accepted
+    set.status = 202;
+    return {
+      success: true,
+      paperId,
+      jobId: job.id,
+      conversationId,
+      status: "queued",
+      statusUrl: `/api/deep-research/paper/${paperId}/status`,
+    };
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        conversationId,
+        userId,
+      },
+      "async_paper_generation_failed",
+    );
+
+    set.status = 500;
+    return {
+      error: "Failed to queue paper generation",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Paper status handler - returns job progress
+ */
+async function paperStatusHandler(ctx: any) {
+  const { params, set, request } = ctx;
+  const paperId = params.paperId;
+
+  // Get authenticated user from auth context
+  const auth = (request as any).auth as AuthContext | undefined;
+  const userId = auth?.userId;
+
+  if (!userId) {
+    set.status = 401;
+    return {
+      error: "Authentication required",
+      message: "Valid authentication is required to check paper status",
+    };
+  }
+
+  if (!paperId) {
+    set.status = 400;
+    return {
+      error: "Missing paperId",
+      message: "paperId must be provided in the route",
+    };
+  }
+
+  logger.info({ paperId, userId }, "paper_status_request");
+
+  try {
+    // Fetch paper record
+    const { data: paper, error } = await supabase
+      .from("paper")
+      .select("*")
+      .eq("id", paperId)
+      .single();
+
+    if (error || !paper) {
+      set.status = 404;
+      return {
+        error: "Paper not found",
+        message: `Paper with id ${paperId} not found`,
+      };
+    }
+
+    // Verify ownership
+    if (paper.user_id !== userId) {
+      set.status = 403;
+      return {
+        error: "Access denied",
+        message: "You do not have permission to access this paper",
+      };
+    }
+
+    // Build response based on status
+    const response: any = {
+      paperId: paper.id,
+      conversationId: paper.conversation_id,
+      status: paper.status,
+      createdAt: paper.created_at,
+    };
+
+    if (paper.progress) {
+      response.progress = paper.progress;
+    }
+
+    if (paper.status === "completed") {
+      // Generate fresh presigned URLs
+      const storage = getStorageProvider();
+      if (storage) {
+        response.pdfUrl = await storage.getPresignedUrl(paper.pdf_path, 3600);
+        const rawLatexPath = paper.pdf_path.replace("/paper.pdf", "/main.tex");
+        try {
+          if (await storage.exists(rawLatexPath)) {
+            response.rawLatexUrl = await storage.getPresignedUrl(rawLatexPath, 3600);
+          }
+        } catch {
+          // LaTeX file may not exist
+        }
+      }
+    }
+
+    if (paper.status === "failed") {
+      response.error = paper.error;
+    }
+
+    logger.info({ paperId, userId, status: paper.status }, "paper_status_returned");
+
+    return response;
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        paperId,
+        userId,
+      },
+      "paper_status_check_failed",
+    );
+
+    set.status = 500;
+    return {
+      error: "Failed to check paper status",
       message: error instanceof Error ? error.message : String(error),
     };
   }
