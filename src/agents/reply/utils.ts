@@ -29,6 +29,8 @@ export type ReplyOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
 };
 
 /**
@@ -128,6 +130,8 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
       ? (options.thinkingBudget ?? 1024)
       : undefined,
     systemInstruction: character.system,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {
@@ -235,6 +239,8 @@ export async function generateChatReply(
       ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
       : undefined,
     systemInstruction: character.system,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

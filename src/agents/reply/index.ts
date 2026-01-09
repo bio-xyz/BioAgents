@@ -66,6 +66,8 @@ export async function replyAgent(input: {
         maxTokens: 5500,
         thinking: true,
         thinkingBudget: 1024,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
 

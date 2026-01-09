@@ -164,6 +164,7 @@ async function processChatJob(
       conversationState,
       message: messageRecord,
       mode: "initial",
+      usageType: "chat",
     });
 
     const plan = planningResult.plan;
@@ -236,7 +237,7 @@ async function processChatJob(
 
     // Step 3: Check if hypothesis is needed
     const allLiteratureOutput = completedTasks.map((t) => t.output).join("\n\n");
-    const needsHypothesis = await checkRequiresHypothesis(message, allLiteratureOutput);
+    const needsHypothesis = await checkRequiresHypothesis(message, allLiteratureOutput, messageId);
 
     let hypothesisText: string | undefined;
 
@@ -319,6 +320,8 @@ async function processChatJob(
       },
       {
         maxTokens: 1024,
+        messageId,
+        usageType: "chat",
       },
     );
 
@@ -378,6 +381,7 @@ async function processChatJob(
 async function checkRequiresHypothesis(
   question: string,
   literatureResults: string,
+  messageId?: string, // For token usage tracking
 ): Promise<boolean> {
   const { LLM } = await import("../../../llm/provider");
 
@@ -418,6 +422,8 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
       model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
       messages: [{ role: "user" as const, content: prompt }],
       maxTokens: 10,
+      messageId,
+      usageType: "chat",
     });
 
     const answer = response.content.trim().toUpperCase();

@@ -14,6 +14,8 @@ export type DiscoveryOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
 };
 
 export type DiscoveryResult = {
@@ -78,6 +80,8 @@ export async function extractDiscoveries(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 4096)
       : undefined,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

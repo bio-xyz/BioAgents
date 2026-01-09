@@ -163,6 +163,8 @@ export async function continueResearchAgent(input: {
       datasets,
       {
         maxTokens: 1024,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
 

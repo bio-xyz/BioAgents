@@ -153,6 +153,8 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
       discoveryDocs,
       {
         maxTokens: 8000,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
 
