@@ -331,7 +331,7 @@ async function listPapersHandler(ctx: any) {
     // Fetch all papers for this conversation
     const { data: papers, error: papersError } = await supabase
       .from("paper")
-      .select("id, pdf_path, created_at")
+      .select("id, pdf_path, created_at, status")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false });
 
@@ -352,6 +352,7 @@ async function listPapersHandler(ctx: any) {
           paperId: p.id,
           pdfPath: p.pdf_path,
           createdAt: p.created_at,
+          status: p.status,
         })) || [],
     };
   } catch (error) {
