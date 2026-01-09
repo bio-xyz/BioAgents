@@ -200,6 +200,7 @@ async function chatRetryHandler(ctx: any) {
 async function requiresHypothesis(
   question: string,
   literatureResults: string,
+  messageId?: string, // For token usage tracking
 ): Promise<boolean> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
@@ -252,6 +253,8 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
         },
       ],
       maxTokens: 10,
+      messageId,
+      usageType: "chat",
     });
 
     const answer = response.content.trim().toUpperCase();
@@ -617,6 +620,7 @@ export async function chatHandler(ctx: any) {
       conversationState,
       message: createdMessage,
       mode: "initial",
+      usageType: "chat",
     });
 
     const plan = planningResult.plan;
@@ -777,6 +781,7 @@ export async function chatHandler(ctx: any) {
     const needsHypothesis = await requiresHypothesis(
       message,
       allLiteratureOutput,
+      createdMessage.id, // Track token usage per message
     );
 
     logger.info(
@@ -927,6 +932,8 @@ export async function chatHandler(ctx: any) {
       },
       {
         maxTokens: 1024,
+        messageId: createdMessage.id,
+        usageType: "chat",
       },
     );
 

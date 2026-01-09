@@ -11,6 +11,27 @@ import type { AuthContext } from "../../types/auth";
 import type { ConversationState, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
+import {
+  getOrCreateUserByWallet,
+  updateConversationState,
+  getMessagesByConversation,
+  updateMessage,
+  createMessage,
+  updateState,
+} from "../../db/operations";
+import { isJobQueueEnabled } from "../../services/queue/connection";
+import { getDeepResearchQueue } from "../../services/queue/queues";
+import { notifyMessageUpdated } from "../../services/queue/notify";
+import { fileUploadAgent } from "../../agents/fileUpload";
+import { planningAgent } from "../../agents/planning";
+import { literatureAgent } from "../../agents/literature";
+import { analysisAgent } from "../../agents/analysis";
+import { hypothesisAgent } from "../../agents/hypothesis";
+import { reflectionAgent } from "../../agents/reflection";
+import { discoveryAgent } from "../../agents/discovery";
+import { replyAgent } from "../../agents/reply";
+import { continueResearchAgent } from "../../agents/continueResearch";
+import { getDiscoveryRunConfig } from "../../utils/discovery";
 
 initKnowledgeBase();
 
@@ -106,7 +127,6 @@ export async function deepResearchStartHandler(ctx: any) {
 
   // For x402 users, ensure wallet user record exists and use the actual user ID
   if (isX402User && auth?.externalId) {
-    const { getOrCreateUserByWallet } = await import("../../db/operations");
     const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
 
     // Use the actual database user ID (may differ from auth.userId)
@@ -208,8 +228,6 @@ export async function deepResearchStartHandler(ctx: any) {
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
-  const { isJobQueueEnabled } = await import("../../services/queue/connection");
-
   if (isJobQueueEnabled()) {
     // QUEUE MODE: Enqueue job and return immediately
     logger.info(
@@ -224,8 +242,6 @@ export async function deepResearchStartHandler(ctx: any) {
         values: conversationStateRecord.values,
       };
 
-      const { fileUploadAgent } = await import("../../agents/fileUpload");
-
       logger.info(
         { fileCount: files.length },
         "processing_file_uploads_before_queue",
@@ -239,9 +255,6 @@ export async function deepResearchStartHandler(ctx: any) {
     }
 
     // Enqueue the job
-    const { getDeepResearchQueue } = await import(
-      "../../services/queue/queues"
-    );
     const deepResearchQueue = getDeepResearchQueue();
 
     const job = await deepResearchQueue.add(
@@ -395,8 +408,6 @@ async function runDeepResearch(params: {
 
     // Step 1: Process files if any
     if (files.length > 0) {
-      const { fileUploadAgent } = await import("../../agents/fileUpload");
-
       const fileResult = await fileUploadAgent({
         conversationState,
         files,
@@ -447,10 +458,6 @@ async function runDeepResearch(params: {
       const iterationStartTime = Date.now();
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
 
-      // Update conversation state with plan and objective
-      const { updateConversationState } = await import("../../db/operations");
-      const { literatureAgent } = await import("../../agents/literature");
-
       // Get current level - if skipPlanning, use existing; otherwise run planning agent
       let newLevel: number;
       let currentObjective: string;
@@ -470,8 +477,6 @@ async function runDeepResearch(params: {
         );
       } else {
         // INITIAL: Execute planning agent
-        const { planningAgent } = await import("../../agents/planning");
-
         logger.info(
           { suggestedNextSteps: conversationState.values.suggestedNextSteps },
           "current_suggested_next_steps",
@@ -482,6 +487,7 @@ async function runDeepResearch(params: {
           conversationState,
           message: createdMessage,
           mode: "initial",
+          usageType: "deep-research",
         });
 
         const plan = deepResearchPlanningResult.plan;
@@ -668,8 +674,6 @@ async function runDeepResearch(params: {
         );
 
         // Run Edison analysis
-        const { analysisAgent } = await import("../../agents/analysis");
-
         try {
           // MOCK: Uncomment to skip actual analysis for faster testing
           const MOCK_ANALYSIS = false;
@@ -806,8 +810,6 @@ These molecular changes align with established longevity pathways (Converging nu
     // Step 3: Generate/update hypothesis based on completed tasks
     logger.info("generating_hypothesis_from_completed_tasks");
 
-    const { hypothesisAgent } = await import("../../agents/hypothesis");
-
     hypothesisResult = await hypothesisAgent({
       objective: currentObjective,
       message: createdMessage,
@@ -833,11 +835,6 @@ These molecular changes align with established longevity pathways (Converging nu
 
     // Step 4: Run reflection and discovery agents in parallel
     logger.info("running_reflection_and_discovery_agents");
-
-    const { reflectionAgent } = await import("../../agents/reflection");
-    const { discoveryAgent } = await import("../../agents/discovery");
-    const { getMessagesByConversation } = await import("../../db/operations");
-    const { getDiscoveryRunConfig } = await import("../../utils/discovery");
 
     // Determine if we should run discovery and which tasks to consider
     let shouldRunDiscovery = false;
@@ -923,6 +920,7 @@ These molecular changes align with established longevity pathways (Converging nu
       conversationState,
       message: createdMessage,
       mode: "next",
+      usageType: "deep-research",
     });
 
     // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
@@ -969,10 +967,6 @@ These molecular changes align with established longevity pathways (Converging nu
       "generating_reply_for_iteration",
     );
 
-    const { replyAgent } = await import("../../agents/reply");
-    const { updateMessage } = await import("../../db/operations");
-    const { notifyMessageUpdated } = await import("../../services/queue/notify");
-
     const replyResult = await replyAgent({
       conversationState,
       message: currentMessage,
@@ -1010,10 +1004,6 @@ These molecular changes align with established longevity pathways (Converging nu
     // Decide whether to continue autonomously or ask user for feedback
     // =========================================================================
     if (shouldContinueLoop && conversationState.values.suggestedNextSteps?.length) {
-      const { continueResearchAgent } = await import(
-        "../../agents/continueResearch"
-      );
-
       const continueResult = await continueResearchAgent({
         conversationState,
         message: currentMessage,
@@ -1090,8 +1080,6 @@ These molecular changes align with established longevity pathways (Converging nu
 
         // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
         // This allows each autonomous iteration to have its own message in the conversation
-        const { createMessage } = await import("../../db/operations");
-
         const agentMessage = await createMessage({
           conversation_id: currentMessage.conversation_id,
           user_id: currentMessage.user_id,
@@ -1153,7 +1141,6 @@ These molecular changes align with established longevity pathways (Converging nu
     );
 
     // Update state to mark as failed
-    const { updateState } = await import("../../db/operations");
     await updateState(stateRecord.id, {
       ...stateRecord.values,
       error: err instanceof Error ? err.message : "Unknown error",

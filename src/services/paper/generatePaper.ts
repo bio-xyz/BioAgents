@@ -224,7 +224,7 @@ export async function generatePaperFromConversation(
     // Report metadata progress
     await onProgress?.("metadata");
 
-    const metadata = await generatePaperMetadata(state, evidenceTasks, authors);
+    const metadata = await generatePaperMetadata(state, evidenceTasks, authors, paperId);
 
     // Report figures progress
     await onProgress?.("figures");
@@ -250,6 +250,7 @@ export async function generatePaperFromConversation(
       allFigures,
       figuresDir,
       3,
+      paperId,
     );
 
     let mainTexContent = assembleMainTex(metadata, discoverySections);
@@ -604,6 +605,7 @@ async function generatePaperMetadata(
   state: ConversationStateValues,
   evidenceTasks: PlanTask[],
   authors: string,
+  paperId?: string,
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
@@ -635,6 +637,8 @@ async function generatePaperMetadata(
     model: LLM_MODEL,
     temperature: 0.3,
     maxTokens: 2000,
+    paperId,
+    usageType: "paper-generation",
   });
 
   const frontMatterContent = frontMatterResponse.content || "";
@@ -677,6 +681,8 @@ async function generatePaperMetadata(
     model: LLM_MODEL,
     temperature: 0.3,
     maxTokens: 3000,
+    paperId,
+    usageType: "paper-generation",
   });
 
   const backgroundContent = backgroundResponse.content || "";
@@ -792,6 +798,7 @@ async function generateDiscoverySectionsParallel(
   allFigures: Map<number, FigureInfo[]>,
   figuresDir: string,
   maxConcurrency: number,
+  paperId?: string,
 ): Promise<DiscoverySection[]> {
   const results: DiscoverySection[] = [];
 
@@ -806,6 +813,7 @@ async function generateDiscoverySectionsParallel(
           ctx.allowedTasks,
           allFigures.get(ctx.index) || [],
           figuresDir,
+          paperId,
         ),
       ),
     );
@@ -822,6 +830,7 @@ async function generateDiscoverySection(
   allowedTasks: PlanTask[],
   figures: FigureInfo[],
   figuresDir: string,
+  paperId?: string,
 ): Promise<DiscoverySection> {
   const allowedDOIs: string[] = [];
   for (const task of allowedTasks) {
@@ -979,6 +988,8 @@ async function generateDiscoverySection(
         model: LLM_MODEL,
         temperature: 0.3,
         maxTokens: 6000,
+        paperId,
+        usageType: "paper-generation",
       });
 
       const llmDurationMs = Date.now() - llmStartTime;

@@ -22,6 +22,8 @@ export type ContinueResearchOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
 };
 
 export type ContinueResearchDecision = {
@@ -122,6 +124,8 @@ export async function decideContinuation(
       },
     ],
     maxTokens: options.maxTokens ?? 1024,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

@@ -173,6 +173,7 @@ async function processDeepResearchJob(
         conversationState,
         message: messageRecord,
         mode: "initial",
+        usageType: "deep-research",
       });
 
       const plan = planningResult.plan;
@@ -481,6 +482,7 @@ async function processDeepResearchJob(
       conversationState,
       message: messageRecord,
       mode: "next",
+      usageType: "deep-research",
     });
 
     if (nextPlanningResult.plan.length > 0) {

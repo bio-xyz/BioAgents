@@ -14,6 +14,8 @@ export type ReflectionOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
 };
 
 export type ReflectionResult = {
@@ -76,6 +78,8 @@ export async function reflectOnWorld(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 2048)
       : undefined,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

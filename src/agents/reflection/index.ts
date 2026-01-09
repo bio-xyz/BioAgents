@@ -138,6 +138,8 @@ export async function reflectionAgent(input: {
         maxTokens: 4000,
         thinking: true,
         thinkingBudget: 2048,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
 

@@ -30,13 +30,16 @@ export type PlanningMode = "initial" | "next";
  *              If no plan exists yet, creates an initial literature search plan
  * - "next": Updates plan for next iteration after reflection (used after hypothesis + reflection)
  */
+export type TokenUsageType = "chat" | "deep-research" | "paper-generation";
+
 export async function planningAgent(input: {
   state: State;
   conversationState: ConversationState;
   message: Message;
   mode?: PlanningMode;
+  usageType?: TokenUsageType;
 }): Promise<PlanningResult> {
-  const { state, conversationState, message, mode = "initial" } = input;
+  const { state, conversationState, message, mode = "initial", usageType } = input;
 
   // Check if plan is empty (indicates first planning or fresh start)
   const hasPlan =
@@ -45,11 +48,11 @@ export async function planningAgent(input: {
   // If no existing plan and initial mode, use LLM with no-plan prompt
   if (!hasPlan && mode === "initial") {
     logger.info("No existing plan found, using LLM for initial planning");
-    return await generateInitialPlan(message, conversationState);
+    return await generateInitialPlan(message, conversationState, usageType);
   }
 
   // Otherwise, use LLM to plan based on current state
-  return await generatePlan(state, conversationState, message, mode);
+  return await generatePlan(state, conversationState, message, mode, usageType);
 }
 
 /**
@@ -59,6 +62,7 @@ export async function planningAgent(input: {
 async function generateInitialPlan(
   message: Message,
   conversationState: ConversationState,
+  usageType?: TokenUsageType,
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const planningApiKey =
@@ -99,6 +103,8 @@ async function generateInitialPlan(
     ],
     maxTokens: 1024,
     systemInstruction: character.system,
+    messageId: message.id,
+    usageType,
   });
 
   const rawContent = response.content.trim();
@@ -140,6 +146,7 @@ async function generatePlan(
   conversationState: ConversationState,
   message: Message,
   mode: PlanningMode = "initial",
+  usageType?: TokenUsageType,
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const planningApiKey =
@@ -184,6 +191,8 @@ async function generatePlan(
     ],
     maxTokens: 1024,
     systemInstruction: character.system,
+    messageId: message.id,
+    usageType,
   });
 
   const rawContent = response.content.trim();
