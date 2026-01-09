@@ -126,6 +126,9 @@ async function processDeepResearchJob(
     // Track the current message being updated (changes when auto-continuing)
     let currentMessage = messageRecord;
 
+    // Flag to skip planning when continuing (tasks already promoted)
+    let skipPlanning = false;
+
     logger.info(
       { jobId: job.id, fullyAutonomous, maxAutoIterations },
       "starting_autonomous_research_loop",
@@ -142,66 +145,85 @@ async function processDeepResearchJob(
     await job.updateProgress({ stage: "planning", percent: 5 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "planning", 5);
 
-    // Step 1: Execute planning agent
-    logger.info({ jobId: job.id }, "deep_research_job_planning");
+    // Get current level - if skipPlanning, use existing; otherwise run planning agent
+    let newLevel: number;
+    let currentObjective: string;
 
-    const { planningAgent } = await import("../../../agents/planning");
-
-    const planningResult = await planningAgent({
-      state,
-      conversationState,
-      message: messageRecord,
-      mode: "initial",
-    });
-
-    const plan = planningResult.plan;
-    const currentObjective = planningResult.currentObjective;
-
-    if (!plan || !currentObjective) {
-      throw new Error("Plan or current objective not found");
-    }
-
-    // Clear previous suggestions
-    conversationState.values.suggestedNextSteps = [];
-
-    // Get current plan or initialize empty
-    const currentPlan = conversationState.values.plan || [];
-
-    // Find max level in current plan
-    const maxLevel =
-      currentPlan?.length > 0
+    if (skipPlanning) {
+      // CONTINUATION: Tasks already promoted, just get current level
+      const currentPlan = conversationState.values.plan || [];
+      newLevel = currentPlan.length > 0
         ? Math.max(...currentPlan.map((t) => t.level || 0))
-        : -1;
+        : 0;
+      currentObjective = conversationState.values.currentObjective || "";
+      skipPlanning = false; // Reset for next iteration
 
-    // Add new tasks with appropriate level and assign IDs
-    const newLevel = maxLevel + 1;
-    const newTasks = plan.map((task: PlanTask) => {
-      const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-      return {
-        ...task,
-        id: taskId,
-        level: newLevel,
-        start: undefined,
-        end: undefined,
-        output: undefined,
-      };
-    });
+      logger.info(
+        { jobId: job.id, newLevel, currentObjective },
+        "continuation_using_promoted_tasks",
+      );
+    } else {
+      // INITIAL: Execute planning agent
+      logger.info({ jobId: job.id }, "deep_research_job_planning");
 
-    // Append to existing plan and update objective
-    conversationState.values.plan = [...currentPlan, ...newTasks];
-    conversationState.values.currentObjective = currentObjective;
-    conversationState.values.currentLevel = newLevel;
+      const { planningAgent } = await import("../../../agents/planning");
 
-    // Update state in DB
-    if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
-      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+      const planningResult = await planningAgent({
+        state,
+        conversationState,
+        message: messageRecord,
+        mode: "initial",
+      });
+
+      const plan = planningResult.plan;
+      currentObjective = planningResult.currentObjective;
+
+      if (!plan || !currentObjective) {
+        throw new Error("Plan or current objective not found");
+      }
+
+      // Clear previous suggestions
+      conversationState.values.suggestedNextSteps = [];
+
+      // Get current plan or initialize empty
+      const currentPlan = conversationState.values.plan || [];
+
+      // Find max level in current plan
+      const maxLevel =
+        currentPlan?.length > 0
+          ? Math.max(...currentPlan.map((t) => t.level || 0))
+          : -1;
+
+      // Add new tasks with appropriate level and assign IDs
+      newLevel = maxLevel + 1;
+      const newTasks = plan.map((task: PlanTask) => {
+        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+        return {
+          ...task,
+          id: taskId,
+          level: newLevel,
+          start: undefined,
+          end: undefined,
+          output: undefined,
+        };
+      });
+
+      // Append to existing plan and update objective
+      conversationState.values.plan = [...currentPlan, ...newTasks];
+      conversationState.values.currentObjective = currentObjective;
+      conversationState.values.currentLevel = newLevel;
+
+      // Update state in DB
+      if (conversationState.id) {
+        await updateConversationState(conversationState.id, conversationState.values);
+        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+      }
+
+      logger.info(
+        { jobId: job.id, newLevel, taskCount: newTasks.length },
+        "deep_research_job_planning_completed",
+      );
     }
-
-    logger.info(
-      { jobId: job.id, newLevel, taskCount: newTasks.length },
-      "deep_research_job_planning_completed",
-    );
 
     // Update progress: Literature/Analysis
     await job.updateProgress({ stage: "literature", percent: 20 } as JobProgress);
@@ -211,8 +233,20 @@ async function processDeepResearchJob(
     const { literatureAgent } = await import("../../../agents/literature");
     const { analysisAgent } = await import("../../../agents/analysis");
 
-    tasksToExecute = conversationState.values.plan.filter(
+    tasksToExecute = (conversationState.values.plan || []).filter(
       (t) => t.level === newLevel,
+    );
+
+    logger.info(
+      {
+        jobId: job.id,
+        iterationCount,
+        newLevel,
+        tasksToExecuteCount: tasksToExecute.length,
+        taskIds: tasksToExecute.map((t) => t.id),
+        allPlanLevels: [...new Set((conversationState.values.plan || []).map((t) => t.level))],
+      },
+      "tasks_to_execute_for_iteration",
     );
 
     // Execute all tasks concurrently
@@ -438,6 +472,7 @@ async function processDeepResearchJob(
     // Step 5: Plan next iteration
     logger.info({ jobId: job.id }, "deep_research_job_planning_next");
 
+    const { planningAgent } = await import("../../../agents/planning");
     const nextPlanningResult = await planningAgent({
       state,
       conversationState,
@@ -472,6 +507,18 @@ async function processDeepResearchJob(
 
     const { replyAgent } = await import("../../../agents/reply");
 
+    logger.info(
+      {
+        jobId: job.id,
+        messageId: currentMessage.id,
+        iterationCount,
+        tasksCount: tasksToExecute.length,
+        hypothesisLength: hypothesisResult.hypothesis?.length || 0,
+        suggestedNextStepsCount: conversationState.values.suggestedNextSteps?.length || 0,
+      },
+      "generating_reply_for_iteration",
+    );
+
     const replyResult = await replyAgent({
       conversationState,
       message: currentMessage,
@@ -480,10 +527,25 @@ async function processDeepResearchJob(
       nextPlan: conversationState.values.suggestedNextSteps || [],
     });
 
-    // Update the current message with the reply
+    // Warn if reply is empty
+    if (!replyResult.reply || replyResult.reply.trim().length === 0) {
+      logger.warn(
+        {
+          jobId: job.id,
+          messageId: currentMessage.id,
+          iterationCount,
+          replyResult,
+        },
+        "reply_agent_returned_empty_response",
+      );
+    }
+
+    // Update the current message with the reply and mark as complete
+    const iterationResponseTime = Date.now() - startTime;
     await updateMessage(currentMessage.id, {
       content: replyResult.reply,
       summary: replyResult.summary,
+      response_time: iterationResponseTime, // Mark message as complete so UI displays it
     });
 
     logger.info(
@@ -491,7 +553,7 @@ async function processDeepResearchJob(
         jobId: job.id,
         messageId: currentMessage.id,
         iterationCount,
-        contentLength: replyResult.reply.length,
+        contentLength: replyResult.reply?.length || 0,
       },
       "iteration_reply_saved",
     );
@@ -531,6 +593,8 @@ async function processDeepResearchJob(
 
       if (continueResult.shouldContinue) {
         // CONTINUE: Promote suggestedNextSteps to plan for next iteration
+        skipPlanning = true; // Skip planning in next iteration - use promoted tasks
+
         logger.info(
           { jobId: job.id, iterationCount },
           "auto_continuing_to_next_iteration",

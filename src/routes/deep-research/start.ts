@@ -434,6 +434,9 @@ async function runDeepResearch(params: {
     // Track the current message being updated (changes when auto-continuing)
     let currentMessage = createdMessage;
 
+    // Flag to skip planning when continuing (tasks already promoted)
+    let skipPlanning = false;
+
     logger.info(
       { fullyAutonomous, maxAutoIterations },
       "starting_autonomous_research_loop",
@@ -441,83 +444,103 @@ async function runDeepResearch(params: {
 
     while (shouldContinueLoop && iterationCount < maxAutoIterations) {
       iterationCount++;
+      const iterationStartTime = Date.now();
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
 
-      // Step 2: Execute deep research planning agent (v2)
-      const { planningAgent } = await import("../../agents/planning");
+      // Update conversation state with plan and objective
+      const { updateConversationState } = await import("../../db/operations");
+      const { literatureAgent } = await import("../../agents/literature");
 
-    logger.info(
-      { suggestedNextSteps: conversationState.values.suggestedNextSteps },
-      "current_suggested_next_steps",
-    );
+      // Get current level - if skipPlanning, use existing; otherwise run planning agent
+      let newLevel: number;
+      let currentObjective: string;
 
-    const deepResearchPlanningResult = await planningAgent({
-      state,
-      conversationState,
-      message: createdMessage,
-      mode: "initial",
-    });
+      if (skipPlanning) {
+        // CONTINUATION: Tasks already promoted, just get current level
+        const currentPlan = conversationState.values.plan || [];
+        newLevel = currentPlan.length > 0
+          ? Math.max(...currentPlan.map((t) => t.level || 0))
+          : 0;
+        currentObjective = conversationState.values.currentObjective || "";
+        skipPlanning = false; // Reset for next iteration
 
-    const plan = deepResearchPlanningResult.plan;
-    const currentObjective = deepResearchPlanningResult.currentObjective;
+        logger.info(
+          { newLevel, currentObjective },
+          "continuation_using_promoted_tasks",
+        );
+      } else {
+        // INITIAL: Execute planning agent
+        const { planningAgent } = await import("../../agents/planning");
 
-    if (!plan || !currentObjective) {
-      throw new Error("Plan or current objective not found");
-    }
+        logger.info(
+          { suggestedNextSteps: conversationState.values.suggestedNextSteps },
+          "current_suggested_next_steps",
+        );
 
-    // Update conversation state with plan and objective
-    const { updateConversationState } = await import("../../db/operations");
-    const { literatureAgent } = await import("../../agents/literature");
+        const deepResearchPlanningResult = await planningAgent({
+          state,
+          conversationState,
+          message: createdMessage,
+          mode: "initial",
+        });
 
-    // Clear previous suggestions since we're starting a new iteration
-    conversationState.values.suggestedNextSteps = [];
+        const plan = deepResearchPlanningResult.plan;
+        currentObjective = deepResearchPlanningResult.currentObjective;
 
-    // Get current plan or initialize empty
-    const currentPlan = conversationState.values.plan || [];
+        if (!plan || !currentObjective) {
+          throw new Error("Plan or current objective not found");
+        }
 
-    // Find max level in current plan, default to -1 if empty
-    const maxLevel =
-      currentPlan?.length > 0
-        ? Math.max(...currentPlan.map((t) => t.level || 0))
-        : -1;
+        // Clear previous suggestions since we're starting a new iteration
+        conversationState.values.suggestedNextSteps = [];
 
-    // Add new tasks with appropriate level and assign IDs
-    const newLevel = maxLevel + 1;
-    const newTasks = plan.map((task: PlanTask) => {
-      const taskId =
-        task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-      return {
-        ...task,
-        id: taskId,
-        level: newLevel,
-        start: undefined,
-        end: undefined,
-        output: undefined,
-      };
-    });
+        // Get current plan or initialize empty
+        const currentPlan = conversationState.values.plan || [];
 
-    // Append to existing plan and update objective
-    conversationState.values.plan = [...currentPlan, ...newTasks];
-    conversationState.values.currentObjective = currentObjective;
-    conversationState.values.currentLevel = newLevel; // Set current level for UI
+        // Find max level in current plan, default to -1 if empty
+        const maxLevel =
+          currentPlan?.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : -1;
 
-    // Update state in DB
-    if (conversationState.id) {
-      await updateConversationState(
-        conversationState.id,
-        conversationState.values,
+        // Add new tasks with appropriate level and assign IDs
+        newLevel = maxLevel + 1;
+        const newTasks = plan.map((task: PlanTask) => {
+          const taskId =
+            task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+          return {
+            ...task,
+            id: taskId,
+            level: newLevel,
+            start: undefined,
+            end: undefined,
+            output: undefined,
+          };
+        });
+
+        // Append to existing plan and update objective
+        conversationState.values.plan = [...currentPlan, ...newTasks];
+        conversationState.values.currentObjective = currentObjective;
+        conversationState.values.currentLevel = newLevel; // Set current level for UI
+
+        // Update state in DB
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+
+          logger.info(
+            { newLevel, newTasks, newObjective: currentObjective },
+            "new_tasks_added_to_plan",
+          );
+        }
+      }
+
+      // Execute only tasks from the current level
+      tasksToExecute = (conversationState.values.plan || []).filter(
+        (t) => t.level === newLevel,
       );
-
-      logger.info(
-        { newLevel, newTasks, newObjective: currentObjective },
-        "new_tasks_added_to_plan",
-      );
-    }
-
-    // Execute only tasks from the new level (max level)
-    tasksToExecute = conversationState.values.plan.filter(
-      (t) => t.level === newLevel,
-    );
 
     // Execute all tasks concurrently
     const taskPromises = tasksToExecute.map(async (task) => {
@@ -958,10 +981,12 @@ These molecular changes align with established longevity pathways (Converging nu
       nextPlan: conversationState.values.suggestedNextSteps || [],
     });
 
-    // Update the current message with the reply
+    // Update the current message with the reply and mark as complete
+    const iterationResponseTime = Date.now() - iterationStartTime;
     await updateMessage(currentMessage.id, {
       content: replyResult.reply,
       summary: replyResult.summary,
+      response_time: iterationResponseTime, // Mark message as complete so UI displays it
     });
 
     logger.info(
@@ -1011,6 +1036,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       if (continueResult.shouldContinue) {
         // CONTINUE: Promote suggestedNextSteps to plan for next iteration
+        skipPlanning = true; // Skip planning in next iteration - use promoted tasks
+
         logger.info(
           { iterationCount },
           "auto_continuing_to_next_iteration",
