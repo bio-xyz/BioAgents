@@ -63,6 +63,7 @@ export interface ConversationStateValues extends StateValues {
     description: string;
     path?: string;
     content?: string; // Parsed text content (for PDFs, extracted text; for CSVs, preview rows)
+    size?: number; // File size in bytes
   }>;
 }
 

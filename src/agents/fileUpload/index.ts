@@ -27,7 +27,7 @@ export async function fileUploadAgent(input: {
   files: File[];
   userId: string;
 }): Promise<{
-  uploadedDatasets: Array<{ id: string; filename: string; description: string; path?: string }>;
+  uploadedDatasets: Array<{ id: string; filename: string; description: string; path?: string; size?: number }>;
   errors: string[];
 }> {
   const { files, conversationState, userId } = input;
@@ -48,6 +48,7 @@ export async function fileUploadAgent(input: {
     mimeType: string;
     parsedText: string;
     metadata?: any;
+    size: number;
   }> = [];
   const errors: string[] = [];
 
@@ -82,6 +83,7 @@ export async function fileUploadAgent(input: {
         mimeType: file.type,
         parsedText: parsed.text,
         metadata: parsed.metadata,
+        size: buffer.length,
       });
 
       logger.info(`Successfully parsed ${file.name}`);
@@ -106,16 +108,18 @@ export async function fileUploadAgent(input: {
   // Generate descriptions for uploaded files
   const uploadedDatasetsWithDescriptions = await Promise.all(
     uploadedFiles.map(async (file) => {
+      const rawFile = rawFiles.find((rf) => rf.filename === file.filename);
       const description = await generateFileDescription(
         file.filename,
         file.mimeType || "",
-        rawFiles.find((rf) => rf.filename === file.filename)?.parsedText || "",
+        rawFile?.parsedText || "",
       );
       return {
         id: file.id,
         filename: file.filename,
         description,
         path: file.path,
+        size: rawFile?.size || 0,
       };
     }),
   );

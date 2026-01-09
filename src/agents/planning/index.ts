@@ -7,6 +7,7 @@ import type {
   State,
 } from "../../types/core";
 import logger from "../../utils/logger";
+import { formatFileSize } from "../fileUpload/utils";
 import {
   INITIAL_PLANNING_NO_PLAN_PROMPT,
   INITIAL_PLANNING_PROMPT,
@@ -325,7 +326,10 @@ async function buildContextFromState(
   if (conversationState.values.uploadedDatasets?.length) {
     contextParts.push(
       `Uploaded Datasets:\n${conversationState.values.uploadedDatasets
-        .map((ds) => `  - ${ds.filename} (ID: ${ds.id}): ${ds.description}`)
+        .map((ds) => {
+          const sizeStr = ds.size ? ` [${formatFileSize(ds.size)}]` : "";
+          return `  - ${ds.filename}${sizeStr} (ID: ${ds.id}): ${ds.description}`;
+        })
         .join("\n")}`,
     );
   }
