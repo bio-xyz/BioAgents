@@ -184,6 +184,7 @@ export async function generatePaperFromConversation(
       user_id: userId,
       conversation_id: conversationId,
       pdf_path: pdfPath,
+      status: "processing", // Will be updated to "completed" at the end
     });
 
     if (insertError) {
@@ -448,6 +449,18 @@ export async function generatePaperFromConversation(
     await onProgress?.("cleanup");
 
     cleanupWorkDir(workDir);
+
+    // Update status to completed (sync flow only - async flow handled by worker)
+    if (!existingPaperId) {
+      const { error: updateError } = await supabase
+        .from("paper")
+        .update({ status: "completed" })
+        .eq("id", paperId);
+
+      if (updateError) {
+        logger.warn({ updateError, paperId }, "failed_to_update_paper_status");
+      }
+    }
 
     logger.info({ paperId }, "paper_generation_completed");
 
