@@ -1,5 +1,8 @@
-import { getMessagesByConversation } from "../../db/operations";
 import type { ConversationState, Message, PlanTask } from "../../types/core";
+import {
+  fetchConversationHistory,
+  resolveQuestionForReply,
+} from "../../utils/deep-research/continuation-utils";
 import logger from "../../utils/logger";
 import { generateReply } from "./utils";
 
@@ -51,47 +54,18 @@ export async function replyAgent(input: {
   );
 
   // Fetch conversation history for classifier context (handles "continue", "yes", etc.)
-  let conversationHistory: Array<{
-    question?: string;
-    summary?: string;
-    content?: string;
-  }> = [];
+  const conversationHistory = await fetchConversationHistory(
+    message.conversation_id,
+  );
 
-  try {
-    const allMessages = await getMessagesByConversation(
-      message.conversation_id,
-      4, // Get last 4 messages
-    );
-    if (allMessages && allMessages.length > 1) {
-      // Skip current message, take previous 3, reverse to chronological order
-      conversationHistory = allMessages
-        .slice(1, 4)
-        .reverse()
-        .map((msg) => ({
-          question: msg.question,
-          summary: msg.summary,
-          content: msg.content,
-        }));
-    }
-  } catch (err) {
-    logger.warn({ err }, "failed_to_fetch_conversation_history_for_reply");
-  }
-
-  // Determine the question to use for classification and reply
+  // Resolve question for classification and reply
   // Priority: current message question > first question from history > objective
-  let questionForReply = message.question || "";
-  if (!questionForReply && conversationHistory.length > 0) {
-    // Find the first non-empty question from history (original user query)
-    const originalQuestion = conversationHistory.find(
-      (h) => h.question,
-    )?.question;
-    questionForReply = originalQuestion || "";
-  }
-  if (!questionForReply) {
-    questionForReply = conversationState.values.objective || "";
-  }
+  const questionForReply = resolveQuestionForReply(
+    message.question,
+    conversationHistory,
+    conversationState.values.objective,
+  );
 
-  // DEBUG LOG - temporary
   logger.info(
     {
       messageQuestion: message.question?.substring(0, 50) || "EMPTY",

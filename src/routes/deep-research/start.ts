@@ -16,9 +16,13 @@ import {
   updateConversationState,
   getMessagesByConversation,
   updateMessage,
-  createMessage,
   updateState,
 } from "../../db/operations";
+import {
+  createContinuationMessage,
+  calculateSessionStartLevel,
+  getSessionCompletedTasks,
+} from "../../utils/deep-research/continuation-utils";
 import { isJobQueueEnabled } from "../../services/queue/connection";
 import { getDeepResearchQueue } from "../../services/queue/queues";
 import { notifyMessageUpdated } from "../../services/queue/notify";
@@ -449,7 +453,7 @@ async function runDeepResearch(params: {
     let skipPlanning = false;
 
     // Track starting level for this user interaction (to gather all tasks across continuations)
-    const sessionStartLevel = (conversationState.values.currentLevel || 0) + 1;
+    const sessionStartLevel = calculateSessionStartLevel(conversationState.values.currentLevel);
 
     logger.info(
       { fullyAutonomous, maxAutoIterations },
@@ -1015,9 +1019,10 @@ These molecular changes align with established longevity pathways (Converging nu
 
     // Get completed tasks from this session, limited to last 3 levels max
     // This ensures reply covers work across continuations without overwhelming context
-    const minLevelForReply = Math.max(sessionStartLevel, newLevel - 2);
-    const sessionCompletedTasks = (conversationState.values.plan || []).filter(
-      (t) => (t.level ?? 0) >= minLevelForReply && t.output && t.output.length > 0,
+    const sessionCompletedTasks = getSessionCompletedTasks(
+      conversationState.values.plan || [],
+      sessionStartLevel,
+      newLevel,
     );
 
     const replyResult = await replyAgent({
@@ -1112,14 +1117,10 @@ These molecular changes align with established longevity pathways (Converging nu
 
       // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
       // This allows each autonomous iteration to have its own message in the conversation
-      const agentMessage = await createMessage({
-        conversation_id: currentMessage.conversation_id,
-        user_id: currentMessage.user_id,
-        question: "", // Empty question indicates agent-initiated continuation
-        content: "", // Will be filled with next iteration's reply
-        source: currentMessage.source,
-        state_id: stateRecord.id,
-      });
+      const agentMessage = await createContinuationMessage(
+        currentMessage,
+        stateRecord.id,
+      );
 
       logger.info(
         {

@@ -18,6 +18,11 @@ import {
 } from "../notify";
 import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
 import type { ConversationState, PlanTask, State } from "../../../types/core";
+import {
+  createContinuationMessage,
+  calculateSessionStartLevel,
+  getSessionCompletedTasks,
+} from "../../../utils/deep-research/continuation-utils";
 import logger from "../../../utils/logger";
 
 /**
@@ -130,7 +135,7 @@ async function processDeepResearchJob(
     let skipPlanning = false;
 
     // Track starting level for this user interaction (to gather all tasks across continuations)
-    const sessionStartLevel = (conversationState.values.currentLevel || 0) + 1;
+    const sessionStartLevel = calculateSessionStartLevel(conversationState.values.currentLevel);
 
     logger.info(
       { jobId: job.id, fullyAutonomous, maxAutoIterations },
@@ -565,9 +570,10 @@ async function processDeepResearchJob(
 
     // Get completed tasks from this session, limited to last 3 levels max
     // This ensures reply covers work across continuations without overwhelming context
-    const minLevelForReply = Math.max(sessionStartLevel, newLevel - 2);
-    const sessionCompletedTasks = (conversationState.values.plan || []).filter(
-      (t) => (t.level ?? 0) >= minLevelForReply && t.output && t.output.length > 0,
+    const sessionCompletedTasks = getSessionCompletedTasks(
+      conversationState.values.plan || [],
+      sessionStartLevel,
+      newLevel,
     );
 
     const replyResult = await replyAgent({
@@ -672,16 +678,10 @@ async function processDeepResearchJob(
       }
 
       // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
-      const { createMessage } = await import("../../../db/operations");
-
-      const agentMessage = await createMessage({
-        conversation_id: currentMessage.conversation_id,
-        user_id: currentMessage.user_id,
-        question: "", // Empty question indicates agent-initiated continuation
-        content: "", // Will be filled with next iteration's reply
-        source: currentMessage.source,
-        state_id: stateId,
-      });
+      const agentMessage = await createContinuationMessage(
+        currentMessage,
+        stateId,
+      );
 
       logger.info(
         {
