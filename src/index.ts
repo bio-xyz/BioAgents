@@ -9,6 +9,7 @@ import { chatRoute } from "./routes/chat";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { deepResearchPaperRoute } from "./routes/deep-research/paper";
+import { deepResearchStateRoute } from "./routes/deep-research/state";
 import { filesRoute } from "./routes/files";
 import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
@@ -179,6 +180,7 @@ const app = new Elysia()
   .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
+  .use(deepResearchStateRoute) // GET /api/deep-research/conversations/:conversationId/state for conversation state
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
   .use(filesRoute) // POST /api/files/* for direct S3 file uploads
 

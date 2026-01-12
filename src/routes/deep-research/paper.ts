@@ -177,12 +177,12 @@ async function paperGenerationHandler(ctx: any) {
  * Get paper handler - generates fresh presigned URLs for an existing paper
  */
 async function getPaperHandler(ctx: any) {
-  const { params, set, request } = ctx;
+  const { params, query, set, request } = ctx;
   const paperId = params.paperId;
 
-  // Get authenticated user from auth context
+  // Get authenticated user from auth context or query param (for API key auth with GET requests)
   const auth = (request as any).auth as AuthContext | undefined;
-  const userId = auth?.userId;
+  const userId = auth?.userId || query?.userId;
 
   if (!userId) {
     set.status = 401;
@@ -283,12 +283,12 @@ async function getPaperHandler(ctx: any) {
  * List papers handler - returns all papers for a conversation
  */
 async function listPapersHandler(ctx: any) {
-  const { params, set, request } = ctx;
+  const { params, query, set, request } = ctx;
   const conversationId = params.conversationId;
 
-  // Get authenticated user from auth context
+  // Get authenticated user from auth context or query param (for API key auth with GET requests)
   const auth = (request as any).auth as AuthContext | undefined;
-  const userId = auth?.userId;
+  const userId = auth?.userId || query?.userId;
 
   if (!userId) {
     set.status = 401;
@@ -575,12 +575,12 @@ async function asyncPaperGenerationHandler(ctx: any) {
  * Paper status handler - returns job progress
  */
 async function paperStatusHandler(ctx: any) {
-  const { params, set, request } = ctx;
+  const { params, query, set, request } = ctx;
   const paperId = params.paperId;
 
-  // Get authenticated user from auth context
+  // Get authenticated user from auth context or query param (for API key auth with GET requests)
   const auth = (request as any).auth as AuthContext | undefined;
-  const userId = auth?.userId;
+  const userId = auth?.userId || query?.userId;
 
   if (!userId) {
     set.status = 401;
