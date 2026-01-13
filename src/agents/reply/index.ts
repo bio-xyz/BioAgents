@@ -1,4 +1,8 @@
 import type { ConversationState, Message, PlanTask } from "../../types/core";
+import {
+  fetchConversationHistory,
+  resolveQuestionForReply,
+} from "../../utils/deep-research/continuation-utils";
 import logger from "../../utils/logger";
 import { generateReply } from "./utils";
 
@@ -26,6 +30,7 @@ export async function replyAgent(input: {
   completedMaxTasks: PlanTask[];
   hypothesis?: string;
   nextPlan: PlanTask[];
+  isFinal?: boolean; // Whether this is the final reply (ask for feedback) or intermediate (research continues)
 }): Promise<ReplyResult> {
   const {
     conversationState,
@@ -33,6 +38,7 @@ export async function replyAgent(input: {
     completedMaxTasks,
     hypothesis,
     nextPlan,
+    isFinal = true, // Default to final (ask for feedback)
   } = input;
   const start = new Date().toISOString();
 
@@ -47,12 +53,38 @@ export async function replyAgent(input: {
     "reply_agent_started",
   );
 
+  // Fetch conversation history for classifier context (handles "continue", "yes", etc.)
+  const conversationHistory = await fetchConversationHistory(
+    message.conversation_id,
+  );
+
+  // Resolve question for classification and reply
+  // Priority: current message question > first question from history > objective
+  const questionForReply = resolveQuestionForReply(
+    message.question,
+    conversationHistory,
+    conversationState.values.objective,
+  );
+
+  logger.info(
+    {
+      messageQuestion: message.question?.substring(0, 50) || "EMPTY",
+      resolvedQuestion: questionForReply.substring(0, 50),
+      source: message.question
+        ? "current"
+        : conversationHistory.find((h) => h.question)
+          ? "history"
+          : "objective",
+    },
+    "reply_agent_question_resolved",
+  );
+
   try {
     // Generate reply
     // Note: uploadedDatasets not passed here - deep research has already analyzed
     // the files via ANALYSIS tasks, results are in completedTasks
     const reply = await generateReply(
-      message.question || conversationState.values.objective || "",
+      questionForReply,
       {
         completedTasks: completedMaxTasks,
         hypothesis,
@@ -61,6 +93,7 @@ export async function replyAgent(input: {
         discoveries: conversationState.values.discoveries || [],
         methodology: conversationState.values.methodology,
         currentObjective: conversationState.values.currentObjective,
+        conversationHistory,
       },
       {
         maxTokens: 5500,
@@ -68,6 +101,7 @@ export async function replyAgent(input: {
         thinkingBudget: 1024,
         messageId: message.id,
         usageType: "deep-research",
+        isFinal,
       },
     );
 
