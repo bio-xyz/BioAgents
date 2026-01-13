@@ -525,6 +525,7 @@ async function processDeepResearchJob(
         hypothesis: hypothesisResult.hypothesis,
         suggestedNextSteps: conversationState.values.suggestedNextSteps,
         iterationCount,
+        fullyAutonomous,
       });
 
       logger.info(

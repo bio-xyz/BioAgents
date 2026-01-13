@@ -33,6 +33,7 @@ export async function continueResearchAgent(input: {
   hypothesis: string;
   suggestedNextSteps: PlanTask[];
   iterationCount: number;
+  fullyAutonomous?: boolean; // If true, only stop when research is complete
 }): Promise<ContinueResearchResult> {
   const {
     conversationState,
@@ -41,6 +42,7 @@ export async function continueResearchAgent(input: {
     hypothesis,
     suggestedNextSteps,
     iterationCount,
+    fullyAutonomous = false,
   } = input;
   const start = new Date().toISOString();
 
@@ -77,12 +79,48 @@ export async function continueResearchAgent(input: {
       hasHypothesis: !!hypothesis,
       datasetCount: datasets.length,
       hasUserMessage: !!userLastMessage,
+      fullyAutonomous,
     },
     "continue_research_agent_started",
   );
 
   try {
-    // Edge case: First iteration should almost always continue
+    // Edge case: No suggested next steps means research is complete
+    if (suggestedNextSteps.length === 0) {
+      logger.info("no_suggested_next_steps_research_complete");
+      const end = new Date().toISOString();
+      return {
+        shouldContinue: false,
+        reasoning:
+          "No further research steps suggested. The research objective appears to be addressed.",
+        confidence: "high",
+        triggerReason: "research_convergence",
+        start,
+        end,
+      };
+    }
+
+    // FULLY AUTONOMOUS MODE: Only stop when research is complete
+    // Skip LLM decision - just continue if there are next steps
+    if (fullyAutonomous) {
+      logger.info(
+        { iterationCount, suggestedNextStepsCount: suggestedNextSteps.length },
+        "fully_autonomous_auto_continue",
+      );
+      const end = new Date().toISOString();
+      return {
+        shouldContinue: true,
+        reasoning:
+          "Fully autonomous mode - continuing research as there are still steps to explore.",
+        confidence: "high",
+        start,
+        end,
+      };
+    }
+
+    // SEMI-AUTONOMOUS MODE: Use LLM to decide based on various criteria
+
+    // First iteration should almost always continue
     if (iterationCount === 1 && suggestedNextSteps.length > 0) {
       logger.info({ iterationCount }, "first_iteration_auto_continue");
       const end = new Date().toISOString();
@@ -91,21 +129,6 @@ export async function continueResearchAgent(input: {
         reasoning:
           "First iteration completed. Continuing to build foundational understanding before seeking user feedback.",
         confidence: "high",
-        start,
-        end,
-      };
-    }
-
-    // Edge case: No suggested next steps means research is complete
-    if (suggestedNextSteps.length === 0) {
-      logger.info("no_suggested_next_steps_asking_user");
-      const end = new Date().toISOString();
-      return {
-        shouldContinue: false,
-        reasoning:
-          "No further research steps suggested. The research objective appears to be addressed.",
-        confidence: "high",
-        triggerReason: "research_convergence",
         start,
         end,
       };

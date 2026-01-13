@@ -980,6 +980,7 @@ These molecular changes align with established longevity pathways (Converging nu
         hypothesis: hypothesisResult.hypothesis,
         suggestedNextSteps: conversationState.values.suggestedNextSteps,
         iterationCount,
+        fullyAutonomous,
       });
 
       logger.info(
