@@ -96,7 +96,7 @@ export async function replyAgent(input: {
         conversationHistory,
       },
       {
-        maxTokens: 5500,
+        maxTokens: 4500,
         thinking: true,
         thinkingBudget: 1024,
         messageId: message.id,

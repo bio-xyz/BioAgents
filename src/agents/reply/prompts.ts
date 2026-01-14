@@ -109,7 +109,7 @@ Generate a user-facing reply that:
 2. Presents Scientific Discoveries section
    - If discoveries exist: present each discovery with evidence
    - If no discoveries yet: say "No formalized scientific discoveries yet. Key Insights are shown above this message."
-3. Presents the current hypothesis clearly
+3. Presents the current hypothesis (ONLY when appropriate - see below)
 4. Describes the current objective and outlines the plan for the next iteration together
 5. Asks the user for feedback on the plan
 
@@ -158,9 +158,23 @@ Example format:
 If no discoveries were provided:
 No formalized scientific discoveries yet. Key Insights are shown above this message.
 
-## Current Hypothesis
+## Current Hypothesis (CONDITIONAL)
 
-[Present the hypothesis in a clear, accessible way. Explain what it means and why it matters.]
+INCLUDE this section if the query involves:
+- User explicitly requests a hypothesis
+- Testing a scientific claim (e.g., "Does X cause Y?")
+- Investigating causation or mechanisms
+- Comparing alternatives (e.g., "Is A better than B?")
+
+SKIP this section if the query is:
+- A literature survey (e.g., "Find papers about X")
+- A factual lookup (e.g., "What are the effects of X?")
+- Exploratory research (e.g., "What's known about X?")
+- Summarization or definition requests (e.g., "What is X?")
+
+When unclear, default to SKIPPING this section.
+
+If included: [Present the hypothesis in a clear, accessible way. Explain what it means and why it matters.]
 
 ## Current Objective & Next Steps
 

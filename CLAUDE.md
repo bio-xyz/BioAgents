@@ -20,6 +20,7 @@ We are building the **BEST AI scientist framework**. Deep Research is the PRIMAR
 **IMPORTANT**: This system enables real scientific discovery through iterative human-AI collaboration. Every research cycle builds on accumulated knowledge - YOU MUST NEVER treat queries in isolation.
 
 Core principles:
+
 1. **Iterative Investigation** - Research unfolds across multiple cycles, each deepening understanding
 2. **Human-in-the-Loop Steering** - Users guide the research direction at every iteration
 3. **Persistent World State** - All discoveries, hypotheses, and insights accumulate across the conversation
@@ -60,6 +61,7 @@ Core principles:
 ```
 
 Each cycle:
+
 1. **Planning** - Decides WHAT tasks to run based on current state and user input
 2. **Execution** - Runs LITERATURE and ANALYSIS tasks in parallel
 3. **Hypothesis** - Synthesizes outputs into scientific claims
@@ -69,12 +71,12 @@ Each cycle:
 
 ### Mini-Agent Collaboration
 
-| Agent | Role | State Updates |
-|-------|------|---------------|
-| **Planning** | Decides WHAT tasks to run, plans next iterations | Returns suggestions (no state mutation) |
-| **Hypothesis** | Synthesizes task outputs into scientific claims | `currentHypothesis` |
-| **Reflection** | Extracts insights, evolves research objectives | `currentObjective`, `keyInsights`, `methodology`, `conversationTitle` |
-| **Discovery** | Identifies novel claims with evidence links | `discoveries[]` |
+| Agent          | Role                                             | State Updates                                                         |
+| -------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| **Planning**   | Decides WHAT tasks to run, plans next iterations | Returns suggestions (no state mutation)                               |
+| **Hypothesis** | Synthesizes task outputs into scientific claims  | `currentHypothesis`                                                   |
+| **Reflection** | Extracts insights, evolves research objectives   | `currentObjective`, `keyInsights`, `methodology`, `conversationTitle` |
+| **Discovery**  | Identifies novel claims with evidence links      | `discoveries[]`                                                       |
 
 **IMPORTANT**: Each agent reads the world state but only updates specific fields. This prevents conflicts and maintains clear causality.
 
@@ -83,6 +85,7 @@ Each cycle:
 **IMPORTANT**: LITERATURE and ANALYSIS tasks are executed by EXTERNAL services (OpenScholar, Edison, BioAgents API). This repository CANNOT control their execution - we can only consume their outputs.
 
 YOU MUST:
+
 - Handle external service outputs gracefully
 - Extract maximum value from returned data
 - Never crash the workflow due to external service failures
@@ -93,29 +96,34 @@ YOU MUST:
 **YOU MUST follow these rules to build a world-class AI scientist:**
 
 #### World State Management
+
 - YOU MUST update the world state after every task completion
 - YOU MUST NEVER lose accumulated discoveries
 - YOU MUST maintain complete traceability: claims → evidence → tasks → jobIds
 
 #### Human Steering
+
 - The user's input ALWAYS overrides agent suggestions
 - YOU MUST present clear next steps for user approval before execution
 - NEVER proceed with major direction changes without user consent
 - When the user provides feedback, incorporate it into the next planning cycle
 
 #### Scientific Rigor
+
 - Every discovery MUST link to supporting evidence (taskId, jobId)
 - Novelty claims MUST be validated against literature
 - Hypotheses MUST evolve based on new findings - they are not static
 - Maintain DOI citations for all literature references
 
 #### Iteration Quality
+
 - Each cycle MUST build meaningfully on prior work
 - NEVER treat a research query in isolation
 - Summarize accumulated context - don't dump raw conversation history
 - The world state should grow richer and more nuanced over time
 
 #### Paper Generation
+
 - When generating papers, ensure complete traceability from claims to source data
 - Include all DOI-backed citations in the bibliography
 - Link figures and artifacts to their source analysis tasks
@@ -197,12 +205,15 @@ src/
 ## Running Modes
 
 ### In-Process Mode (Default)
+
 ```bash
 USE_JOB_QUEUE=false bun run dev
 ```
+
 Jobs execute directly in the main process. Simpler for development.
 
 ### Queue Mode (Production)
+
 ```bash
 # Terminal 1: API server
 USE_JOB_QUEUE=true bun run dev
@@ -210,6 +221,7 @@ USE_JOB_QUEUE=true bun run dev
 # Terminal 2: Worker process
 USE_JOB_QUEUE=true bun run worker
 ```
+
 Jobs are queued in Redis and processed by separate worker processes. Supports horizontal scaling.
 
 ## Key Environment Variables
@@ -242,21 +254,25 @@ B402_ENABLED=false         # BNB/USDT payments
 ## API Endpoints
 
 ### Core
+
 - `POST /api/chat` - Chat with AI agent
 - `POST /api/deep-research/start` - Start deep research job
 - `GET /api/deep-research/status/:messageId` - Check job status
 - `GET /api/health` - Health check with queue status
 
 ### Paper Generation
+
 - `POST /api/deep-research/conversations/:conversationId/paper` - Generate LaTeX paper from conversation
 - `GET /api/deep-research/paper/:paperId` - Get paper with fresh presigned URLs
 - `GET /api/deep-research/conversations/:conversationId/papers` - List all papers for a conversation
 
 ### Payment-Gated (x402/b402)
+
 - `POST /api/x402/chat` - Payment-gated chat (Base/USDC)
 - `POST /api/b402/chat` - Payment-gated chat (BNB/USDT)
 
 ### Admin
+
 - `/admin/queues` - Bull Board dashboard (when queue enabled)
 
 ## Bun-Specific Guidelines
@@ -274,9 +290,10 @@ B402_ENABLED=false         # BNB/USDT payments
 Bun workers have different module initialization than the main process. Module-level variables can cause TDZ errors.
 
 **Bad** (causes TDZ in workers):
+
 ```typescript
-const config = process.env.MY_VAR;  // TDZ error
-let cache: Map<string, any>;         // TDZ error
+const config = process.env.MY_VAR; // TDZ error
+let cache: Map<string, any>; // TDZ error
 
 export function doSomething() {
   return config;
@@ -284,11 +301,12 @@ export function doSomething() {
 ```
 
 **Good** (use dynamic imports and globalThis):
+
 ```typescript
 // No module-level variables!
 
 export async function doSomething() {
-  const config = process.env.MY_VAR;  // Inside function
+  const config = process.env.MY_VAR; // Inside function
 
   // Use globalThis for singletons
   let cache = (globalThis as any).__myCache;
@@ -326,6 +344,7 @@ X402_ENABLED=true bun test
 ## Docker Deployment
 
 ### Production (with Job Queue)
+
 ```bash
 # Start all services (API + Worker + Redis)
 docker compose up -d
@@ -342,6 +361,7 @@ docker compose down
 ```
 
 Architecture:
+
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Client    │────▶│  API Server │────▶│    Redis    │
@@ -357,13 +377,16 @@ Architecture:
 ```
 
 ### Simple (without Queue)
+
 ```bash
 # Single container, in-process mode
 docker compose -f docker-compose.simple.yml up -d
 ```
 
 ### Environment Variables
+
 Set in `.env` file or pass directly:
+
 ```bash
 # Required for queue mode
 USE_JOB_QUEUE=true
@@ -374,7 +397,9 @@ USE_JOB_QUEUE=true
 ```
 
 ### Coolify/PaaS Deployment
+
 For Coolify or similar PaaS:
+
 1. Deploy the main `docker-compose.yml`
 2. Set `USE_JOB_QUEUE=true` in environment
 3. Redis is included as a service
@@ -386,3 +411,9 @@ For Coolify or similar PaaS:
 2. **Logging**: Check `pino` logs for structured logging output
 3. **Queue Dashboard**: Access `/admin/queues` when `USE_JOB_QUEUE=true`
 4. **WebSocket Testing**: Connect to `/ws?userId=<uuid>` for real-time job updates
+
+## Other repositories related to this project
+
+IMPORTANT:
+
+- To get details about other related repositories to this project, feel free to check out the ~/.claude/CLAUDE.md from the main CLAUDE.md. There you will find information about the data analysis and literature agent implementations, as well as the production frontend for our repository (not the dev one that is found here).

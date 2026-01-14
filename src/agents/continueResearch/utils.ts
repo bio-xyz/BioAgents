@@ -124,6 +124,7 @@ export async function decideContinuation(
       },
     ],
     maxTokens: options.maxTokens ?? 1024,
+    thinkingBudget: options.thinkingBudget,
     messageId: options.messageId,
     usageType: options.usageType,
   };

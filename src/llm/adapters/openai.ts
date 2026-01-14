@@ -238,12 +238,43 @@ export class OpenAIAdapter extends LLMAdapter {
       openaiRequest.temperature = request.temperature;
     }
 
+    // Map thinkingBudget to reasoning effort for GPT-5.2+ and o-series models
+    const reasoningEffort = this.mapThinkingBudgetToReasoningEffort(request.thinkingBudget);
+    if (reasoningEffort) {
+      (openaiRequest as any).reasoning = { effort: reasoningEffort };
+    }
+
     const mappedTools = this.mapToolsForChat(request.tools);
     if (mappedTools.length > 0) {
       openaiRequest.tools = mappedTools;
     }
 
     return openaiRequest;
+  }
+
+  /**
+   * Maps thinkingBudget (token count) to OpenAI reasoning effort level.
+   * GPT-5.2+ supports: none, low, medium, high, xhigh
+   */
+  private mapThinkingBudgetToReasoningEffort(
+    thinkingBudget: number | undefined,
+  ): "none" | "low" | "medium" | "high" | "xhigh" | undefined {
+    if (thinkingBudget === undefined) {
+      return undefined; // Don't set reasoning param, use model default
+    }
+    if (thinkingBudget === 0) {
+      return "none";
+    }
+    if (thinkingBudget <= 2000) {
+      return "low";
+    }
+    if (thinkingBudget <= 4000) {
+      return "medium";
+    }
+    if (thinkingBudget <= 8000) {
+      return "high";
+    }
+    return "xhigh";
   }
 
   protected transformResponse(response: ChatCompletion): LLMResponse {

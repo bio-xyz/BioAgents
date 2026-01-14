@@ -259,13 +259,20 @@ export class AnthropicAdapter extends LLMAdapter {
         }
       });
 
+    // Anthropic requires max_tokens > thinking.budget_tokens
+    // We handle this by adding thinkingBudget to maxTokens so developers can think of them as separate budgets
+    const baseMaxTokens = request.maxTokens ?? 5000;
+    const effectiveMaxTokens = request.thinkingBudget
+      ? baseMaxTokens + request.thinkingBudget
+      : baseMaxTokens;
+
     const anthropicRequest: MessageCreateParamsNonStreaming = {
       model: request.model,
       messages: userAndAssistantMessages.map((message) => ({
         role: message.role as "user" | "assistant",
         content: message.content,
       })),
-      max_tokens: request.maxTokens ?? 5000,
+      max_tokens: effectiveMaxTokens,
     };
 
     if (systemSegments.length > 0) {
