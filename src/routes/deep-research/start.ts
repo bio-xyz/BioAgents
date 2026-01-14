@@ -586,27 +586,34 @@ async function runDeepResearch(params: {
           const primaryLiteratureLabel =
             primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
-          // Run OpenScholar and update state when done
-          const openScholarPromise = literatureAgent({
-            objective: task.objective,
-            type: "OPENSCHOLAR",
-          }).then(async (result) => {
-            if (result.count && result.count > 0) {
-              task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-            }
-            if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
-              logger.info({ count: result.count }, "openscholar_completed");
-            }
-            logger.info(
-              { outputLength: result.output.length, count: result.count },
-              "openscholar_result_received",
-            );
-          });
+          // Build list of literature promises based on configured sources
+          const literaturePromises: Promise<void>[] = [];
 
+          // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+          if (process.env.OPENSCHOLAR_API_URL) {
+            const openScholarPromise = literatureAgent({
+              objective: task.objective,
+              type: "OPENSCHOLAR",
+            }).then(async (result) => {
+              if (result.count && result.count > 0) {
+                task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+              }
+              if (conversationState.id) {
+                await updateConversationState(
+                  conversationState.id,
+                  conversationState.values,
+                );
+                logger.info({ count: result.count }, "openscholar_completed");
+              }
+              logger.info(
+                { outputLength: result.output.length, count: result.count },
+                "openscholar_result_received",
+              );
+            });
+            literaturePromises.push(openScholarPromise);
+          }
+
+          // Primary literature (Edison or BioLit) - always enabled
           const primaryLiteraturePromise = literatureAgent({
             objective: task.objective,
             type: primaryLiteratureType,
@@ -628,33 +635,34 @@ async function runDeepResearch(params: {
               "primary_literature_result_received",
             );
           });
+          literaturePromises.push(primaryLiteraturePromise);
 
-          const knowledgePromise = literatureAgent({
-            objective: task.objective,
-            type: "KNOWLEDGE",
-          }).then(async (result) => {
-            if (result.count && result.count > 0) {
-              task.output += `Knowledge literature results:\n${result.output}\n\n`;
-            }
-            if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
+          // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+          if (process.env.KNOWLEDGE_DOCS_PATH) {
+            const knowledgePromise = literatureAgent({
+              objective: task.objective,
+              type: "KNOWLEDGE",
+            }).then(async (result) => {
+              if (result.count && result.count > 0) {
+                task.output += `Knowledge literature results:\n${result.output}\n\n`;
+              }
+              if (conversationState.id) {
+                await updateConversationState(
+                  conversationState.id,
+                  conversationState.values,
+                );
+                logger.info({ count: result.count }, "knowledge_completed");
+              }
+              logger.info(
+                { outputLength: result.output.length, count: result.count },
+                "knowledge_result_received",
               );
-              logger.info({ count: result.count }, "knowledge_completed");
-            }
-            logger.info(
-              { outputLength: result.output.length, count: result.count },
-              "knowledge_result_received",
-            );
-          });
+            });
+            literaturePromises.push(knowledgePromise);
+          }
 
-          // Wait for all to complete
-          await Promise.all([
-            openScholarPromise,
-            primaryLiteraturePromise,
-            knowledgePromise,
-          ]);
+          // Wait for all enabled sources to complete
+          await Promise.all(literaturePromises);
 
           // Set end timestamp after all are done
           task.end = new Date().toISOString();
