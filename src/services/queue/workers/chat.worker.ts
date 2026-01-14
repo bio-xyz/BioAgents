@@ -500,8 +500,11 @@ export function startChatWorker(): Worker {
     {
       connection: getBullMQConnection(),
       concurrency,
-      lockDuration: 120000, // 2 minutes
-      stalledInterval: 30000, // Check stalled jobs every 30s
+      // Chat jobs typically complete in 1-3 minutes
+      // lockRenewTime must be significantly less than lockDuration (1/5 ratio)
+      lockDuration: 300000, // 5 minutes
+      lockRenewTime: 60000, // 1 minute - renew well before lock expires
+      stalledInterval: 120000, // 2 minutes
     },
   );
 

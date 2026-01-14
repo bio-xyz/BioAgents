@@ -158,10 +158,11 @@ export function startPaperGenerationWorker(): Worker {
     {
       connection: getBullMQConnection(),
       concurrency,
-      // Paper generation can take 15-30 minutes
-      lockDuration: 1800000, // 30 minutes
-      stalledInterval: 60000, // Check stalled jobs every 1 minute
-      lockRenewTime: 900000, // Renew lock every 15 minutes
+      // Paper generation can take 30-60 minutes
+      // lockRenewTime must be significantly less than lockDuration (1/6 ratio)
+      lockDuration: 3600000, // 1 hour
+      lockRenewTime: 600000, // 10 minutes - renew well before lock expires
+      stalledInterval: 1800000, // 30 minutes
     },
   );
 

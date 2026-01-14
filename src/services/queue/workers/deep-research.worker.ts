@@ -781,10 +781,11 @@ export function startDeepResearchWorker(): Worker {
     {
       connection: getBullMQConnection(),
       concurrency,
-      // Deep research can take 20-30+ minutes
-      lockDuration: 1800000, // 30 minutes
-      stalledInterval: 60000, // Check stalled jobs every 1 minute
-      lockRenewTime: 900000, // Renew lock every 15 minutes
+      // Deep research with autonomous mode can take 2-8 hours
+      // lockRenewTime must be significantly less than lockDuration (1/6 ratio)
+      lockDuration: 3600000, // 1 hour - gives plenty of buffer before stalled detection
+      lockRenewTime: 600000, // 10 minutes - renew well before lock expires
+      stalledInterval: 1800000, // 30 minutes - check for stalled jobs
     },
   );
 
