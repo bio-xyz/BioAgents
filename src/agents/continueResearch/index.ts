@@ -186,6 +186,7 @@ export async function continueResearchAgent(input: {
       datasets,
       {
         maxTokens: 1024,
+        thinkingBudget: 2048,
         messageId: message.id,
         usageType: "deep-research",
       },

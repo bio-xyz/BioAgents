@@ -244,12 +244,19 @@ export class GoogleAdapter extends LLMAdapter {
       config.temperature = request.temperature;
     }
 
-    if (request.maxTokens !== undefined) {
+    // Google counts thinking tokens within maxOutputTokens (thoughts + output <= maxOutputTokens)
+    // We handle this by adding thinkingBudget to maxTokens so developers can think of them as separate budgets
+    if (request.maxTokens !== undefined || request.thinkingBudget !== undefined) {
+      const baseMaxTokens = request.maxTokens ?? 5000;
+      const effectiveMaxTokens = request.thinkingBudget
+        ? baseMaxTokens + request.thinkingBudget
+        : baseMaxTokens;
+
       const existingGenerationConfig =
         (config.generationConfig as Record<string, unknown> | undefined) ?? {};
       config.generationConfig = {
         ...existingGenerationConfig,
-        maxOutputTokens: request.maxTokens,
+        maxOutputTokens: effectiveMaxTokens,
       };
     }
 
@@ -258,8 +265,6 @@ export class GoogleAdapter extends LLMAdapter {
         includeThoughts: true,
         thinkingBudget: request.thinkingBudget,
       };
-    } else if (request.thinkingBudget !== undefined && !request.model.includes('thinking')) {
-      logger.warn('thinkingBudget specified but model does not support thinking');
     }
 
     const tools = this.mapTools(request.tools);
