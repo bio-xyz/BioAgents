@@ -280,17 +280,24 @@ async function processDeepResearchJob(
         const primaryLiteratureLabel =
           primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
-        // Run literature searches in parallel
-        const openScholarPromise = literatureAgent({
-          objective: task.objective,
-          type: "OPENSCHOLAR",
-        }).then(async (result) => {
-          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-          if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
-          }
-        });
+        // Build list of literature promises based on configured sources
+        const literaturePromises: Promise<void>[] = [];
 
+        // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+        if (process.env.OPENSCHOLAR_API_URL) {
+          const openScholarPromise = literatureAgent({
+            objective: task.objective,
+            type: "OPENSCHOLAR",
+          }).then(async (result) => {
+            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+            if (conversationState.id) {
+              await updateConversationState(conversationState.id, conversationState.values);
+            }
+          });
+          literaturePromises.push(openScholarPromise);
+        }
+
+        // Primary literature (Edison or BioLit) - always enabled
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           type: primaryLiteratureType,
@@ -304,18 +311,23 @@ async function processDeepResearchJob(
             await updateConversationState(conversationState.id, conversationState.values);
           }
         });
+        literaturePromises.push(primaryLiteraturePromise);
 
-        const knowledgePromise = literatureAgent({
-          objective: task.objective,
-          type: "KNOWLEDGE",
-        }).then(async (result) => {
-          task.output += `Knowledge literature results:\n${result.output}\n\n`;
-          if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
-          }
-        });
+        // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+        if (process.env.KNOWLEDGE_DOCS_PATH) {
+          const knowledgePromise = literatureAgent({
+            objective: task.objective,
+            type: "KNOWLEDGE",
+          }).then(async (result) => {
+            task.output += `Knowledge literature results:\n${result.output}\n\n`;
+            if (conversationState.id) {
+              await updateConversationState(conversationState.id, conversationState.values);
+            }
+          });
+          literaturePromises.push(knowledgePromise);
+        }
 
-        await Promise.all([openScholarPromise, primaryLiteraturePromise, knowledgePromise]);
+        await Promise.all(literaturePromises);
 
         task.end = new Date().toISOString();
         if (conversationState.id) {

@@ -677,66 +677,72 @@ export async function chatHandler(ctx: any) {
       const useBioLiterature =
         process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
 
-      // Run OPENSCHOLAR
-      const openScholarPromise = literatureAgent({
-        objective: task.objective,
-        type: "OPENSCHOLAR",
-      }).then((result) => {
-        if (result.count && result.count > 0) {
-          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-        }
-        logger.info(
-          {
-            taskObjective: task.objective,
-            outputLength: result.output.length,
-            count: result.count,
-            outputPreview: result.output.substring(0, 200),
-          },
-          "openscholar_completed",
-        );
-      });
+      // Build list of literature promises based on configured sources
+      const literaturePromises: Promise<void>[] = [];
 
-      // Optionally run BIOLIT when configured as the primary literature agent
-      const bioLiteraturePromise = useBioLiterature
-        ? literatureAgent({
-            objective: task.objective,
-            type: "BIOLIT",
-          }).then((result) => {
-            task.output += `BioLiterature results:\n${result.output}\n\n`;
-            logger.info(
-              {
-                taskObjective: task.objective,
-                outputLength: result.output.length,
-                outputPreview: result.output.substring(0, 200),
-              },
-              "bioliterature_completed",
-            );
-          })
-        : Promise.resolve();
+      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+      if (process.env.OPENSCHOLAR_API_URL) {
+        const openScholarPromise = literatureAgent({
+          objective: task.objective,
+          type: "OPENSCHOLAR",
+        }).then((result) => {
+          if (result.count && result.count > 0) {
+            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+          }
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              count: result.count,
+              outputPreview: result.output.substring(0, 200),
+            },
+            "openscholar_completed",
+          );
+        });
+        literaturePromises.push(openScholarPromise);
+      }
 
-      // Optionally run KNOWLEDGE
-      const knowledgePromise = literatureAgent({
-        objective: task.objective,
-        type: "KNOWLEDGE",
-      }).then((result) => {
-        if (result.count && result.count > 0) {
-          task.output += `Knowledge literature results:\n${result.output}\n\n`;
-        }
-        logger.info(
-          {
-            taskObjective: task.objective,
-            outputLength: result.output.length,
-            count: result.count,
-          },
-          "knowledge_completed",
-        );
-      });
+      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
+      if (useBioLiterature) {
+        const bioLiteraturePromise = literatureAgent({
+          objective: task.objective,
+          type: "BIOLIT",
+        }).then((result) => {
+          task.output += `BioLiterature results:\n${result.output}\n\n`;
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              outputPreview: result.output.substring(0, 200),
+            },
+            "bioliterature_completed",
+          );
+        });
+        literaturePromises.push(bioLiteraturePromise);
+      }
 
-      await Promise.all([
-        openScholarPromise,
-        bioLiteraturePromise,
-        knowledgePromise,
-      ]);
+      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+      if (process.env.KNOWLEDGE_DOCS_PATH) {
+        const knowledgePromise = literatureAgent({
+          objective: task.objective,
+          type: "KNOWLEDGE",
+        }).then((result) => {
+          if (result.count && result.count > 0) {
+            task.output += `Knowledge literature results:\n${result.output}\n\n`;
+          }
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              count: result.count,
+            },
+            "knowledge_completed",
+          );
+        });
+        literaturePromises.push(knowledgePromise);
+      }
+
+      await Promise.all(literaturePromises);
 
       task.end = new Date().toISOString();
       completedTasks.push(task);
