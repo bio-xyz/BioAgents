@@ -57,7 +57,11 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-): Promise<{ output: string; artifacts: Array<AnalysisArtifact>; jobId: string }> {
+): Promise<{
+  output: string;
+  artifacts: Array<AnalysisArtifact>;
+  jobId: string;
+}> {
   if (!objective) {
     logger.error("No question provided to Data Analysis Agent");
     throw new Error("No question provided to Data Analysis Agent");
@@ -226,7 +230,11 @@ async function awaitBioTask(
   config: BioAnalysisConfig,
   taskId: string,
 ): Promise<BioDataAnalysisResult> {
-  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes max wait
+  const timeoutMinutes = parseInt(
+    process.env.BIO_ANALYSIS_TASK_TIMEOUT_MINUTES || "60",
+    10,
+  );
+  const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
 

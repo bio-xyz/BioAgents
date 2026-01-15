@@ -51,7 +51,11 @@ export async function awaitEdisonTask(
   apiKey: string,
   taskId: string,
 ): Promise<{ answer?: string; error?: string }> {
-  const MAX_WAIT_TIME = 30 * 60 * 1000; // 30 minutes max wait
+  const timeoutMinutes = parseInt(
+    process.env.EDISON_TASK_TIMEOUT_MINUTES || "30",
+    10,
+  );
+  const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 3000; // Poll every 3 seconds
   const startTime = Date.now();
 
@@ -59,7 +63,7 @@ export async function awaitEdisonTask(
     // Check timeout
     if (Date.now() - startTime > MAX_WAIT_TIME) {
       logger.warn({ taskId }, "edison_task_timeout");
-      return { error: "Task timed out after 30 minutes" };
+      return { error: `Task timed out after ${timeoutMinutes} minutes` };
     }
 
     try {
