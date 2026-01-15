@@ -144,7 +144,20 @@ export async function decideContinuation(
       // Try to locate JSON between {}
       const jsonMatch = response.content.match(/\{[\s\S]*?\}/);
       const jsonString = jsonMatch ? jsonMatch[0] : "";
-      parsedResponse = JSON.parse(jsonString);
+      try {
+        parsedResponse = JSON.parse(jsonString);
+      } catch {
+        logger.warn(
+          { content: response.content.substring(0, 300) },
+          "continue_research_json_parse_failed"
+        );
+        // Default to not continuing - safe to stop and let user decide
+        parsedResponse = {
+          shouldContinue: false,
+          reasoning: "Unable to parse continue decision",
+          confidence: "low",
+        };
+      }
     }
 
     // Validate required fields

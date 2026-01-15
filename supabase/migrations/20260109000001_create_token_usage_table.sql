@@ -227,7 +227,7 @@ BEGIN
         ROUND(SUM(stats.user_request_count)::NUMERIC / NULLIF(COUNT(DISTINCT stats.user_id), 0), 2) AS avg_requests_per_user,
         ROUND(SUM(stats.user_total_cost) / NULLIF(SUM(stats.user_request_count), 0), 6) AS avg_cost_per_request,
         ROUND(SUM(stats.user_total_cost), 4) AS total_cost_usd,
-        SUM(stats.user_request_count) AS total_requests
+        SUM(stats.user_request_count)::BIGINT AS total_requests
     FROM (
         SELECT
             COALESCE(m.user_id, p.user_id) AS user_id,

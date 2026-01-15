@@ -16,6 +16,11 @@ export type ReflectionOptions = {
   thinkingBudget?: number;
   messageId?: string; // For token usage tracking
   usageType?: "chat" | "deep-research" | "paper-generation";
+  // Existing values to preserve on parse failure
+  existingObjective?: string;
+  existingInsights?: string[];
+  existingMethodology?: string;
+  existingTitle?: string;
 };
 
 export type ReflectionResult = {
@@ -99,7 +104,22 @@ export async function reflectOnWorld(
         /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
       );
       const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
-      parsedResponse = JSON.parse(jsonString);
+      try {
+        parsedResponse = JSON.parse(jsonString);
+      } catch {
+        logger.warn(
+          { content: response.content.substring(0, 300) },
+          "reflection_json_parse_failed"
+        );
+        // Preserve existing values from conversation state
+        parsedResponse = {
+          currentObjective: options.existingObjective || "",
+          keyInsights: options.existingInsights || [],
+          discoveries: [],
+          methodology: options.existingMethodology || "",
+          conversationTitle: options.existingTitle || "",
+        };
+      }
     }
 
     // Validate required fields

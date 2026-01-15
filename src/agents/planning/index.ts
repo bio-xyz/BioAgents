@@ -7,6 +7,7 @@ import type {
   State,
 } from "../../types/core";
 import logger from "../../utils/logger";
+import { extractPlanningResult } from "../../utils/planningJsonExtractor";
 import { formatFileSize } from "../fileUpload/utils";
 import {
   INITIAL_PLANNING_NO_PLAN_PROMPT,
@@ -110,19 +111,8 @@ async function generateInitialPlan(
 
   const rawContent = response.content.trim();
 
-  // Try to extract JSON from markdown code blocks if present
-  const jsonMatch = rawContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  const jsonString = jsonMatch ? jsonMatch[1] || "" : rawContent || "";
-
-  let result: PlanningResult;
-  try {
-    result = JSON.parse(jsonString) as PlanningResult;
-  } catch (error) {
-    // try to locate the json inbetween {} in the message content
-    const jsonMatch = rawContent.match(/\{[\s\S]*?\}/);
-    const jsonString = jsonMatch ? jsonMatch[0] || "" : "";
-    result = JSON.parse(jsonString) as PlanningResult;
-  }
+  // Extract planning result with multi-strategy fallback
+  const result = extractPlanningResult(rawContent, message.question);
 
   logger.info(
     {
@@ -130,7 +120,7 @@ async function generateInitialPlan(
       currentObjective: result.currentObjective,
       plan: result.plan.map(
         (t) =>
-          `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
+          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`,
       ),
     },
     "initial_plan_generated",
@@ -199,21 +189,8 @@ async function generatePlan(
 
   const rawContent = response.content.trim();
 
-  // Try to extract JSON from markdown code blocks if present
-  const jsonMatch = rawContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  const jsonString = jsonMatch ? jsonMatch[1] || "" : rawContent || "";
-
-  let result: PlanningResult;
-  try {
-    result = JSON.parse(jsonString) as PlanningResult;
-  } catch (error) {
-    // try to locate the json inbetween {} in the message content
-    const jsonMatch = message.content.match(
-      /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
-    );
-    const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
-    result = JSON.parse(jsonString) as PlanningResult;
-  }
+  // Extract planning result with multi-strategy fallback
+  const result = extractPlanningResult(rawContent, message.question);
 
   logger.info(
     {
@@ -221,7 +198,7 @@ async function generatePlan(
       currentObjective: result.currentObjective,
       plan: result.plan.map(
         (t) =>
-          `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
+          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`,
       ),
     },
     "plan_generated",

@@ -140,6 +140,11 @@ export async function reflectionAgent(input: {
         thinkingBudget: 4096,
         messageId: message.id,
         usageType: "deep-research",
+        // Pass existing values to preserve on parse failure
+        existingObjective: conversationState.values.currentObjective,
+        existingInsights: conversationState.values.keyInsights,
+        existingMethodology: conversationState.values.methodology,
+        existingTitle: conversationState.values.conversationTitle,
       },
     );
 
