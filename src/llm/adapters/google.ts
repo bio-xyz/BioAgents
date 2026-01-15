@@ -365,6 +365,7 @@ export class GoogleAdapter extends LLMAdapter {
             totalTokens: usage.totalTokenCount ?? 0,
           }
         : undefined,
+      finishReason: candidate?.finishReason ?? undefined,
     };
   }
 

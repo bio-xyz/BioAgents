@@ -198,6 +198,7 @@ export class AnthropicAdapter extends LLMAdapter {
               response.usage.input_tokens + response.usage.output_tokens,
           }
         : undefined,
+      finishReason: response.stop_reason ?? undefined,
     };
   }
 
