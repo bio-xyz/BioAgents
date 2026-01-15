@@ -43,6 +43,7 @@ async function processDeepResearchJob(
     messageId,
     stateId,
     conversationStateId,
+    message,
     fullyAutonomous = false,
   } = job.data;
 
@@ -60,7 +61,17 @@ async function processDeepResearchJob(
   }
 
   logger.info(
-    { jobId: job.id, messageId, conversationId },
+    {
+      jobId: job.id,
+      messageId,
+      conversationId,
+      conversationStateId,
+      stateId,
+      userId,
+      fullyAutonomous,
+      messagePreview: message ? (message.length > 200 ? message.substring(0, 200) + "..." : message) : undefined,
+      messageLength: message?.length,
+    },
     "deep_research_job_started",
   );
 

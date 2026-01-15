@@ -168,17 +168,32 @@ export async function generatePaperFromConversation(
   const user = await getUser(userId);
   const userEmail = user?.email;
 
-  // Generate authors string: User + Aubrai if user has real email, otherwise just Aubrai
+  // Generate authors string
   // Skip auto-generated emails (x402.local, temp.local, etc.)
   const isRealEmail =
     userEmail &&
     !userEmail.endsWith("@x402.local") &&
     !userEmail.endsWith("@temp.local") &&
     userEmail.includes("@");
-  const aubraiAuthor = "Aubrai (aubrai@bio.xyz)";
-  const authors = isRealEmail
-    ? `${userEmail} \\and ${aubraiAuthor}`
-    : aubraiAuthor;
+
+  // Build agent author string only if AGENT_NAME is configured
+  const agentName = process.env.AGENT_NAME;
+  const agentEmail = process.env.AGENT_EMAIL;
+  const agentAuthor = agentName
+    ? (agentEmail ? `${agentName} (${agentEmail})` : agentName)
+    : null;
+
+  // Determine final authors string
+  let authors: string;
+  if (isRealEmail && agentAuthor) {
+    authors = `${userEmail} \\and ${agentAuthor}`;
+  } else if (isRealEmail) {
+    authors = userEmail;
+  } else if (agentAuthor) {
+    authors = agentAuthor;
+  } else {
+    authors = "Anonymous";
+  }
 
   logger.info(
     { userId, hasEmail: !!userEmail, isRealEmail, authors },
