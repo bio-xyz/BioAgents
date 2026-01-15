@@ -14,6 +14,7 @@ import {
   getFileUploadPath,
   getStorageProvider,
   getMimeTypeFromFilename,
+  getUploadPath,
 } from "../../storage";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -371,11 +372,12 @@ export async function processFile(
   }, "file_processed_for_storage");
 
   // Update conversation state (no content - deep research accesses files via S3)
+  // Use relative path (uploads/filename) instead of full S3 key
   await addFileToConversationState(conversationStateId, {
     id: fileId,
     filename,
     description,
-    path: s3Key,
+    path: getUploadPath(filename),
   });
 
   // Update status to ready

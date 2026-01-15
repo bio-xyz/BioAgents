@@ -1,7 +1,6 @@
 import {
   getConversationBasePath,
   getStorageProvider,
-  getUploadPath,
   isStorageProviderAvailable,
 } from "../../storage";
 import { type AnalysisArtifact } from "../../types/core";
@@ -144,11 +143,18 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
 
   await Promise.all(
     datasets.map(async (dataset) => {
+      if (!dataset.path) {
+        logger.warn(
+          { datasetId: dataset.id, filename: dataset.filename },
+          "skipping_dataset_no_artifact_path",
+        );
+        return;
+      }
       try {
-        const fileBuffer = await storageProvider.fetchFileFromUserStorage(
+        const fileBuffer = await storageProvider.fetchFileByRelativePath(
           userId,
           conversationStateId,
-          dataset.filename,
+          dataset.path,
         );
         dataset.content = fileBuffer;
       } catch (err) {
@@ -178,7 +184,9 @@ function buildTaskFormData(
     const basePath = getConversationBasePath(userId, conversationStateId);
     formData.append("base_path", basePath);
     for (const dataset of datasets) {
-      formData.append("file_paths", getUploadPath(dataset.filename));
+      if (dataset.path) {
+        formData.append("file_paths", dataset.path);
+      }
     }
   } else {
     for (const dataset of datasets) {

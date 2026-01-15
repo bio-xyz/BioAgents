@@ -1,5 +1,6 @@
 import character from "../../character";
 import { LLM } from "../../llm/provider";
+import { getUploadPath } from "../../storage";
 import type {
   ConversationState,
   Message,
@@ -14,6 +15,39 @@ import {
   INITIAL_PLANNING_PROMPT,
   NEXT_PLANNING_PROMPT,
 } from "./prompts";
+
+/**
+ * Resolve dataset paths for planned tasks
+ * - For artifacts: looks up path by artifact ID from completed tasks
+ * - For uploaded files: uses uploads/{filename} path
+ */
+function resolveDatasetPaths(
+  newTasks: PlanTask[],
+  existingPlan: PlanTask[],
+): PlanTask[] {
+  const artifactMap = new Map<string, string>();
+
+  for (const task of existingPlan) {
+    if (task.artifacts) {
+      for (const artifact of task.artifacts) {
+        if (artifact.id && artifact.path) {
+          artifactMap.set(artifact.id, artifact.path);
+        }
+      }
+    }
+  }
+
+  return newTasks.map((task) => ({
+    ...task,
+    datasets: task.datasets.map((dataset) => {
+      const path = artifactMap.get(dataset.id);
+      if (path) {
+        return { ...dataset, path };
+      }
+      return { ...dataset, path: getUploadPath(dataset.filename) };
+    }),
+  }));
+}
 
 export type PlanningResult = {
   currentObjective: string;
@@ -46,14 +80,21 @@ export async function planningAgent(input: {
   const hasPlan =
     conversationState.values.plan && conversationState.values.plan.length > 0;
 
+  let result: PlanningResult;
+
   // If no existing plan and initial mode, use LLM with no-plan prompt
   if (!hasPlan && mode === "initial") {
     logger.info("No existing plan found, using LLM for initial planning");
-    return await generateInitialPlan(message, conversationState, usageType);
+    result = await generateInitialPlan(message, conversationState, usageType);
+  } else {
+    // Otherwise, use LLM to plan based on current state
+    result = await generatePlan(state, conversationState, message, mode, usageType);
   }
 
-  // Otherwise, use LLM to plan based on current state
-  return await generatePlan(state, conversationState, message, mode, usageType);
+  // Resolve dataset paths before returning
+  result.plan = resolveDatasetPaths(result.plan, conversationState.values.plan || []);
+
+  return result;
 }
 
 /**
@@ -319,6 +360,26 @@ async function buildContextFromState(
           return `  - ${ds.filename}${sizeStr} (ID: ${ds.id}): ${ds.description}`;
         })
         .join("\n")}`,
+    );
+  }
+
+  // Add artifacts from completed analysis tasks
+  const completedAnalysisTasks =
+    conversationState.values.plan?.filter(
+      (task) => task.type === "ANALYSIS" && task.end && task.artifacts?.length,
+    ) || [];
+
+  if (completedAnalysisTasks.length > 0) {
+    const artifactsText = completedAnalysisTasks
+      .flatMap((task) =>
+        task.artifacts!.map((artifact) => {
+          return `  - ${artifact.name} (id: ${artifact.id}) [from ${task.id}]: ${artifact.description}`;
+        }),
+      )
+      .join("\n");
+
+    contextParts.push(
+      `Available Artifacts (from completed analysis tasks):\n${artifactsText}`,
     );
   }
 
