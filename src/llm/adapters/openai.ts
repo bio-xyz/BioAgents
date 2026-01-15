@@ -287,6 +287,7 @@ export class OpenAIAdapter extends LLMAdapter {
             totalTokens: response.usage.total_tokens,
           }
         : undefined,
+      finishReason: response.choices[0]?.finish_reason ?? undefined,
     };
   }
 

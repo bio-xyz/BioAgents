@@ -37,6 +37,7 @@ export class LLM {
       const duration = Date.now() - startTime;
       (this.adapter as any).logDuration("createChatCompletion", duration);
       this.trackTokenUsage(result, request, duration);
+      this.checkFinishReason(result, request);
       return result;
     } catch (error: any) {
       // Check if we need to try fallback provider
@@ -94,6 +95,7 @@ export class LLM {
         duration
       );
       this.trackTokenUsage(result, fallbackRequest, duration, fallbackProvider);
+      this.checkFinishReason(result, fallbackRequest);
 
       logger.info(
         { fallbackProvider, fallbackModel },
@@ -214,6 +216,38 @@ export class LLM {
   private getFallbackApiKey(provider: string): string | undefined {
     const envKey = `${provider.toUpperCase()}_API_KEY`;
     return process.env[envKey];
+  }
+
+  // Normal finish reasons by provider (case-insensitive comparison)
+  private static readonly NORMAL_FINISH_REASONS = new Set([
+    "stop",        // OpenAI, OpenRouter
+    "end_turn",    // Anthropic
+    "STOP",        // Google
+  ]);
+
+  private checkFinishReason(result: LLMResponse, request: LLMRequest): void {
+    if (!result.finishReason) return;
+
+    const isNormal = LLM.NORMAL_FINISH_REASONS.has(result.finishReason);
+    if (!isNormal) {
+      // Get the last user message as the prompt preview
+      const lastUserMessage = [...request.messages].reverse().find(m => m.role === "user");
+      const promptPreview = lastUserMessage?.content?.slice(0, 500);
+
+      logger.warn(
+        {
+          finishReason: result.finishReason,
+          provider: this.providerName,
+          model: request.model,
+          maxTokens: request.maxTokens,
+          contentLength: result.content?.length,
+          contentPreview: result.content?.slice(-100),
+          promptPreview,
+          promptLength: lastUserMessage?.content?.length,
+        },
+        "llm_response_truncated_or_abnormal_finish"
+      );
+    }
   }
 
   private trackTokenUsage(

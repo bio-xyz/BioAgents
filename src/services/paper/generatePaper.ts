@@ -23,6 +23,7 @@ import type {
   PlanTask,
 } from "../../types/core";
 import logger from "../../utils/logger";
+import type { PaperGenerationStage } from "../queue/types";
 import {
   generateBackgroundPrompt,
   generateDiscoverySectionPrompt,
@@ -48,6 +49,7 @@ import {
 } from "./utils/compile";
 import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
 import { escapeLatex } from "./utils/escapeLatex";
+import { processInlineDOICitations } from "./utils/inlineDoiCitations";
 
 /**
  * Sanitize a JSON string by escaping invalid backslash sequences.
@@ -73,7 +75,10 @@ function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
       logger.warn(
         {
           context,
-          originalError: firstError instanceof Error ? firstError.message : String(firstError),
+          originalError:
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError),
         },
         "json_parse_sanitized",
       );
@@ -83,8 +88,14 @@ function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
       logger.error(
         {
           context,
-          originalError: firstError instanceof Error ? firstError.message : String(firstError),
-          sanitizedError: secondError instanceof Error ? secondError.message : String(secondError),
+          originalError:
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError),
+          sanitizedError:
+            secondError instanceof Error
+              ? secondError.message
+              : String(secondError),
           jsonPreview: jsonStr.substring(0, 500),
         },
         "json_parse_failed_after_sanitization",
@@ -95,8 +106,6 @@ function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
     }
   }
 }
-import { processInlineDOICitations } from "./utils/inlineDoiCitations";
-import type { PaperGenerationStage } from "../queue/types";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -122,7 +131,10 @@ export async function generatePaperFromConversation(
   existingPaperId?: string,
   onProgress?: ProgressCallback,
 ): Promise<PaperGenerationResult> {
-  logger.info({ conversationId, userId, existingPaperId }, "paper_generation_started");
+  logger.info(
+    { conversationId, userId, existingPaperId },
+    "paper_generation_started",
+  );
 
   // Report validating progress
   await onProgress?.("validating");
@@ -224,7 +236,12 @@ export async function generatePaperFromConversation(
     // Report metadata progress
     await onProgress?.("metadata");
 
-    const metadata = await generatePaperMetadata(state, evidenceTasks, authors, paperId);
+    const metadata = await generatePaperMetadata(
+      state,
+      evidenceTasks,
+      authors,
+      paperId,
+    );
 
     // Report figures progress
     await onProgress?.("figures");
@@ -636,7 +653,7 @@ async function generatePaperMetadata(
     messages: [{ role: "user", content: frontMatterPrompt }],
     model: LLM_MODEL,
     temperature: 0.3,
-    maxTokens: 2000,
+    maxTokens: 3000,
     paperId,
     usageType: "paper-generation",
   });
@@ -680,13 +697,12 @@ async function generatePaperMetadata(
     messages: [{ role: "user", content: backgroundPrompt }],
     model: LLM_MODEL,
     temperature: 0.3,
-    maxTokens: 3000,
+    maxTokens: 5000,
     paperId,
     usageType: "paper-generation",
   });
 
   const backgroundContent = backgroundResponse.content || "";
-
   // Parse background JSON response
   const backgroundJsonMatch = backgroundContent.match(/\{[\s\S]*\}/);
   if (!backgroundJsonMatch) {
@@ -987,7 +1003,7 @@ async function generateDiscoverySection(
         messages: [{ role: "user", content: messageContent }],
         model: LLM_MODEL,
         temperature: 0.3,
-        maxTokens: 6000,
+        maxTokens: 8000,
         paperId,
         usageType: "paper-generation",
       });

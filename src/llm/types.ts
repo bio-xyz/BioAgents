@@ -41,6 +41,7 @@ export interface LLMResponse {
     completionTokens: number;
     totalTokens: number;
   };
+  finishReason?: string; // "stop", "length", "max_tokens", etc. - varies by provider
 }
 
 export interface WebSearchResult {
