@@ -211,6 +211,19 @@ export async function deepResearchStartHandler(ctx: any) {
 
   const { conversationStateRecord, stateRecord } = dataSetup.data!;
 
+  // Log with state IDs now that we have them
+  logger.info(
+    {
+      userId,
+      conversationId,
+      conversationStateId: conversationStateRecord.id,
+      stateId: stateRecord.id,
+      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+      messageLength: message.length,
+    },
+    "deep_research_state_initialized",
+  );
+
   // Create message record
   const messageResult = await createMessageRecord({
     conversationId,

@@ -26,7 +26,12 @@ export function generateFrontMatterPrompt(
     })
     .join("\n");
 
-  return `You are writing the front matter for a scientific research paper conducted by Aubrai, an AI research agent.
+  const agentName = process.env.AGENT_NAME;
+  const agentDescription = agentName
+    ? `conducted by ${agentName}, an AI research agent`
+    : "conducted by an AI research agent";
+
+  return `You are writing the front matter for a scientific research paper ${agentDescription}.
 
 # Research Information
 
@@ -119,7 +124,12 @@ ${truncatedOutput}
   const literatureTaskCount = evidenceTasks.filter(t => t.type === "LITERATURE").length;
   const analysisTaskCount = evidenceTasks.filter(t => t.type === "ANALYSIS").length;
 
-  return `You are writing the Background/Introduction section for a scientific research paper conducted by Aubrai, an AI research agent.
+  const agentName = process.env.AGENT_NAME;
+  const agentDescription = agentName
+    ? `conducted by ${agentName}, an AI research agent`
+    : "conducted by an AI research agent";
+
+  return `You are writing the Background/Introduction section for a scientific research paper ${agentDescription}.
 
 # Research Context
 
