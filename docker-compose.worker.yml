@@ -1,0 +1,110 @@
+# ==========================================================================
+# Worker-Only Docker Compose
+# ==========================================================================
+#
+# Deploy this to ANY server to add more worker capacity.
+# All workers connect to the same Redis queue and share the load.
+#
+# SETUP:
+#   1. Copy .env.worker.example to .env
+#   2. Fill in your credentials
+#   3. Run: docker-compose -f docker-compose.worker.yml up -d
+#
+# SCALE:
+#   docker-compose -f docker-compose.worker.yml up -d --scale worker=3
+#
+# LOGS:
+#   docker-compose -f docker-compose.worker.yml logs -f
+#
+# ==========================================================================
+
+services:
+  worker:
+    build: .
+    command: ["bun", "run", "src/worker.ts"]
+
+    environment:
+      # Required: Redis URL (Upstash or your managed Redis)
+      - REDIS_URL=${REDIS_URL}
+      - USE_JOB_QUEUE=true
+
+      # Required: Database
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+
+      # Required: LLM API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+
+      # Agent Configuration
+      - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
+      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-google}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gemini-2.5-pro}
+      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-google}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gemini-2.5-pro}
+      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-google}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gemini-2.5-flash}
+      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-google}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gemini-2.5-flash}
+
+      # Embedding Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - TEXT_EMBEDDING_MODEL=${TEXT_EMBEDDING_MODEL:-text-embedding-3-large}
+
+      # Literature & Analysis Agents
+      - PRIMARY_LITERATURE_AGENT=${PRIMARY_LITERATURE_AGENT:-}
+      - PRIMARY_ANALYSIS_AGENT=${PRIMARY_ANALYSIS_AGENT:-}
+      - EDISON_API_URL=${EDISON_API_URL:-}
+      - BIOAGENTS_API_URL=${BIOAGENTS_API_URL:-}
+
+      # Vector Search Configuration
+      - CHUNK_SIZE=${CHUNK_SIZE:-2000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-20}
+      - RERANK_FINAL_LIMIT=${RERANK_FINAL_LIMIT:-5}
+      - USE_RERANKING=${USE_RERANKING:-true}
+      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.45}
+
+      # Worker Concurrency
+      - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
+      - DEEP_RESEARCH_QUEUE_CONCURRENCY=${DEEP_RESEARCH_QUEUE_CONCURRENCY:-3}
+      - PAPER_GENERATION_CONCURRENCY=${PAPER_GENERATION_CONCURRENCY:-1}
+
+      # S3 Storage (for paper generation)
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+
+      # Production
+      - NODE_ENV=production
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
+
+    # CRITICAL: Allow workers to finish long-running jobs before stopping
+    # Default is 10s, but deep research jobs can run up to 8 hours
+    # Docker will wait this long for graceful shutdown before force killing
+    stop_grace_period: 8h
+
+    # Health check - verify worker is running
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # Resource limits (adjust based on your server)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
