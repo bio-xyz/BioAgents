@@ -83,7 +83,7 @@ services:
 
       # Job Queue Configuration (connects to Redis)
       - USE_JOB_QUEUE=${USE_JOB_QUEUE:-false}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
 
       # Queue concurrency (for rate limiting info)
       - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
@@ -167,7 +167,7 @@ services:
 
       # Job Queue Configuration (required for worker)
       - USE_JOB_QUEUE=${USE_JOB_QUEUE:-true}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
 
       # Worker concurrency settings
       - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
