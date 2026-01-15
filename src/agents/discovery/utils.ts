@@ -101,7 +101,16 @@ export async function extractDiscoveries(
         /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
       );
       const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
-      parsedResponse = JSON.parse(jsonString);
+      try {
+        parsedResponse = JSON.parse(jsonString);
+      } catch {
+        logger.warn(
+          { content: response.content.substring(0, 300) },
+          "discovery_json_parse_failed"
+        );
+        // Preserve existing discoveries from conversation state
+        parsedResponse = { discoveries: existingDiscoveries };
+      }
     }
 
     // Validate required fields
