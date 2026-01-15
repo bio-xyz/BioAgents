@@ -10,6 +10,7 @@ export type Dataset = {
   id: string;
   description: string;
   content?: Buffer;
+  path?: string;
 };
 
 export type AnalysisResult = {

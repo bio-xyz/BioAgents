@@ -35,7 +35,12 @@ export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
   objective: string;
-  datasets: Array<{ filename: string; id: string; description: string }>;
+  datasets: Array<{
+    filename: string;
+    id: string;
+    description: string;
+    path?: string;
+  }>;
   type: "LITERATURE" | "ANALYSIS";
   level?: number;
   start?: string;
