@@ -166,7 +166,7 @@ async function pollBioLiteratureJob(
 
     const answer = extractAnswer(jobData);
 
-    logger.debug(
+    logger.info(
       { jobId, status, hasAnswer: Boolean(answer) },
       "bioliterature_deep_poll",
     );
