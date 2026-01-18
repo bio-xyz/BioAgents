@@ -17,9 +17,9 @@
  *   - Lists all papers for a conversation
  */
 
-import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import { Elysia } from "elysia";
+import { getServiceClient } from "../../db/client";
 import { getConversation } from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
 import { isJobQueueEnabled } from "../../services/queue/connection";
@@ -28,10 +28,8 @@ import { getStorageProvider } from "../../storage";
 import type { AuthContext } from "../../types/auth";
 import logger from "../../utils/logger";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+// Use service client to bypass RLS - auth is verified by middleware
+const supabase = getServiceClient();
 
 /**
  * Paper routes with auth guard

@@ -51,11 +51,9 @@ async function processPaperGenerationJob(
   );
 
   // Update paper status in DB to 'processing'
-  const { createClient } = await import("@supabase/supabase-js");
-  const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_ANON_KEY!,
-  );
+  // Use service client to bypass RLS - worker has no JWT context
+  const { getServiceClient } = await import("../../../db/client");
+  const supabase = getServiceClient();
 
   await supabase
     .from("paper")

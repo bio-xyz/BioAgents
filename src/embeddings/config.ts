@@ -1,3 +1,9 @@
+/**
+ * Configuration for embeddings and vector search
+ *
+ * Note: Supabase client is now centralized in src/db/client.ts
+ * Do not create Supabase clients directly - use getServiceClient() instead.
+ */
 export const CONFIG = {
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || "openai",
   TEXT_EMBEDDING_MODEL:
@@ -14,8 +20,6 @@ export const CONFIG = {
   RERANKER_SCORE_THRESHOLD: parseFloat(
     process.env.RERANKER_SCORE_THRESHOLD || "0.0",
   ),
-  SUPABASE_URL: process.env.SUPABASE_URL!,
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
   COHERE_API_KEY: process.env.COHERE_API_KEY!,
 } as const;

@@ -1,14 +1,12 @@
 // lib/vectorSearchWithDocs.ts
-import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "../db/client";
 import logger from "../utils/logger";
-import { CONFIG } from "./config";
 import { DocumentProcessor } from "./documentProcessor";
 import { TextChunker } from "./textChunker";
 import { VectorSearchWithReranker } from "./vectorSearch";
 
-// We create a separate Supabase client instance here specifically for the
-// startup logic, keeping it self-contained within this module.
-const supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+// Use service client to bypass RLS for document operations
+const supabase = getServiceClient();
 
 export class VectorSearchWithDocuments extends VectorSearchWithReranker {
   private documentProcessor = new DocumentProcessor();
