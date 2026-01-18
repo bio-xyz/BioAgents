@@ -292,9 +292,10 @@ export class GoogleAdapter extends LLMAdapter {
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => {
         const role = message.role === 'assistant' ? 'model' : 'user';
+        const parts = this.convertContentToParts(message.content);
         return {
           role,
-          parts: [{ text: message.content }],
+          parts,
         } as GoogleContent;
       });
 
@@ -319,6 +320,94 @@ export class GoogleAdapter extends LLMAdapter {
     }
 
     return contents;
+  }
+
+  /**
+   * Convert message content to Google's parts format.
+   * Handles both string content and multimodal content arrays.
+   *
+   * Multimodal array format:
+   * [
+   *   { type: "image", source: { type: "base64", media_type: "image/png", data: "..." } },
+   *   { type: "text", text: "prompt text" }
+   * ]
+   *
+   * Google format:
+   * [
+   *   { inlineData: { mimeType: "image/png", data: "..." } },
+   *   { text: "prompt text" }
+   * ]
+   */
+  private convertContentToParts(content: string | unknown): Array<Record<string, unknown>> {
+    // If content is a simple string, return as text part
+    if (typeof content === 'string') {
+      return [{ text: content }];
+    }
+
+    // If content is an array (multimodal format), convert each block
+    if (Array.isArray(content)) {
+      const parts: Array<Record<string, unknown>> = [];
+
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null) {
+          continue;
+        }
+
+        const typedBlock = block as Record<string, unknown>;
+
+        // Handle text blocks
+        if (typedBlock.type === 'text' && typeof typedBlock.text === 'string') {
+          parts.push({ text: typedBlock.text });
+        }
+        // Handle image blocks with base64 source
+        else if (typedBlock.type === 'image' && typedBlock.source) {
+          const source = typedBlock.source as Record<string, unknown>;
+          if (source.type === 'base64' && typeof source.data === 'string') {
+            const mimeType = (source.media_type as string) || 'image/png';
+            parts.push({
+              inlineData: {
+                mimeType,
+                data: source.data,
+              },
+            });
+            logger.info({ mimeType }, 'Converted image block to Google inlineData format');
+          }
+        }
+        // Handle image_url blocks (data URL format)
+        else if (typedBlock.type === 'image_url' && typedBlock.image_url) {
+          const imageUrl = typedBlock.image_url as Record<string, unknown>;
+          const url = imageUrl.url as string;
+
+          // Check if it's a data URL (base64 inline)
+          if (url?.startsWith('data:')) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              parts.push({
+                inlineData: {
+                  mimeType: match[1],
+                  data: match[2],
+                },
+              });
+              logger.info({ mimeType: match[1] }, 'Converted data URL to Google inlineData format');
+            }
+          } else {
+            logger.warn({ url: url?.substring(0, 100) }, 'Cannot convert external image URL to Google format - requires file upload');
+          }
+        }
+      }
+
+      // If we couldn't extract any parts, fall back to stringifying
+      if (parts.length === 0) {
+        logger.warn('No valid parts extracted from multimodal content, falling back to string');
+        return [{ text: JSON.stringify(content) }];
+      }
+
+      return parts;
+    }
+
+    // Fallback: stringify unknown content
+    logger.warn({ contentType: typeof content }, 'Unknown content type, converting to string');
+    return [{ text: String(content) }];
   }
 
   protected transformResponse(response: GenerateContentResponse): LLMResponse {
