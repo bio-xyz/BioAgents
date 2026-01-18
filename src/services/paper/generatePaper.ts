@@ -944,15 +944,40 @@ async function generateDiscoverySection(
 
       if (LLM_PROVIDER === "anthropic" && figures.length > 0) {
         // Anthropic vision support: encode images as base64
+        // Limits per Claude docs: 5MB per image, 100 images per request
+        const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+        const MAX_IMAGES_PER_REQUEST = 100;
+
         const contentBlocks: any[] = [];
         const figureSizes: Array<{ filename: string; sizeKB: number }> = [];
+        const skippedFigures: Array<{ filename: string; reason: string }> = [];
         let totalImageSizeBytes = 0;
+        let imageCount = 0;
 
         for (const figure of figures) {
+          // Enforce image count limit
+          if (imageCount >= MAX_IMAGES_PER_REQUEST) {
+            skippedFigures.push({
+              filename: figure.filename,
+              reason: `Exceeded ${MAX_IMAGES_PER_REQUEST} image limit`,
+            });
+            continue;
+          }
+
           try {
             const figPath = path.join(figuresDir, figure.filename);
             if (fs.existsSync(figPath)) {
               const imageBuffer = fs.readFileSync(figPath);
+
+              // Enforce per-image size limit (5MB)
+              if (imageBuffer.length > MAX_IMAGE_SIZE_BYTES) {
+                skippedFigures.push({
+                  filename: figure.filename,
+                  reason: `Exceeds 5MB limit (${(imageBuffer.length / (1024 * 1024)).toFixed(2)}MB)`,
+                });
+                continue;
+              }
+
               const base64Image = imageBuffer.toString("base64");
               const mediaType = getImageMediaType(figure.filename);
 
@@ -961,6 +986,7 @@ async function generateDiscoverySection(
                 sizeKB: Math.round(imageBuffer.length / 1024),
               });
               totalImageSizeBytes += imageBuffer.length;
+              imageCount++;
 
               contentBlocks.push({
                 type: "image",
@@ -977,6 +1003,10 @@ async function generateDiscoverySection(
               "failed_to_encode_image",
             );
           }
+        }
+
+        if (skippedFigures.length > 0) {
+          logger.warn({ skippedFigures }, "figures_skipped_due_to_limits");
         }
 
         // Log figure sizes being sent to LLM

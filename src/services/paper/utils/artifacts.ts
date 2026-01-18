@@ -124,7 +124,12 @@ function getFileExtension(filename: string): string {
   return match?.[1]?.toLowerCase() || "";
 }
 
+/**
+ * Check if a file extension is a supported image format for LLM vision.
+ * Supported formats per Claude docs: image/jpeg, image/png, image/gif, image/webp
+ * Note: SVG and PDF are excluded - they are not supported by vision models.
+ */
 function isImageExtension(ext: string): boolean {
-  const imageExtensions = ["png", "jpg", "jpeg", "svg", "pdf", "gif", "webp"];
+  const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp"];
   return imageExtensions.includes(ext.toLowerCase());
 }
