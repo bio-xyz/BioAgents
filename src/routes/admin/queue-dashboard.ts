@@ -4,6 +4,11 @@
  * Provides a web UI to monitor and manage BullMQ queues.
  * Access at /admin/queues when USE_JOB_QUEUE=true
  *
+ * Security:
+ * - Protected by HTTP Basic Auth (configured in index.ts)
+ * - Set ADMIN_USERNAME and ADMIN_PASSWORD env vars
+ * - Dashboard disabled in production if ADMIN_PASSWORD not set
+ *
  * Features:
  * - View all queues (chat, deep-research, paper-generation, file-process)
  * - Monitor job states (waiting, active, completed, failed)
@@ -20,6 +25,9 @@ import { isJobQueueEnabled } from "../../services/queue/connection";
 import { getChatQueue, getDeepResearchQueue, getFileProcessQueue, getPaperGenerationQueue } from "../../services/queue/queues";
 import logger from "../../utils/logger";
 
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
 /**
  * Create the Bull Board dashboard route
  * Only initializes when job queue is enabled
@@ -27,6 +35,14 @@ import logger from "../../utils/logger";
 export function createQueueDashboard(): Elysia | null {
   if (!isJobQueueEnabled()) {
     logger.info("queue_dashboard_disabled_job_queue_not_enabled");
+    return null;
+  }
+
+  // In production, require ADMIN_PASSWORD to be set
+  if (IS_PRODUCTION && !ADMIN_PASSWORD) {
+    logger.warn(
+      "queue_dashboard_disabled_no_admin_password: Set ADMIN_PASSWORD env var to enable Bull Board in production"
+    );
     return null;
   }
 
@@ -59,11 +75,11 @@ export function createQueueDashboard(): Elysia | null {
     });
 
     logger.info(
-      { path: "/admin/queues" },
+      { path: "/admin/queues", authEnabled: !!ADMIN_PASSWORD },
       "queue_dashboard_initialized"
     );
 
-    // Return the Elysia plugin
+    // Return the Elysia plugin (auth is handled separately in index.ts)
     return serverAdapter.registerPlugin() as unknown as Elysia;
   } catch (error) {
     logger.error({ error }, "queue_dashboard_initialization_failed");
