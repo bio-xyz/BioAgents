@@ -155,10 +155,10 @@ export async function deepResearchStartHandler(ctx: any) {
     }
   }
 
-  // Extract fullyAutonomous flag (optional, defaults to false)
-  const fullyAutonomous =
-    parsedBody.fullyAutonomous === true ||
-    parsedBody.fullyAutonomous === "true";
+  // Extract researchMode
+  // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
+  type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
+  const researchMode: ResearchMode = parsedBody.researchMode || "semi-autonomous";
 
   // Extract files from parsed body
   let files: File[] = [];
@@ -287,7 +287,7 @@ export async function deepResearchStartHandler(ctx: any) {
         stateId: stateRecord.id,
         conversationStateId: conversationStateRecord.id,
         requestedAt: new Date().toISOString(),
-        fullyAutonomous,
+        researchMode,
       },
       {
         jobId: createdMessage.id, // Use message ID as job ID for easy lookup
@@ -363,8 +363,7 @@ export async function deepResearchStartHandler(ctx: any) {
     conversationStateRecord,
     createdMessage,
     files,
-    setupResult,
-    fullyAutonomous,
+    researchMode,
   }).catch((err) => {
     logger.error(
       { err, messageId: createdMessage.id },
@@ -385,25 +384,24 @@ export async function deepResearchStartHandler(ctx: any) {
 /**
  * Background function that executes the deep research workflow
  *
- * Supports autonomous continuation:
- * - fullyAutonomous=false (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
- * - fullyAutonomous=true: Continues until research is done or hard cap of 20 iterations
+ * Research modes:
+ * - 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
+ * - 'fully-autonomous': Continues until research is done or hard cap of 20 iterations
+ * - 'steering': Single iteration only, always asks user for feedback
  */
 async function runDeepResearch(params: {
   stateRecord: any;
   conversationStateRecord: any;
   createdMessage: any;
   files: File[];
-  setupResult: any;
-  fullyAutonomous?: boolean;
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
 }) {
   const {
     stateRecord,
     conversationStateRecord,
     createdMessage,
     files,
-    setupResult,
-    fullyAutonomous = false,
+    researchMode = "semi-autonomous",
   } = params;
 
   try {
@@ -447,9 +445,12 @@ async function runDeepResearch(params: {
     // AUTONOMOUS ITERATION LOOP
     // Continues until: research is done, max iterations reached, or agent decides to ask user
     // =========================================================================
-    const maxAutoIterations = fullyAutonomous
-      ? 20 // Hard cap for fully autonomous mode
-      : parseInt(process.env.MAX_AUTO_ITERATIONS || "5");
+    const maxAutoIterations =
+      researchMode === "steering"
+        ? 1 // Steering mode: single iteration, always ask user
+        : researchMode === "fully-autonomous"
+          ? 20 // Fully autonomous: hard cap
+          : parseInt(process.env.MAX_AUTO_ITERATIONS || "5"); // Semi-autonomous: configurable
 
     let iterationCount = 0;
     let shouldContinueLoop = true;
@@ -473,7 +474,7 @@ async function runDeepResearch(params: {
     );
 
     logger.info(
-      { fullyAutonomous, maxAutoIterations },
+      { researchMode, maxAutoIterations },
       "starting_autonomous_research_loop",
     );
 
@@ -1021,7 +1022,7 @@ These molecular changes align with established longevity pathways (Converging nu
           hypothesis: hypothesisResult.hypothesis,
           suggestedNextSteps: conversationState.values.suggestedNextSteps,
           iterationCount,
-          fullyAutonomous,
+          researchMode,
         });
 
         logger.info(
