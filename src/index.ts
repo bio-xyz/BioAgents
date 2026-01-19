@@ -23,15 +23,66 @@ import { isJobQueueEnabled, closeConnections } from "./services/queue/connection
 import { websocketHandler, cleanupDeadConnections } from "./services/websocket/handler";
 import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
 import { createQueueDashboard } from "./routes/admin/queue-dashboard";
+import { adminJobsRoute } from "./routes/admin/jobs";
+
+// ============================================================================
+// CORS Configuration - Security Critical
+// ============================================================================
+// Set ALLOWED_ORIGINS env var in production: comma-separated list of allowed origins
+// Example: ALLOWED_ORIGINS=https://bioagent-platform.bioagents.dev,https://app.bioagents.xyz
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+];
+
+const ALLOWED_ORIGINS: string[] = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+  : DEFAULT_ALLOWED_ORIGINS;
+
+// Log CORS configuration on startup
+if (process.env.NODE_ENV === "production" && !process.env.ALLOWED_ORIGINS) {
+  logger.warn(
+    { defaultOrigins: DEFAULT_ALLOWED_ORIGINS },
+    "cors_security_warning: ALLOWED_ORIGINS not set in production - using localhost defaults only. Set ALLOWED_ORIGINS env var for production domains."
+  );
+} else {
+  logger.info({ allowedOrigins: ALLOWED_ORIGINS }, "cors_configuration");
+}
+
+/**
+ * CORS origin validator
+ * - Allows same-origin requests (no Origin header)
+ * - Allows requests from whitelisted origins
+ * - Rejects and logs requests from unknown origins
+ */
+function validateCorsOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+
+  // Allow requests with no origin (same-origin, curl, server-to-server)
+  if (!origin) {
+    return true;
+  }
+
+  // Check against whitelist
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    return true;
+  }
+
+  // Log rejected origin for security monitoring
+  logger.warn({ origin, allowedOrigins: ALLOWED_ORIGINS }, "cors_origin_rejected");
+  return false;
+}
 
 const app = new Elysia()
   // WebSocket handler for real-time notifications (when job queue enabled)
   .use(websocketHandler)
-  // Enable CORS for frontend access
+  // Enable CORS with origin whitelist
   .use(
     cors({
-      origin: true, // Allow all origins (Coolify handles domain routing)
-      credentials: true, // Important: allow cookies
+      origin: validateCorsOrigin,
+      credentials: true,
       allowedHeaders: [
         "Content-Type",
         "Authorization",
@@ -43,10 +94,36 @@ const app = new Elysia()
         "Content-Type",
         "X-PAYMENT-RESPONSE", // x402 settlement response header
       ],
+      maxAge: 86400, // Cache preflight for 24 hours
     }),
   )
 
-  // Basic request logging (optional)
+  // ============================================================================
+  // Security Headers
+  // ============================================================================
+  .onBeforeHandle(({ set }) => {
+    // Prevent MIME-type sniffing attacks
+    set.headers["X-Content-Type-Options"] = "nosniff";
+
+    // Prevent clickjacking (iframe embedding)
+    set.headers["X-Frame-Options"] = "DENY";
+
+    // Enable browser XSS filter (legacy browsers)
+    set.headers["X-XSS-Protection"] = "1; mode=block";
+
+    // Control referrer information leakage
+    set.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+
+    // Disable unnecessary browser features
+    set.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+
+    // Force HTTPS in production (only enable if you have valid SSL)
+    if (process.env.NODE_ENV === "production") {
+      set.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+  })
+
+  // Basic request logging
   .onRequest(({ request }) => {
     if (!logger) return;
     logger.info(
@@ -195,9 +272,55 @@ const app = new Elysia()
 // Mount Bull Board dashboard (only when job queue is enabled)
 const queueDashboard = createQueueDashboard();
 if (queueDashboard) {
+  // Add basic auth protection for admin routes if ADMIN_PASSWORD is set
+  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+  if (ADMIN_PASSWORD) {
+    app.onBeforeHandle(({ request, set }) => {
+      const url = new URL(request.url);
+      
+      // Only protect /admin/* routes
+      if (!url.pathname.startsWith("/admin")) {
+        return;
+      }
+
+      const authHeader = request.headers.get("Authorization");
+      
+      // Check for valid basic auth
+      if (!authHeader || !authHeader.startsWith("Basic ")) {
+        set.status = 401;
+        set.headers["WWW-Authenticate"] = 'Basic realm="Admin Dashboard"';
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      try {
+        const base64Credentials = authHeader.slice(6);
+        const credentials = atob(base64Credentials);
+        const [username, password] = credentials.split(":");
+
+        if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+          logger.warn({ path: url.pathname }, "admin_dashboard_invalid_credentials");
+          set.status = 401;
+          set.headers["WWW-Authenticate"] = 'Basic realm="Admin Dashboard"';
+          return new Response("Unauthorized", { status: 401 });
+        }
+      } catch {
+        set.status = 401;
+        set.headers["WWW-Authenticate"] = 'Basic realm="Admin Dashboard"';
+        return new Response("Unauthorized", { status: 401 });
+      }
+    });
+    logger.info({ path: "/admin/queues", authEnabled: true }, "bull_board_dashboard_mounted_with_auth");
+  } else {
+    logger.info({ path: "/admin/queues", authEnabled: false }, "bull_board_dashboard_mounted_no_auth");
+  }
+
   app.use(queueDashboard);
-  logger.info({ path: "/admin/queues" }, "bull_board_dashboard_mounted");
 }
+
+// Mount admin jobs API (for frontend dashboard)
+app.use(adminJobsRoute);
 
 // Continue with catch-all route
 app

@@ -76,7 +76,7 @@ export const deepResearchStartRoute = new Elysia().guard(
   {
     beforeHandle: [
       authResolver({
-        required: process.env.NODE_ENV === "production",
+        required: true, // Always require auth - no environment-based bypass
       }),
       rateLimitMiddleware("deep-research"),
     ],

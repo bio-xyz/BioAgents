@@ -51,7 +51,7 @@ export const chatRoute = new Elysia()
     {
       beforeHandle: [
         authResolver({
-          required: process.env.NODE_ENV === "production",
+          required: true, // Always require auth - no environment-based bypass
         }),
         rateLimitMiddleware("chat"),
       ],
@@ -126,8 +126,22 @@ async function chatStatusHandler(ctx: any) {
  * POST /api/chat/retry/:jobId
  */
 async function chatRetryHandler(ctx: any) {
-  const { params, set } = ctx;
+  const { params, set, request } = ctx;
   const { jobId } = params;
+
+  // SECURITY: Get authenticated user
+  const auth = (request as any).auth as AuthContext | undefined;
+
+  if (!auth?.userId) {
+    set.status = 401;
+    return {
+      ok: false,
+      error: "Authentication required",
+      message: "Please provide a valid JWT or API key",
+    };
+  }
+
+  const userId = auth.userId;
 
   const { isJobQueueEnabled } = await import("../services/queue/connection");
 
@@ -148,7 +162,20 @@ async function chatRetryHandler(ctx: any) {
     set.status = 404;
     return {
       ok: false,
-      error: "Job not found"
+      error: "Job not found",
+    };
+  }
+
+  // SECURITY: Verify the authenticated user owns this job
+  if (job.data.userId !== userId) {
+    logger.warn(
+      { jobId, requestedBy: userId, ownedBy: job.data.userId },
+      "chat_retry_ownership_mismatch"
+    );
+    set.status = 403;
+    return {
+      ok: false,
+      error: "Access denied: job belongs to another user",
     };
   }
 
@@ -171,6 +198,7 @@ async function chatRetryHandler(ctx: any) {
     logger.info(
       {
         jobId,
+        userId,
         previousAttempts: job.attemptsMade,
       },
       "job_manually_retried"

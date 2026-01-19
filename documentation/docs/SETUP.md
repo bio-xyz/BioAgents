@@ -53,9 +53,15 @@ OPENROUTER_API_KEY=...          # If using OpenRouter
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_KEY=your-service-role-key  # Required for production with RLS
 ```
 
-Get these from your [Supabase project settings](https://supabase.com/dashboard).
+Get these from your [Supabase project settings](https://supabase.com/dashboard):
+- `SUPABASE_URL` - Under Settings > API > Project URL
+- `SUPABASE_ANON_KEY` - Under Settings > API > anon/public key
+- `SUPABASE_SERVICE_KEY` - Under Settings > API > service_role key (keep this secret!)
+
+**Important:** The `SUPABASE_SERVICE_KEY` is required when Row Level Security (RLS) is enabled on your database. The backend uses this key to bypass RLS since authentication is already verified by the auth middleware.
 
 ### 3. Set up the Database
 

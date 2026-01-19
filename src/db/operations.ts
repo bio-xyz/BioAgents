@@ -1,12 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import type { AnalysisArtifact, PlanTask } from "../types/core";
 import logger from "../utils/logger";
 import { walletAddressToUUID } from "../utils/uuid";
+import { getServiceClient } from "./client";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+// Use service client to bypass RLS - auth is verified by middleware
+const supabase = getServiceClient();
 
 export interface User {
   id?: string;

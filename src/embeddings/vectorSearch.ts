@@ -1,12 +1,13 @@
 // lib/vectorSearch.ts
-import { createClient } from "@supabase/supabase-js";
 import { CohereClient } from "cohere-ai";
+import { getServiceClient } from "../db/client";
 import logger from "../utils/logger";
 import { SimpleCache } from "../utils/cache";
 import { CONFIG } from "./config";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./provider";
 
-const supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+// Use service client to bypass RLS for document operations
+const supabase = getServiceClient();
 
 const cohere = new CohereClient({
   token: CONFIG.COHERE_API_KEY,

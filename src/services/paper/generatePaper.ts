@@ -5,11 +5,11 @@
  * compiles it to PDF, and uploads to storage.
  */
 
-import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { getServiceClient } from "../../db/client";
 import {
   getConversation,
   getConversationState,
@@ -107,10 +107,8 @@ function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
   }
 }
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+// Use service client to bypass RLS - auth is verified before calling this service
+const supabase = getServiceClient();
 
 /**
  * Progress callback type for async paper generation

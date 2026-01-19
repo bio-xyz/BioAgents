@@ -193,10 +193,20 @@ export function rateLimitMiddleware(action: "chat" | "deep-research") {
       return;
     }
 
-    // Get user ID from auth context
+    // Get user ID from auth context - auth is required, no anonymous fallback
     const auth = (request as any).auth as AuthContext | undefined;
-    const userId = auth?.userId || "anonymous";
+    
+    if (!auth?.userId) {
+      // Should not happen if authResolver runs before this middleware
+      logger.warn({ action }, "rate_limit_no_auth_context");
+      set.status = 401;
+      return {
+        error: "Authentication required",
+        message: "You must be authenticated to access this endpoint",
+      };
+    }
 
+    const userId = auth.userId;
     const result = await checkRateLimit(userId, action);
 
     // Set rate limit headers
