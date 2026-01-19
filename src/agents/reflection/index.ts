@@ -7,6 +7,7 @@ import logger from "../../utils/logger";
 import { reflectOnWorld, type ReflectionDoc } from "./utils";
 
 type ReflectionResult = {
+  objective?: string; // Only set if research direction fundamentally changed
   conversationTitle?: string;
   currentObjective?: string;
   keyInsights: string[];

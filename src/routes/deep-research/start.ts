@@ -554,6 +554,11 @@ async function runDeepResearch(params: {
         conversationState.values.currentObjective = currentObjective;
         conversationState.values.currentLevel = newLevel; // Set current level for UI
 
+        // Initialize main objective from first message (only if not already set)
+        if (!conversationState.values.objective && createdMessage.question) {
+          conversationState.values.objective = createdMessage.question;
+        }
+
         // Update state in DB
         if (conversationState.id) {
           await updateConversationState(
@@ -912,6 +917,10 @@ These molecular changes align with established longevity pathways (Converging nu
       ]);
 
       // Update conversation state with reflection results
+      if (reflectionResult.objective) {
+        // Only update main objective if reflection detected a fundamental direction change
+        conversationState.values.objective = reflectionResult.objective;
+      }
       conversationState.values.conversationTitle =
         reflectionResult.conversationTitle;
       conversationState.values.currentObjective =

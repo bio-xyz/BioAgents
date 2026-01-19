@@ -25,6 +25,7 @@ export type ReflectionOptions = {
 
 export type ReflectionResult = {
   text: {
+    objective?: string; // Only set if research direction fundamentally changed
     conversationTitle?: string;
     currentObjective?: string;
     keyInsights: string[];
@@ -144,6 +145,7 @@ export async function reflectOnWorld(
 
     return {
       text: {
+        objective: parsedResponse.objective, // Only present if direction fundamentally changed
         conversationTitle: parsedResponse.conversationTitle,
         currentObjective: parsedResponse.currentObjective,
         keyInsights: parsedResponse.keyInsights,

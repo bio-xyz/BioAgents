@@ -238,6 +238,7 @@ IMPORTANT INSTRUCTIONS:
 - Tasks will be executed in PARALLEL, so if tasks depend on each other, only plan the first ones
 - Tailor the objective to the specific type of task
 - If you believe the main objective has been achieved, set the objective to "Main objective achieved" and your plan should be empty
+- When deciding if research is complete, consider whether the MAIN OBJECTIVE (original research question) has been sufficiently addressed, not just the current objective
 
 CURRENT RESEARCH STATE:
 {context}
