@@ -736,7 +736,7 @@ export async function chatHandler(ctx: any) {
           objective: task.objective,
           type: "BIOLIT",
         }).then((result) => {
-          task.output += `BioLiterature results:\n${result.output}\n\n`;
+          task.output += `${result.output}\n\n`;
           logger.info(
             {
               taskObjective: task.objective,

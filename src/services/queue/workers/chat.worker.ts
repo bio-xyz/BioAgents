@@ -240,7 +240,7 @@ async function processChatJob(
           objective: task.objective,
           type: "BIOLIT",
         }).then((result) => {
-          task.output += `BioLiterature results:\n${result.output}\n\n`;
+          task.output += `${result.output}\n\n`;
         });
         literaturePromises.push(bioLiteraturePromise);
       }

@@ -385,7 +385,7 @@ async function processDeepResearchJob(
             conversationStateId: conversationState.id!,
           });
 
-          task.output = `Analysis results:\n${analysisResult.output}\n\n`;
+          task.output = `${analysisResult.output}\n\n`;
           task.artifacts = analysisResult.artifacts || [];
           task.jobId = analysisResult.jobId;
 
