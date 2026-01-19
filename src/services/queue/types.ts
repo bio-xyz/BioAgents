@@ -46,10 +46,11 @@ export interface DeepResearchJobData {
   stateId: string;
   conversationStateId: string;
 
-  // Autonomous continuation mode
-  // false (default): Uses MAX_AUTO_ITERATIONS env var (default 5)
-  // true: Continues until research is done or hard cap of 20 iterations
-  fullyAutonomous?: boolean;
+  // Research mode - determines iteration behavior
+  // 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS env var (default 5)
+  // 'fully-autonomous': Continues until research is done or hard cap of 20 iterations
+  // 'steering': Single iteration only, always asks user for feedback
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
 }
 
 /**

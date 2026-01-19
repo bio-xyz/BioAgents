@@ -33,7 +33,7 @@ export async function continueResearchAgent(input: {
   hypothesis: string;
   suggestedNextSteps: PlanTask[];
   iterationCount: number;
-  fullyAutonomous?: boolean; // If true, only stop when research is complete
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
 }): Promise<ContinueResearchResult> {
   const {
     conversationState,
@@ -42,7 +42,7 @@ export async function continueResearchAgent(input: {
     hypothesis,
     suggestedNextSteps,
     iterationCount,
-    fullyAutonomous = false,
+    researchMode = "semi-autonomous",
   } = input;
   const start = new Date().toISOString();
 
@@ -79,7 +79,7 @@ export async function continueResearchAgent(input: {
       hasHypothesis: !!hypothesis,
       datasetCount: datasets.length,
       hasUserMessage: !!userLastMessage,
-      fullyAutonomous,
+      researchMode,
     },
     "continue_research_agent_started",
   );
@@ -100,9 +100,24 @@ export async function continueResearchAgent(input: {
       };
     }
 
+    // STEERING MODE: Always stop after each iteration to let user steer
+    if (researchMode === "steering") {
+      logger.info({ iterationCount }, "steering_mode_asking_user");
+      const end = new Date().toISOString();
+      return {
+        shouldContinue: false,
+        reasoning:
+          "Steering mode - pausing for user feedback after each iteration.",
+        confidence: "high",
+        triggerReason: "steering_mode",
+        start,
+        end,
+      };
+    }
+
     // FULLY AUTONOMOUS MODE: Only stop when research is complete
     // Skip LLM decision - just continue if there are next steps
-    if (fullyAutonomous) {
+    if (researchMode === "fully-autonomous") {
       logger.info(
         { iterationCount, suggestedNextStepsCount: suggestedNextSteps.length },
         "fully_autonomous_auto_continue",

@@ -29,9 +29,10 @@ import logger from "../../../utils/logger";
  * Process a deep research job
  * This is the core deep research processing logic extracted from runDeepResearch
  *
- * Supports autonomous continuation:
- * - fullyAutonomous=false (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
- * - fullyAutonomous=true: Continues until research is done or hard cap of 20 iterations
+ * Research modes:
+ * - 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
+ * - 'fully-autonomous': Continues until research is done or hard cap of 20 iterations
+ * - 'steering': Single iteration only, always asks user for feedback
  */
 async function processDeepResearchJob(
   job: Job<DeepResearchJobData, DeepResearchJobResult>,
@@ -44,7 +45,7 @@ async function processDeepResearchJob(
     stateId,
     conversationStateId,
     message,
-    fullyAutonomous = false,
+    researchMode = "semi-autonomous",
   } = job.data;
 
   // Log retry attempt if this is a retry
@@ -68,7 +69,7 @@ async function processDeepResearchJob(
       conversationStateId,
       stateId,
       userId,
-      fullyAutonomous,
+      researchMode,
       messagePreview: message ? (message.length > 200 ? message.substring(0, 200) + "..." : message) : undefined,
       messageLength: message?.length,
     },
@@ -125,9 +126,12 @@ async function processDeepResearchJob(
     // AUTONOMOUS ITERATION LOOP
     // Continues until: research is done, max iterations reached, or agent decides to ask user
     // =========================================================================
-    const maxAutoIterations = fullyAutonomous
-      ? 20 // Hard cap for fully autonomous mode
-      : parseInt(process.env.MAX_AUTO_ITERATIONS || "5");
+    const maxAutoIterations =
+      researchMode === "steering"
+        ? 1 // Steering mode: single iteration, always ask user
+        : researchMode === "fully-autonomous"
+          ? 20 // Fully autonomous: hard cap
+          : parseInt(process.env.MAX_AUTO_ITERATIONS || "5"); // Semi-autonomous: configurable
 
     let iterationCount = 0;
     let shouldContinueLoop = true;
@@ -149,7 +153,7 @@ async function processDeepResearchJob(
     const sessionStartLevel = calculateSessionStartLevel(conversationState.values.currentLevel);
 
     logger.info(
-      { jobId: job.id, fullyAutonomous, maxAutoIterations },
+      { jobId: job.id, researchMode, maxAutoIterations },
       "starting_autonomous_research_loop",
     );
 
@@ -557,7 +561,7 @@ async function processDeepResearchJob(
         hypothesis: hypothesisResult.hypothesis,
         suggestedNextSteps: conversationState.values.suggestedNextSteps,
         iterationCount,
-        fullyAutonomous,
+        researchMode,
       });
 
       logger.info(
