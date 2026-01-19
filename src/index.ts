@@ -23,6 +23,7 @@ import { isJobQueueEnabled, closeConnections } from "./services/queue/connection
 import { websocketHandler, cleanupDeadConnections } from "./services/websocket/handler";
 import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
 import { createQueueDashboard } from "./routes/admin/queue-dashboard";
+import { adminJobsRoute } from "./routes/admin/jobs";
 
 // ============================================================================
 // CORS Configuration - Security Critical
@@ -317,6 +318,9 @@ if (queueDashboard) {
 
   app.use(queueDashboard);
 }
+
+// Mount admin jobs API (for frontend dashboard)
+app.use(adminJobsRoute);
 
 // Continue with catch-all route
 app
