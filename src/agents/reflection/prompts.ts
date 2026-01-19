@@ -45,6 +45,20 @@ REFLECTION PRINCIPLES
 
 WORLD STATE UPDATE GUIDELINES
 
+**objective** (OPTIONAL - only include if research direction has FUNDAMENTALLY changed):
+- Only update if the user has explicitly redirected research to a completely different topic
+- NOT for refinements, deep dives, or natural evolution of the same research
+- If not changing, DO NOT include this field in your output
+- Examples of when to UPDATE:
+  - User started with "NAD+ decline" but now says "let's focus on exercise interventions instead"
+  - User explicitly says "change of plans" or "new research direction"
+  - User asks to investigate something completely unrelated to original question
+- Examples of when to KEEP UNCHANGED (do not output):
+  - Research naturally evolved from NAD+ to sirtuins (related topic)
+  - User asks to go deeper on a subtopic
+  - User provides feedback within the same research area
+  - User refines or narrows the original question
+
 **conversationTitle**:
 - A concise title capturing the current research focus (5-7 words max)
 - Only update if there's a major shift in research direction
@@ -101,6 +115,7 @@ OUTPUT FORMAT
 Provide ONLY a valid JSON object with these fields (no markdown, no comments, no extra text):
 
 {
+  "objective": "string (ONLY if fundamentally changed - omit otherwise)",
   "conversationTitle": "string (5-7 words max)",
   "currentObjective": "string (1-2 sentences)",
   "keyInsights": ["string (1-2 sentences each)", "..."],
