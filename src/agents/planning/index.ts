@@ -55,6 +55,7 @@ export type PlanningResult = {
 };
 
 export type PlanningMode = "initial" | "next";
+export type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
 
 /**
  * Planning agent for deep research
@@ -73,8 +74,9 @@ export async function planningAgent(input: {
   message: Message;
   mode?: PlanningMode;
   usageType?: TokenUsageType;
+  researchMode?: ResearchMode;
 }): Promise<PlanningResult> {
-  const { state, conversationState, message, mode = "initial", usageType } = input;
+  const { state, conversationState, message, mode = "initial", usageType, researchMode = "semi-autonomous" } = input;
 
   // Check if plan is empty (indicates first planning or fresh start)
   const hasPlan =
@@ -85,16 +87,35 @@ export async function planningAgent(input: {
   // If no existing plan and initial mode, use LLM with no-plan prompt
   if (!hasPlan && mode === "initial") {
     logger.info("No existing plan found, using LLM for initial planning");
-    result = await generateInitialPlan(message, conversationState, usageType);
+    result = await generateInitialPlan(message, conversationState, usageType, researchMode);
   } else {
     // Otherwise, use LLM to plan based on current state
-    result = await generatePlan(state, conversationState, message, mode, usageType);
+    result = await generatePlan(state, conversationState, message, mode, usageType, researchMode);
   }
 
   // Resolve dataset paths before returning
   result.plan = resolveDatasetPaths(result.plan, conversationState.values.plan || []);
 
   return result;
+}
+
+/**
+ * Get research mode guidance text for prompts
+ */
+function getResearchModeGuidance(researchMode: ResearchMode): string {
+  switch (researchMode) {
+    case "steering":
+      return `RESEARCH MODE: STEERING
+- User will review outputs after this iteration, so plan focused, self-contained tasks
+- Each task should produce clear, actionable results the user can evaluate`;
+    case "fully-autonomous":
+      return `RESEARCH MODE: FULLY AUTONOMOUS
+- System will continue iterating automatically, so plan comprehensive tasks
+- You can plan foundational work that subsequent iterations will build upon
+- Feel free to explore broader scope - future iterations can refine and follow up`;
+    default: // semi-autonomous
+      return ""; // Prompts are written for semi-autonomous by default
+  }
 }
 
 /**
@@ -105,6 +126,7 @@ async function generateInitialPlan(
   message: Message,
   conversationState: ConversationState,
   usageType?: TokenUsageType,
+  researchMode: ResearchMode = "semi-autonomous",
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const planningApiKey =
@@ -133,7 +155,8 @@ async function generateInitialPlan(
   const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace(
     "{context}",
     context,
-  ).replace("{userMessage}", message.question);
+  ).replace("{userMessage}", message.question)
+    .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
     model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
@@ -179,6 +202,7 @@ async function generatePlan(
   message: Message,
   mode: PlanningMode = "initial",
   usageType?: TokenUsageType,
+  researchMode: ResearchMode = "semi-autonomous",
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const planningApiKey =
@@ -211,7 +235,8 @@ async function generatePlan(
   // Replace placeholders
   const planningPrompt = promptTemplate
     .replace("{context}", context)
-    .replace("{userMessage}", message.question);
+    .replace("{userMessage}", message.question)
+    .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
     model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",

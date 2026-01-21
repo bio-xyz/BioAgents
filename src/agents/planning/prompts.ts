@@ -8,6 +8,8 @@
  */
 export const INITIAL_PLANNING_NO_PLAN_PROMPT = `You are a research planning agent. The user has just started a research session with no existing plan.
 
+{researchModeGuidance}
+
 CURRENT RESEARCH STATE:
 {context}
 
@@ -94,6 +96,8 @@ CRUCIAL: You absolutely MUST only output the JSON object, no additional text or 
  * Used when adding tasks to an existing research session
  */
 export const INITIAL_PLANNING_PROMPT = `You are a research planning agent. Your job is to plan the NEXT immediate steps based on the current research state.
+
+{researchModeGuidance}
 
 PLANNING MODE: INITIAL
 You are planning tasks for the CURRENT iteration based on the user's request.
@@ -208,6 +212,8 @@ CRUCIAL: You absolutely MUST only output the JSON object, no additional text or 
  * Used to plan follow-up tasks after completing current iteration
  */
 export const NEXT_PLANNING_PROMPT = `You are a research planning agent. Your job is to plan the NEXT immediate steps based on the current research state.
+
+{researchModeGuidance}
 
 PLANNING MODE: NEXT
 You are planning tasks for the NEXT iteration based on completed work (hypothesis + reflection).
