@@ -45,7 +45,7 @@ async function processDeepResearchJob(
     stateId,
     conversationStateId,
     message,
-    researchMode = "semi-autonomous",
+    researchMode: requestedResearchMode,
   } = job.data;
 
   // Log retry attempt if this is a retry
@@ -69,7 +69,7 @@ async function processDeepResearchJob(
       conversationStateId,
       stateId,
       userId,
-      researchMode,
+      requestedResearchMode,
       messagePreview: message ? (message.length > 200 ? message.substring(0, 200) + "..." : message) : undefined,
       messageLength: message?.length,
     },
@@ -121,6 +121,15 @@ async function processDeepResearchJob(
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
+
+    // Reconcile researchMode: request takes priority, then existing state, then default
+    type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
+    const researchMode: ResearchMode = requestedResearchMode
+      || conversationState.values.researchMode
+      || "semi-autonomous";
+
+    // Save researchMode to conversation state (allows it to change per request)
+    conversationState.values.researchMode = researchMode;
 
     // =========================================================================
     // AUTONOMOUS ITERATION LOOP
@@ -298,8 +307,6 @@ async function processDeepResearchJob(
           process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
             ? "BIOLITDEEP"
             : "EDISON";
-        const primaryLiteratureLabel =
-          primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
         // Build list of literature promises based on configured sources
         const literaturePromises: Promise<void>[] = [];
@@ -310,7 +317,7 @@ async function processDeepResearchJob(
             objective: task.objective,
             type: "OPENSCHOLAR",
           }).then(async (result) => {
-            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+            task.output += `${result.output}\n\n`;
             if (conversationState.id) {
               await updateConversationState(conversationState.id, conversationState.values);
             }
@@ -323,7 +330,7 @@ async function processDeepResearchJob(
           objective: task.objective,
           type: primaryLiteratureType,
         }).then(async (result) => {
-          task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+          task.output += `${result.output}\n\n`;
           // Capture jobId from primary literature (Edison)
           if (result.jobId) {
             task.jobId = result.jobId;
@@ -340,7 +347,7 @@ async function processDeepResearchJob(
             objective: task.objective,
             type: "KNOWLEDGE",
           }).then(async (result) => {
-            task.output += `Knowledge literature results:\n${result.output}\n\n`;
+            task.output += `${result.output}\n\n`;
             if (conversationState.id) {
               await updateConversationState(conversationState.id, conversationState.values);
             }

@@ -155,10 +155,10 @@ export async function deepResearchStartHandler(ctx: any) {
     }
   }
 
-  // Extract researchMode
+  // Extract researchMode from request (will be reconciled with conversation state later)
   // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
   type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
-  const researchMode: ResearchMode = parsedBody.researchMode || "semi-autonomous";
+  const requestedResearchMode: ResearchMode | undefined = parsedBody.researchMode;
 
   // Extract files from parsed body
   let files: File[] = [];
@@ -223,6 +223,14 @@ export async function deepResearchStartHandler(ctx: any) {
     },
     "deep_research_state_initialized",
   );
+
+  // Reconcile researchMode: request takes priority, then existing state, then default
+  const researchMode: ResearchMode = requestedResearchMode
+    || conversationStateRecord.values.researchMode
+    || "semi-autonomous";
+
+  // Save researchMode to conversation state (allows it to change per request)
+  conversationStateRecord.values.researchMode = researchMode;
 
   // Create message record
   const messageResult = await createMessageRecord({
@@ -603,8 +611,6 @@ async function runDeepResearch(params: {
             process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
               ? "BIOLITDEEP"
               : "EDISON";
-          const primaryLiteratureLabel =
-            primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
 
           // Build list of literature promises based on configured sources
           const literaturePromises: Promise<void>[] = [];
@@ -616,7 +622,7 @@ async function runDeepResearch(params: {
               type: "OPENSCHOLAR",
             }).then(async (result) => {
               if (result.count && result.count > 0) {
-                task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+                task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
                 await updateConversationState(
@@ -639,7 +645,7 @@ async function runDeepResearch(params: {
             type: primaryLiteratureType,
           }).then(async (result) => {
             // Always append for Edison/BioLit (no count filtering)
-            task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
+            task.output += `${result.output}\n\n`;
             // Capture jobId from primary literature (Edison or BioLit)
             if (result.jobId) {
               task.jobId = result.jobId;
@@ -664,7 +670,7 @@ async function runDeepResearch(params: {
               type: "KNOWLEDGE",
             }).then(async (result) => {
               if (result.count && result.count > 0) {
-                task.output += `Knowledge literature results:\n${result.output}\n\n`;
+                task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
                 await updateConversationState(

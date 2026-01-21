@@ -62,6 +62,7 @@ export interface ConversationStateValues extends StateValues {
   discoveries?: Discovery[]; // Structured scientific discoveries (only in deep research mode)
   plan?: Array<PlanTask>; // Actual plan being executed or already executed
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;
     id: string;
