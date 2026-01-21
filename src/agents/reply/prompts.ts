@@ -33,7 +33,7 @@ QUESTION: {{question}}
 SCIENTIFIC DISCOVERIES:
 {{discoveries}}
 
-CURRENT HYPOTHESIS:
+CURRENT HYPOTHESIS (for your context only - DO NOT include in output):
 {{hypothesis}}
 
 COMPLETED RESEARCH TASKS:
@@ -97,7 +97,7 @@ The following tasks were completed across recent iterations:
 SCIENTIFIC DISCOVERIES (Rigorous findings with evidence):
 {{discoveries}}
 
-CURRENT HYPOTHESIS
+CURRENT HYPOTHESIS (for your context only - DO NOT include in output)
 {{hypothesis}}
 
 UPCOMING PLAN (Next iteration tasks):
@@ -109,9 +109,10 @@ Generate a user-facing reply that:
 2. Presents Scientific Discoveries section
    - If discoveries exist: present each discovery with evidence
    - If no discoveries yet: say "No formalized scientific discoveries yet. Key Insights are shown above this message."
-3. Presents the current hypothesis (ONLY when appropriate - see below)
-4. Describes the current objective and outlines the plan for the next iteration together
-5. Asks the user for feedback on the plan
+3. Describes the current objective and outlines the plan for the next iteration together
+4. Asks the user for feedback on the plan
+
+NOTE: The hypothesis is provided as context to inform your response, but should NOT be shown directly to the user. Use it to guide your synthesis and discoveries presentation.
 
 IMPORTANT NOTES:
 - Scientific discoveries are rigorously evidence-based findings with specific supporting evidence
@@ -216,7 +217,7 @@ CONTEXT
 - User's Question: {{question}}
 - Literature Search Results: {{completedTasks}}
 - Key Insights: {{keyInsights}}
-- Hypothesis (if generated): {{hypothesis}}
+- Hypothesis (for context only - DO NOT include in output): {{hypothesis}}
 - Uploaded Datasets: {{uploadedDatasets}}
 
 TASK

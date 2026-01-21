@@ -514,6 +514,7 @@ async function runDeepResearch(params: {
           message: createdMessage,
           mode: "initial",
           usageType: "deep-research",
+          researchMode,
         });
 
         const plan = deepResearchPlanningResult.plan;
@@ -967,6 +968,7 @@ These molecular changes align with established longevity pathways (Converging nu
         message: createdMessage,
         mode: "next",
         usageType: "deep-research",
+        researchMode,
       });
 
       // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
