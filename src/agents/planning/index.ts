@@ -114,7 +114,7 @@ function getResearchModeGuidance(researchMode: ResearchMode): string {
 - You can plan foundational work that subsequent iterations will build upon
 - Feel free to explore broader scope - future iterations can refine and follow up`;
     default: // semi-autonomous
-      return ""; // Prompts are written for semi-autonomous by default
+      return "RESEARCH MODE: SEMI-AUTONOMOUS: No specific guidance for semi-autonomous mode"; // Prompts are written for semi-autonomous by default
   }
 }
 
