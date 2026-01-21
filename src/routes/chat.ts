@@ -715,7 +715,7 @@ export async function chatHandler(ctx: any) {
           type: "OPENSCHOLAR",
         }).then((result) => {
           if (result.count && result.count > 0) {
-            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+            task.output += `${result.output}\n\n`;
           }
           logger.info(
             {
@@ -756,7 +756,7 @@ export async function chatHandler(ctx: any) {
           type: "KNOWLEDGE",
         }).then((result) => {
           if (result.count && result.count > 0) {
-            task.output += `Knowledge literature results:\n${result.output}\n\n`;
+            task.output += `${result.output}\n\n`;
           }
           logger.info(
             {

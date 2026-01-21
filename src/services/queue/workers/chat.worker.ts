@@ -229,7 +229,7 @@ async function processChatJob(
           objective: task.objective,
           type: "OPENSCHOLAR",
         }).then((result) => {
-          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
+          task.output += `${result.output}\n\n`;
         });
         literaturePromises.push(openScholarPromise);
       }
@@ -251,7 +251,7 @@ async function processChatJob(
           objective: task.objective,
           type: "KNOWLEDGE",
         }).then((result) => {
-          task.output += `Knowledge literature results:\n${result.output}\n\n`;
+          task.output += `${result.output}\n\n`;
         });
         literaturePromises.push(knowledgePromise);
       }
