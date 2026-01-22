@@ -11,7 +11,7 @@ export interface UseFileUploadReturn {
   clearFiles: () => void;
 }
 
-const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB total limit
+const MAX_TOTAL_SIZE = 2 * 1024 * 1024 * 1024; // 2GB total limit
 
 /**
  * Custom hook for file upload handling
@@ -27,7 +27,7 @@ export function useFileUpload(): UseFileUploadReturn {
   const selectFile = (file: File) => {
     console.log('[useFileUpload.selectFile] File selected:', file.name, file.size);
     if (file.size > MAX_TOTAL_SIZE) {
-      alert(`File ${file.name} is too large. Maximum total size is 500MB.`);
+      alert(`File ${file.name} is too large. Maximum total size is 2GB.`);
       return;
     }
     setSelectedFile(file);
@@ -42,7 +42,7 @@ export function useFileUpload(): UseFileUploadReturn {
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
     if (totalSize > MAX_TOTAL_SIZE) {
-      alert(`Total file size (${(totalSize / (1024 * 1024)).toFixed(1)}MB) exceeds the 500MB limit.`);
+      alert(`Total file size (${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB) exceeds the 2GB limit.`);
       return;
     }
 
@@ -58,7 +58,7 @@ export function useFileUpload(): UseFileUploadReturn {
     const newTotalSize = currentTotalSize + file.size;
 
     if (newTotalSize > MAX_TOTAL_SIZE) {
-      alert(`Adding this file would exceed the 500MB total limit.`);
+      alert(`Adding this file would exceed the 2GB total limit.`);
       return;
     }
 
