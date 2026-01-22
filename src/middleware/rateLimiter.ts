@@ -9,8 +9,8 @@
  * - Deep Research: 3 requests per 5 minutes per user
  */
 
-import type { AuthContext } from "../types/auth";
 import { isJobQueueEnabled } from "../services/queue/connection";
+import type { AuthContext } from "../types/auth";
 import logger from "../utils/logger";
 
 /**
@@ -102,6 +102,7 @@ export async function checkRateLimit(
     // Get count from second command (index 1)
     const currentCount = (results?.[1]?.[1] as number) || 0;
 
+    /*
     if (currentCount >= config.max) {
       // Rate limit exceeded - remove the entry we just added
       await redis.zremrangebyscore(key, now, now);
@@ -130,6 +131,7 @@ export async function checkRateLimit(
         resetIn: Math.max(1, resetIn),
       };
     }
+    */
 
     logger.info(
       {
