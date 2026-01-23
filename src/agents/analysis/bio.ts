@@ -4,6 +4,7 @@ import {
   isStorageProviderAvailable,
 } from "../../storage";
 import { type AnalysisArtifact } from "../../types/core";
+import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 import type { Dataset } from "./index";
 
@@ -211,11 +212,18 @@ async function startBioTask(
   const endpoint = `${config.apiUrl}/api/task/run/async`;
   const formData = buildTaskFormData(config, context, query);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "X-API-Key": config.apiKey },
-    body: formData,
-  });
+  const { response } = await fetchWithRetry(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "X-API-Key": config.apiKey },
+      body: formData,
+    },
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, error: error.message }, "bio_task_start_retry"),
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -249,10 +257,17 @@ async function awaitBioTask(
   const endpoint = `${config.apiUrl}/api/task/${taskId}`;
 
   while (Date.now() - startTime < MAX_WAIT_TIME) {
-    const response = await fetch(endpoint, {
-      method: "GET",
-      headers: { "X-API-Key": config.apiKey },
-    });
+    const { response } = await fetchWithRetry(
+      endpoint,
+      {
+        method: "GET",
+        headers: { "X-API-Key": config.apiKey },
+      },
+      {
+        onRetry: (attempt, error) =>
+          logger.warn({ attempt, taskId, error: error.message }, "bio_task_poll_retry"),
+      },
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -277,7 +292,7 @@ async function awaitBioTask(
       return taskResult;
     }
 
-    logger.debug(
+    logger.info(
       { taskId, status: taskResult.status },
       "bio_analysis_task_still_running",
     );
