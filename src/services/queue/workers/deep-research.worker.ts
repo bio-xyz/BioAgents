@@ -843,9 +843,9 @@ export function startDeepResearchWorker(): Worker {
       concurrency,
       // Deep research with autonomous mode can take 2-8 hours
       // lockRenewTime must be significantly less than lockDuration (1/6 ratio)
-      lockDuration: 3600000, // 1 hour - gives plenty of buffer before stalled detection
-      lockRenewTime: 600000, // 10 minutes - renew well before lock expires
-      stalledInterval: 1800000, // 30 minutes - check for stalled jobs
+      lockDuration: 1800000,   // 30 minutes - covers most iterations including slow analysis
+      lockRenewTime: 300000,   // 5 minutes - renew frequently (6x before expiry)
+      stalledInterval: 600000, // 10 minutes - detect stalled jobs reasonably fast
     },
   );
 
