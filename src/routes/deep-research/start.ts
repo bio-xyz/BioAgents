@@ -281,11 +281,11 @@ export async function deepResearchStartHandler(ctx: any) {
       });
     }
 
-    // Enqueue the job
+    // Enqueue the job (iteration 1)
     const deepResearchQueue = getDeepResearchQueue();
 
     const job = await deepResearchQueue.add(
-      `deep-research-${createdMessage.id}`,
+      `iteration-1-${createdMessage.id}`,
       {
         userId,
         conversationId,
@@ -296,6 +296,10 @@ export async function deepResearchStartHandler(ctx: any) {
         conversationStateId: conversationStateRecord.id,
         requestedAt: new Date().toISOString(),
         researchMode,
+        // Iteration tracking (iteration-per-job architecture)
+        iterationNumber: 1,
+        isInitialIteration: true,
+        // rootJobId will be set by worker to job.id since this is the first job
       },
       {
         jobId: createdMessage.id, // Use message ID as job ID for easy lookup

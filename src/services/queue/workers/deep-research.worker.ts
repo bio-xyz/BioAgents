@@ -1,9 +1,14 @@
 /**
  * Deep Research Worker for BullMQ
  *
- * Processes deep research jobs from the queue.
- * This is the same logic as runDeepResearch in routes/deep-research/start.ts,
- * but extracted to run in a separate worker process.
+ * Architecture: Iteration-per-job
+ * Each job executes exactly ONE iteration of the deep research workflow.
+ * If the research should continue, the worker enqueues the next iteration
+ * as a new job. This provides:
+ * - Atomic iterations (either fully complete or never started)
+ * - Better graceful shutdown (each job ~5-10 min instead of 20+ min)
+ * - Natural retry on failure (no partial state to rollback)
+ * - Better scaling (different workers can handle different iterations)
  */
 
 import { Worker, Job } from "bullmq";
@@ -16,6 +21,7 @@ import {
   notifyMessageUpdated,
   notifyStateUpdated,
 } from "../notify";
+import { getDeepResearchQueue } from "../queues";
 import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
 import type { ConversationState, PlanTask, State } from "../../../types/core";
 import {
@@ -26,8 +32,7 @@ import {
 import logger from "../../../utils/logger";
 
 /**
- * Process a deep research job
- * This is the core deep research processing logic extracted from runDeepResearch
+ * Process a deep research job - executes a SINGLE iteration
  *
  * Research modes:
  * - 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
@@ -46,6 +51,9 @@ async function processDeepResearchJob(
     conversationStateId,
     message,
     researchMode: requestedResearchMode,
+    iterationNumber = 1,
+    rootJobId,
+    isInitialIteration = true,
   } = job.data;
 
   // Log retry attempt if this is a retry
@@ -54,6 +62,7 @@ async function processDeepResearchJob(
       {
         jobId: job.id,
         messageId,
+        iterationNumber,
         attempt: job.attemptsMade + 1,
         maxAttempts: job.opts.attempts,
       },
@@ -70,6 +79,9 @@ async function processDeepResearchJob(
       stateId,
       userId,
       requestedResearchMode,
+      iterationNumber,
+      rootJobId: rootJobId || job.id,
+      isInitialIteration,
       messagePreview: message ? (message.length > 200 ? message.substring(0, 200) + "..." : message) : undefined,
       messageLength: message?.length,
     },
@@ -131,10 +143,7 @@ async function processDeepResearchJob(
     // Save researchMode to conversation state (allows it to change per request)
     conversationState.values.researchMode = researchMode;
 
-    // =========================================================================
-    // AUTONOMOUS ITERATION LOOP
-    // Continues until: research is done, max iterations reached, or agent decides to ask user
-    // =========================================================================
+    // Calculate max iterations based on mode
     const maxAutoIterations =
       researchMode === "steering"
         ? 1 // Steering mode: single iteration, always ask user
@@ -142,53 +151,43 @@ async function processDeepResearchJob(
           ? 20 // Fully autonomous: hard cap
           : parseInt(process.env.MAX_AUTO_ITERATIONS || "5"); // Semi-autonomous: configurable
 
-    let iterationCount = 0;
-    let shouldContinueLoop = true;
-
-    // Variables that need to be accessible after the loop
+    // Variables for this iteration
     let tasksToExecute: PlanTask[] = [];
     let hypothesisResult: { hypothesis: string; mode: string } = {
       hypothesis: "",
       mode: "create",
     };
 
-    // Track the current message being updated (changes when auto-continuing)
+    // Track the current message being updated
     let currentMessage = messageRecord;
-
-    // Flag to skip planning when continuing (tasks already promoted)
-    let skipPlanning = false;
 
     // Track starting level for this user interaction (to gather all tasks across continuations)
     const sessionStartLevel = calculateSessionStartLevel(conversationState.values.currentLevel);
 
     logger.info(
-      { jobId: job.id, researchMode, maxAutoIterations },
-      "starting_autonomous_research_loop",
+      { jobId: job.id, researchMode, maxAutoIterations, iterationNumber, isInitialIteration },
+      "starting_iteration",
     );
 
-    while (shouldContinueLoop && iterationCount < maxAutoIterations) {
-      iterationCount++;
-      logger.info(
-        { jobId: job.id, iterationCount, maxAutoIterations },
-        "starting_iteration",
-      );
+    // =========================================================================
+    // SINGLE ITERATION EXECUTION
+    // =========================================================================
 
     // Update progress: Planning
     await job.updateProgress({ stage: "planning", percent: 5 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "planning", 5);
 
-    // Get current level - if skipPlanning, use existing; otherwise run planning agent
+    // Get current level - if continuation, use existing; otherwise run planning agent
     let newLevel: number;
     let currentObjective: string;
 
-    if (skipPlanning) {
+    if (!isInitialIteration) {
       // CONTINUATION: Tasks already promoted, just get current level
       const currentPlan = conversationState.values.plan || [];
       newLevel = currentPlan.length > 0
         ? Math.max(...currentPlan.map((t) => t.level || 0))
         : 0;
       currentObjective = conversationState.values.currentObjective || "";
-      skipPlanning = false; // Reset for next iteration
 
       logger.info(
         { jobId: job.id, newLevel, currentObjective },
@@ -279,7 +278,7 @@ async function processDeepResearchJob(
     logger.info(
       {
         jobId: job.id,
-        iterationCount,
+        iterationNumber,
         newLevel,
         tasksToExecuteCount: tasksToExecute.length,
         taskIds: tasksToExecute.map((t) => t.id),
@@ -538,6 +537,9 @@ async function processDeepResearchJob(
       researchMode,
     });
 
+    // Track whether research should continue
+    let shouldContinue = false;
+
     if (nextPlanningResult.plan.length > 0) {
       conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
       if (nextPlanningResult.currentObjective) {
@@ -546,9 +548,7 @@ async function processDeepResearchJob(
       if (conversationState.id) {
         await updateConversationState(conversationState.id, conversationState.values);
       }
-    } else {
-      // No suggested next steps means research is complete - exit loop
-      shouldContinueLoop = false;
+      shouldContinue = true;
     }
 
     // =========================================================================
@@ -558,7 +558,7 @@ async function processDeepResearchJob(
     let isFinal = true;
     let willContinue = false;
 
-    if (shouldContinueLoop && conversationState.values.suggestedNextSteps?.length) {
+    if (shouldContinue && conversationState.values.suggestedNextSteps?.length && iterationNumber < maxAutoIterations) {
       const { continueResearchAgent } = await import(
         "../../../agents/continueResearch"
       );
@@ -569,7 +569,7 @@ async function processDeepResearchJob(
         completedTasks: tasksToExecute,
         hypothesis: hypothesisResult.hypothesis,
         suggestedNextSteps: conversationState.values.suggestedNextSteps,
-        iterationCount,
+        iterationCount: iterationNumber,
         researchMode,
       });
 
@@ -580,7 +580,7 @@ async function processDeepResearchJob(
           confidence: continueResult.confidence,
           reasoning: continueResult.reasoning,
           triggerReason: continueResult.triggerReason,
-          iterationCount,
+          iterationNumber,
         },
         "continue_research_decision",
       );
@@ -589,26 +589,21 @@ async function processDeepResearchJob(
         isFinal = false;
         willContinue = true;
       } else {
-        shouldContinueLoop = false;
         logger.info(
-          { jobId: job.id, triggerReason: continueResult.triggerReason, iterationCount },
+          { jobId: job.id, triggerReason: continueResult.triggerReason, iterationNumber },
           "stopping_for_user_feedback",
         );
       }
-    } else {
-      // No suggested next steps - research complete, exit loop
-      shouldContinueLoop = false;
     }
 
     // =========================================================================
     // GENERATE REPLY FOR THIS ITERATION
-    // Each iteration gets its own reply, saved to the current message
     // =========================================================================
     await job.updateProgress({ stage: "reply", percent: 95 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
 
     logger.info(
-      { jobId: job.id, iterationCount, messageId: currentMessage.id, isFinal },
+      { jobId: job.id, iterationNumber, messageId: currentMessage.id, isFinal },
       "generating_reply_for_iteration",
     );
 
@@ -637,7 +632,7 @@ async function processDeepResearchJob(
         {
           jobId: job.id,
           messageId: currentMessage.id,
-          iterationCount,
+          iterationNumber,
           replyResult,
         },
         "reply_agent_returned_empty_response",
@@ -656,7 +651,7 @@ async function processDeepResearchJob(
       {
         jobId: job.id,
         messageId: currentMessage.id,
-        iterationCount,
+        iterationNumber,
         contentLength: replyResult.reply?.length || 0,
       },
       "iteration_reply_saved",
@@ -666,18 +661,16 @@ async function processDeepResearchJob(
     await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
 
     // =========================================================================
-    // PREPARE FOR NEXT ITERATION (if continuing)
+    // ENQUEUE NEXT ITERATION (if continuing)
+    // This is the key change: instead of looping, we enqueue a new job
     // =========================================================================
     if (willContinue) {
-      // CONTINUE: Promote suggestedNextSteps to plan for next iteration
-      skipPlanning = true; // Skip planning in next iteration - use promoted tasks
-
       logger.info(
-        { jobId: job.id, iterationCount },
-        "auto_continuing_to_next_iteration",
+        { jobId: job.id, iterationNumber },
+        "preparing_next_iteration_job",
       );
 
-      // Get current max level
+      // Promote suggestedNextSteps to plan for next iteration
       const currentPlan = conversationState.values.plan || [];
       const currentMaxLevel =
         currentPlan.length > 0
@@ -734,28 +727,61 @@ async function processDeepResearchJob(
           jobId: job.id,
           newMessageId: agentMessage.id,
           previousMessageId: currentMessage.id,
-          iterationCount: iterationCount + 1,
+          nextIterationNumber: iterationNumber + 1,
         },
         "created_agent_continuation_message",
       );
 
-      // Update currentMessage to point to the new message for next iteration
-      currentMessage = agentMessage;
+      // ENQUEUE NEXT ITERATION JOB
+      const queue = getDeepResearchQueue();
+      const nextMessageId = agentMessage.id!; // createMessage always returns an ID
+      const nextJobName = `iteration-${iterationNumber + 1}-${nextMessageId}`;
+
+      await queue.add(
+        nextJobName,
+        {
+          userId,
+          conversationId,
+          messageId: nextMessageId, // Next iteration writes to new message
+          message, // Original message for context
+          authMethod: job.data.authMethod,
+          stateId,
+          conversationStateId,
+          requestedAt: new Date().toISOString(),
+          researchMode,
+          iterationNumber: iterationNumber + 1,
+          rootJobId: rootJobId || job.id!, // Track the chain back to original
+          isInitialIteration: false, // Use promoted tasks, skip planning
+        },
+        {
+          jobId: nextMessageId, // Use message ID as job ID for easy lookup
+        },
+      );
+
+      logger.info(
+        {
+          jobId: job.id,
+          nextJobName,
+          nextIterationNumber: iterationNumber + 1,
+          nextMessageId,
+          rootJobId: rootJobId || job.id,
+        },
+        "enqueued_next_iteration_job",
+      );
     }
 
-    } // END OF WHILE LOOP
-
     // =========================================================================
-    // END OF AUTONOMOUS LOOP
+    // JOB COMPLETE
     // =========================================================================
     const responseTime = Date.now() - startTime;
 
     logger.info(
       {
         jobId: job.id,
-        originalMessageId: messageId,
-        finalMessageId: currentMessage.id,
-        totalIterations: iterationCount,
+        messageId: currentMessage.id,
+        iterationNumber,
+        willContinue,
+        isFinal,
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
       },
@@ -775,6 +801,7 @@ async function processDeepResearchJob(
       {
         jobId: job.id,
         error,
+        iterationNumber,
         attempt: job.attemptsMade + 1,
         willRetry: job.attemptsMade + 1 < (job.opts.attempts || 2),
       },
@@ -824,7 +851,12 @@ export function startDeepResearchWorker(): Worker {
 
   worker.on("completed", (job, result) => {
     logger.info(
-      { jobId: job.id, messageId: result.messageId, responseTime: result.responseTime },
+      {
+        jobId: job.id,
+        messageId: result.messageId,
+        responseTime: result.responseTime,
+        iterationNumber: job.data.iterationNumber,
+      },
       "deep_research_worker_job_completed",
     );
   });
@@ -835,6 +867,7 @@ export function startDeepResearchWorker(): Worker {
         jobId: job?.id,
         error: error.message,
         attemptsMade: job?.attemptsMade,
+        iterationNumber: job?.data.iterationNumber,
       },
       "deep_research_worker_job_failed_permanently",
     );
