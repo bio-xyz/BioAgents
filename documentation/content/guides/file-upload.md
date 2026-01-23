@@ -158,7 +158,7 @@ The Analysis Agent will automatically use files attached to the conversation.
 
 | Limit | Value |
 |-------|-------|
-| Max file size | 500 MB |
+| Max file size | 2 GB |
 | Max files per conversation | 10 |
 | Upload URL expiry | 1 hour |
 
@@ -168,7 +168,7 @@ Common errors and solutions:
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `file_too_large` | File exceeds 500MB | Split into smaller files |
+| `file_too_large` | File exceeds 2GB | Split into smaller files |
 | `invalid_type` | Unsupported format | Convert to supported format |
 | `upload_expired` | URL expired | Request new upload URL |
 | `processing_failed` | Analysis error | Check file format, retry |
