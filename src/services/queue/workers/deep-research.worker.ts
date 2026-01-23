@@ -272,7 +272,7 @@ async function processDeepResearchJob(
     const { analysisAgent } = await import("../../../agents/analysis");
 
     tasksToExecute = (conversationState.values.plan || []).filter(
-      (t) => t.level === newLevel,
+      (t) => t.level === newLevel && !t.end, // Skip already-completed tasks (for retry safety)
     );
 
     logger.info(
