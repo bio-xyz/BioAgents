@@ -1,4 +1,5 @@
 import type { BioLiteratureMode } from ".";
+import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
@@ -141,13 +142,20 @@ async function pollBioLiteratureJob(
       );
     }
 
-    const response = await fetch(`${baseUrl}/query/jobs/${jobId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
+    const { response } = await fetchWithRetry(
+      `${baseUrl}/query/jobs/${jobId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
       },
-    });
+      {
+        onRetry: (attempt, error) =>
+          logger.warn({ attempt, jobId, error: error.message }, "bioliterature_poll_retry"),
+      },
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -206,20 +214,27 @@ export async function searchBioLiterature(
   const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
   const endpoint = `${baseUrl}/query`;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": BIO_LIT_AGENT_API_KEY,
+  const { response } = await fetchWithRetry(
+    endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": BIO_LIT_AGENT_API_KEY,
+      },
+      body: JSON.stringify({
+        question: objective,
+        max_results: 20,
+        per_source_limit: 5,
+        sources: ["arxiv", "pubmed", "clinical-trials"],
+        mode,
+      }),
     },
-    body: JSON.stringify({
-      question: objective,
-      max_results: 20,
-      per_source_limit: 5,
-      sources: ["arxiv", "pubmed", "clinical-trials"],
-      mode,
-    }),
-  });
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, objective, error: error.message }, "bioliterature_search_retry"),
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -1,6 +1,6 @@
 # File Upload Guide
 
-BioAgents uses presigned S3 URLs for secure, direct-to-storage file uploads. This allows large files (up to 500MB) to be uploaded without passing through the API server.
+BioAgents uses presigned S3 URLs for secure, direct-to-storage file uploads. This allows large files (up to 2GB) to be uploaded without passing through the API server.
 
 ## Table of Contents
 
@@ -52,7 +52,7 @@ BioAgents uses presigned S3 URLs for secure, direct-to-storage file uploads. Thi
 
 | Benefit | Description |
 |---------|-------------|
-| **Large files** | Upload up to 500MB without server memory issues |
+| **Large files** | Upload up to 2GB without server memory issues |
 | **Direct upload** | Files go directly to S3, reducing server load |
 | **Security** | URLs are time-limited and size-enforced |
 | **Resumable** | Failed uploads can be retried with same URL |
@@ -214,7 +214,7 @@ S3_ENDPOINT=https://nyc3.digitaloceanspaces.com
 
 | Limit | Value | Location |
 |-------|-------|----------|
-| Max file size | 500MB | `src/agents/fileUpload/config.ts` |
+| Max file size | 2GB | `src/services/files/index.ts` |
 | URL expiration | 1 hour | `src/services/files/index.ts` |
 | Max files per request | 5 | Client-side only |
 

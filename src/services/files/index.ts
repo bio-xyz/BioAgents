@@ -65,8 +65,8 @@ export interface ConfirmUploadResult {
   jobId?: string;
 }
 
-// Maximum file size: 500MB (same as MAX_FILE_SIZE_MB in fileUpload config)
-const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
+// Maximum file size: 2GB
+const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
  * Request a presigned URL for direct S3 upload
