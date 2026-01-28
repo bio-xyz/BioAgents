@@ -90,11 +90,12 @@ export async function createContinuationMessage(
 
 /**
  * Calculate session start level for tracking tasks across continuations
+ * Returns the current level (or 0 if undefined) - tasks at this level and above will be included
  */
 export function calculateSessionStartLevel(
   currentLevel: number | undefined,
 ): number {
-  return (currentLevel || 0) + 1;
+  return currentLevel ?? 0;
 }
 
 /**
