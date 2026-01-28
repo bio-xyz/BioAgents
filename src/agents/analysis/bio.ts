@@ -1,10 +1,10 @@
 import {
   getConversationBasePath,
   getStorageProvider,
-  getUploadPath,
   isStorageProviderAvailable,
 } from "../../storage";
 import { type AnalysisArtifact } from "../../types/core";
+import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 import type { Dataset } from "./index";
 
@@ -57,7 +57,11 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-): Promise<{ output: string; artifacts: Array<AnalysisArtifact>; jobId: string }> {
+): Promise<{
+  output: string;
+  artifacts: Array<AnalysisArtifact>;
+  jobId: string;
+}> {
   if (!objective) {
     logger.error("No question provided to Data Analysis Agent");
     throw new Error("No question provided to Data Analysis Agent");
@@ -140,11 +144,18 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
 
   await Promise.all(
     datasets.map(async (dataset) => {
+      if (!dataset.path) {
+        logger.warn(
+          { datasetId: dataset.id, filename: dataset.filename },
+          "skipping_dataset_no_artifact_path",
+        );
+        return;
+      }
       try {
-        const fileBuffer = await storageProvider.fetchFileFromUserStorage(
+        const fileBuffer = await storageProvider.fetchFileByRelativePath(
           userId,
           conversationStateId,
-          dataset.filename,
+          dataset.path,
         );
         dataset.content = fileBuffer;
       } catch (err) {
@@ -174,7 +185,9 @@ function buildTaskFormData(
     const basePath = getConversationBasePath(userId, conversationStateId);
     formData.append("base_path", basePath);
     for (const dataset of datasets) {
-      formData.append("file_paths", getUploadPath(dataset.filename));
+      if (dataset.path) {
+        formData.append("file_paths", dataset.path);
+      }
     }
   } else {
     for (const dataset of datasets) {
@@ -199,11 +212,18 @@ async function startBioTask(
   const endpoint = `${config.apiUrl}/api/task/run/async`;
   const formData = buildTaskFormData(config, context, query);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "X-API-Key": config.apiKey },
-    body: formData,
-  });
+  const { response } = await fetchWithRetry(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "X-API-Key": config.apiKey },
+      body: formData,
+    },
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, error: error.message }, "bio_task_start_retry"),
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -226,17 +246,28 @@ async function awaitBioTask(
   config: BioAnalysisConfig,
   taskId: string,
 ): Promise<BioDataAnalysisResult> {
-  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes max wait
+  const timeoutMinutes = parseInt(
+    process.env.BIO_ANALYSIS_TASK_TIMEOUT_MINUTES || "60",
+    10,
+  );
+  const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
 
   const endpoint = `${config.apiUrl}/api/task/${taskId}`;
 
   while (Date.now() - startTime < MAX_WAIT_TIME) {
-    const response = await fetch(endpoint, {
-      method: "GET",
-      headers: { "X-API-Key": config.apiKey },
-    });
+    const { response } = await fetchWithRetry(
+      endpoint,
+      {
+        method: "GET",
+        headers: { "X-API-Key": config.apiKey },
+      },
+      {
+        onRetry: (attempt, error) =>
+          logger.warn({ attempt, taskId, error: error.message }, "bio_task_poll_retry"),
+      },
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -261,7 +292,7 @@ async function awaitBioTask(
       return taskResult;
     }
 
-    logger.debug(
+    logger.info(
       { taskId, status: taskResult.status },
       "bio_analysis_task_still_running",
     );

@@ -35,6 +35,7 @@ interface OpenRouterResponse {
   choices?: Array<{
     message?: OpenRouterMessage;
     text?: string;
+    finish_reason?: string;
   }>;
   usage?: {
     prompt_tokens?: number;
@@ -151,6 +152,7 @@ export class OpenRouterAdapter extends LLMAdapter {
     return {
       content: this.extractText(response),
       usage: this.extractUsage(response),
+      finishReason: response.choices?.[0]?.finish_reason ?? undefined,
     };
   }
 

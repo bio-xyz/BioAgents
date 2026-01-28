@@ -123,6 +123,8 @@ export async function hypothesisAgent(input: {
         thinking: true,
         thinkingBudget: 2048,
         mode,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
 

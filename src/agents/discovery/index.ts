@@ -5,7 +5,7 @@ import type {
   PlanTask,
 } from "../../types/core";
 import logger from "../../utils/logger";
-import { extractDiscoveries, type DiscoveryDoc } from "./utils";
+import { extractDiscoveries, fixDiscoveryArtifactPaths, type DiscoveryDoc } from "./utils";
 
 type DiscoveryAgentResult = {
   discoveries: Discovery[];
@@ -153,21 +153,27 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
       discoveryDocs,
       {
         maxTokens: 8000,
+        messageId: message.id,
+        usageType: "deep-research",
       },
     );
+
+    // Fix artifact paths by matching against task artifacts
+    // LLM may output sandbox paths or filenames - we need correct storage paths
+    const fixedDiscoveries = fixDiscoveryArtifactPaths(discoveries, tasksToConsider);
 
     const end = new Date().toISOString();
 
     logger.info(
       {
-        discoveryCount: discoveries.length,
-        discoveries,
+        discoveryCount: fixedDiscoveries.length,
+        discoveries: fixedDiscoveries,
       },
       "discovery_agent_completed",
     );
 
     return {
-      discoveries,
+      discoveries: fixedDiscoveries,
       start,
       end,
     };

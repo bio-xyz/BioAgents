@@ -1,5 +1,21 @@
 import { Elysia } from "elysia";
+import { analysisAgent } from "../../agents/analysis";
+import { continueResearchAgent } from "../../agents/continueResearch";
+import { discoveryAgent } from "../../agents/discovery";
+import { fileUploadAgent } from "../../agents/fileUpload";
+import { hypothesisAgent } from "../../agents/hypothesis";
+import { literatureAgent } from "../../agents/literature";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
+import { planningAgent } from "../../agents/planning";
+import { reflectionAgent } from "../../agents/reflection";
+import { replyAgent } from "../../agents/reply";
+import {
+  getMessagesByConversation,
+  getOrCreateUserByWallet,
+  updateConversationState,
+  updateMessage,
+  updateState,
+} from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import {
@@ -7,8 +23,17 @@ import {
   setupConversationData,
 } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
+import { isJobQueueEnabled } from "../../services/queue/connection";
+import { notifyMessageUpdated } from "../../services/queue/notify";
+import { getDeepResearchQueue } from "../../services/queue/queues";
 import type { AuthContext } from "../../types/auth";
 import type { ConversationState, PlanTask, State } from "../../types/core";
+import {
+  calculateSessionStartLevel,
+  createContinuationMessage,
+  getSessionCompletedTasks,
+} from "../../utils/deep-research/continuation-utils";
+import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
@@ -51,7 +76,7 @@ export const deepResearchStartRoute = new Elysia().guard(
   {
     beforeHandle: [
       authResolver({
-        required: process.env.NODE_ENV === "production",
+        required: true, // Always require auth - no environment-based bypass
       }),
       rateLimitMiddleware("deep-research"),
     ],
@@ -106,7 +131,6 @@ export async function deepResearchStartHandler(ctx: any) {
 
   // For x402 users, ensure wallet user record exists and use the actual user ID
   if (isX402User && auth?.externalId) {
-    const { getOrCreateUserByWallet } = await import("../../db/operations");
     const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
 
     // Use the actual database user ID (may differ from auth.userId)
@@ -130,6 +154,11 @@ export async function deepResearchStartHandler(ctx: any) {
       logger.info({ conversationId, userId }, "auto_generated_conversation_id");
     }
   }
+
+  // Extract researchMode from request (will be reconciled with conversation state later)
+  // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
+  type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
+  const requestedResearchMode: ResearchMode | undefined = parsedBody.researchMode;
 
   // Extract files from parsed body
   let files: File[] = [];
@@ -182,6 +211,27 @@ export async function deepResearchStartHandler(ctx: any) {
 
   const { conversationStateRecord, stateRecord } = dataSetup.data!;
 
+  // Log with state IDs now that we have them
+  logger.info(
+    {
+      userId,
+      conversationId,
+      conversationStateId: conversationStateRecord.id,
+      stateId: stateRecord.id,
+      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+      messageLength: message.length,
+    },
+    "deep_research_state_initialized",
+  );
+
+  // Reconcile researchMode: request takes priority, then existing state, then default
+  const researchMode: ResearchMode = requestedResearchMode
+    || conversationStateRecord.values.researchMode
+    || "semi-autonomous";
+
+  // Save researchMode to conversation state (allows it to change per request)
+  conversationStateRecord.values.researchMode = researchMode;
+
   // Create message record
   const messageResult = await createMessageRecord({
     conversationId,
@@ -205,8 +255,6 @@ export async function deepResearchStartHandler(ctx: any) {
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
-  const { isJobQueueEnabled } = await import("../../services/queue/connection");
-
   if (isJobQueueEnabled()) {
     // QUEUE MODE: Enqueue job and return immediately
     logger.info(
@@ -221,8 +269,6 @@ export async function deepResearchStartHandler(ctx: any) {
         values: conversationStateRecord.values,
       };
 
-      const { fileUploadAgent } = await import("../../agents/fileUpload");
-
       logger.info(
         { fileCount: files.length },
         "processing_file_uploads_before_queue",
@@ -235,14 +281,11 @@ export async function deepResearchStartHandler(ctx: any) {
       });
     }
 
-    // Enqueue the job
-    const { getDeepResearchQueue } = await import(
-      "../../services/queue/queues"
-    );
+    // Enqueue the job (iteration 1)
     const deepResearchQueue = getDeepResearchQueue();
 
     const job = await deepResearchQueue.add(
-      `deep-research-${createdMessage.id}`,
+      `iteration-1-${createdMessage.id}`,
       {
         userId,
         conversationId,
@@ -252,6 +295,11 @@ export async function deepResearchStartHandler(ctx: any) {
         stateId: stateRecord.id,
         conversationStateId: conversationStateRecord.id,
         requestedAt: new Date().toISOString(),
+        researchMode,
+        // Iteration tracking (iteration-per-job architecture)
+        iterationNumber: 1,
+        isInitialIteration: true,
+        // rootJobId will be set by worker to job.id since this is the first job
       },
       {
         jobId: createdMessage.id, // Use message ID as job ID for easy lookup
@@ -327,7 +375,7 @@ export async function deepResearchStartHandler(ctx: any) {
     conversationStateRecord,
     createdMessage,
     files,
-    setupResult,
+    researchMode,
   }).catch((err) => {
     logger.error(
       { err, messageId: createdMessage.id },
@@ -347,20 +395,25 @@ export async function deepResearchStartHandler(ctx: any) {
 
 /**
  * Background function that executes the deep research workflow
+ *
+ * Research modes:
+ * - 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS from env (default 5)
+ * - 'fully-autonomous': Continues until research is done or hard cap of 20 iterations
+ * - 'steering': Single iteration only, always asks user for feedback
  */
 async function runDeepResearch(params: {
   stateRecord: any;
   conversationStateRecord: any;
   createdMessage: any;
   files: File[];
-  setupResult: any;
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
 }) {
   const {
     stateRecord,
     conversationStateRecord,
     createdMessage,
     files,
-    setupResult,
+    researchMode = "semi-autonomous",
   } = params;
 
   try {
@@ -384,8 +437,6 @@ async function runDeepResearch(params: {
 
     // Step 1: Process files if any
     if (files.length > 0) {
-      const { fileUploadAgent } = await import("../../agents/fileUpload");
-
       const fileResult = await fileUploadAgent({
         conversationState,
         files,
@@ -402,220 +453,287 @@ async function runDeepResearch(params: {
       );
     }
 
-    // Step 2: Execute deep research planning agent (v2)
-    const { planningAgent } = await import("../../agents/planning");
+    // =========================================================================
+    // AUTONOMOUS ITERATION LOOP
+    // Continues until: research is done, max iterations reached, or agent decides to ask user
+    // =========================================================================
+    const maxAutoIterations =
+      researchMode === "steering"
+        ? 1 // Steering mode: single iteration, always ask user
+        : researchMode === "fully-autonomous"
+          ? 20 // Fully autonomous: hard cap
+          : parseInt(process.env.MAX_AUTO_ITERATIONS || "5"); // Semi-autonomous: configurable
+
+    let iterationCount = 0;
+    let shouldContinueLoop = true;
+
+    // Variables that need to be accessible after the loop for reply generation
+    let tasksToExecute: PlanTask[] = [];
+    let hypothesisResult: { hypothesis: string; mode: string } = {
+      hypothesis: "",
+      mode: "create",
+    };
+
+    // Track the current message being updated (changes when auto-continuing)
+    let currentMessage = createdMessage;
+
+    // Flag to skip planning when continuing (tasks already promoted)
+    let skipPlanning = false;
+
+    // Track starting level for this user interaction (to gather all tasks across continuations)
+    const sessionStartLevel = calculateSessionStartLevel(
+      conversationState.values.currentLevel,
+    );
 
     logger.info(
-      { suggestedNextSteps: conversationState.values.suggestedNextSteps },
-      "current_suggested_next_steps",
+      { researchMode, maxAutoIterations },
+      "starting_autonomous_research_loop",
     );
 
-    const deepResearchPlanningResult = await planningAgent({
-      state,
-      conversationState,
-      message: createdMessage,
-      mode: "initial",
-    });
+    while (shouldContinueLoop && iterationCount < maxAutoIterations) {
+      iterationCount++;
+      const iterationStartTime = Date.now();
+      logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
 
-    const plan = deepResearchPlanningResult.plan;
-    const currentObjective = deepResearchPlanningResult.currentObjective;
+      // Get current level - if skipPlanning, use existing; otherwise run planning agent
+      let newLevel: number;
+      let currentObjective: string;
 
-    if (!plan || !currentObjective) {
-      throw new Error("Plan or current objective not found");
-    }
-
-    // Update conversation state with plan and objective
-    const { updateConversationState } = await import("../../db/operations");
-    const { literatureAgent } = await import("../../agents/literature");
-
-    // Clear previous suggestions since we're starting a new iteration
-    conversationState.values.suggestedNextSteps = [];
-
-    // Get current plan or initialize empty
-    const currentPlan = conversationState.values.plan || [];
-
-    // Find max level in current plan, default to -1 if empty
-    const maxLevel =
-      currentPlan?.length > 0
-        ? Math.max(...currentPlan.map((t) => t.level || 0))
-        : -1;
-
-    // Add new tasks with appropriate level and assign IDs
-    const newLevel = maxLevel + 1;
-    const newTasks = plan.map((task: PlanTask) => {
-      const taskId =
-        task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-      return {
-        ...task,
-        id: taskId,
-        level: newLevel,
-        start: undefined,
-        end: undefined,
-        output: undefined,
-      };
-    });
-
-    // Append to existing plan and update objective
-    conversationState.values.plan = [...currentPlan, ...newTasks];
-    conversationState.values.currentObjective = currentObjective;
-    conversationState.values.currentLevel = newLevel; // Set current level for UI
-
-    // Update state in DB
-    if (conversationState.id) {
-      await updateConversationState(
-        conversationState.id,
-        conversationState.values,
-      );
-
-      logger.info(
-        { newLevel, newTasks, newObjective: currentObjective },
-        "new_tasks_added_to_plan",
-      );
-    }
-
-    // Execute only tasks from the new level (max level)
-    const tasksToExecute = conversationState.values.plan.filter(
-      (t) => t.level === newLevel,
-    );
-
-    // Execute all tasks concurrently
-    const taskPromises = tasksToExecute.map(async (task) => {
-      if (task.type === "LITERATURE") {
-        // Set start timestamp
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
-        }
+      if (skipPlanning) {
+        // CONTINUATION: Tasks already promoted, just get current level
+        const currentPlan = conversationState.values.plan || [];
+        newLevel =
+          currentPlan.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : 0;
+        currentObjective = conversationState.values.currentObjective || "";
+        skipPlanning = false; // Reset for next iteration
 
         logger.info(
-          { taskObjective: task.objective },
-          "executing_literature_task",
+          { newLevel, currentObjective },
+          "continuation_using_promoted_tasks",
         );
-
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
-            ? "BIOLITDEEP"
-            : "EDISON";
-        const primaryLiteratureLabel =
-          primaryLiteratureType === "BIOLITDEEP" ? "BioLiterature" : "Edison";
-
-        // Run OpenScholar and update state when done
-        const openScholarPromise = literatureAgent({
-          objective: task.objective,
-          type: "OPENSCHOLAR",
-        }).then(async (result) => {
-          if (result.count && result.count > 0) {
-            task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-          }
-          if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
-            logger.info({ count: result.count }, "openscholar_completed");
-          }
-          logger.info(
-            { outputLength: result.output.length, count: result.count },
-            "openscholar_result_received",
-          );
-        });
-
-        const primaryLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          type: primaryLiteratureType,
-        }).then(async (result) => {
-          // Always append for Edison/BioLit (no count filtering)
-          task.output += `${primaryLiteratureLabel} literature results:\n${result.output}\n\n`;
-          // Capture jobId from primary literature (Edison or BioLit)
-          if (result.jobId) {
-            task.jobId = result.jobId;
-          }
-          if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
-          }
-          logger.info(
-            { outputLength: result.output.length, jobId: result.jobId },
-            "primary_literature_result_received",
-          );
-        });
-
-        const knowledgePromise = literatureAgent({
-          objective: task.objective,
-          type: "KNOWLEDGE",
-        }).then(async (result) => {
-          if (result.count && result.count > 0) {
-            task.output += `Knowledge literature results:\n${result.output}\n\n`;
-          }
-          if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
-            logger.info({ count: result.count }, "knowledge_completed");
-          }
-          logger.info(
-            { outputLength: result.output.length, count: result.count },
-            "knowledge_result_received",
-          );
-        });
-
-        // Wait for all to complete
-        await Promise.all([
-          openScholarPromise,
-          primaryLiteraturePromise,
-          knowledgePromise,
-        ]);
-
-        // Set end timestamp after all are done
-        task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
-          logger.info("task_completed");
-        }
-      } else if (task.type === "ANALYSIS") {
-        // Set start timestamp
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
-        }
-
+      } else {
+        // INITIAL: Execute planning agent
         logger.info(
-          {
-            taskObjective: task.objective,
-            datasets: task.datasets.map((d) => `${d.filename} (${d.id})`),
-          },
-          "executing_analysis_task",
+          { suggestedNextSteps: conversationState.values.suggestedNextSteps },
+          "current_suggested_next_steps",
         );
 
-        // Run Edison analysis
-        const { analysisAgent } = await import("../../agents/analysis");
+        const deepResearchPlanningResult = await planningAgent({
+          state,
+          conversationState,
+          message: createdMessage,
+          mode: "initial",
+          usageType: "deep-research",
+          researchMode,
+        });
 
-        try {
-          // MOCK: Uncomment to skip actual analysis for faster testing
-          const MOCK_ANALYSIS = false;
+        const plan = deepResearchPlanningResult.plan;
+        currentObjective = deepResearchPlanningResult.currentObjective;
 
-          let analysisResult;
-          if (MOCK_ANALYSIS) {
-            logger.info("using_mock_analysis_for_testing");
-            analysisResult = {
+        if (!plan || !currentObjective) {
+          throw new Error("Plan or current objective not found");
+        }
+
+        // Clear previous suggestions since we're starting a new iteration
+        conversationState.values.suggestedNextSteps = [];
+
+        // Get current plan or initialize empty
+        const currentPlan = conversationState.values.plan || [];
+
+        // Find max level in current plan, default to -1 if empty
+        const maxLevel =
+          currentPlan?.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : -1;
+
+        // Add new tasks with appropriate level and assign IDs
+        newLevel = maxLevel + 1;
+        const newTasks = plan.map((task: PlanTask) => {
+          const taskId =
+            task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+          return {
+            ...task,
+            id: taskId,
+            level: newLevel,
+            start: undefined,
+            end: undefined,
+            output: undefined,
+          };
+        });
+
+        // Append to existing plan and update objective
+        conversationState.values.plan = [...currentPlan, ...newTasks];
+        conversationState.values.currentObjective = currentObjective;
+        conversationState.values.currentLevel = newLevel; // Set current level for UI
+
+        // Initialize main objective from first message (only if not already set)
+        if (!conversationState.values.objective && createdMessage.question) {
+          conversationState.values.objective = createdMessage.question;
+        }
+
+        // Update state in DB
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+
+          logger.info(
+            { newLevel, newTasks, newObjective: currentObjective },
+            "new_tasks_added_to_plan",
+          );
+        }
+      }
+
+      // Execute only tasks from the current level
+      tasksToExecute = (conversationState.values.plan || []).filter(
+        (t) => t.level === newLevel,
+      );
+
+      // Execute all tasks concurrently
+      const taskPromises = tasksToExecute.map(async (task) => {
+        if (task.type === "LITERATURE") {
+          // Set start timestamp
+          task.start = new Date().toISOString();
+          task.output = "";
+
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+          }
+
+          logger.info(
+            { taskObjective: task.objective },
+            "executing_literature_task",
+          );
+
+          const primaryLiteratureType =
+            process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO"
+              ? "BIOLITDEEP"
+              : "EDISON";
+
+          // Build list of literature promises based on configured sources
+          const literaturePromises: Promise<void>[] = [];
+
+          // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+          if (process.env.OPENSCHOLAR_API_URL) {
+            const openScholarPromise = literatureAgent({
               objective: task.objective,
-              output: `## Differential Gene Expression Analysis: Caloric Restriction vs Control
+              type: "OPENSCHOLAR",
+            }).then(async (result) => {
+              if (result.count && result.count > 0) {
+                task.output += `${result.output}\n\n`;
+              }
+              if (conversationState.id) {
+                await updateConversationState(
+                  conversationState.id,
+                  conversationState.values,
+                );
+                logger.info({ count: result.count }, "openscholar_completed");
+              }
+              logger.info(
+                { outputLength: result.output.length, count: result.count },
+                "openscholar_result_received",
+              );
+            });
+            literaturePromises.push(openScholarPromise);
+          }
+
+          // Primary literature (Edison or BioLit) - always enabled
+          const primaryLiteraturePromise = literatureAgent({
+            objective: task.objective,
+            type: primaryLiteratureType,
+          }).then(async (result) => {
+            // Always append for Edison/BioLit (no count filtering)
+            task.output += `${result.output}\n\n`;
+            // Capture jobId from primary literature (Edison or BioLit)
+            if (result.jobId) {
+              task.jobId = result.jobId;
+            }
+            if (conversationState.id) {
+              await updateConversationState(
+                conversationState.id,
+                conversationState.values,
+              );
+            }
+            logger.info(
+              { outputLength: result.output.length, jobId: result.jobId },
+              "primary_literature_result_received",
+            );
+          });
+          literaturePromises.push(primaryLiteraturePromise);
+
+          // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+          if (process.env.KNOWLEDGE_DOCS_PATH) {
+            const knowledgePromise = literatureAgent({
+              objective: task.objective,
+              type: "KNOWLEDGE",
+            }).then(async (result) => {
+              if (result.count && result.count > 0) {
+                task.output += `${result.output}\n\n`;
+              }
+              if (conversationState.id) {
+                await updateConversationState(
+                  conversationState.id,
+                  conversationState.values,
+                );
+                logger.info({ count: result.count }, "knowledge_completed");
+              }
+              logger.info(
+                { outputLength: result.output.length, count: result.count },
+                "knowledge_result_received",
+              );
+            });
+            literaturePromises.push(knowledgePromise);
+          }
+
+          // Wait for all enabled sources to complete
+          await Promise.all(literaturePromises);
+
+          // Set end timestamp after all are done
+          task.end = new Date().toISOString();
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+            logger.info("task_completed");
+          }
+        } else if (task.type === "ANALYSIS") {
+          // Set start timestamp
+          task.start = new Date().toISOString();
+          task.output = "";
+
+          if (conversationState.id) {
+            await updateConversationState(
+              conversationState.id,
+              conversationState.values,
+            );
+          }
+
+          logger.info(
+            {
+              taskObjective: task.objective,
+              datasets: task.datasets.map((d) => `${d.filename} (${d.id})`),
+            },
+            "executing_analysis_task",
+          );
+
+          // Run Edison analysis
+          try {
+            // MOCK: Uncomment to skip actual analysis for faster testing
+            const MOCK_ANALYSIS = false;
+
+            let analysisResult;
+            if (MOCK_ANALYSIS) {
+              logger.info("using_mock_analysis_for_testing");
+              analysisResult = {
+                objective: task.objective,
+                output: `## Differential Gene Expression Analysis: Caloric Restriction vs Control
 
 **Datasets Analyzed:** ${task.datasets.map((d) => d.filename).join(", ")}
 
@@ -677,199 +795,160 @@ These molecular changes align with established longevity pathways (Converging nu
 - Significantly downregulated (FDR < 0.05): 2 genes
 - Mean lifespan increase under CR: 25.7% (p < 0.001)
 - Batch effects: Not significant (p = 0.34)`,
-              start: new Date().toISOString(),
-              end: new Date().toISOString(),
-            };
-          } else {
-            const type =
-              process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO"
-                ? "BIO"
-                : "EDISON";
-            const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
-            analysisResult = await analysisAgent({
-              objective: task.objective,
-              datasets: task.datasets,
-              type,
-              userId: createdMessage.user_id,
-              conversationStateId: conversationStateId,
-            });
+                start: new Date().toISOString(),
+                end: new Date().toISOString(),
+              };
+            } else {
+              const type =
+                process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO"
+                  ? "BIO"
+                  : "EDISON";
+              const conversationStateId = conversationState.id!; // Use conversation_state ID to match upload path
+              analysisResult = await analysisAgent({
+                objective: task.objective,
+                datasets: task.datasets,
+                type,
+                userId: createdMessage.user_id,
+                conversationStateId: conversationStateId,
+              });
+            }
+
+            task.output = `${analysisResult.output}\n\n`;
+            task.artifacts = analysisResult.artifacts || [];
+            task.jobId = analysisResult.jobId;
+
+            if (conversationState.id) {
+              await updateConversationState(
+                conversationState.id,
+                conversationState.values,
+              );
+              logger.info(
+                { jobId: analysisResult.jobId },
+                "analysis_completed",
+              );
+            }
+
+            logger.info(
+              { outputLength: analysisResult.output.length },
+              "analysis_result_received",
+            );
+          } catch (error) {
+            const errorMsg =
+              error instanceof Error
+                ? error.message
+                : typeof error === "object" && error !== null
+                  ? JSON.stringify(error)
+                  : String(error);
+            task.output = `Analysis failed: ${errorMsg}`;
+            logger.error(
+              { error, taskObjective: task.objective },
+              "analysis_failed",
+            );
           }
 
-          task.output = `Analysis results:\n${analysisResult.output}\n\n`;
-          task.artifacts = analysisResult.artifacts || [];
-          task.jobId = analysisResult.jobId;
-
+          // Set end timestamp
+          task.end = new Date().toISOString();
           if (conversationState.id) {
             await updateConversationState(
               conversationState.id,
               conversationState.values,
             );
-            logger.info({ jobId: analysisResult.jobId }, "analysis_completed");
           }
-
-          logger.info(
-            { outputLength: analysisResult.output.length },
-            "analysis_result_received",
-          );
-        } catch (error) {
-          const errorMsg =
-            error instanceof Error
-              ? error.message
-              : typeof error === "object" && error !== null
-                ? JSON.stringify(error)
-                : String(error);
-          task.output = `Analysis failed: ${errorMsg}`;
-          logger.error(
-            { error, taskObjective: task.objective },
-            "analysis_failed",
-          );
         }
+      });
 
-        // Set end timestamp
-        task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
-        }
-      }
-    });
+      // Wait for all tasks to complete
+      await Promise.all(taskPromises);
 
-    // Wait for all tasks to complete
-    await Promise.all(taskPromises);
+      // Step 3: Generate/update hypothesis based on completed tasks
+      logger.info("generating_hypothesis_from_completed_tasks");
 
-    // Step 3: Generate/update hypothesis based on completed tasks
-    logger.info("generating_hypothesis_from_completed_tasks");
-
-    const { hypothesisAgent } = await import("../../agents/hypothesis");
-
-    const hypothesisResult = await hypothesisAgent({
-      objective: currentObjective,
-      message: createdMessage,
-      conversationState,
-      completedTasks: tasksToExecute, // All tasks from current level
-    });
-
-    // Update conversation state with new hypothesis
-    conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
-    if (conversationState.id) {
-      await updateConversationState(
-        conversationState.id,
-        conversationState.values,
-      );
-      logger.info(
-        {
-          mode: hypothesisResult.mode,
-          hypothesis: hypothesisResult.hypothesis,
-        },
-        "hypothesis_updated_in_state",
-      );
-    }
-
-    // Step 4: Run reflection and discovery agents in parallel
-    logger.info("running_reflection_and_discovery_agents");
-
-    const { reflectionAgent } = await import("../../agents/reflection");
-    const { discoveryAgent } = await import("../../agents/discovery");
-    const { getMessagesByConversation } = await import("../../db/operations");
-    const { getDiscoveryRunConfig } = await import("../../utils/discovery");
-
-    // Determine if we should run discovery and which tasks to consider
-    let shouldRunDiscovery = false;
-    let tasksToConsider: PlanTask[] = [];
-
-    if (createdMessage.conversation_id) {
-      const allMessages = await getMessagesByConversation(
-        createdMessage.conversation_id,
-        100,
-      );
-      const messageCount = allMessages?.length || 1;
-
-      const discoveryConfig = getDiscoveryRunConfig(
-        messageCount,
-        conversationState.values.plan || [],
-        tasksToExecute,
-      );
-
-      shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
-      tasksToConsider = discoveryConfig.tasksToConsider;
-    }
-
-    // Run reflection and discovery in parallel
-    const [reflectionResult, discoveryResult] = await Promise.all([
-      reflectionAgent({
-        conversationState,
+      hypothesisResult = await hypothesisAgent({
+        objective: currentObjective,
         message: createdMessage,
-        completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
-        hypothesis: hypothesisResult.hypothesis,
-      }),
-      shouldRunDiscovery
-        ? discoveryAgent({
-            conversationState,
-            message: createdMessage,
-            tasksToConsider,
+        conversationState,
+        completedTasks: tasksToExecute, // All tasks from current level
+      });
+
+      // Update conversation state with new hypothesis
+      conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
+      if (conversationState.id) {
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
+        logger.info(
+          {
+            mode: hypothesisResult.mode,
             hypothesis: hypothesisResult.hypothesis,
-          })
-        : Promise.resolve(null),
-    ]);
+          },
+          "hypothesis_updated_in_state",
+        );
+      }
 
-    // Update conversation state with reflection results
-    conversationState.values.conversationTitle =
-      reflectionResult.conversationTitle;
-    conversationState.values.currentObjective =
-      reflectionResult.currentObjective;
-    conversationState.values.keyInsights = reflectionResult.keyInsights;
-    conversationState.values.methodology = reflectionResult.methodology;
+      // Step 4: Run reflection and discovery agents in parallel
+      logger.info("running_reflection_and_discovery_agents");
 
-    // Update conversation state with discovery results if discovery ran
-    if (discoveryResult) {
-      conversationState.values.discoveries = discoveryResult.discoveries;
-      logger.info(
-        {
-          discoveryCount: discoveryResult.discoveries.length,
-        },
-        "discoveries_updated",
-      );
-    }
+      // Determine if we should run discovery and which tasks to consider
+      let shouldRunDiscovery = false;
+      let tasksToConsider: PlanTask[] = [];
 
-    if (conversationState.id) {
-      await updateConversationState(
-        conversationState.id,
-        conversationState.values,
-      );
-      logger.info(
-        {
-          insights: reflectionResult.keyInsights,
-          discoveries: conversationState.values.discoveries?.length || 0,
-          currentObjective: reflectionResult.currentObjective,
-        },
-        "world_state_updated_via_reflection_and_discovery",
-      );
-    }
+      if (createdMessage.conversation_id) {
+        const allMessages = await getMessagesByConversation(
+          createdMessage.conversation_id,
+          100,
+        );
+        const messageCount = allMessages?.length || 1;
 
-    // Step 5: Run planning agent in "next" mode to plan next iteration
-    logger.info("running_next_planning_for_future_iteration");
+        const discoveryConfig = getDiscoveryRunConfig(
+          messageCount,
+          conversationState.values.plan || [],
+          tasksToExecute,
+        );
 
-    // Clear old suggestions before generating new ones (ensures fresh planning)
-    conversationState.values.suggestedNextSteps = [];
+        shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
+        tasksToConsider = discoveryConfig.tasksToConsider;
+      }
 
-    const nextPlanningResult = await planningAgent({
-      state,
-      conversationState,
-      message: createdMessage,
-      mode: "next",
-    });
+      // Run reflection and discovery in parallel
+      const [reflectionResult, discoveryResult] = await Promise.all([
+        reflectionAgent({
+          conversationState,
+          message: createdMessage,
+          completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
+          hypothesis: hypothesisResult.hypothesis,
+        }),
+        shouldRunDiscovery
+          ? discoveryAgent({
+              conversationState,
+              message: createdMessage,
+              tasksToConsider,
+              hypothesis: hypothesisResult.hypothesis,
+            })
+          : Promise.resolve(null),
+      ]);
 
-    // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
-    if (nextPlanningResult.plan.length > 0) {
-      // Store as suggestions (without level - will be assigned when user confirms)
-      conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
+      // Update conversation state with reflection results
+      if (reflectionResult.objective) {
+        // Only update main objective if reflection detected a fundamental direction change
+        conversationState.values.objective = reflectionResult.objective;
+      }
+      conversationState.values.conversationTitle =
+        reflectionResult.conversationTitle;
+      conversationState.values.currentObjective =
+        reflectionResult.currentObjective;
+      conversationState.values.keyInsights = reflectionResult.keyInsights;
+      conversationState.values.methodology = reflectionResult.methodology;
 
-      // Update objective if provided
-      if (nextPlanningResult.currentObjective) {
-        conversationState.values.currentObjective =
-          nextPlanningResult.currentObjective;
+      // Update conversation state with discovery results if discovery ran
+      if (discoveryResult) {
+        conversationState.values.discoveries = discoveryResult.discoveries;
+        logger.info(
+          {
+            discoveryCount: discoveryResult.discoveries.length,
+          },
+          "discoveries_updated",
+        );
       }
 
       if (conversationState.id) {
@@ -879,81 +958,264 @@ These molecular changes align with established longevity pathways (Converging nu
         );
         logger.info(
           {
-            nextPlanningSteps: nextPlanningResult.plan.map(
-              (t) =>
-                `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
-            ),
-            nextObjective: nextPlanningResult.currentObjective,
+            insights: reflectionResult.keyInsights,
+            discoveries: conversationState.values.discoveries?.length || 0,
+            currentObjective: reflectionResult.currentObjective,
           },
-          "next_iteration_suggestions_saved",
+          "world_state_updated_via_reflection_and_discovery",
         );
       }
-    } else {
+
+      // Step 5: Run planning agent in "next" mode to plan next iteration
+      logger.info("running_next_planning_for_future_iteration");
+
+      // Clear old suggestions before generating new ones (ensures fresh planning)
+      conversationState.values.suggestedNextSteps = [];
+
+      const nextPlanningResult = await planningAgent({
+        state,
+        conversationState,
+        message: createdMessage,
+        mode: "next",
+        usageType: "deep-research",
+        researchMode,
+      });
+
+      // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
+      if (nextPlanningResult.plan.length > 0) {
+        // Store as suggestions (without level - will be assigned when user confirms)
+        conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
+
+        // Update objective if provided
+        if (nextPlanningResult.currentObjective) {
+          conversationState.values.currentObjective =
+            nextPlanningResult.currentObjective;
+        }
+
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+          logger.info(
+            {
+              nextPlanningSteps: nextPlanningResult.plan.map(
+                (t) =>
+                  `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`,
+              ),
+              nextObjective: nextPlanningResult.currentObjective,
+            },
+            "next_iteration_suggestions_saved",
+          );
+        }
+      } else {
+        logger.info(
+          "no_next_iteration_tasks_suggested_research_complete_or_awaiting_feedback",
+        );
+        // No suggested next steps means research is complete - exit loop
+        shouldContinueLoop = false;
+      }
+
+      // =========================================================================
+      // CONTINUE RESEARCH DECISION (before reply so we know if it's final)
+      // Decide whether to continue autonomously or ask user for feedback
+      // =========================================================================
+      let isFinal = true;
+      let willContinue = false;
+
+      if (
+        shouldContinueLoop &&
+        conversationState.values.suggestedNextSteps?.length &&
+        iterationCount < maxAutoIterations
+      ) {
+        const continueResult = await continueResearchAgent({
+          conversationState,
+          message: currentMessage,
+          completedTasks: tasksToExecute,
+          hypothesis: hypothesisResult.hypothesis,
+          suggestedNextSteps: conversationState.values.suggestedNextSteps,
+          iterationCount,
+          researchMode,
+        });
+
+        logger.info(
+          {
+            shouldContinue: continueResult.shouldContinue,
+            confidence: continueResult.confidence,
+            reasoning: continueResult.reasoning,
+            triggerReason: continueResult.triggerReason,
+            iterationCount,
+          },
+          "continue_research_decision",
+        );
+
+        if (continueResult.shouldContinue) {
+          isFinal = false;
+          willContinue = true;
+        } else {
+          shouldContinueLoop = false;
+          logger.info(
+            { triggerReason: continueResult.triggerReason, iterationCount },
+            "stopping_for_user_feedback",
+          );
+        }
+      } else {
+        // No suggested next steps - research complete, exit loop
+        shouldContinueLoop = false;
+      }
+
+      // =========================================================================
+      // GENERATE REPLY FOR THIS ITERATION
+      // Each iteration gets its own reply, saved to the current message
+      // =========================================================================
       logger.info(
-        "no_next_iteration_tasks_suggested_research_complete_or_awaiting_feedback",
+        { iterationCount, messageId: currentMessage.id, isFinal },
+        "generating_reply_for_iteration",
       );
-    }
 
-    // Step 6: Generate reply to user
-    logger.info("generating_reply_to_user");
+      // Get completed tasks from this session, limited to last 3 levels max
+      // This ensures reply covers work across continuations without overwhelming context
+      const sessionCompletedTasks = getSessionCompletedTasks(
+        conversationState.values.plan || [],
+        sessionStartLevel,
+        newLevel,
+      );
 
-    const { replyAgent } = await import("../../agents/reply");
+      logger.info(
+        {
+          sessionCompletedTasksCount: sessionCompletedTasks.length,
+          sessionStartLevel,
+          newLevel,
+          totalPlanTasks: (conversationState.values.plan || []).length,
+        },
+        "reply_tasks_filtered",
+      );
 
-    const replyResult = await replyAgent({
-      conversationState,
-      message: createdMessage,
-      completedMaxTasks: tasksToExecute,
-      hypothesis: hypothesisResult.hypothesis,
-      nextPlan: conversationState.values.suggestedNextSteps || [],
-    });
+      const replyResult = await replyAgent({
+        conversationState,
+        message: currentMessage,
+        completedMaxTasks: sessionCompletedTasks,
+        hypothesis: hypothesisResult.hypothesis,
+        nextPlan: conversationState.values.suggestedNextSteps || [],
+        isFinal,
+      });
+
+      // Update the current message with the reply and mark as complete
+      const iterationResponseTime = Date.now() - iterationStartTime;
+      await updateMessage(currentMessage.id, {
+        content: replyResult.reply,
+        summary: replyResult.summary,
+        response_time: iterationResponseTime, // Mark message as complete so UI displays it
+      });
+
+      logger.info(
+        {
+          messageId: currentMessage.id,
+          iterationCount,
+          contentLength: replyResult.reply.length,
+        },
+        "iteration_reply_saved",
+      );
+
+      // Notify client that message is ready
+      await notifyMessageUpdated(
+        `in-process-${currentMessage.id}`,
+        currentMessage.conversation_id,
+        currentMessage.id,
+      );
+
+      // =========================================================================
+      // PREPARE FOR NEXT ITERATION (if continuing)
+      // =========================================================================
+      if (willContinue) {
+        // CONTINUE: Promote suggestedNextSteps to plan for next iteration
+        skipPlanning = true; // Skip planning in next iteration - use promoted tasks
+
+        logger.info({ iterationCount }, "auto_continuing_to_next_iteration");
+
+        // Get current max level
+        const currentPlan = conversationState.values.plan || [];
+        const currentMaxLevel =
+          currentPlan.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : -1;
+        const nextLevel = currentMaxLevel + 1;
+
+        // Promote suggested steps to plan with new level and IDs
+        const promotedTasks = conversationState.values.suggestedNextSteps.map(
+          (task: PlanTask) => {
+            const taskId =
+              task.type === "ANALYSIS"
+                ? `ana-${nextLevel}`
+                : `lit-${nextLevel}`;
+            return {
+              ...task,
+              id: taskId,
+              level: nextLevel,
+              start: undefined,
+              end: undefined,
+              output: undefined,
+            };
+          },
+        );
+
+        // Add to plan and clear suggestions
+        conversationState.values.plan = [...currentPlan, ...promotedTasks];
+        conversationState.values.suggestedNextSteps = [];
+        conversationState.values.currentLevel = nextLevel;
+
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+          logger.info(
+            {
+              nextLevel,
+              promotedTaskCount: promotedTasks.length,
+            },
+            "suggested_steps_promoted_to_plan",
+          );
+        }
+
+        // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
+        // This allows each autonomous iteration to have its own message in the conversation
+        const agentMessage = await createContinuationMessage(
+          currentMessage,
+          stateRecord.id,
+        );
+
+        logger.info(
+          {
+            newMessageId: agentMessage.id,
+            previousMessageId: currentMessage.id,
+            iterationCount: iterationCount + 1,
+          },
+          "created_agent_continuation_message",
+        );
+
+        // Update currentMessage to point to the new message for next iteration
+        currentMessage = agentMessage;
+      }
+    } // END OF WHILE LOOP
+
+    // =========================================================================
+    // END OF AUTONOMOUS LOOP
+    // =========================================================================
+    logger.info(
+      { totalIterations: iterationCount, finalMessageId: currentMessage.id },
+      "autonomous_loop_completed",
+    );
 
     logger.info(
       {
-        reply: replyResult.reply,
-      },
-      "reply_generated",
-    );
-
-    // Step 7: Update the message with the reply content and summary
-    const { updateMessage } = await import("../../db/operations");
-
-    await updateMessage(createdMessage.id, {
-      content: replyResult.reply,
-      summary: replyResult.summary, // Save summary for efficient conversation context
-    });
-
-    logger.info(
-      {
-        messageId: createdMessage.id,
-        contentLength: replyResult.reply.length,
-        summaryLength: replyResult.summary?.length || 0,
-      },
-      "message_content_saved",
-    );
-
-    // Notify client that message is ready via WebSocket
-    // This is essential for the UI to display the response
-    const { notifyMessageUpdated } = await import("../../services/queue/notify");
-    await notifyMessageUpdated(
-      `in-process-${createdMessage.id}`, // Use a synthetic job ID for in-process mode
-      createdMessage.conversation_id,
-      createdMessage.id,
-    );
-
-    logger.info(
-      {
-        messageId: createdMessage.id,
+        originalMessageId: createdMessage.id,
+        finalMessageId: currentMessage.id,
         conversationId: createdMessage.conversation_id,
+        totalIterations: iterationCount,
       },
-      "message_updated_notification_sent",
+      "deep_research_completed",
     );
-
-    if (logger) {
-      logger.info(
-        { messageId: createdMessage.id },
-        "deep_research_completed",
-      );
-    }
   } catch (err) {
     logger.error(
       { err, messageId: createdMessage.id },
@@ -961,7 +1223,6 @@ These molecular changes align with established longevity pathways (Converging nu
     );
 
     // Update state to mark as failed
-    const { updateState } = await import("../../db/operations");
     await updateState(stateRecord.id, {
       ...stateRecord.values,
       error: err instanceof Error ? err.message : "Unknown error",

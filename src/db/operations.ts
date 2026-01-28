@@ -1,12 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import type { AnalysisArtifact, PlanTask } from "../types/core";
 import logger from "../utils/logger";
 import { walletAddressToUUID } from "../utils/uuid";
+import { getServiceClient } from "./client";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+// Use service client to bypass RLS - auth is verified by middleware
+const supabase = getServiceClient();
 
 export interface User {
   id?: string;
@@ -574,4 +572,48 @@ function cleanValues(values: any): any {
   }
 
   return cleanedValues;
+}
+
+// ============================================================================
+// Token Usage Operations
+// ============================================================================
+
+export type TokenUsageType = "chat" | "deep-research" | "paper-generation";
+
+export interface TokenUsage {
+  id?: string;
+  message_id?: string; // Nullable: set for chat/deep-research
+  paper_id?: string; // Nullable: set for paper-generation
+  type: TokenUsageType;
+  provider: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  duration_ms?: number;
+  created_at?: string;
+}
+
+/**
+ * Create a token usage record
+ * Either message_id or paper_id must be provided
+ */
+export async function createTokenUsage(
+  tokenUsage: Omit<TokenUsage, "id" | "created_at">
+): Promise<TokenUsage> {
+  // Validate that at least one reference is provided
+  if (!tokenUsage.message_id && !tokenUsage.paper_id) {
+    throw new Error("Either message_id or paper_id must be provided");
+  }
+
+  const { data, error } = await supabase
+    .from("token_usage")
+    .insert(tokenUsage)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+  return data;
 }

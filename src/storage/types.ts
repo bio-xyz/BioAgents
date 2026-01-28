@@ -2,6 +2,7 @@
  * Storage Provider Interface
  * Defines the contract for file storage backends (S3, Azure, etc.)
  */
+import { base } from "viem/chains";
 import { getConversationBasePath, getUploadPath } from "../storage";
 import logger from "../utils/logger";
 
@@ -76,22 +77,29 @@ export abstract class StorageProvider {
   ): Promise<string>;
 
   /**
-   * Download a file from a user's conversation storage
+   * Download a file from a user's conversation storage using a relative path
    * @param userId - ID of the user
    * @param conversationStateId - ID of the conversation state
-   * @param filename - Name of the file to fetch
-   * @returns
+   * @param relativePath - Relative path within conversation storage
+   * @returns The file content as a Buffer
    */
-  async fetchFileFromUserStorage(
+  async fetchFileByRelativePath(
     userId: string,
     conversationStateId: string,
-    filename: string,
+    relativePath: string,
   ): Promise<Buffer> {
     const basePath = getConversationBasePath(userId, conversationStateId);
-    const uploadPath = getUploadPath(filename);
-    const fullPath = `${basePath}/${uploadPath}`;
+    if (relativePath.startsWith(basePath)) {
+      logger.info(
+        { relativePath },
+        "fetching_file_by_relative_path_already_full_path",
+      );
+      return await this.download(relativePath);
+    }
 
-    logger.info({ filename, fullPath }, "fetching_file_from_storage");
+    const fullPath = `${basePath}/${relativePath}`;
+
+    logger.info({ relativePath, fullPath }, "fetching_file_by_relative_path");
 
     return await this.download(fullPath);
   }

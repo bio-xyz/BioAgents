@@ -51,7 +51,7 @@ export const chatRoute = new Elysia()
     {
       beforeHandle: [
         authResolver({
-          required: process.env.NODE_ENV === "production",
+          required: true, // Always require auth - no environment-based bypass
         }),
         rateLimitMiddleware("chat"),
       ],
@@ -126,8 +126,22 @@ async function chatStatusHandler(ctx: any) {
  * POST /api/chat/retry/:jobId
  */
 async function chatRetryHandler(ctx: any) {
-  const { params, set } = ctx;
+  const { params, set, request } = ctx;
   const { jobId } = params;
+
+  // SECURITY: Get authenticated user
+  const auth = (request as any).auth as AuthContext | undefined;
+
+  if (!auth?.userId) {
+    set.status = 401;
+    return {
+      ok: false,
+      error: "Authentication required",
+      message: "Please provide a valid JWT or API key",
+    };
+  }
+
+  const userId = auth.userId;
 
   const { isJobQueueEnabled } = await import("../services/queue/connection");
 
@@ -148,7 +162,20 @@ async function chatRetryHandler(ctx: any) {
     set.status = 404;
     return {
       ok: false,
-      error: "Job not found"
+      error: "Job not found",
+    };
+  }
+
+  // SECURITY: Verify the authenticated user owns this job
+  if (job.data.userId !== userId) {
+    logger.warn(
+      { jobId, requestedBy: userId, ownedBy: job.data.userId },
+      "chat_retry_ownership_mismatch"
+    );
+    set.status = 403;
+    return {
+      ok: false,
+      error: "Access denied: job belongs to another user",
     };
   }
 
@@ -171,6 +198,7 @@ async function chatRetryHandler(ctx: any) {
     logger.info(
       {
         jobId,
+        userId,
         previousAttempts: job.attemptsMade,
       },
       "job_manually_retried"
@@ -200,6 +228,7 @@ async function chatRetryHandler(ctx: any) {
 async function requiresHypothesis(
   question: string,
   literatureResults: string,
+  messageId?: string, // For token usage tracking
 ): Promise<boolean> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
@@ -252,6 +281,8 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
         },
       ],
       maxTokens: 10,
+      messageId,
+      usageType: "chat",
     });
 
     const answer = response.content.trim().toUpperCase();
@@ -617,6 +648,7 @@ export async function chatHandler(ctx: any) {
       conversationState,
       message: createdMessage,
       mode: "initial",
+      usageType: "chat",
     });
 
     const plan = planningResult.plan;
@@ -673,66 +705,72 @@ export async function chatHandler(ctx: any) {
       const useBioLiterature =
         process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
 
-      // Run OPENSCHOLAR
-      const openScholarPromise = literatureAgent({
-        objective: task.objective,
-        type: "OPENSCHOLAR",
-      }).then((result) => {
-        if (result.count && result.count > 0) {
-          task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-        }
-        logger.info(
-          {
-            taskObjective: task.objective,
-            outputLength: result.output.length,
-            count: result.count,
-            outputPreview: result.output.substring(0, 200),
-          },
-          "openscholar_completed",
-        );
-      });
+      // Build list of literature promises based on configured sources
+      const literaturePromises: Promise<void>[] = [];
 
-      // Optionally run BIOLIT when configured as the primary literature agent
-      const bioLiteraturePromise = useBioLiterature
-        ? literatureAgent({
-            objective: task.objective,
-            type: "BIOLIT",
-          }).then((result) => {
-            task.output += `BioLiterature results:\n${result.output}\n\n`;
-            logger.info(
-              {
-                taskObjective: task.objective,
-                outputLength: result.output.length,
-                outputPreview: result.output.substring(0, 200),
-              },
-              "bioliterature_completed",
-            );
-          })
-        : Promise.resolve();
+      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+      if (process.env.OPENSCHOLAR_API_URL) {
+        const openScholarPromise = literatureAgent({
+          objective: task.objective,
+          type: "OPENSCHOLAR",
+        }).then((result) => {
+          if (result.count && result.count > 0) {
+            task.output += `${result.output}\n\n`;
+          }
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              count: result.count,
+              outputPreview: result.output.substring(0, 200),
+            },
+            "openscholar_completed",
+          );
+        });
+        literaturePromises.push(openScholarPromise);
+      }
 
-      // Optionally run KNOWLEDGE
-      const knowledgePromise = literatureAgent({
-        objective: task.objective,
-        type: "KNOWLEDGE",
-      }).then((result) => {
-        if (result.count && result.count > 0) {
-          task.output += `Knowledge literature results:\n${result.output}\n\n`;
-        }
-        logger.info(
-          {
-            taskObjective: task.objective,
-            outputLength: result.output.length,
-            count: result.count,
-          },
-          "knowledge_completed",
-        );
-      });
+      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
+      if (useBioLiterature) {
+        const bioLiteraturePromise = literatureAgent({
+          objective: task.objective,
+          type: "BIOLIT",
+        }).then((result) => {
+          task.output += `${result.output}\n\n`;
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              outputPreview: result.output.substring(0, 200),
+            },
+            "bioliterature_completed",
+          );
+        });
+        literaturePromises.push(bioLiteraturePromise);
+      }
 
-      await Promise.all([
-        openScholarPromise,
-        bioLiteraturePromise,
-        knowledgePromise,
-      ]);
+      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+      if (process.env.KNOWLEDGE_DOCS_PATH) {
+        const knowledgePromise = literatureAgent({
+          objective: task.objective,
+          type: "KNOWLEDGE",
+        }).then((result) => {
+          if (result.count && result.count > 0) {
+            task.output += `${result.output}\n\n`;
+          }
+          logger.info(
+            {
+              taskObjective: task.objective,
+              outputLength: result.output.length,
+              count: result.count,
+            },
+            "knowledge_completed",
+          );
+        });
+        literaturePromises.push(knowledgePromise);
+      }
+
+      await Promise.all(literaturePromises);
 
       task.end = new Date().toISOString();
       completedTasks.push(task);
@@ -777,6 +815,7 @@ export async function chatHandler(ctx: any) {
     const needsHypothesis = await requiresHypothesis(
       message,
       allLiteratureOutput,
+      createdMessage.id, // Track token usage per message
     );
 
     logger.info(
@@ -927,6 +966,8 @@ export async function chatHandler(ctx: any) {
       },
       {
         maxTokens: 1024,
+        messageId: createdMessage.id,
+        usageType: "chat",
       },
     );
 

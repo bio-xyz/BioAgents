@@ -96,11 +96,18 @@ async function uploadFilesToEdison(
 
   for (const dataset of datasets) {
     try {
-      // Fetch file from storage
+      if (!dataset.path) {
+        logger.warn(
+          { filename: dataset.filename },
+          "skipping_file_no_artifact_path",
+        );
+        continue;
+      }
+
       const fileBuffer = await fetchFileBufferFromStorage(
-        dataset.filename,
         userId,
         conversationStateId,
+        dataset.path,
       );
 
       if (!fileBuffer) {
@@ -197,12 +204,12 @@ Note: Full dataset files have been uploaded and are available for analysis.`;
 }
 
 /**
- * Fetch file buffer from storage bucket (raw file content)
+ * Fetch file buffer from storage bucket using relative path
  */
 async function fetchFileBufferFromStorage(
-  filename: string,
   userId: string,
   conversationStateId: string,
+  relativePath: string,
 ): Promise<Buffer | null> {
   const storageProvider = getStorageProvider();
 
@@ -212,16 +219,14 @@ async function fetchFileBufferFromStorage(
   }
 
   try {
-    const buffer = await storageProvider.fetchFileFromUserStorage(
+    return await storageProvider.fetchFileByRelativePath(
       userId,
       conversationStateId,
-      filename,
+      relativePath,
     );
-
-    return buffer;
   } catch (error) {
     logger.error(
-      { error, filename, userId, conversationStateId },
+      { error, userId, conversationStateId, relativePath },
       "failed_to_download_file_from_storage",
     );
     throw error;

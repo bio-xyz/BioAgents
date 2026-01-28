@@ -5,11 +5,11 @@
  * compiles it to PDF, and uploads to storage.
  */
 
-import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { getServiceClient } from "../../db/client";
 import {
   getConversation,
   getConversationState,
@@ -23,6 +23,7 @@ import type {
   PlanTask,
 } from "../../types/core";
 import logger from "../../utils/logger";
+import type { PaperGenerationStage } from "../queue/types";
 import {
   generateBackgroundPrompt,
   generateDiscoverySectionPrompt,
@@ -50,19 +51,91 @@ import { extractDOICitations, extractDOIsFromText } from "./utils/doi";
 import { escapeLatex } from "./utils/escapeLatex";
 import { processInlineDOICitations } from "./utils/inlineDoiCitations";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+/**
+ * Sanitize a JSON string by escaping invalid backslash sequences.
+ * JSON only allows: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+ * LLMs often produce invalid sequences like \g, \p, \s from LaTeX or text.
+ */
+function sanitizeJsonString(jsonStr: string): string {
+  // Replace invalid escape sequences: any backslash not followed by valid escape chars
+  // Valid escapes: ", \, /, b, f, n, r, t, u (for \uXXXX)
+  return jsonStr.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+}
+
+/**
+ * Safely parse JSON from LLM response, handling invalid escape sequences
+ */
+function safeJsonParse<T = unknown>(jsonStr: string, context: string): T {
+  try {
+    return JSON.parse(jsonStr);
+  } catch (firstError) {
+    // Try with sanitized JSON
+    try {
+      const sanitized = sanitizeJsonString(jsonStr);
+      logger.warn(
+        {
+          context,
+          originalError:
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError),
+        },
+        "json_parse_sanitized",
+      );
+      return JSON.parse(sanitized);
+    } catch (secondError) {
+      // Log both errors and rethrow with context
+      logger.error(
+        {
+          context,
+          originalError:
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError),
+          sanitizedError:
+            secondError instanceof Error
+              ? secondError.message
+              : String(secondError),
+          jsonPreview: jsonStr.substring(0, 500),
+        },
+        "json_parse_failed_after_sanitization",
+      );
+      throw new Error(
+        `Failed to parse JSON for ${context}: ${secondError instanceof Error ? secondError.message : String(secondError)}`,
+      );
+    }
+  }
+}
+
+// Use service client to bypass RLS - auth is verified before calling this service
+const supabase = getServiceClient();
+
+/**
+ * Progress callback type for async paper generation
+ */
+export type ProgressCallback = (stage: PaperGenerationStage) => Promise<void>;
 
 /**
  * Main entry point: Generate paper from conversation
+ *
+ * @param conversationId - The conversation to generate a paper from
+ * @param userId - The user requesting the paper
+ * @param existingPaperId - Optional pre-created paper ID (for async queue flow)
+ * @param onProgress - Optional callback for progress updates (for async queue flow)
  */
 export async function generatePaperFromConversation(
   conversationId: string,
   userId: string,
+  existingPaperId?: string,
+  onProgress?: ProgressCallback,
 ): Promise<PaperGenerationResult> {
-  logger.info({ conversationId, userId }, "paper_generation_started");
+  logger.info(
+    { conversationId, userId, existingPaperId },
+    "paper_generation_started",
+  );
+
+  // Report validating progress
+  await onProgress?.("validating");
 
   const conversation = await getConversation(conversationId);
   if (!conversation) {
@@ -93,39 +166,61 @@ export async function generatePaperFromConversation(
   const user = await getUser(userId);
   const userEmail = user?.email;
 
-  // Generate authors string: User + Aubrai if user has real email, otherwise just Aubrai
+  // Generate authors string
   // Skip auto-generated emails (x402.local, temp.local, etc.)
   const isRealEmail =
     userEmail &&
     !userEmail.endsWith("@x402.local") &&
     !userEmail.endsWith("@temp.local") &&
     userEmail.includes("@");
-  const aubraiAuthor = "Aubrai (aubrai@bio.xyz)";
-  const authors = isRealEmail
-    ? `${userEmail} \\and ${aubraiAuthor}`
-    : aubraiAuthor;
+
+  // Build agent author string only if AGENT_NAME is configured
+  const agentName = process.env.AGENT_NAME;
+  const agentEmail = process.env.AGENT_EMAIL;
+  const agentAuthor = agentName
+    ? (agentEmail ? `${agentName} (${agentEmail})` : agentName)
+    : null;
+
+  // Determine final authors string
+  let authors: string;
+  if (isRealEmail && agentAuthor) {
+    authors = `${userEmail} \\and ${agentAuthor}`;
+  } else if (isRealEmail) {
+    authors = userEmail;
+  } else if (agentAuthor) {
+    authors = agentAuthor;
+  } else {
+    authors = "Anonymous";
+  }
 
   logger.info(
     { userId, hasEmail: !!userEmail, isRealEmail, authors },
     "paper_authors_determined",
   );
 
-  const paperId = randomUUID();
+  // Use existing paperId if provided (async flow), otherwise generate new one
+  const paperId = existingPaperId || randomUUID();
   const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
 
-  const { error: insertError } = await supabase.from("paper").insert({
-    id: paperId,
-    user_id: userId,
-    conversation_id: conversationId,
-    pdf_path: pdfPath,
-  });
+  // Only create paper record if not using an existing paperId (sync flow)
+  if (!existingPaperId) {
+    const { error: insertError } = await supabase.from("paper").insert({
+      id: paperId,
+      user_id: userId,
+      conversation_id: conversationId,
+      pdf_path: pdfPath,
+      status: "processing", // Will be updated to "completed" at the end
+    });
 
-  if (insertError) {
-    logger.error({ insertError }, "failed_to_create_paper_record");
-    throw new Error(`Failed to create paper record: ${insertError.message}`);
+    if (insertError) {
+      logger.error({ insertError }, "failed_to_create_paper_record");
+      throw new Error(`Failed to create paper record: ${insertError.message}`);
+    }
+
+    logger.info({ paperId }, "paper_record_created");
+  } else {
+    logger.info({ paperId: existingPaperId }, "using_existing_paper_record");
   }
-
-  logger.info({ paperId }, "paper_record_created");
 
   const workDir = path.join(os.tmpdir(), "paper", paperId);
   const latexDir = path.join(workDir, "latex");
@@ -151,7 +246,18 @@ export async function generatePaperFromConversation(
       .map((id) => tasksByJobId.get(id))
       .filter((task): task is PlanTask => task !== undefined);
 
-    const metadata = await generatePaperMetadata(state, evidenceTasks, authors);
+    // Report metadata progress
+    await onProgress?.("metadata");
+
+    const metadata = await generatePaperMetadata(
+      state,
+      evidenceTasks,
+      authors,
+      paperId,
+    );
+
+    // Report figures progress
+    await onProgress?.("figures");
 
     const allFigures: Map<number, FigureInfo[]> = new Map();
     for (let i = 0; i < discoveryContexts.length; i++) {
@@ -166,14 +272,21 @@ export async function generatePaperFromConversation(
       allFigures.set(i, figures);
     }
 
+    // Report discoveries progress
+    await onProgress?.("discoveries");
+
     const discoverySections = await generateDiscoverySectionsParallel(
       discoveryContexts,
       allFigures,
       figuresDir,
       3,
+      paperId,
     );
 
     let mainTexContent = assembleMainTex(metadata, discoverySections);
+
+    // Report bibliography progress
+    await onProgress?.("bibliography");
 
     const allDOIs = extractDOICitations(mainTexContent);
     const discoveryBibEntries = await resolveMultipleDOIs(allDOIs);
@@ -206,6 +319,9 @@ export async function generatePaperFromConversation(
     // Convert \cite{doi:10.xxx/yyy} to inline text (DOI: 10.xxx/yyy)
     mainTexContent = sanitizeUnresolvedCitations(mainTexContent);
 
+    // Report latex_assembly progress
+    await onProgress?.("latex_assembly");
+
     fs.writeFileSync(path.join(latexDir, "main.tex"), mainTexContent);
 
     const mergedBibContent = generateBibTeXFile(dedupedBibEntries);
@@ -223,6 +339,9 @@ export async function generatePaperFromConversation(
       citekeysInBib,
       missingInBib,
     );
+
+    // Report compilation progress
+    await onProgress?.("compilation");
 
     logger.info("compiling_latex");
     let compileResult = await compileLatexToPDF(workDir);
@@ -276,7 +395,10 @@ export async function generatePaperFromConversation(
             { errorLogs: finalErrorLogs },
             "latex_compilation_failed_even_without_citations",
           );
-          await supabase.from("paper").delete().eq("id", paperId);
+          // Only delete paper record if we created it (sync flow)
+          if (!existingPaperId) {
+            await supabase.from("paper").delete().eq("id", paperId);
+          }
           throw new Error(
             `LaTeX compilation failed (even without citations):\n${finalErrorLogs}`,
           );
@@ -313,7 +435,10 @@ export async function generatePaperFromConversation(
           if (!compileResult.success || !compileResult.pdfPath) {
             const errorLogs = extractLastLines(compileResult.logs, 200);
             logger.error({ errorLogs }, "latex_recompilation_failed");
-            await supabase.from("paper").delete().eq("id", paperId);
+            // Only delete paper record if we created it (sync flow)
+            if (!existingPaperId) {
+              await supabase.from("paper").delete().eq("id", paperId);
+            }
             throw new Error(`LaTeX recompilation failed:\n${errorLogs}`);
           }
         }
@@ -333,6 +458,9 @@ export async function generatePaperFromConversation(
       );
     }
 
+    // Report upload progress
+    await onProgress?.("upload");
+
     const storage = getStorageProvider();
     if (!storage) {
       throw new Error("Storage provider not available");
@@ -348,7 +476,22 @@ export async function generatePaperFromConversation(
     const pdfUrl = await storage.getPresignedUrl(pdfPath, 3600);
     const rawLatexUrl = await storage.getPresignedUrl(rawLatexPath, 3600);
 
+    // Report cleanup progress
+    await onProgress?.("cleanup");
+
     cleanupWorkDir(workDir);
+
+    // Update status to completed (sync flow only - async flow handled by worker)
+    if (!existingPaperId) {
+      const { error: updateError } = await supabase
+        .from("paper")
+        .update({ status: "completed" })
+        .eq("id", paperId);
+
+      if (updateError) {
+        logger.warn({ updateError, paperId }, "failed_to_update_paper_status");
+      }
+    }
 
     logger.info({ paperId }, "paper_generation_completed");
 
@@ -364,8 +507,11 @@ export async function generatePaperFromConversation(
     // Cleanup on error
     cleanupWorkDir(workDir);
 
-    // Delete paper record on error
-    await supabase.from("paper").delete().eq("id", paperId);
+    // Only delete paper record if we created it (sync flow)
+    // In async flow (existingPaperId provided), the worker handles status updates
+    if (!existingPaperId) {
+      await supabase.from("paper").delete().eq("id", paperId);
+    }
 
     logger.error(
       {
@@ -489,6 +635,7 @@ async function generatePaperMetadata(
   state: ConversationStateValues,
   evidenceTasks: PlanTask[],
   authors: string,
+  paperId?: string,
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
@@ -519,7 +666,9 @@ async function generatePaperMetadata(
     messages: [{ role: "user", content: frontMatterPrompt }],
     model: LLM_MODEL,
     temperature: 0.3,
-    maxTokens: 2000,
+    maxTokens: 3000,
+    paperId,
+    usageType: "paper-generation",
   });
 
   const frontMatterContent = frontMatterResponse.content || "";
@@ -532,7 +681,11 @@ async function generatePaperMetadata(
     );
   }
 
-  const frontMatterParsed = JSON.parse(frontMatterJsonMatch[0]);
+  const frontMatterParsed = safeJsonParse<{
+    title?: string;
+    abstract?: string;
+    researchSnapshot?: string;
+  }>(frontMatterJsonMatch[0], "front_matter");
 
   if (
     !frontMatterParsed.title ||
@@ -557,11 +710,12 @@ async function generatePaperMetadata(
     messages: [{ role: "user", content: backgroundPrompt }],
     model: LLM_MODEL,
     temperature: 0.3,
-    maxTokens: 3000,
+    maxTokens: 5000,
+    paperId,
+    usageType: "paper-generation",
   });
 
   const backgroundContent = backgroundResponse.content || "";
-
   // Parse background JSON response
   const backgroundJsonMatch = backgroundContent.match(/\{[\s\S]*\}/);
   if (!backgroundJsonMatch) {
@@ -570,7 +724,10 @@ async function generatePaperMetadata(
     );
   }
 
-  const backgroundParsed = JSON.parse(backgroundJsonMatch[0]);
+  const backgroundParsed = safeJsonParse<{
+    background?: string;
+    keyInsights?: string;
+  }>(backgroundJsonMatch[0], "background");
 
   if (!backgroundParsed.background) {
     throw new Error(
@@ -670,6 +827,7 @@ async function generateDiscoverySectionsParallel(
   allFigures: Map<number, FigureInfo[]>,
   figuresDir: string,
   maxConcurrency: number,
+  paperId?: string,
 ): Promise<DiscoverySection[]> {
   const results: DiscoverySection[] = [];
 
@@ -684,6 +842,7 @@ async function generateDiscoverySectionsParallel(
           ctx.allowedTasks,
           allFigures.get(ctx.index) || [],
           figuresDir,
+          paperId,
         ),
       ),
     );
@@ -700,6 +859,7 @@ async function generateDiscoverySection(
   allowedTasks: PlanTask[],
   figures: FigureInfo[],
   figuresDir: string,
+  paperId?: string,
 ): Promise<DiscoverySection> {
   const allowedDOIs: string[] = [];
   for (const task of allowedTasks) {
@@ -782,15 +942,40 @@ async function generateDiscoverySection(
 
       if (LLM_PROVIDER === "anthropic" && figures.length > 0) {
         // Anthropic vision support: encode images as base64
+        // Limits per Claude docs: 5MB per image, 100 images per request
+        const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+        const MAX_IMAGES_PER_REQUEST = 100;
+
         const contentBlocks: any[] = [];
         const figureSizes: Array<{ filename: string; sizeKB: number }> = [];
+        const skippedFigures: Array<{ filename: string; reason: string }> = [];
         let totalImageSizeBytes = 0;
+        let imageCount = 0;
 
         for (const figure of figures) {
+          // Enforce image count limit
+          if (imageCount >= MAX_IMAGES_PER_REQUEST) {
+            skippedFigures.push({
+              filename: figure.filename,
+              reason: `Exceeded ${MAX_IMAGES_PER_REQUEST} image limit`,
+            });
+            continue;
+          }
+
           try {
             const figPath = path.join(figuresDir, figure.filename);
             if (fs.existsSync(figPath)) {
               const imageBuffer = fs.readFileSync(figPath);
+
+              // Enforce per-image size limit (5MB)
+              if (imageBuffer.length > MAX_IMAGE_SIZE_BYTES) {
+                skippedFigures.push({
+                  filename: figure.filename,
+                  reason: `Exceeds 5MB limit (${(imageBuffer.length / (1024 * 1024)).toFixed(2)}MB)`,
+                });
+                continue;
+              }
+
               const base64Image = imageBuffer.toString("base64");
               const mediaType = getImageMediaType(figure.filename);
 
@@ -799,6 +984,7 @@ async function generateDiscoverySection(
                 sizeKB: Math.round(imageBuffer.length / 1024),
               });
               totalImageSizeBytes += imageBuffer.length;
+              imageCount++;
 
               contentBlocks.push({
                 type: "image",
@@ -815,6 +1001,10 @@ async function generateDiscoverySection(
               "failed_to_encode_image",
             );
           }
+        }
+
+        if (skippedFigures.length > 0) {
+          logger.warn({ skippedFigures }, "figures_skipped_due_to_limits");
         }
 
         // Log figure sizes being sent to LLM
@@ -856,7 +1046,9 @@ async function generateDiscoverySection(
         messages: [{ role: "user", content: messageContent }],
         model: LLM_MODEL,
         temperature: 0.3,
-        maxTokens: 6000,
+        maxTokens: 8000,
+        paperId,
+        usageType: "paper-generation",
       });
 
       const llmDurationMs = Date.now() - llmStartTime;
@@ -882,7 +1074,10 @@ async function generateDiscoverySection(
         );
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = safeJsonParse<{
+        sectionLatex?: string;
+        usedDois?: string[];
+      }>(jsonMatch[0], `discovery_section_${discoveryIndex}`);
 
       if (!parsed.sectionLatex) {
         throw new Error(

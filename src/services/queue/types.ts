@@ -31,12 +31,19 @@ export interface ChatJobData {
 /**
  * Job data for deep research queue
  * Sent to /api/deep-research/start, processed by deep-research worker
+ *
+ * Architecture: Iteration-per-job
+ * Each job executes exactly ONE iteration. If the research should continue,
+ * the worker enqueues the next iteration as a new job. This provides:
+ * - Atomic iterations (either fully complete or never started)
+ * - Better graceful shutdown (each job ~5-10 min instead of 20+ min)
+ * - Natural retry on failure (no partial state to rollback)
  */
 export interface DeepResearchJobData {
   // Same core fields as ChatJobData
   userId: string;
   conversationId: string;
-  messageId: string;
+  messageId: string; // The message THIS iteration writes to
   message: string;
   authMethod: AuthMethod;
   fileIds?: string[];
@@ -45,6 +52,17 @@ export interface DeepResearchJobData {
   // Deep research specific
   stateId: string;
   conversationStateId: string;
+
+  // Research mode - determines iteration behavior
+  // 'semi-autonomous' (default): Uses MAX_AUTO_ITERATIONS env var (default 5)
+  // 'fully-autonomous': Continues until research is done or hard cap of 20 iterations
+  // 'steering': Single iteration only, always asks user for feedback
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
+
+  // Iteration tracking (for job chaining)
+  iterationNumber: number; // 1, 2, 3... (starts at 1)
+  rootJobId?: string; // Original job ID for tracking the chain
+  isInitialIteration: boolean; // true for first iteration (runs planning), false for continuations (uses promoted tasks)
 }
 
 /**
@@ -99,6 +117,46 @@ export interface FileProcessJobResult {
 }
 
 /**
+ * Job data for paper generation queue
+ * Sent to /api/deep-research/conversations/:id/paper/async, processed by paper-generation worker
+ */
+export interface PaperGenerationJobData {
+  paperId: string;
+  userId: string;
+  conversationId: string;
+  authMethod: AuthMethod;
+  requestedAt: string;
+}
+
+/**
+ * Result returned by paper generation worker on completion
+ */
+export interface PaperGenerationJobResult {
+  paperId: string;
+  conversationId: string;
+  pdfPath: string;
+  pdfUrl?: string;
+  rawLatexUrl?: string;
+  status: "completed" | "failed";
+  error?: string;
+  responseTime: number;
+}
+
+/**
+ * Paper generation progress stages
+ */
+export type PaperGenerationStage =
+  | "validating"
+  | "metadata"
+  | "figures"
+  | "discoveries"
+  | "bibliography"
+  | "latex_assembly"
+  | "compilation"
+  | "upload"
+  | "cleanup";
+
+/**
  * Notification types sent via Redis Pub/Sub
  */
 export type NotificationType =
@@ -109,7 +167,11 @@ export type NotificationType =
   | "message:updated"
   | "state:updated"
   | "file:ready"
-  | "file:error";
+  | "file:error"
+  | "paper:started"
+  | "paper:progress"
+  | "paper:completed"
+  | "paper:failed";
 
 /**
  * Notification payload structure
@@ -122,6 +184,7 @@ export interface Notification {
   messageId?: string;
   stateId?: string;
   fileId?: string;
+  paperId?: string;
   progress?: { stage: string; percent: number };
   description?: string;
   error?: string;

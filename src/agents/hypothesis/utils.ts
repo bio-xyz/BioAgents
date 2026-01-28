@@ -15,6 +15,8 @@ export type HypothesisOptions = {
   thinking?: boolean;
   thinkingBudget?: number;
   mode?: "create" | "update";
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
 };
 
 export type HypothesisResult = {
@@ -81,6 +83,8 @@ export async function generateHypothesis(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 2048)
       : undefined,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

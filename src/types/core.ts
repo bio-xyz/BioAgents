@@ -35,7 +35,12 @@ export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
   objective: string;
-  datasets: Array<{ filename: string; id: string; description: string }>;
+  datasets: Array<{
+    filename: string;
+    id: string;
+    description: string;
+    path?: string;
+  }>;
   type: "LITERATURE" | "ANALYSIS";
   level?: number;
   start?: string;
@@ -57,12 +62,14 @@ export interface ConversationStateValues extends StateValues {
   discoveries?: Discovery[]; // Structured scientific discoveries (only in deep research mode)
   plan?: Array<PlanTask>; // Actual plan being executed or already executed
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
+  researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;
     id: string;
     description: string;
     path?: string;
     content?: string; // Parsed text content (for PDFs, extracted text; for CSVs, preview rows)
+    size?: number; // File size in bytes
   }>;
 }
 

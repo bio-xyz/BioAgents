@@ -1,9 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "./client";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!,
-);
+// Use service client to bypass RLS - auth is verified by middleware
+const supabase = getServiceClient();
 
 export interface X402PaymentRecord {
   id?: string;

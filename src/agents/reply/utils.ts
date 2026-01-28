@@ -3,7 +3,12 @@ import { LLM } from "../../llm/provider";
 import type { LLMRequest } from "../../llm/types";
 import type { Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { chatReplyPrompt, replyPrompt } from "./prompts";
+import {
+  answerModePrompt,
+  chatReplyPrompt,
+  replyModeClassifierPrompt,
+  reportModePrompt,
+} from "./prompts";
 
 export type UploadedDataset = {
   id: string;
@@ -22,6 +27,13 @@ export type ReplyContext = {
   methodology?: string;
   currentObjective?: string;
   uploadedDatasets?: UploadedDataset[];
+  // Conversation history for classifier context (handles "continue", "yes", etc.)
+  // Passed from replyAgent which fetches it internally
+  conversationHistory?: Array<{
+    question?: string;
+    summary?: string;
+    content?: string;
+  }>;
 };
 
 export type ReplyOptions = {
@@ -29,10 +41,106 @@ export type ReplyOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
+  isFinal?: boolean; // Whether this is the final reply (ask for feedback) or intermediate (research continues)
 };
 
 /**
+ * Format for conversation history entry
+ */
+type ConversationHistoryEntry = {
+  question?: string;
+  summary?: string;
+  content?: string;
+};
+
+/**
+ * Classify whether the user's query is a question (ANSWER mode) or directive (REPORT mode)
+ * Uses a fast/cheap LLM call to determine the response style
+ * Considers conversation history for context (e.g., "continue" after a question)
+ */
+async function classifyReplyMode(
+  question: string,
+  conversationHistory: ConversationHistoryEntry[] = [],
+): Promise<"ANSWER" | "REPORT"> {
+  const CLASSIFIER_LLM_PROVIDER: LLMProvider =
+    (process.env.CLASSIFIER_LLM_PROVIDER as LLMProvider) || "google";
+  const classifierModel = process.env.CLASSIFIER_LLM_MODEL || "gemini-2.5-pro";
+
+  const llmApiKey =
+    process.env[`${CLASSIFIER_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+
+  if (!llmApiKey) {
+    logger.warn(
+      { provider: CLASSIFIER_LLM_PROVIDER },
+      "No API key for classifier, defaulting to REPORT mode",
+    );
+    return "REPORT";
+  }
+
+  const llmProvider = new LLM({
+    name: CLASSIFIER_LLM_PROVIDER,
+    apiKey: llmApiKey,
+  });
+
+  // Format conversation history (use summary if available, fallback to truncated content)
+  const historyText =
+    conversationHistory.length > 0
+      ? conversationHistory
+          .map((msg) => {
+            const parts: string[] = [];
+            if (msg.question) {
+              parts.push(`User: ${msg.question}`);
+            }
+            // Use summary if available, otherwise truncate content
+            if (msg.summary) {
+              parts.push(`Assistant: ${msg.summary}`);
+            } else if (msg.content) {
+              const truncated =
+                msg.content.length > 300
+                  ? msg.content.substring(0, 300) + "..."
+                  : msg.content;
+              parts.push(`Assistant: ${truncated}`);
+            }
+            return parts.join("\n");
+          })
+          .join("\n\n")
+      : "No previous conversation.";
+
+  const prompt = replyModeClassifierPrompt
+    .replace("{{conversationHistory}}", historyText)
+    .replace("{{question}}", question);
+
+  try {
+    const response = await llmProvider.createChatCompletion({
+      model: classifierModel,
+      messages: [{ role: "user", content: prompt }],
+      maxTokens: 100,
+    });
+
+    const result = response.content.trim().toUpperCase();
+    const mode = result === "ANSWER" ? "ANSWER" : "REPORT";
+
+    return mode;
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        provider: CLASSIFIER_LLM_PROVIDER,
+        model: classifierModel,
+      },
+      "reply_mode_classification_failed",
+    );
+    // Default to REPORT mode on error
+    return "REPORT";
+  }
+}
+
+/**
  * Generate user-facing reply based on completed work and next plan
+ * Uses classifier to determine ANSWER vs REPORT mode
  */
 export async function generateReply(
   question: string,
@@ -40,6 +148,20 @@ export async function generateReply(
   options: ReplyOptions = {},
 ): Promise<string> {
   const model = process.env.REPLY_LLM_MODEL || "gemini-2.5-pro";
+
+  // 1. Determine reply mode
+  // - Intermediate replies (isFinal=false): Always REPORT (progress update)
+  // - Final replies (isFinal=true): Use classifier to decide ANSWER vs REPORT
+  let mode: "ANSWER" | "REPORT";
+  if (options.isFinal === false) {
+    mode = "REPORT"; // Intermediate replies are always progress reports
+    logger.info(
+      { mode: "REPORT", reason: "intermediate_reply" },
+      "skipping_classification_for_intermediate",
+    );
+  } else {
+    mode = await classifyReplyMode(question, context.conversationHistory || []);
+  }
 
   // Format completed tasks
   const completedTasksText = context.completedTasks
@@ -85,20 +207,44 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
           .join("\n\n")
       : "No formalized scientific discoveries yet. They will appear here as we progress our research.";
 
-  // Build the prompt
-  // Note: uploadedDatasets not included - deep research analyzes files via ANALYSIS tasks
-  // Note: keyInsights not included - shown separately in UI above the message
-  const replyInstruction = replyPrompt
-    .replace("{{question}}", question)
-    .replace("{{completedTasks}}", completedTasksText)
-    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
-    .replace("{{nextPlan}}", nextPlanText)
-    .replace("{{discoveries}}", discoveriesText)
-    .replace("{{methodology}}", context.methodology || "Not specified")
-    .replace(
-      "{{currentObjective}}",
-      context.currentObjective || "Not specified",
-    );
+  // 2. Select prompt based on mode
+  let replyInstruction: string;
+
+  if (mode === "ANSWER") {
+    // ANSWER mode - direct answer format with internal fallback
+    logger.info({ mode: "ANSWER" }, "using_answer_mode_prompt"); // DEBUG
+    replyInstruction = answerModePrompt
+      .replace("{{question}}", question)
+      .replace("{{discoveries}}", discoveriesText)
+      .replace(
+        "{{hypothesis}}",
+        context.hypothesis || "No hypothesis generated",
+      )
+      .replace("{{completedTasks}}", completedTasksText)
+      .replace("{{nextPlan}}", nextPlanText);
+  } else {
+    // REPORT mode - structured progress report format
+    logger.info({ mode: "REPORT" }, "using_report_mode_prompt"); // DEBUG
+    replyInstruction = reportModePrompt
+      .replace("{{question}}", question)
+      .replace("{{completedTasks}}", completedTasksText)
+      .replace(
+        "{{hypothesis}}",
+        context.hypothesis || "No hypothesis generated",
+      )
+      .replace("{{nextPlan}}", nextPlanText)
+      .replace("{{discoveries}}", discoveriesText)
+      .replace("{{methodology}}", context.methodology || "Not specified")
+      .replace(
+        "{{currentObjective}}",
+        context.currentObjective || "Not specified",
+      );
+  }
+
+  // For intermediate replies (research will auto-continue), don't ask for feedback
+  if (options.isFinal === false) {
+    replyInstruction += `\n\nIMPORTANT: This is an intermediate reply - the research will automatically continue to the next iteration. Do NOT ask the user for feedback or approval. Instead of ending with "Let me know if you'd like me to proceed...", end with a brief note like:\n\n---\n\n**Continuing research...**`;
+  }
 
   const REPLY_LLM_PROVIDER: LLMProvider =
     (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
@@ -128,6 +274,8 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
       ? (options.thinkingBudget ?? 1024)
       : undefined,
     systemInstruction: character.system,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {
@@ -138,6 +286,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
         replyLength: response.content.length,
         completedTaskCount: context.completedTasks.length,
         nextPlanCount: context.nextPlan.length,
+        replyMode: mode,
       },
       "reply_generated",
     );
@@ -235,6 +384,8 @@ export async function generateChatReply(
       ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
       : undefined,
     systemInstruction: character.system,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {

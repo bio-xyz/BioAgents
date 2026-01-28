@@ -7,6 +7,7 @@ import logger from "../../utils/logger";
 import { reflectOnWorld, type ReflectionDoc } from "./utils";
 
 type ReflectionResult = {
+  objective?: string; // Only set if research direction fundamentally changed
   conversationTitle?: string;
   currentObjective?: string;
   keyInsights: string[];
@@ -137,7 +138,14 @@ export async function reflectionAgent(input: {
       {
         maxTokens: 4000,
         thinking: true,
-        thinkingBudget: 2048,
+        thinkingBudget: 4096,
+        messageId: message.id,
+        usageType: "deep-research",
+        // Pass existing values to preserve on parse failure
+        existingObjective: conversationState.values.currentObjective,
+        existingInsights: conversationState.values.keyInsights,
+        existingMethodology: conversationState.values.methodology,
+        existingTitle: conversationState.values.conversationTitle,
       },
     );
 

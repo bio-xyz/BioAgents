@@ -2,6 +2,39 @@
 
 An advanced AI agent framework for biological and scientific research. BioAgents provides powerful conversational AI capabilities with specialized knowledge in biology, life sciences, and scientific research methodologies.
 
+## State-of-the-Art Analysis Agent
+
+The BioAgents analysis agent achieves state-of-the-art performance on the BixBench benchmark, outperforming all existing solutions:
+
+![BioAgents Analysis Benchmark Results](https://ai-bio-xyz-flame.vercel.app/blog/bixbench_oa.png)
+
+| Evaluation Mode | Score |
+|-----------------|-------|
+| Open-Answer | **48.78%** |
+| Multiple-Choice (with refusal) | **55.12%** |
+| Multiple-Choice (without refusal) | **64.39%** |
+
+These results outperform Kepler, GPT-5, and others across all evaluation modes.
+
+**Learn more:**
+- [Introducing BioAgents](http://ai.bio.xyz/blog/introducing-bios) - Detailed blog post about our literature and analysis agents
+- [Scientific Paper (arXiv)](https://arxiv.org/abs/2601.12542) - Full technical details and methodology
+
+## Configurable Research Agents
+
+BioAgents allows you to choose your primary literature and analysis agents. While multiple backends are supported, **BIO** is the recommended default:
+
+| Agent Type | Primary (BIO) | Alternative |
+|------------|---------------|-------------|
+| **Literature** | BioAgents Literature API - semantic search with LLM reranking | OpenScholar, Edison |
+| **Analysis** | BioAgents Data Analysis - state-of-the-art benchmark performance | Edison |
+
+Configure your preferred agents in `.env`:
+```bash
+PRIMARY_LITERATURE_AGENT=bio    # or openscholar, edison
+PRIMARY_ANALYSIS_AGENT=bio      # or edison
+```
+
 ## Setup
 
 Check out [SETUP.md](documentation/docs/SETUP.md)
@@ -16,10 +49,12 @@ The system operates through two main routes:
 - **[/api/deep-research](src/routes/deep-research/)** - Deep research mode with iterative hypothesis-driven investigation
 
 **Chat diagram**
-<img width="858" height="142" alt="image" src="https://github.com/user-attachments/assets/f6f8e85c-c975-4894-8268-017ed4ff33ce" />
+<img width="880" height="141" alt="image" src="https://github.com/user-attachments/assets/21493a0a-4401-4bb5-b1e7-55f9ae5e6db4" />
+
 
 **Deep research diagram**
-<img width="1274" height="316" alt="image" src="https://github.com/user-attachments/assets/a859e30c-49f4-4e4a-bd39-bb0722ef43d7" />
+<img width="1999" height="878" alt="image" src="https://github.com/user-attachments/assets/87afd02c-9476-45d0-8ac0-66ac8b590e35" />
+
 
 Both routes use the same agent architecture but differ in their orchestration and iteration patterns.
 

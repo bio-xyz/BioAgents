@@ -1,4 +1,5 @@
 import type { BioLiteratureMode } from ".";
+import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
@@ -126,22 +127,35 @@ async function pollBioLiteratureJob(
   apiKey: string,
   jobId: string,
 ): Promise<BioLiteratureResponse> {
-  const MAX_WAIT_TIME = 60 * 60 * 1000; // 60 minutes
+  const timeoutMinutes = parseInt(
+    process.env.BIO_LITERATURE_TASK_TIMEOUT_MINUTES || "60",
+    10,
+  );
+  const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 10000; // 10 seconds
   const startTime = Date.now();
 
   while (true) {
     if (Date.now() - startTime > MAX_WAIT_TIME) {
-      throw new Error(`BioLiterature job ${jobId} timed out after 60 minutes`);
+      throw new Error(
+        `BioLiterature job ${jobId} timed out after ${timeoutMinutes} minutes`,
+      );
     }
 
-    const response = await fetch(`${baseUrl}/query/jobs/${jobId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
+    const { response } = await fetchWithRetry(
+      `${baseUrl}/query/jobs/${jobId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
       },
-    });
+      {
+        onRetry: (attempt, error) =>
+          logger.warn({ attempt, jobId, error: error.message }, "bioliterature_poll_retry"),
+      },
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -160,7 +174,7 @@ async function pollBioLiteratureJob(
 
     const answer = extractAnswer(jobData);
 
-    logger.debug(
+    logger.info(
       { jobId, status, hasAnswer: Boolean(answer) },
       "bioliterature_deep_poll",
     );
@@ -200,20 +214,27 @@ export async function searchBioLiterature(
   const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
   const endpoint = `${baseUrl}/query`;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": BIO_LIT_AGENT_API_KEY,
+  const { response } = await fetchWithRetry(
+    endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": BIO_LIT_AGENT_API_KEY,
+      },
+      body: JSON.stringify({
+        question: objective,
+        max_results: 20,
+        per_source_limit: 5,
+        sources: ["arxiv", "pubmed", "clinical-trials"],
+        mode,
+      }),
     },
-    body: JSON.stringify({
-      question: objective,
-      max_results: 20,
-      per_source_limit: 5,
-      sources: ["arxiv", "pubmed", "clinical-trials"],
-      mode,
-    }),
-  });
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, objective, error: error.message }, "bioliterature_search_retry"),
+    },
+  );
 
   if (!response.ok) {
     const errorText = await response.text();

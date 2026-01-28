@@ -14,10 +14,18 @@ export type ReflectionOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudget?: number;
+  messageId?: string; // For token usage tracking
+  usageType?: "chat" | "deep-research" | "paper-generation";
+  // Existing values to preserve on parse failure
+  existingObjective?: string;
+  existingInsights?: string[];
+  existingMethodology?: string;
+  existingTitle?: string;
 };
 
 export type ReflectionResult = {
   text: {
+    objective?: string; // Only set if research direction fundamentally changed
     conversationTitle?: string;
     currentObjective?: string;
     keyInsights: string[];
@@ -76,6 +84,8 @@ export async function reflectOnWorld(
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 2048)
       : undefined,
+    messageId: options.messageId,
+    usageType: options.usageType,
   };
 
   try {
@@ -95,7 +105,22 @@ export async function reflectOnWorld(
         /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
       );
       const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
-      parsedResponse = JSON.parse(jsonString);
+      try {
+        parsedResponse = JSON.parse(jsonString);
+      } catch {
+        logger.warn(
+          { content: response.content.substring(0, 300) },
+          "reflection_json_parse_failed"
+        );
+        // Preserve existing values from conversation state
+        parsedResponse = {
+          currentObjective: options.existingObjective || "",
+          keyInsights: options.existingInsights || [],
+          discoveries: [],
+          methodology: options.existingMethodology || "",
+          conversationTitle: options.existingTitle || "",
+        };
+      }
     }
 
     // Validate required fields
@@ -120,6 +145,7 @@ export async function reflectOnWorld(
 
     return {
       text: {
+        objective: parsedResponse.objective, // Only present if direction fundamentally changed
         conversationTitle: parsedResponse.conversationTitle,
         currentObjective: parsedResponse.currentObjective,
         keyInsights: parsedResponse.keyInsights,

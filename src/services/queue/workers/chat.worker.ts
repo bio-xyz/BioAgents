@@ -6,18 +6,18 @@
  * but extracted to run in a separate worker process.
  */
 
-import { Worker, Job } from "bullmq";
+import { Job, Worker } from "bullmq";
+import type { ConversationState, PlanTask, State } from "../../../types/core";
+import logger from "../../../utils/logger";
 import { getBullMQConnection } from "../connection";
 import {
-  notifyJobStarted,
-  notifyJobProgress,
   notifyJobCompleted,
   notifyJobFailed,
+  notifyJobProgress,
+  notifyJobStarted,
   notifyMessageUpdated,
 } from "../notify";
 import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
-import type { ConversationState, PlanTask, State } from "../../../types/core";
-import logger from "../../../utils/logger";
 
 /**
  * Process a chat job
@@ -49,8 +49,13 @@ async function processChatJob(
 
   try {
     // Import required modules
-    const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
-      await import("../../../db/operations");
+    const {
+      getMessage,
+      getState,
+      getConversationState,
+      updateConversationState,
+      updateMessage,
+    } = await import("../../../db/operations");
     const { updateMessageResponseTime } = await import("../../chat/tools");
 
     // Get message record (already created by route handler)
@@ -85,7 +90,8 @@ async function processChatJob(
 
     // Wait for any pending file processing jobs BEFORE planning
     // This ensures files uploaded with the chat message are available
-    const { getPendingFileIds, getFileStatus } = await import("../../files/status");
+    const { getPendingFileIds, getFileStatus } =
+      await import("../../files/status");
     const { getFileProcessQueue } = await import("../queues");
 
     const conversationStateId = conversationState.id;
@@ -119,7 +125,12 @@ async function processChatJob(
               !fileJob // Job doesn't exist (already completed/cleaned)
             ) {
               logger.info(
-                { jobId: job.id, fileId, fileJobState, fileStatus: fileStatus?.status },
+                {
+                  jobId: job.id,
+                  fileId,
+                  fileJobState,
+                  fileStatus: fileStatus?.status,
+                },
                 "chat_job_file_ready",
               );
               break;
@@ -127,7 +138,12 @@ async function processChatJob(
 
             if (fileJobState === "failed" || fileStatus?.status === "error") {
               logger.warn(
-                { jobId: job.id, fileId, fileJobState, fileStatus: fileStatus?.status },
+                {
+                  jobId: job.id,
+                  fileId,
+                  fileJobState,
+                  fileStatus: fileStatus?.status,
+                },
                 "chat_job_file_failed_continuing",
               );
               break;
@@ -139,11 +155,16 @@ async function processChatJob(
         }
 
         // Refresh conversation state to get updated uploadedDatasets
-        const freshConversationState = await getConversationState(conversationStateId);
+        const freshConversationState =
+          await getConversationState(conversationStateId);
         if (freshConversationState) {
           conversationState.values = freshConversationState.values;
           logger.info(
-            { jobId: job.id, uploadedDatasetsCount: freshConversationState.values.uploadedDatasets?.length || 0 },
+            {
+              jobId: job.id,
+              uploadedDatasetsCount:
+                freshConversationState.values.uploadedDatasets?.length || 0,
+            },
             "chat_job_refreshed_conversation_state_for_planning",
           );
         }
@@ -164,6 +185,7 @@ async function processChatJob(
       conversationState,
       message: messageRecord,
       mode: "initial",
+      usageType: "chat",
     });
 
     const plan = planningResult.plan;
@@ -181,7 +203,10 @@ async function processChatJob(
     );
 
     // Update progress: Literature
-    await job.updateProgress({ stage: "literature", percent: 30 } as JobProgress);
+    await job.updateProgress({
+      stage: "literature",
+      percent: 30,
+    } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "literature", 30);
 
     // Step 2: Execute literature tasks
@@ -195,31 +220,43 @@ async function processChatJob(
       const useBioLiterature =
         process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
 
-      // Run literature searches in parallel
-      const openScholarPromise = literatureAgent({
-        objective: task.objective,
-        type: "OPENSCHOLAR",
-      }).then((result) => {
-        task.output += `OpenScholar literature results:\n${result.output}\n\n`;
-      });
+      // Build list of literature promises based on configured sources
+      const literaturePromises: Promise<void>[] = [];
 
-      const bioLiteraturePromise = useBioLiterature
-        ? literatureAgent({
-            objective: task.objective,
-            type: "BIOLIT",
-          }).then((result) => {
-            task.output += `BioLiterature results:\n${result.output}\n\n`;
-          })
-        : Promise.resolve();
+      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
+      if (process.env.OPENSCHOLAR_API_URL) {
+        const openScholarPromise = literatureAgent({
+          objective: task.objective,
+          type: "OPENSCHOLAR",
+        }).then((result) => {
+          task.output += `${result.output}\n\n`;
+        });
+        literaturePromises.push(openScholarPromise);
+      }
 
-      const knowledgePromise = literatureAgent({
-        objective: task.objective,
-        type: "KNOWLEDGE",
-      }).then((result) => {
-        task.output += `Knowledge literature results:\n${result.output}\n\n`;
-      });
+      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
+      if (useBioLiterature) {
+        const bioLiteraturePromise = literatureAgent({
+          objective: task.objective,
+          type: "BIOLIT",
+        }).then((result) => {
+          task.output += `${result.output}\n\n`;
+        });
+        literaturePromises.push(bioLiteraturePromise);
+      }
 
-      await Promise.all([openScholarPromise, bioLiteraturePromise, knowledgePromise]);
+      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
+      if (process.env.KNOWLEDGE_DOCS_PATH) {
+        const knowledgePromise = literatureAgent({
+          objective: task.objective,
+          type: "KNOWLEDGE",
+        }).then((result) => {
+          task.output += `${result.output}\n\n`;
+        });
+        literaturePromises.push(knowledgePromise);
+      }
+
+      await Promise.all(literaturePromises);
 
       task.end = new Date().toISOString();
       completedTasks.push(task);
@@ -231,12 +268,21 @@ async function processChatJob(
     );
 
     // Update progress: Hypothesis
-    await job.updateProgress({ stage: "hypothesis", percent: 60 } as JobProgress);
+    await job.updateProgress({
+      stage: "hypothesis",
+      percent: 60,
+    } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "hypothesis", 60);
 
     // Step 3: Check if hypothesis is needed
-    const allLiteratureOutput = completedTasks.map((t) => t.output).join("\n\n");
-    const needsHypothesis = await checkRequiresHypothesis(message, allLiteratureOutput);
+    const allLiteratureOutput = completedTasks
+      .map((t) => t.output)
+      .join("\n\n");
+    const needsHypothesis = await checkRequiresHypothesis(
+      message,
+      allLiteratureOutput,
+      messageId,
+    );
 
     let hypothesisText: string | undefined;
 
@@ -257,7 +303,10 @@ async function processChatJob(
       conversationState.values.currentHypothesis = hypothesisText;
 
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
       }
 
       // Step 5: Run reflection agent
@@ -273,13 +322,16 @@ async function processChatJob(
       });
 
       // Update conversation state with reflection results
-      conversationState.values.currentObjective = reflectionResult.currentObjective;
+      conversationState.values.currentObjective =
+        reflectionResult.currentObjective;
       conversationState.values.keyInsights = reflectionResult.keyInsights;
-      conversationState.values.discoveries = reflectionResult.discoveries;
       conversationState.values.methodology = reflectionResult.methodology;
 
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
       }
     }
 
@@ -294,16 +346,19 @@ async function processChatJob(
 
     // Log uploaded datasets info for debugging
     const uploadedDatasets = conversationState.values.uploadedDatasets || [];
-    logger.info({
-      jobId: job.id,
-      uploadedDatasetsCount: uploadedDatasets.length,
-      datasetsInfo: uploadedDatasets.map((d: any) => ({
-        filename: d.filename,
-        hasContent: !!d.content,
-        contentLength: d.content?.length || 0,
-        contentPreview: d.content?.slice(0, 100) || "no content",
-      })),
-    }, "chat_job_uploaded_datasets");
+    logger.info(
+      {
+        jobId: job.id,
+        uploadedDatasetsCount: uploadedDatasets.length,
+        datasetsInfo: uploadedDatasets.map((d: any) => ({
+          filename: d.filename,
+          hasContent: !!d.content,
+          contentLength: d.content?.length || 0,
+          contentPreview: d.content?.slice(0, 100) || "no content",
+        })),
+      },
+      "chat_job_uploaded_datasets",
+    );
 
     const replyText = await generateChatReply(
       message,
@@ -319,6 +374,8 @@ async function processChatJob(
       },
       {
         maxTokens: 1024,
+        messageId,
+        usageType: "chat",
       },
     );
 
@@ -378,6 +435,7 @@ async function processChatJob(
 async function checkRequiresHypothesis(
   question: string,
   literatureResults: string,
+  messageId?: string, // For token usage tracking
 ): Promise<boolean> {
   const { LLM } = await import("../../../llm/provider");
 
@@ -418,6 +476,8 @@ Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
       model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
       messages: [{ role: "user" as const, content: prompt }],
       maxTokens: 10,
+      messageId,
+      usageType: "chat",
     });
 
     const answer = response.content.trim().toUpperCase();
@@ -440,8 +500,11 @@ export function startChatWorker(): Worker {
     {
       connection: getBullMQConnection(),
       concurrency,
-      lockDuration: 120000, // 2 minutes
-      stalledInterval: 30000, // Check stalled jobs every 30s
+      // Chat jobs typically complete in 1-3 minutes
+      // lockRenewTime must be significantly less than lockDuration (1/5 ratio)
+      lockDuration: 300000, // 5 minutes
+      lockRenewTime: 60000, // 1 minute - renew well before lock expires
+      stalledInterval: 120000, // 2 minutes
     },
   );
 
