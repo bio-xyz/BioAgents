@@ -791,6 +791,40 @@ async function processDeepResearchJob(
     // Notify: Job completed
     await notifyJobCompleted(job.id!, conversationId, currentMessage.id, stateId);
 
+    // Complete credits when research is truly done (final iteration)
+    if (isFinal) {
+      try {
+        const { getServiceClient } = await import("../../../db/client");
+        const supabase = getServiceClient();
+
+        // Look up Privy ID from database user ID (credits are keyed by Privy ID)
+        const { data: userData } = await supabase
+          .from('users')
+          .select('privy_id')
+          .eq('id', userId)
+          .single();
+
+        const privyId = userData?.privy_id;
+        if (!privyId) {
+          logger.warn({ userId }, "credit_completion_skipped_no_privy_id");
+        } else {
+          const { data, error } = await supabase.rpc('complete_deep_research_job', {
+            p_user_id: privyId,
+            p_job_id: job.data.rootJobId || job.id,
+            p_final_iterations: iterationNumber,
+          });
+
+          if (error) {
+            logger.error({ error, privyId }, "credit_completion_failed");
+          } else {
+            logger.info({ refunded: data?.refunded, iterations: iterationNumber, privyId }, "credits_completed");
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, "credit_completion_error");
+      }
+    }
+
     return {
       messageId: currentMessage.id,
       status: "completed",
@@ -819,6 +853,33 @@ async function processDeepResearchJob(
 
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
+
+        // Refund credits on final failure
+        const { getServiceClient } = await import("../../../db/client");
+        const supabase = getServiceClient();
+
+        // Look up Privy ID from database user ID (credits are keyed by Privy ID)
+        const { data: userData } = await supabase
+          .from('users')
+          .select('privy_id')
+          .eq('id', userId)
+          .single();
+
+        const privyId = userData?.privy_id;
+        if (!privyId) {
+          logger.warn({ userId }, "credit_refund_skipped_no_privy_id");
+        } else {
+          const { data, error: refundError } = await supabase.rpc('refund_deep_research_credits', {
+            p_user_id: privyId,
+            p_job_id: job.data.rootJobId || job.id,
+          });
+
+          if (refundError) {
+            logger.error({ refundError, privyId }, "credit_refund_failed");
+          } else {
+            logger.info({ refunded: data?.refunded, privyId }, "credits_refunded_on_failure");
+          }
+        }
       } catch (updateErr) {
         logger.error({ updateErr }, "failed_to_update_state_on_error");
       }
