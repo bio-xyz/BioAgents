@@ -1080,6 +1080,16 @@ These molecular changes align with established longevity pathways (Converging nu
         newLevel,
       );
 
+      logger.info(
+        {
+          sessionCompletedTasksCount: sessionCompletedTasks.length,
+          sessionStartLevel,
+          newLevel,
+          totalPlanTasks: (conversationState.values.plan || []).length,
+        },
+        "reply_tasks_filtered",
+      );
+
       const replyResult = await replyAgent({
         conversationState,
         message: currentMessage,

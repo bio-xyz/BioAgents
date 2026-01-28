@@ -617,6 +617,17 @@ async function processDeepResearchJob(
       newLevel,
     );
 
+    logger.info(
+      {
+        jobId: job.id,
+        sessionCompletedTasksCount: sessionCompletedTasks.length,
+        sessionStartLevel,
+        newLevel,
+        totalPlanTasks: (conversationState.values.plan || []).length,
+      },
+      "reply_tasks_filtered",
+    );
+
     const replyResult = await replyAgent({
       conversationState,
       message: currentMessage,
