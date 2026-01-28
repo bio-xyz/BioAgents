@@ -115,9 +115,9 @@ services:
 
     restart: unless-stopped
 
-    depends_on:
-      redis:
-        condition: service_healthy
+    # Note: depends_on removed to allow using external REDIS_URL
+    # If using local redis, it will auto-reconnect when redis becomes available
+    # If using external REDIS_URL (set in .env), local redis is ignored
 
     healthcheck:
       test:
@@ -136,6 +136,9 @@ services:
   # ==========================================================================
   # Redis - Message broker for BullMQ job queue
   # ==========================================================================
+  # NOTE: If using external Redis (set REDIS_URL in .env), this local redis
+  # will still start but won't be used. The API connects to whatever REDIS_URL points to.
+  # To disable local redis entirely, comment out this service in Coolify.
   redis:
     image: redis:7-alpine
     container_name: bioagents-redis
