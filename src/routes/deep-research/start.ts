@@ -1025,7 +1025,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       if (
         shouldContinueLoop &&
-        conversationState.values.suggestedNextSteps?.length
+        conversationState.values.suggestedNextSteps?.length &&
+        iterationCount < maxAutoIterations
       ) {
         const continueResult = await continueResearchAgent({
           conversationState,
@@ -1078,6 +1079,16 @@ These molecular changes align with established longevity pathways (Converging nu
         conversationState.values.plan || [],
         sessionStartLevel,
         newLevel,
+      );
+
+      logger.info(
+        {
+          sessionCompletedTasksCount: sessionCompletedTasks.length,
+          sessionStartLevel,
+          newLevel,
+          totalPlanTasks: (conversationState.values.plan || []).length,
+        },
+        "reply_tasks_filtered",
       );
 
       const replyResult = await replyAgent({
