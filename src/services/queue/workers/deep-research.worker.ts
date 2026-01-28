@@ -811,11 +811,11 @@ async function processDeepResearchJob(
         // Look up Privy ID from database user ID (credits are keyed by Privy ID)
         const { data: userData } = await supabase
           .from('users')
-          .select('privy_id')
+          .select('user_id')
           .eq('id', userId)
           .single();
 
-        const privyId = userData?.privy_id;
+        const privyId = userData?.user_id;
         if (!privyId) {
           logger.warn({ userId }, "credit_completion_skipped_no_privy_id");
         } else {
@@ -872,11 +872,11 @@ async function processDeepResearchJob(
         // Look up Privy ID from database user ID (credits are keyed by Privy ID)
         const { data: userData } = await supabase
           .from('users')
-          .select('privy_id')
+          .select('user_id')
           .eq('id', userId)
           .single();
 
-        const privyId = userData?.privy_id;
+        const privyId = userData?.user_id;
         if (!privyId) {
           logger.warn({ userId }, "credit_refund_skipped_no_privy_id");
         } else {

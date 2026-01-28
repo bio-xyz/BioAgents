@@ -1025,7 +1025,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       if (
         shouldContinueLoop &&
-        conversationState.values.suggestedNextSteps?.length
+        conversationState.values.suggestedNextSteps?.length &&
+        iterationCount < maxAutoIterations
       ) {
         const continueResult = await continueResearchAgent({
           conversationState,
