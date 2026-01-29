@@ -100,13 +100,16 @@ export function authResolver(options: AuthResolverOptions = {}) {
     request,
     set,
     body,
+    query,
   }: {
     request: Request & { auth?: AuthContext; x402Settlement?: any };
     set: any;
     body?: any;
+    query?: Record<string, string>;
   }) => {
     let auth: AuthContext | null = null;
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
 
     logger?.info(
       {
@@ -207,8 +210,9 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // =====================================================
     // Only used if JWT mode is not active or no JWT provided
     if (!auth && isValidApiKey(request)) {
-      // API key is valid - trust the caller's userId from body
-      const providedUserId = body?.userId;
+      // API key is valid - trust the caller's userId from body or query param
+      // Query param fallback is needed for GET requests (no body)
+      const providedUserId = body?.userId || query?.userId;
       const userId =
         providedUserId &&
         typeof providedUserId === "string" &&
@@ -222,11 +226,12 @@ export function authResolver(options: AuthResolverOptions = {}) {
         verified: false, // Caller-provided userId, not cryptographic
       };
 
+      const userIdSource = body?.userId ? "body" : query?.userId ? "query" : "generated";
       logger?.info(
         {
           userId,
           method: "api_key",
-          userIdSource: providedUserId ? "body" : "generated",
+          userIdSource,
         },
         "auth_resolved_api_key"
       );
@@ -236,7 +241,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // Priority 4: None Mode (Development)
     // =====================================================
     if (!auth && config.mode === "none") {
-      const providedUserId = body?.userId;
+      // Check body first, then query param (for GET requests)
+      const providedUserId = body?.userId || query?.userId;
       const userId =
         providedUserId &&
         typeof providedUserId === "string" &&
@@ -250,11 +256,12 @@ export function authResolver(options: AuthResolverOptions = {}) {
         verified: false,
       };
 
+      const userIdSource = body?.userId ? "body" : query?.userId ? "query" : "generated";
       logger?.info(
         {
           userId,
           method: "anonymous",
-          userIdSource: providedUserId ? "body" : "generated",
+          userIdSource,
         },
         "auth_resolved_anonymous"
       );
@@ -339,9 +346,14 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  *
  * @param request - The incoming request
  * @param body - Optional parsed request body (for userId extraction in dev mode)
+ * @param query - Optional query params (for userId extraction in GET requests)
  * @returns AuthContext with userId if authenticated
  */
-export async function resolveAuth(request: Request, body?: any): Promise<{
+export async function resolveAuth(
+  request: Request,
+  body?: any,
+  query?: Record<string, string>
+): Promise<{
   authenticated: boolean;
   userId?: string;
   method?: string;
@@ -373,9 +385,9 @@ export async function resolveAuth(request: Request, body?: any): Promise<{
     }
   }
 
-  // Helper to get userId from body (same logic as authResolver middleware)
-  const getUserIdFromBody = () => {
-    const providedUserId = body?.userId;
+  // Helper to get userId from body or query (same logic as authResolver middleware)
+  const getUserId = () => {
+    const providedUserId = body?.userId || query?.userId;
     return providedUserId &&
       typeof providedUserId === "string" &&
       providedUserId.length > 0
@@ -387,7 +399,7 @@ export async function resolveAuth(request: Request, body?: any): Promise<{
   if (isValidApiKey(request)) {
     return {
       authenticated: true,
-      userId: getUserIdFromBody(),
+      userId: getUserId(),
       method: "api_key",
     };
   }
@@ -396,7 +408,7 @@ export async function resolveAuth(request: Request, body?: any): Promise<{
   if (config.mode === "none") {
     return {
       authenticated: true,
-      userId: getUserIdFromBody(),
+      userId: getUserId(),
       method: "anonymous",
     };
   }
