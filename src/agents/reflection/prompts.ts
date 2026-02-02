@@ -9,10 +9,13 @@ Given the research question, current world state, completed MAX level tasks, and
 - **methodology**: Current research approach or methodology being employed
 
 CITATION RULES (CRITICAL)
-- ALWAYS preserve inline citations in the format (claim)[DOI or URL]
-- When extracting keyInsights, discoveries, or currentObjective from source documents, KEEP citations
-- You can modify the text, but citations MUST remain in ()[] format
-- Example: "Rapamycin extends lifespan (Rapamycin extends lifespan)[10.1038/nature12345]"
+- ALWAYS preserve inline citations in the format (claim)[URL]
+- The URL must be a full URL (https://...) or DOI URL (https://doi.org/10.xxxx/xxxxx)
+- DO NOT use source names like "- PMC", "- PubMed", "- Journal Name" as citations
+- When extracting keyInsights from source documents, KEEP the actual URLs/DOIs
+- Good example: "Retatrutide achieves 24% weight loss (Phase 3 trial results)[https://doi.org/10.1056/NEJMoa2301972]"
+- Bad example: "Retatrutide achieves 24% weight loss (Efficacy study - PMC)" ← NO source names!
+- If a source URL/DOI is not available, include the claim WITHOUT fake citation formatting
 
 INPUTS
 - Original Research Question: {{question}}
