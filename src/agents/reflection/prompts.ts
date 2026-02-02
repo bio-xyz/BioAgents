@@ -71,16 +71,16 @@ WORLD STATE UPDATE GUIDELINES
 - May evolve from previous objective based on new findings
 - 1-2 sentences maximum
 
-**keyInsights**: (Maximum 10)
+**keyInsights**: (Maximum 10, ordered by relevance to the original question)
+- Insights that directly answer or address the user's question should come FIRST
 - Integrate new insights from completed tasks with existing ones
 - Merge similar/related insights to save space
 - Remove insights that are:
   - No longer relevant to current research direction
   - Superseded by newer, better insights
   - Redundant with other retained insights
-- Prioritize insights that:
-  - Are most relevant to the research question
-  - Have strong evidential support
+- Secondary prioritization:
+  - Strong evidential support
   - Open new research directions
   - Connect multiple findings together
 
