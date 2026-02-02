@@ -76,6 +76,7 @@ Return ONLY valid JSON with this structure:
 # Requirements
 
 - Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
+- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
 - DO NOT include LaTeX formatting commands (\\section, \\textbf, etc.) - just plain text
 - Write in professional, scientific tone
 - Be specific and concrete, referencing actual discoveries
@@ -187,6 +188,7 @@ Return ONLY valid JSON with this structure:
 # Requirements
 
 - Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
+- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
 - DO NOT include LaTeX formatting commands (\\section, \\subsection, \\textbf, etc.) - just plain text
 - Write in professional, scientific tone appropriate for a research paper introduction
 - For the Literature Overview subsection, focus on LITERATURE type tasks
@@ -346,6 +348,7 @@ CRITICAL: Use proper LaTeX commands instead of Unicode characters:
 - Use $\\times$ instead of ×
 - Use $\\alpha$, $\\beta$, $\\mu$ etc. instead of Greek letter Unicode characters (α, β, μ)
 - Use $\\sim$ for ~, $\\approx$ for ≈, etc.
+- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
 - DO NOT use any Unicode mathematical symbols or Greek letters directly
 
 Generate the section now:`;
