@@ -108,7 +108,7 @@ export function getSessionCompletedTasks<
   plan: T[],
   sessionStartLevel: number,
   currentLevel: number,
-  maxLevels: number = 3,
+  maxLevels: number = 2,
 ): T[] {
   const minLevel = Math.max(sessionStartLevel, currentLevel - (maxLevels - 1));
   return plan.filter(

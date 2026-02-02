@@ -6,7 +6,6 @@ import logger from "../../utils/logger";
 import {
   answerModePrompt,
   chatReplyPrompt,
-  replyModeClassifierPrompt,
   reportModePrompt,
 } from "./prompts";
 
@@ -47,100 +46,9 @@ export type ReplyOptions = {
 };
 
 /**
- * Format for conversation history entry
- */
-type ConversationHistoryEntry = {
-  question?: string;
-  summary?: string;
-  content?: string;
-};
-
-/**
- * Classify whether the user's query is a question (ANSWER mode) or directive (REPORT mode)
- * Uses a fast/cheap LLM call to determine the response style
- * Considers conversation history for context (e.g., "continue" after a question)
- */
-async function classifyReplyMode(
-  question: string,
-  conversationHistory: ConversationHistoryEntry[] = [],
-): Promise<"ANSWER" | "REPORT"> {
-  const CLASSIFIER_LLM_PROVIDER: LLMProvider =
-    (process.env.CLASSIFIER_LLM_PROVIDER as LLMProvider) || "google";
-  const classifierModel = process.env.CLASSIFIER_LLM_MODEL || "gemini-2.5-pro";
-
-  const llmApiKey =
-    process.env[`${CLASSIFIER_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!llmApiKey) {
-    logger.warn(
-      { provider: CLASSIFIER_LLM_PROVIDER },
-      "No API key for classifier, defaulting to REPORT mode",
-    );
-    return "REPORT";
-  }
-
-  const llmProvider = new LLM({
-    name: CLASSIFIER_LLM_PROVIDER,
-    apiKey: llmApiKey,
-  });
-
-  // Format conversation history (use summary if available, fallback to truncated content)
-  const historyText =
-    conversationHistory.length > 0
-      ? conversationHistory
-          .map((msg) => {
-            const parts: string[] = [];
-            if (msg.question) {
-              parts.push(`User: ${msg.question}`);
-            }
-            // Use summary if available, otherwise truncate content
-            if (msg.summary) {
-              parts.push(`Assistant: ${msg.summary}`);
-            } else if (msg.content) {
-              const truncated =
-                msg.content.length > 300
-                  ? msg.content.substring(0, 300) + "..."
-                  : msg.content;
-              parts.push(`Assistant: ${truncated}`);
-            }
-            return parts.join("\n");
-          })
-          .join("\n\n")
-      : "No previous conversation.";
-
-  const prompt = replyModeClassifierPrompt
-    .replace("{{conversationHistory}}", historyText)
-    .replace("{{question}}", question);
-
-  try {
-    const response = await llmProvider.createChatCompletion({
-      model: classifierModel,
-      messages: [{ role: "user", content: prompt }],
-      maxTokens: 100,
-    });
-
-    const result = response.content.trim().toUpperCase();
-    const mode = result === "ANSWER" ? "ANSWER" : "REPORT";
-
-    return mode;
-  } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        provider: CLASSIFIER_LLM_PROVIDER,
-        model: classifierModel,
-      },
-      "reply_mode_classification_failed",
-    );
-    // Default to REPORT mode on error
-    return "REPORT";
-  }
-}
-
-/**
  * Generate user-facing reply based on completed work and next plan
- * Uses classifier to determine ANSWER vs REPORT mode
+ * - Intermediate replies (isFinal=false): REPORT mode (progress update)
+ * - Final replies (isFinal=true): ANSWER mode (deliver findings with citations)
  */
 export async function generateReply(
   question: string,
@@ -151,7 +59,7 @@ export async function generateReply(
 
   // 1. Determine reply mode
   // - Intermediate replies (isFinal=false): Always REPORT (progress update)
-  // - Final replies (isFinal=true): Use classifier to decide ANSWER vs REPORT
+  // - Final replies (isFinal=true): Always ANSWER (deliver findings with citations)
   let mode: "ANSWER" | "REPORT";
   if (options.isFinal === false) {
     mode = "REPORT"; // Intermediate replies are always progress reports
@@ -160,15 +68,19 @@ export async function generateReply(
       "skipping_classification_for_intermediate",
     );
   } else {
-    mode = await classifyReplyMode(question, context.conversationHistory || []);
+    mode = "ANSWER"; // Final replies always use ANSWER mode to deliver findings
+    logger.info(
+      { mode: "ANSWER", reason: "final_reply" },
+      "using_answer_mode_for_final",
+    );
   }
 
-  // Format completed tasks
+  // Format completed tasks (2000 char limit to preserve citations)
   const completedTasksText = context.completedTasks
     .map((task, i) => {
       const output = task.output || "No output available";
       const truncatedOutput =
-        output.length > 500 ? `${output.substring(0, 500)}...` : output;
+        output.length > 2000 ? `${output.substring(0, 2000)}...` : output;
       return `${i + 1}. ${task.type} Task: ${task.objective}\n   Output: ${truncatedOutput}`;
     })
     .join("\n\n");
@@ -213,8 +125,16 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
   if (mode === "ANSWER") {
     // ANSWER mode - direct answer format with internal fallback
     logger.info({ mode: "ANSWER" }, "using_answer_mode_prompt"); // DEBUG
+
+    // Format key insights for answer mode
+    const keyInsightsText =
+      context.keyInsights.length > 0
+        ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
+        : "No key insights yet.";
+
     replyInstruction = answerModePrompt
       .replace("{{question}}", question)
+      .replace("{{keyInsights}}", keyInsightsText)
       .replace("{{discoveries}}", discoveriesText)
       .replace(
         "{{hypothesis}}",

@@ -1,30 +1,4 @@
-// Classifier prompt - determines if user is asking a question or giving a directive
-// Includes conversation context to handle edge cases like "continue", "yes", etc.
-export const replyModeClassifierPrompt = `Classify the user's query type based on the conversation context.
-
-RECENT CONVERSATION:
-{{conversationHistory}}
-
-CURRENT USER MESSAGE: {{question}}
-
-RULES:
-Focus on the CURRENT USER MESSAGE, but use conversation history for context (especially for short messages like "continue", "yes", "go ahead").
-
-- Return "ANSWER" if the user is asking a QUESTION seeking information:
-  - Explicit questions: What, How, Why, Is there, Does, Can you explain, Tell me about
-  - OR if the original question (from history) was information-seeking and user says "continue", "yes", "go ahead", etc.
-  - Intent: User wants to KNOW something
-
-- Return "REPORT" if the user gave a DIRECTIVE or COMMAND:
-  - Explicit directives: Research, Investigate, Analyze, Look into, Find papers, Study, Explore
-  - OR if the original query (from history) was a directive and user says "continue", "yes", "go ahead", etc.
-  - Intent: User wants agent to DO something
-
-When ambiguous or no clear history, lean toward ANSWER if it sounds like a question, REPORT if it sounds like a task.
-
-Reply with ONE word only: ANSWER or REPORT`;
-
-// Answer mode prompt - for direct questions, with internal fallback to REPORT format
+// Answer mode prompt - for direct questions, delivers findings with citations
 export const answerModePrompt = `ROLE
 You are a research assistant answering a user's question using evidence gathered from scientific literature.
 
@@ -34,10 +8,13 @@ SECURITY / ANTI-JAILBREAK (CRITICAL)
 
 QUESTION: {{question}}
 
+KEY INSIGHTS (accumulated findings with citations - USE THESE):
+{{keyInsights}}
+
 SCIENTIFIC DISCOVERIES:
 {{discoveries}}
 
-CURRENT HYPOTHESIS (for your context only - DO NOT include in output):
+CURRENT HYPOTHESIS (synthesized understanding - use citations from here):
 {{hypothesis}}
 
 COMPLETED RESEARCH TASKS:
@@ -57,9 +34,13 @@ IF YOU CAN ANSWER (sufficient evidence to give a confident, substantive response
 
 Lead with a DIRECT ANSWER to their question. Do NOT start with "I searched..." or "What I did..."
 
-CITATION PRESERVATION:
-- Preserve ALL inline citations in format (claim)[https://doi.org/...]
-- Keep citations exactly as they appear in the source material
+USING YOUR RESEARCH:
+- Your accumulated findings above (key insights, discoveries, hypothesis, and task outputs) contain inline citations
+- When answering, ALWAYS draw from these findings and include the citations in format: (claim)[URL]
+- Citations MUST be full URLs (https://...) or DOI URLs (https://doi.org/...) - NOT source names
+- Good: (weight loss of 24%)[https://doi.org/10.1056/NEJMoa2301972]
+- Bad: (weight loss of 24%) or (weight loss - PMC) ← these are NOT valid citations
+- This grounds your answer in the literature you've gathered
 
 OUTPUT FORMAT (when you CAN answer):
 
@@ -79,7 +60,9 @@ Here's what I plan to investigate next:
 
 **Let me know if you'd like me to proceed with this plan, or adjust the direction!**
 
----
+[END OF USER-FACING ANSWER]
+
+(Internal check: Before finalizing, verify your answer includes inline citations in (claim)[URL] format - URLs must be https:// links, not source names like "PMC" or "PubMed".)
 `;
 
 // Report mode prompt - for directives and commands
