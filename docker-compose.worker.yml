@@ -23,6 +23,10 @@ services:
     build: .
     command: ["bun", "run", "src/worker.ts"]
 
+    # Coolify label to override default 30s stop timeout
+    labels:
+      - coolify.stopTimeout=28800
+
     environment:
       # Required: Redis URL (Upstash or your managed Redis)
       - REDIS_URL=${REDIS_URL}
