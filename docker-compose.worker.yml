@@ -87,9 +87,6 @@ services:
       # Production
       - NODE_ENV=production
 
-    env_file:
-      - .env
-
     restart: unless-stopped
 
     # CRITICAL: Allow workers to finish long-running jobs before stopping
