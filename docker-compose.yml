@@ -141,6 +141,10 @@ services:
       retries: 3
       start_period: 40s
 
+    networks:
+      - coolify
+      - default
+
   # ==========================================================================
   # Redis - Message broker for BullMQ job queue
   # ==========================================================================
@@ -172,3 +176,10 @@ volumes:
     driver: local
   redis-data:
     driver: local
+
+# Networks - connect to Coolify's Traefik proxy network
+networks:
+  coolify:
+    external: true
+  default:
+    driver: bridge
