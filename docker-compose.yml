@@ -53,6 +53,14 @@ services:
     ports:
       - "${PORT:-3000}:3000"
 
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.bioagents-staging-api.rule=Host(`bioagent-staging-platform.bioagents.dev`)"
+      - traefik.http.routers.bioagents-staging-api.entryPoints=https
+      - traefik.http.routers.bioagents-staging-api.tls=true
+      - traefik.http.routers.bioagents-staging-api.tls.certresolver=letsencrypt
+      - traefik.http.services.bioagents-staging-api.loadbalancer.server.port=3000
+
     environment:
       # Required: LLM API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY}
