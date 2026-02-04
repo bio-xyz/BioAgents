@@ -39,9 +39,15 @@ function generate402Response(request: Request) {
     { includeOutputSchema: true }
   );
 
+  // Encode for v2 clients that expect PAYMENT-REQUIRED header
+  const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
+
   return new Response(JSON.stringify(paymentRequired), {
     status: 402,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "PAYMENT-REQUIRED": paymentRequiredHeader,
+    },
   });
 }
 

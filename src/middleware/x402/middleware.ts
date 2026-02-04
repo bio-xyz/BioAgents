@@ -115,11 +115,15 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
+      // Encode payment required for header (v2 clients expect this)
+      const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
+
       return new Response(JSON.stringify(paymentRequired), {
         status: 402,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Encoding": "identity",
+          "PAYMENT-REQUIRED": paymentRequiredHeader,
         },
       });
     }
@@ -157,11 +161,14 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
+      const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
+
       return new Response(JSON.stringify(paymentRequired), {
         status: 402,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Encoding": "identity",
+          "PAYMENT-REQUIRED": paymentRequiredHeader,
         },
       });
     }
@@ -184,11 +191,14 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
 
       set.status = 402;
 
+      const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
+
       return new Response(JSON.stringify(paymentRequired), {
         status: 402,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Encoding": "identity",
+          "PAYMENT-REQUIRED": paymentRequiredHeader,
         },
       });
     }
