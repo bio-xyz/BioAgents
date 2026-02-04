@@ -6,7 +6,6 @@ export interface Character {
 }
 
 
-
 /**
  * Default BIOS character - a scientific bioagent for the AI BIO xyz platform
  */
