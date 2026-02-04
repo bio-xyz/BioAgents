@@ -114,20 +114,55 @@ export function getTotalPremiumToolsPrice(): number {
  * - Simpler to implement
  */
 export const routePricing: RoutePricing[] = [
-
   // x402 payment routes
   {
     route: "/api/x402/chat",
-    priceUSD: "0.01", // Same as standard chat
+    priceUSD: "0.01",
     description: "Chat API access via x402 payment",
   },
   {
     route: "/api/x402/deep-research/start",
-    priceUSD: "0.025", // Higher price for deep research (more resources)
+    priceUSD: "0.025",
     description: "Deep research initiation via x402 payment",
   },
   // Note: /api/x402/deep-research/status/:messageId is FREE (no payment)
-  // Security: Handler validates ownership via userId query param
+
+  // Individual agent routes
+  {
+    route: "/api/x402/agents/literature",
+    priceUSD: "0.01",
+    description: "Literature search agent - searches scientific papers and knowledge bases",
+  },
+  {
+    route: "/api/x402/agents/reply",
+    priceUSD: "0.01",
+    description: "Reply agent - generates AI responses based on context",
+  },
+  {
+    route: "/api/x402/agents/planning",
+    priceUSD: "0.01",
+    description: "Planning agent - creates research plans and task breakdowns",
+  },
+  {
+    route: "/api/x402/agents/hypothesis",
+    priceUSD: "0.02",
+    description: "Hypothesis agent - generates scientific hypotheses from research",
+  },
+  {
+    route: "/api/x402/agents/reflection",
+    priceUSD: "0.015",
+    description: "Reflection agent - evaluates and reflects on research progress",
+  },
+  {
+    route: "/api/x402/agents/discovery",
+    priceUSD: "0.02",
+    description: "Discovery agent - extracts scientific discoveries from research",
+  },
+  {
+    route: "/api/x402/agents/analysis",
+    priceUSD: "0.025",
+    description: "Analysis agent - performs data analysis on datasets",
+  },
 ];
 
 /**
