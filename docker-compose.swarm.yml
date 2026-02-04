@@ -39,6 +39,7 @@ services:
     image: ${WORKER_IMAGE:-bioagents-worker:latest}
     command: ["bun", "run", "src/worker.ts"]
 
+
     environment:
       # Required: Redis URL (Upstash or your managed Redis)
       - REDIS_URL=${REDIS_URL}
