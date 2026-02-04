@@ -1,31 +1,33 @@
-import { exact } from "x402/schemes";
+import {
+  decodePaymentSignatureHeader,
+  encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
+  HTTPFacilitatorClient,
+} from "@x402/core/http";
 import type {
-  Network,
   PaymentPayload,
   PaymentRequirements,
-  Price,
-  Resource,
-} from "x402/types";
-import { useFacilitator } from "x402/verify";
-import { processPriceToAtomicAmount } from "x402/shared";
-import { createFacilitatorConfig } from "@coinbase/x402";
+  PaymentRequired,
+  VerifyResponse,
+  SettleResponse,
+  Network,
+} from "@x402/core/types";
 import logger from "../../utils/logger";
-import { x402Config } from "./config";
+import { x402Config, networkConfig } from "./config";
 
 /**
- * Field definition for x402scan schema validation
+ * Field definition for API schema documentation
  */
 export interface FieldDef {
   type?: string;
   required?: boolean | string[];
   description?: string;
   enum?: string[];
-  properties?: Record<string, FieldDef>; // for nested objects
+  properties?: Record<string, FieldDef>;
 }
 
 /**
- * Output schema for x402scan compliance
- * Describes the API input/output format for better UI integration
+ * Output schema for API documentation
  */
 export interface OutputSchema {
   input: {
@@ -53,195 +55,43 @@ export interface PaymentSettlementResult {
   errorReason?: string;
 }
 
+/**
+ * Convert USD string to base units (6 decimals for USDC)
+ */
 export function usdToBaseUnits(amountUSD: string): string {
-  const [whole, fraction = ""] = amountUSD.split(".");
+  const numericAmount = amountUSD.replace(/[^0-9.]/g, "");
+  const [whole = "0", fraction = ""] = numericAmount.split(".");
   const normalizedFraction = (fraction + "000000").slice(0, 6);
-  return `${whole}${normalizedFraction}`.replace(/^0+/, "") || "0";
+  const result = `${whole}${normalizedFraction}`.replace(/^0+/, "") || "0";
+  return result;
 }
 
 /**
- * Creates payment requirements for a given price and network
- *
- * @param price - The price to be paid for the resource
- * @param network - The blockchain network to use for payment
- * @param resource - The resource being accessed
- * @param description - Optional description of the payment
- * @returns Payment requirements object
+ * x402 V2 Service
+ * 
+ * Handles payment verification and settlement using the x402 V2 protocol.
  */
-function createExactPaymentRequirements(
-  price: Price,
-  network: Network,
-  resource: Resource,
-  description = "",
-  options?: {
-    includeOutputSchema?: boolean;
-    discoverable?: boolean;
-    metadata?: Record<string, any>;
-  },
-): PaymentRequirements {
-  const atomicAmountForAsset = processPriceToAtomicAmount(price, network);
-  if ("error" in atomicAmountForAsset) {
-    throw new Error(atomicAmountForAsset.error);
-  }
-  const { maxAmountRequired, asset } = atomicAmountForAsset;
-
-  const requirement: PaymentRequirements = {
-    scheme: "exact",
-    network,
-    maxAmountRequired,
-    resource,
-    description,
-    mimeType: "application/json",
-    payTo: x402Config.paymentAddress as `0x${string}`,
-    maxTimeoutSeconds: x402Config.defaultTimeout,
-    asset: asset.address,
-    extra: {
-      name: "eip712" in asset ? asset.eip712.name : "USDC",
-      version: "eip712" in asset ? asset.eip712.version : "2",
-      ...(options?.metadata || {}),
-    },
-  };
-
-  // Include outputSchema and config for x402scan + Bazaar discovery
-  if (options?.includeOutputSchema) {
-    // Input/Output schema for x402scan compliance
-    requirement.outputSchema = {
-      input: {
-        type: "http",
-        method: "POST",
-        bodyType: "json",
-        bodyFields: {
-          message: {
-            type: "string",
-            required: true,
-            description: "User's question or message to the AI assistant",
-          },
-          conversationId: {
-            type: "string",
-            required: false,
-            description:
-              "Optional conversation ID for multi-turn conversations (UUID v4 format). Auto-generated if not provided.",
-          },
-          userId: {
-            type: "string",
-            required: false,
-            description: "Optional user ID for tracking. Auto-generated if not provided.",
-          },
-        },
-      },
-      output: {
-        text: {
-          type: "string",
-          description: "AI-generated response text",
-        },
-        files: {
-          type: "array",
-          description: "Optional metadata for processed files (filename, mimeType, size)",
-          properties: {
-            filename: { type: "string", description: "Name of the processed file" },
-            mimeType: { type: "string", description: "MIME type of the file" },
-            size: { type: "number", description: "File size in bytes" },
-          },
-        },
-      },
-    };
-
-    // Bazaar discovery config - stored in 'extra' per x402scan schema
-    // The 'extra' field is for custom provider data
-    if (options?.discoverable !== false) {
-      requirement.extra = {
-        ...requirement.extra,
-        // Bazaar discovery metadata
-        discoverable: true,
-        bazaar: {
-          inputSchema: {
-            bodyFields: {
-              message: {
-                type: "string",
-                description: "User's question or message to the AI assistant",
-                required: true,
-              },
-              conversationId: {
-                type: "string",
-                description: "Optional conversation ID for multi-turn conversations",
-                required: false,
-              },
-              userId: {
-                type: "string",
-                description: "Optional user ID for tracking",
-                required: false,
-              },
-            },
-          },
-          outputSchema: {
-            type: "object",
-            properties: {
-              text: { type: "string", description: "AI-generated response text" },
-              userId: { type: "string", description: "User identifier" },
-              conversationId: { type: "string", description: "Conversation identifier" },
-              pollUrl: { type: "string", description: "URL to poll for async job status" },
-            },
-          },
-        },
-      };
-    }
-  }
-
-  return requirement;
-}
-
 export class X402Service {
-  private facilitator: ReturnType<typeof useFacilitator>;
-  private x402Version = 1;
+  private facilitatorClient: HTTPFacilitatorClient;
+  private x402Version = 2;
 
   constructor() {
-    // Check if using CDP facilitator (requires authentication)
-    const isCdpFacilitator = x402Config.facilitatorUrl.includes("cdp.coinbase.com");
+    // Initialize HTTP facilitator client
+    this.facilitatorClient = new HTTPFacilitatorClient({
+      url: x402Config.facilitatorUrl,
+    });
 
-    if (isCdpFacilitator) {
-      // CDP facilitator requires JWT authentication using @coinbase/x402
-      const cdpApiKeyId = process.env.CDP_API_KEY_ID;
-      const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET;
-
-      if (!cdpApiKeyId || !cdpApiKeySecret) {
-        throw new Error("CDP_API_KEY_ID and CDP_API_KEY_SECRET are required for CDP facilitator");
-      }
-
-      // Use the official Coinbase facilitator config helper
-      // This automatically sets up the correct URL and auth headers
-      const cdpConfig = createFacilitatorConfig(cdpApiKeyId, cdpApiKeySecret);
-      this.facilitator = useFacilitator(cdpConfig);
-
-      if (logger) {
-        logger.info(
-          {
-            environment: x402Config.environment,
-            facilitatorUrl: x402Config.facilitatorUrl,
-            network: x402Config.network,
-            paymentAddress: x402Config.paymentAddress,
-            facilitatorType: "CDP (JWT authenticated)",
-          },
-          "x402_service_initialized",
-        );
-      }
-    } else {
-      // Public facilitator (no authentication required)
-      this.facilitator = useFacilitator({
-        url: x402Config.facilitatorUrl as Resource,
-      });
-
-      if (logger) {
-        logger.info(
-          {
-            environment: x402Config.environment,
-            facilitatorUrl: x402Config.facilitatorUrl,
-            network: x402Config.network,
-            paymentAddress: x402Config.paymentAddress,
-            facilitatorType: "public (no auth)",
-          },
-          "x402_service_initialized",
-        );
-      }
+    if (logger) {
+      logger.info(
+        {
+          environment: x402Config.environment,
+          facilitatorUrl: x402Config.facilitatorUrl,
+          network: x402Config.network,
+          paymentAddress: x402Config.paymentAddress,
+          x402Version: this.x402Version,
+        },
+        "x402_v2_service_initialized",
+      );
     }
   }
 
@@ -249,6 +99,14 @@ export class X402Service {
     return x402Config.facilitatorUrl;
   }
 
+  getVersion(): number {
+    return this.x402Version;
+  }
+
+  /**
+   * Generate PaymentRequirements for V2
+   * V2 structure: scheme, network, asset, amount, payTo, maxTimeoutSeconds, extra
+   */
   generatePaymentRequirement(
     resource: string,
     description: string,
@@ -259,25 +117,142 @@ export class X402Service {
       metadata?: Record<string, any>;
     },
   ): PaymentRequirements {
-    return createExactPaymentRequirements(
-      `$${amountUSD}` as Price,
-      x402Config.network as Network,
-      resource as Resource,
-      description,
-      options,
-    );
+    const requirements: PaymentRequirements = {
+      scheme: "exact",
+      network: x402Config.network as Network,
+      asset: x402Config.usdcAddress,
+      amount: usdToBaseUnits(amountUSD),
+      payTo: x402Config.paymentAddress,
+      maxTimeoutSeconds: x402Config.defaultTimeout,
+      extra: {
+        name: "USDC",
+        version: "2",
+        // Store resource info in extra for compatibility
+        resource,
+        description,
+        ...(options?.metadata || {}),
+      },
+    };
+
+    // Add discoverable flag
+    if (options?.discoverable !== false) {
+      requirements.extra.discoverable = true;
+    }
+
+    return requirements;
   }
 
+  /**
+   * Generate a PaymentRequired response object for 402 responses
+   * V2 structure includes resource info separately
+   */
+  generatePaymentRequired(
+    resource: string,
+    description: string,
+    amountUSD: string,
+    options?: {
+      includeOutputSchema?: boolean;
+      discoverable?: boolean;
+      metadata?: Record<string, any>;
+    },
+  ): PaymentRequired {
+    const requirements = this.generatePaymentRequirement(
+      resource,
+      description,
+      amountUSD,
+      options,
+    );
+
+    const paymentRequired: PaymentRequired = {
+      x402Version: this.x402Version,
+      resource: {
+        url: resource,
+        description: description,
+        mimeType: "application/json",
+      },
+      accepts: [requirements],
+    };
+
+    // Add error field for compatibility
+    (paymentRequired as any).error = "Payment required";
+
+    // Add outputSchema for discovery
+    if (options?.includeOutputSchema) {
+      paymentRequired.extensions = {
+        outputSchema: {
+          input: {
+            type: "http",
+            method: "POST",
+            bodyType: "json",
+            bodyFields: {
+              message: {
+                type: "string",
+                required: true,
+                description: "User's question or message to the AI assistant",
+              },
+              conversationId: {
+                type: "string",
+                required: false,
+                description: "Optional conversation ID for multi-turn conversations",
+              },
+              userId: {
+                type: "string",
+                required: false,
+                description: "Optional user ID for tracking",
+              },
+            },
+          },
+          output: {
+            text: {
+              type: "string",
+              description: "AI-generated response text",
+            },
+            userId: {
+              type: "string",
+              description: "User identifier",
+            },
+            conversationId: {
+              type: "string",
+              description: "Conversation identifier",
+            },
+            pollUrl: {
+              type: "string",
+              description: "URL to poll for async job status",
+            },
+          },
+        },
+      };
+    }
+
+    return paymentRequired;
+  }
+
+  /**
+   * Encode a PaymentRequired object for the PAYMENT-REQUIRED header
+   */
+  encodePaymentRequiredHeader(paymentRequired: PaymentRequired): string {
+    return encodePaymentRequiredHeader(paymentRequired);
+  }
+
+  /**
+   * Decode a payment signature header
+   */
+  decodePaymentHeader(paymentHeader: string): PaymentPayload {
+    return decodePaymentSignatureHeader(paymentHeader);
+  }
+
+  /**
+   * Verify a payment
+   */
   async verifyPayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements,
   ): Promise<PaymentVerificationResult> {
     try {
-      // Decode payment using x402 library
+      // Decode payment from header
       let decodedPayment: PaymentPayload;
       try {
-        decodedPayment = exact.evm.decodePayment(paymentHeader);
-        decodedPayment.x402Version = this.x402Version;
+        decodedPayment = this.decodePaymentHeader(paymentHeader);
       } catch (error) {
         if (logger) logger.error({ error }, "Failed to decode payment header");
         return {
@@ -286,22 +261,23 @@ export class X402Service {
         };
       }
 
-      // Debug: Log what we're sending to facilitator
       if (logger) {
         logger.info(
           {
             facilitatorUrl: x402Config.facilitatorUrl,
-            verifyEndpoint: `${x402Config.facilitatorUrl}/verify`,
             environment: x402Config.environment,
             network: x402Config.network,
             payTo: paymentRequirements.payTo,
           },
-          "x402_verify_request",
+          "x402_v2_verify_request",
         );
       }
 
       // Use facilitator to verify
-      const response = await this.facilitator.verify(decodedPayment, paymentRequirements);
+      const response: VerifyResponse = await this.facilitatorClient.verify(
+        decodedPayment,
+        paymentRequirements,
+      );
 
       if (!response.isValid) {
         if (logger) {
@@ -310,48 +286,56 @@ export class X402Service {
               invalidReason: response.invalidReason,
               payer: response.payer,
             },
-            "x402_verify_failed",
+            "x402_v2_verify_failed",
           );
         }
       }
 
-      return response;
+      return {
+        isValid: response.isValid,
+        invalidReason: response.invalidReason,
+        payer: response.payer,
+      };
     } catch (error: any) {
       const message = error?.message || "Verification error";
-      if (logger) logger.error({ error }, "x402_verification_error");
+      if (logger) logger.error({ error }, "x402_v2_verification_error");
       return { isValid: false, invalidReason: message };
     }
   }
 
+  /**
+   * Settle a payment
+   */
   async settlePayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements,
   ): Promise<PaymentSettlementResult> {
     try {
-      // Decode payment using x402 library
+      // Decode payment from header
       let decodedPayment: PaymentPayload;
       try {
-        decodedPayment = exact.evm.decodePayment(paymentHeader);
-        decodedPayment.x402Version = this.x402Version;
+        decodedPayment = this.decodePaymentHeader(paymentHeader);
       } catch (e) {
         if (logger) logger.error({ error: e }, "Failed to decode payment header for settlement");
         return { success: false, errorReason: "Invalid payment header format" };
       }
 
-      // Debug logging for settlement request
       if (logger) {
         logger.info(
           {
-            url: `${x402Config.facilitatorUrl}/settle`,
+            facilitatorUrl: x402Config.facilitatorUrl,
             environment: x402Config.environment,
             network: x402Config.network,
           },
-          "x402_settle_request",
+          "x402_v2_settle_request",
         );
       }
 
       // Use facilitator to settle
-      const response = await this.facilitator.settle(decodedPayment, paymentRequirements);
+      const response: SettleResponse = await this.facilitatorClient.settle(
+        decodedPayment,
+        paymentRequirements,
+      );
 
       if (!response.success) {
         if (logger) {
@@ -360,12 +344,21 @@ export class X402Service {
               errorReason: response.errorReason,
               network: response.network,
             },
-            "x402_settle_failed",
+            "x402_v2_settle_failed",
           );
         }
+        return {
+          success: false,
+          errorReason: response.errorReason,
+        };
       }
 
-      return response;
+      return {
+        success: response.success,
+        transaction: response.transaction,
+        network: response.network,
+        payer: response.payer,
+      };
     } catch (error: any) {
       const message = error?.message || "Settlement error";
       if (logger) {
@@ -373,15 +366,21 @@ export class X402Service {
           {
             error: error?.message || String(error),
             stack: error?.stack,
-            name: error?.name,
-            cause: error?.cause,
           },
-          "x402_settlement_error",
+          "x402_v2_settlement_error",
         );
       }
       return { success: false, errorReason: message };
     }
   }
+
+  /**
+   * Encode a settlement response for the PAYMENT-RESPONSE header
+   */
+  encodeSettlementHeader(settlement: SettleResponse): string {
+    return encodePaymentResponseHeader(settlement);
+  }
 }
 
+// Export singleton instance
 export const x402Service = new X402Service();

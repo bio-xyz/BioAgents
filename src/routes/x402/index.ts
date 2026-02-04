@@ -10,12 +10,13 @@ import { x402Service } from "../../middleware/x402/service";
 import logger from "../../utils/logger";
 
 export const x402Route = new Elysia({ prefix: "/api/x402" })
-  // x402 config endpoint
+  // x402 V2 config endpoint
   .get("/config", () => {
     return {
-      // Current active protocol info
+      // Protocol info
       enabled: x402Config.enabled,
       protocol: "x402",
+      x402Version: 2,
       network: x402Config.network,
       environment: x402Config.environment,
       asset: x402Config.asset,
@@ -30,7 +31,7 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
       rpcUrl: networkConfig.rpcUrl,
       explorer: networkConfig.explorer,
 
-      // Available networks (x402 only supports Base)
+      // Available networks
       availableNetworks: [
         {
           id: x402Config.environment === "testnet" ? "base-sepolia" : "base",
@@ -48,6 +49,13 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
           nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
         },
       ],
+
+      // V2 header info
+      headers: {
+        paymentSignature: "PAYMENT-SIGNATURE",
+        paymentResponse: "PAYMENT-RESPONSE",
+        paymentRequired: "PAYMENT-REQUIRED",
+      },
     };
   })
   .get("/pricing", () => ({
@@ -61,7 +69,7 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
         const payments = await getPaymentsByUser(userId, 50);
         return { ok: true, payments };
       } catch (error) {
-        if (logger) logger.error({ error }, "x402_payments_query_failed");
+        if (logger) logger.error({ error }, "x402_v2_payments_query_failed");
         set.status = 500;
         return { ok: false, error: "Failed to fetch payments" };
       }
@@ -74,7 +82,7 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
         const stats = await getUserPaymentStats(userId);
         return { ok: true, stats };
       } catch (error) {
-        if (logger) logger.error({ error }, "x402_payment_stats_failed");
+        if (logger) logger.error({ error }, "x402_v2_payment_stats_failed");
         set.status = 500;
         return { ok: false, error: "Failed to fetch stats" };
       }
@@ -87,19 +95,21 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
 
       return {
         ok: response.ok,
+        x402Version: 2,
         facilitatorAvailable: response.ok,
         supported,
       };
     } catch (error) {
-      if (logger) logger.error({ error }, "x402_health_check_failed");
+      if (logger) logger.error({ error }, "x402_v2_health_check_failed");
       set.status = 503;
       return {
         ok: false,
+        x402Version: 2,
         facilitatorAvailable: false,
       };
     }
   })
-  // Get or create user by wallet address - returns user UUID for conversation queries
+  // Get or create user by wallet address
   .get(
     "/user/:walletAddress",
     async ({ params: { walletAddress }, set }) => {
@@ -114,7 +124,7 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
         if (logger) {
           logger.info(
             { userId: user.id, wallet: walletAddress, isNew },
-            "x402_user_lookup",
+            "x402_v2_user_lookup",
           );
         }
 
@@ -125,7 +135,7 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
           isNew,
         };
       } catch (error) {
-        if (logger) logger.error({ error }, "x402_user_lookup_failed");
+        if (logger) logger.error({ error }, "x402_v2_user_lookup_failed");
         set.status = 500;
         return { ok: false, error: "Failed to lookup user" };
       }

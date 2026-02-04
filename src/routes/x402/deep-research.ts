@@ -7,19 +7,19 @@ import { deepResearchStartHandler } from "../deep-research/start";
 import { deepResearchStatusHandler } from "../deep-research/status";
 
 /**
- * x402 Deep Research Routes - Payment-gated deep research endpoints
+ * x402 V2 Deep Research Routes - Payment-gated deep research endpoints
  *
- * Uses x402 payment protocol instead of API key authentication.
+ * Uses x402 V2 payment protocol instead of API key authentication.
  * Reuses the same handler logic as the standard deep-research routes.
  *
  * Security:
- * - GET /start: Returns 402 with payment requirements (x402scan discovery)
+ * - GET /start: Returns 402 with payment requirements (discovery)
  * - POST /start: Requires x402 payment (handled by x402Middleware)
  * - GET /status: Free (no payment), but requires userId query param
  */
 
 /**
- * Generate 402 response with x402-compliant schema for discovery
+ * Generate 402 response with x402 V2 compliant schema
  */
 function generate402Response(request: Request) {
   const pricing = routePricing.find((entry) =>
@@ -32,30 +32,23 @@ function generate402Response(request: Request) {
   const protocol = forwardedProto || url.protocol.replace(":", "");
   const resourceUrl = `${protocol}://${url.host}/api/x402/deep-research/start`;
 
-  const requirement = x402Service.generatePaymentRequirement(
+  const paymentRequired = x402Service.generatePaymentRequired(
     resourceUrl,
     pricing?.description || "Deep research initiation via x402 payment",
     pricing?.priceUSD || "0.025",
     { includeOutputSchema: true }
   );
 
-  return new Response(
-    JSON.stringify({
-      x402Version: 1,
-      accepts: [requirement],
-      error: "Payment required",
-    }),
-    {
-      status: 402,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-    }
-  );
+  return new Response(JSON.stringify(paymentRequired), {
+    status: 402,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
 }
 
 export const x402DeepResearchRoute = new Elysia()
   // Status endpoint - FREE, no payment required (ownership validated in handler)
   .get("/api/x402/deep-research/status/:messageId", deepResearchStatusHandler)
-  // GET /start for x402scan discovery - returns 402 with schema
+  // GET /start for discovery - returns 402 with schema
   .get("/api/x402/deep-research/start", async ({ request }) => {
     return generate402Response(request);
   })
@@ -66,17 +59,15 @@ export const x402DeepResearchRoute = new Elysia()
     const { body, request } = ctx;
     const x402Settlement = (request as any).x402Settlement;
 
-    // If no valid payment settlement, return 402 (x402scan compliance)
-    // This handles cases where middleware is disabled or payment wasn't provided
+    // If no valid payment settlement, return 402
     if (!x402Settlement) {
       return generate402Response(request);
     }
 
-    // Handle x402scan test requests (valid payment but no query)
-    // x402scan sends POST with payment to verify it works, but no actual body
+    // Handle test requests (valid payment but no query)
     const query = (body as any)?.query;
     if (!query) {
-      // Payment was validated - return success matching outputSchema
+      // Payment was validated - return success
       return {
         text: `Payment verified successfully. Transaction: ${x402Settlement.transaction}`,
         userId: x402Settlement.payer,

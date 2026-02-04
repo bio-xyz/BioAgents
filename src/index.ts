@@ -88,11 +88,14 @@ const app = new Elysia()
         "Authorization",
         "X-API-Key",
         "X-Requested-With",
-        "X-PAYMENT", // x402 payment proof header
+        "X-PAYMENT", // x402 v1 payment proof header (b402 compatibility)
+        "PAYMENT-SIGNATURE", // x402 v2 payment proof header
       ],
       exposeHeaders: [
         "Content-Type",
-        "X-PAYMENT-RESPONSE", // x402 settlement response header
+        "X-PAYMENT-RESPONSE", // x402 v1 settlement response (b402 compatibility)
+        "PAYMENT-RESPONSE", // x402 v2 settlement response header
+        "PAYMENT-REQUIRED", // x402 v2 payment required header
       ],
       maxAge: 86400, // Cache preflight for 24 hours
     }),

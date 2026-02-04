@@ -25,7 +25,6 @@
     "@coinbase/cdp-react": "^0.0.53",
     "@coinbase/cdp-sdk": "^1.38.5",
     "@coinbase/wallet-sdk": "^4.3.7",
-    "@coinbase/x402": "^0.7.0",
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/cors": "^1.4.0",
     "@elysiajs/html": "^1.4.0",
@@ -59,10 +58,11 @@
     "preact-router": "^4.1.2",
     "tesseract.js": "^7.0.0",
     "viem": "^2.21.26",
-    "x402": "^0.7.1",
-    "x402-fetch": "^0.7.0",
     "xlsx": "^0.18.5",
-    "zod": "3"
+    "zod": "3",
+    "@x402/core": "^2.2.0",
+    "@x402/evm": "^2.2.0",
+    "@x402/fetch": "^2.2.0"
   },
   "scripts": {
     "dev": "bun --watch src/index.ts",
