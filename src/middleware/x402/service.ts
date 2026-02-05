@@ -13,7 +13,8 @@ import type {
   Network,
 } from "@x402/core/types";
 import logger from "../../utils/logger";
-import { x402Config, networkConfig } from "./config";
+import { x402Config, networkConfig, X402_VERSION, hasCdpAuth, isCdpFacilitator } from "./config";
+import { routePricing } from "./pricing";
 
 /**
  * Field definition for API schema documentation
@@ -67,19 +68,70 @@ export function usdToBaseUnits(amountUSD: string): string {
 }
 
 /**
+ * Create CDP auth headers for facilitator requests
+ * Returns headers object with auth for verify, settle, and supported operations
+ */
+async function createCdpAuthHeaders(): Promise<{
+  verify: Record<string, string>;
+  settle: Record<string, string>;
+  supported: Record<string, string>;
+}> {
+  if (!x402Config.cdpApiKeyId || !x402Config.cdpApiKeySecret) {
+    return { verify: {}, settle: {}, supported: {} };
+  }
+  
+  // CDP uses API key authentication via header
+  // Format: Basic base64(api_key_id:api_key_secret)
+  const credentials = Buffer.from(
+    `${x402Config.cdpApiKeyId}:${x402Config.cdpApiKeySecret}`
+  ).toString("base64");
+  
+  const authHeader = { Authorization: `Basic ${credentials}` };
+  
+  return {
+    verify: authHeader,
+    settle: authHeader,
+    supported: authHeader,
+  };
+}
+
+/**
  * x402 V2 Service
  * 
  * Handles payment verification and settlement using the x402 V2 protocol.
  */
 export class X402Service {
   private facilitatorClient: HTTPFacilitatorClient;
-  private x402Version = 2;
 
   constructor() {
-    // Initialize HTTP facilitator client
-    this.facilitatorClient = new HTTPFacilitatorClient({
+    // Initialize HTTP facilitator client with optional CDP auth
+    const clientConfig: {
+      url: string;
+      createAuthHeaders?: () => Promise<{
+        verify: Record<string, string>;
+        settle: Record<string, string>;
+        supported: Record<string, string>;
+      }>;
+    } = {
       url: x402Config.facilitatorUrl,
-    });
+    };
+    
+    // Add CDP auth if using CDP facilitator and credentials are available
+    if (isCdpFacilitator && hasCdpAuth) {
+      clientConfig.createAuthHeaders = createCdpAuthHeaders;
+      if (logger) {
+        logger.info("x402_v2_cdp_auth_enabled");
+      }
+    } else if (isCdpFacilitator && !hasCdpAuth) {
+      if (logger) {
+        logger.warn(
+          "x402_v2_cdp_auth_missing: CDP facilitator URL detected but CDP_API_KEY_ID/SECRET not set. " +
+          "Auth will fail for mainnet. Set credentials or use X402_FACILITATOR_URL=https://x402.org/facilitator for testing."
+        );
+      }
+    }
+    
+    this.facilitatorClient = new HTTPFacilitatorClient(clientConfig);
 
     if (logger) {
       logger.info(
@@ -88,7 +140,8 @@ export class X402Service {
           facilitatorUrl: x402Config.facilitatorUrl,
           network: x402Config.network,
           paymentAddress: x402Config.paymentAddress,
-          x402Version: this.x402Version,
+          x402Version: X402_VERSION,
+          cdpAuthEnabled: isCdpFacilitator && hasCdpAuth,
         },
         "x402_v2_service_initialized",
       );
@@ -100,7 +153,7 @@ export class X402Service {
   }
 
   getVersion(): number {
-    return this.x402Version;
+    return X402_VERSION;
   }
 
   /**
@@ -163,18 +216,18 @@ export class X402Service {
       options,
     );
 
-    const paymentRequired: PaymentRequired = {
-      x402Version: this.x402Version,
+    // Build payment required response
+    // Note: 'error' field is added for client compatibility but is not part of v2 spec
+    const paymentRequired: PaymentRequired & { error?: string } = {
+      x402Version: X402_VERSION,
       resource: {
         url: resource,
         description: description,
         mimeType: "application/json",
       },
       accepts: [requirements],
+      error: "Payment required",
     };
-
-    // Add error field for compatibility
-    (paymentRequired as any).error = "Payment required";
 
     // Add outputSchema for discovery
     if (options?.includeOutputSchema) {
@@ -384,3 +437,51 @@ export class X402Service {
 
 // Export singleton instance
 export const x402Service = new X402Service();
+
+/**
+ * Consolidated 402 response generator for all x402 routes
+ * 
+ * Creates a standardized 402 Payment Required response with proper headers
+ * for v2 client compatibility.
+ * 
+ * @param request - The incoming request (used for URL building)
+ * @param routePath - The route path to look up pricing (e.g., "/api/x402/chat")
+ * @param options - Optional overrides for description and price
+ * @returns Response object with 402 status and PAYMENT-REQUIRED header
+ */
+export function create402Response(
+  request: Request,
+  routePath: string,
+  options?: {
+    description?: string;
+    priceUSD?: string;
+    includeOutputSchema?: boolean;
+  }
+): Response {
+  // Look up pricing from centralized config
+  const pricing = routePricing.find((entry) => routePath.startsWith(entry.route));
+  
+  // Build resource URL with correct protocol
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const protocol = forwardedProto || url.protocol.replace(":", "");
+  const resourceUrl = `${protocol}://${url.host}${routePath}`;
+
+  const paymentRequired = x402Service.generatePaymentRequired(
+    resourceUrl,
+    options?.description || pricing?.description || "API access via x402 payment",
+    options?.priceUSD || pricing?.priceUSD || "0.01",
+    { includeOutputSchema: options?.includeOutputSchema ?? true }
+  );
+
+  // Encode for v2 clients that expect PAYMENT-REQUIRED header
+  const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
+
+  return new Response(JSON.stringify(paymentRequired), {
+    status: 402,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "PAYMENT-REQUIRED": paymentRequiredHeader,
+    },
+  });
+}

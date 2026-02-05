@@ -1,7 +1,6 @@
 import { Elysia } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
-import { x402Service } from "../../middleware/x402/service";
-import { routePricing } from "../../middleware/x402/pricing";
+import { create402Response } from "../../middleware/x402/service";
 import { authResolver } from "../../middleware/authResolver";
 import { chatHandler } from "../chat";
 
@@ -17,41 +16,10 @@ import { chatHandler } from "../chat";
  * - POST with valid payment: Middleware validates, then chatHandler processes
  */
 
-/**
- * Generate 402 response with x402 V2 compliant schema
- */
-function generate402Response(request: Request) {
-  const pricing = routePricing.find((entry) => "/api/x402/chat".startsWith(entry.route));
-
-  // Build resource URL with correct protocol
-  const url = new URL(request.url);
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const protocol = forwardedProto || url.protocol.replace(":", "");
-  const resourceUrl = `${protocol}://${url.host}/api/x402/chat`;
-
-  const paymentRequired = x402Service.generatePaymentRequired(
-    resourceUrl,
-    pricing?.description || "Chat API access via x402 payment",
-    pricing?.priceUSD || "0.01",
-    { includeOutputSchema: true }
-  );
-
-  // Encode for v2 clients that expect PAYMENT-REQUIRED header
-  const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
-
-  return new Response(JSON.stringify(paymentRequired), {
-    status: 402,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "PAYMENT-REQUIRED": paymentRequiredHeader,
-    },
-  });
-}
-
 export const x402ChatRoute = new Elysia()
   // GET endpoint for discovery - returns 402 with schema
   .get("/api/x402/chat", async ({ request }) => {
-    return generate402Response(request);
+    return create402Response(request, "/api/x402/chat");
   })
   // POST endpoint with payment validation
   .use(x402Middleware())
@@ -62,7 +30,7 @@ export const x402ChatRoute = new Elysia()
 
     // If no valid payment settlement, return 402
     if (!x402Settlement) {
-      return generate402Response(request);
+      return create402Response(request, "/api/x402/chat");
     }
 
     // Handle test requests (valid payment but no message)

@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
-import { x402Service } from "../../middleware/x402/service";
+import { create402Response } from "../../middleware/x402/service";
+import { routePricing } from "../../middleware/x402/pricing";
 import { authResolver } from "../../middleware/authResolver";
 import logger from "../../utils/logger";
 
@@ -19,85 +20,29 @@ import { replyAgent } from "../../agents/reply";
  * Each sub-agent can be called independently via x402 payment.
  * Simpler agents (literature, reply) work standalone.
  * Complex agents (hypothesis, discovery) need conversation context.
+ * 
+ * Pricing is defined centrally in src/middleware/x402/pricing.ts
  */
-
-// Agent pricing configuration
-const agentPricing: Record<string, { priceUSD: string; description: string }> = {
-  literature: {
-    priceUSD: "0.01",
-    description: "Literature search agent - searches scientific papers and knowledge bases",
-  },
-  reply: {
-    priceUSD: "0.01",
-    description: "Reply agent - generates AI responses based on context",
-  },
-  hypothesis: {
-    priceUSD: "0.02",
-    description: "Hypothesis agent - generates scientific hypotheses from research",
-  },
-  analysis: {
-    priceUSD: "0.025",
-    description: "Analysis agent - performs data analysis on datasets",
-  },
-  discovery: {
-    priceUSD: "0.02",
-    description: "Discovery agent - extracts scientific discoveries from research",
-  },
-  reflection: {
-    priceUSD: "0.015",
-    description: "Reflection agent - evaluates and reflects on research progress",
-  },
-  planning: {
-    priceUSD: "0.01",
-    description: "Planning agent - creates research plans and task breakdowns",
-  },
-};
 
 /**
- * Generate 402 response for an agent
+ * Get available agent names from pricing config
  */
-function generate402Response(request: Request, agentName: string) {
-  const pricing = agentPricing[agentName];
-  if (!pricing) {
-    return new Response(JSON.stringify({ error: `Unknown agent: ${agentName}` }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const url = new URL(request.url);
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const protocol = forwardedProto || url.protocol.replace(":", "");
-  const resourceUrl = `${protocol}://${url.host}/api/x402/agents/${agentName}`;
-
-  const paymentRequired = x402Service.generatePaymentRequired(
-    resourceUrl,
-    pricing.description,
-    pricing.priceUSD,
-    { includeOutputSchema: true }
-  );
-
-  // Encode for v2 clients that expect PAYMENT-REQUIRED header
-  const paymentRequiredHeader = x402Service.encodePaymentRequiredHeader(paymentRequired);
-
-  return new Response(JSON.stringify(paymentRequired), {
-    status: 402,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "PAYMENT-REQUIRED": paymentRequiredHeader,
-    },
-  });
+function getAgentPricing() {
+  return routePricing
+    .filter(p => p.route.startsWith("/api/x402/agents/"))
+    .map(p => ({
+      name: p.route.replace("/api/x402/agents/", ""),
+      endpoint: p.route,
+      priceUSD: p.priceUSD,
+      description: p.description,
+    }));
 }
 
 export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // List all available agents and their pricing
   .get("/", () => {
     return {
-      agents: Object.entries(agentPricing).map(([name, info]) => ({
-        name,
-        endpoint: `/api/x402/agents/${name}`,
-        ...info,
-      })),
+      agents: getAgentPricing(),
     };
   })
 
@@ -108,10 +53,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // LITERATURE AGENT - Standalone, simple input
   // =====================================================
-  .get("/literature", ({ request }) => generate402Response(request, "literature"))
+  .get("/literature", ({ request }) => create402Response(request, "/api/x402/agents/literature"))
   .post("/literature", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "literature");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/literature");
 
     const { objective, type = "OPENSCHOLAR" } = body as {
       objective: string;
@@ -141,10 +86,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // REPLY AGENT - Needs message context
   // =====================================================
-  .get("/reply", ({ request }) => generate402Response(request, "reply"))
+  .get("/reply", ({ request }) => create402Response(request, "/api/x402/agents/reply"))
   .post("/reply", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "reply");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/reply");
 
     const { message, context = [], systemPrompt } = body as {
       message: string;
@@ -197,10 +142,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // PLANNING AGENT - Creates research plans
   // =====================================================
-  .get("/planning", ({ request }) => generate402Response(request, "planning"))
+  .get("/planning", ({ request }) => create402Response(request, "/api/x402/agents/planning"))
   .post("/planning", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "planning");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/planning");
 
     const { objective, existingPlan } = body as {
       objective: string;
@@ -240,10 +185,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // HYPOTHESIS AGENT - Needs research context
   // =====================================================
-  .get("/hypothesis", ({ request }) => generate402Response(request, "hypothesis"))
+  .get("/hypothesis", ({ request }) => create402Response(request, "/api/x402/agents/hypothesis"))
   .post("/hypothesis", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "hypothesis");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/hypothesis");
 
     const { objective, completedTasks = [], currentHypothesis } = body as {
       objective: string;
@@ -300,10 +245,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // ANALYSIS AGENT - Needs datasets
   // =====================================================
-  .get("/analysis", ({ request }) => generate402Response(request, "analysis"))
+  .get("/analysis", ({ request }) => create402Response(request, "/api/x402/agents/analysis"))
   .post("/analysis", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "analysis");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/analysis");
 
     const { objective, datasets, type = "BIO" } = body as {
       objective: string;
@@ -354,10 +299,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // REFLECTION AGENT - Evaluates research
   // =====================================================
-  .get("/reflection", ({ request }) => generate402Response(request, "reflection"))
+  .get("/reflection", ({ request }) => create402Response(request, "/api/x402/agents/reflection"))
   .post("/reflection", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "reflection");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/reflection");
 
     const { objective, hypothesis, discoveries = [], completedTasks = [] } = body as {
       objective: string;
@@ -411,10 +356,10 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   // DISCOVERY AGENT - Extracts discoveries
   // =====================================================
-  .get("/discovery", ({ request }) => generate402Response(request, "discovery"))
+  .get("/discovery", ({ request }) => create402Response(request, "/api/x402/agents/discovery"))
   .post("/discovery", async ({ body, request, set }) => {
     const x402Settlement = (request as any).x402Settlement;
-    if (!x402Settlement) return generate402Response(request, "discovery");
+    if (!x402Settlement) return create402Response(request, "/api/x402/agents/discovery");
 
     const { hypothesis, completedTasks = [], existingDiscoveries = [] } = body as {
       hypothesis?: string;

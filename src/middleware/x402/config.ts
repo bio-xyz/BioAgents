@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export type Environment = "testnet" | "mainnet";
 
+/**
+ * x402 Protocol Version - single source of truth
+ */
+export const X402_VERSION = 2;
+
 export const X402ConfigSchema = z.object({
   enabled: z.boolean().default(false),
   environment: z.enum(["testnet", "mainnet"]).default("testnet"),
@@ -11,6 +16,9 @@ export const X402ConfigSchema = z.object({
   asset: z.string().default("USDC"),
   usdcAddress: z.string(),
   defaultTimeout: z.number().default(30),
+  // CDP facilitator credentials (required for mainnet CDP facilitator)
+  cdpApiKeyId: z.string().optional(),
+  cdpApiKeySecret: z.string().optional(),
 });
 
 export type X402Config = z.infer<typeof X402ConfigSchema>;
@@ -61,7 +69,20 @@ export const x402Config: X402Config = {
   usdcAddress:
     process.env.X402_USDC_ADDRESS || networkDefaults.usdcAddress,
   defaultTimeout: Number(process.env.X402_TIMEOUT || 30),
+  // CDP credentials for authenticated facilitator
+  cdpApiKeyId: process.env.CDP_API_KEY_ID,
+  cdpApiKeySecret: process.env.CDP_API_KEY_SECRET,
 };
+
+/**
+ * Check if CDP facilitator authentication is available
+ */
+export const hasCdpAuth = Boolean(x402Config.cdpApiKeyId && x402Config.cdpApiKeySecret);
+
+/**
+ * Check if using CDP facilitator URL
+ */
+export const isCdpFacilitator = x402Config.facilitatorUrl.includes("cdp.coinbase.com");
 
 export const networkConfig = {
   ...networkDefaults,

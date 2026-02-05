@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import logger from "../../utils/logger";
-import { x402Config } from "./config";
+import { x402Config, X402_VERSION } from "./config";
 import { routePricing } from "./pricing";
 import { x402Service } from "./service";
 
@@ -12,7 +12,7 @@ import { x402Service } from "./service";
  * V2 Changes:
  * - Header: X-PAYMENT → PAYMENT-SIGNATURE
  * - Header: X-PAYMENT-RESPONSE → PAYMENT-RESPONSE
- * - Version: x402Version: 2
+ * - Version: Uses X402_VERSION from config (single source of truth)
  */
 
 // V2 Header names
@@ -33,7 +33,7 @@ export function x402Middleware(options: X402MiddlewareOptions = {}) {
       environment: x402Config.environment,
       network: x402Config.network,
       paymentAddress: x402Config.paymentAddress,
-      x402Version: 2,
+      x402Version: X402_VERSION,
     }, enabled ? "x402_v2_middleware_ENABLED" : "x402_v2_middleware_DISABLED");
   }
 
