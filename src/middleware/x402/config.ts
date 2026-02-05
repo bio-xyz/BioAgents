@@ -29,6 +29,9 @@ const NETWORK_CONFIG = {
     // Using x402.org facilitator (open-source, no auth required)
     facilitatorUrl: "https://x402.org/facilitator",
     usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    // EIP-712 domain must match the contract's name() and version()
+    usdcName: "USDC",       // Base Sepolia USDC contract name() returns "USDC"
+    usdcVersion: "2",
     chainId: 84532,
     rpcUrl: "https://sepolia.base.org",
     explorer: "https://sepolia.basescan.org",
@@ -40,6 +43,9 @@ const NETWORK_CONFIG = {
     // CDP: https://api.cdp.coinbase.com/platform/v2/x402 (requires CDP_API_KEY_ID/SECRET)
     facilitatorUrl: "https://api.cdp.coinbase.com/platform/v2/x402",
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    // EIP-712 domain must match the contract's name() and version()
+    usdcName: "USD Coin",   // Base mainnet USDC contract name() returns "USD Coin"
+    usdcVersion: "2",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
     explorer: "https://basescan.org",

@@ -146,7 +146,8 @@ export class X402Service {
     },
   ): PaymentRequirements {
     // EIP-712 domain params must match the token contract's name() and version()
-    // USDC on Base: name() = "USD Coin", version() = "2"
+    // Testnet (Base Sepolia): name() = "USDC"
+    // Mainnet (Base): name() = "USD Coin"
     const requirements: PaymentRequirements = {
       scheme: "exact",
       network: x402Config.network as Network,
@@ -155,8 +156,8 @@ export class X402Service {
       payTo: x402Config.paymentAddress,
       maxTimeoutSeconds: x402Config.defaultTimeout,
       extra: {
-        name: "USD Coin",  // Must match USDC contract's name() for EIP-712
-        version: "2",      // Must match USDC contract's version() for EIP-712
+        name: networkConfig.usdcName,     // Must match USDC contract's name() for EIP-712
+        version: networkConfig.usdcVersion, // Must match USDC contract's version() for EIP-712
         // Store resource info in extra for compatibility
         resource,
         description,
