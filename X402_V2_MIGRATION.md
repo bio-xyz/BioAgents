@@ -16,7 +16,7 @@ Migrate BioAgents from x402 v1 (`x402@0.7.1`) to x402 v2 (`@x402/*@2.2.0`) acros
 
 ## Test Wallet
 
-- **Address:** `0xd460447EEB14E970C935E32731d512A68903E4c1`
+- **Address:** `0xE58A8d9D004807582e616b658324fa9E10911aE8`
 - **Private Key:** Stored in `/data/.clawdbot/credentials/x402_test_wallet_pk`
 - **Network:** Base Mainnet
 - **Balance:** 2.00 USDC + 0.005 ETH
