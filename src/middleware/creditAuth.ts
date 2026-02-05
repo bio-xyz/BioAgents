@@ -1,14 +1,13 @@
 /**
- * Credit-based Authentication Middleware
+ * Privy Authentication Bypass Middleware
  *
- * Allows Privy-authenticated users with sufficient credits to bypass x402 payments.
+ * Allows Privy-authenticated users to bypass x402 payments.
  * Works in conjunction with x402 middleware - runs BEFORE x402 to set bypass flag.
  *
  * Flow:
  * 1. Check if user is authenticated (JWT/Privy)
- * 2. Look up user's credit balance
- * 3. If credits available: set bypassX402=true, reserve/deduct credit
- * 4. If no credits: let x402 middleware handle payment
+ * 2. If authenticated: set bypassX402=true
+ * 3. If not authenticated: let x402 middleware handle payment
  */
 
 import { Elysia } from "elysia";
@@ -16,12 +15,8 @@ import { getServiceClient } from "../db/client";
 import logger from "../utils/logger";
 import type { AuthContext } from "../types/auth";
 
-export interface CreditAuthOptions {
-  /** Cost in credits per request (default: 1) */
-  creditCost?: number;
-  /** Whether to deduct immediately or reserve (default: true = immediate) */
-  immediateDeduct?: boolean;
-  /** Skip credit check for these auth methods */
+export interface PrivyAuthBypassOptions {
+  /** Skip bypass for these auth methods (default: ["x402", "anonymous"]) */
   skipForMethods?: string[];
 }
 
@@ -53,135 +48,32 @@ async function getPrivyId(userId: string): Promise<string | null> {
 
     return byInternalId?.user_id || null;
   } catch (err) {
-    logger?.error({ err, userId }, "credit_auth_privy_lookup_failed");
+    logger?.error({ err, userId }, "privy_auth_lookup_failed");
     return null;
   }
 }
 
 /**
- * Check user's credit balance
- * Uses the 'points' field in users table as credit balance
- */
-async function getUserCredits(privyId: string): Promise<number> {
-  try {
-    const supabase = getServiceClient();
-
-    const { data, error } = await supabase
-      .from("users")
-      .select("points")
-      .eq("user_id", privyId)
-      .single();
-
-    if (error) {
-      logger?.error({ error, privyId }, "credit_auth_balance_check_failed");
-      return 0;
-    }
-
-    return data?.points || 0;
-  } catch (err) {
-    logger?.error({ err, privyId }, "credit_auth_balance_check_error");
-    return 0;
-  }
-}
-
-/**
- * Deduct credits from user's balance
- * Returns true if successful, false if insufficient credits
- */
-async function deductCredits(
-  privyId: string,
-  amount: number
-): Promise<boolean> {
-  try {
-    const supabase = getServiceClient();
-
-    // Use atomic decrement to prevent race conditions
-    // This will fail if points would go negative (handled by constraint or RPC)
-    const { data, error } = await supabase.rpc("deduct_user_credits", {
-      p_user_id: privyId,
-      p_amount: amount,
-    });
-
-    if (error) {
-      // If RPC doesn't exist, fall back to manual update
-      if (error.message?.includes("function") || error.code === "42883") {
-        logger?.warn(
-          { privyId },
-          "credit_auth_rpc_not_found_using_fallback"
-        );
-
-        // Fallback: manual atomic update
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({
-            points: supabase.rpc("greatest", { a: 0, b: "points - " + amount }),
-          })
-          .eq("user_id", privyId)
-          .gte("points", amount); // Only update if sufficient balance
-
-        if (updateError) {
-          // Simple fallback without atomic guarantee
-          const { data: user } = await supabase
-            .from("users")
-            .select("points")
-            .eq("user_id", privyId)
-            .single();
-
-          if (!user || user.points < amount) {
-            return false;
-          }
-
-          const { error: finalError } = await supabase
-            .from("users")
-            .update({ points: user.points - amount })
-            .eq("user_id", privyId);
-
-          if (finalError) {
-            logger?.error(
-              { finalError, privyId },
-              "credit_auth_deduct_fallback_failed"
-            );
-            return false;
-          }
-        }
-
-        return true;
-      }
-
-      logger?.error({ error, privyId }, "credit_auth_deduct_failed");
-      return false;
-    }
-
-    return data?.success !== false;
-  } catch (err) {
-    logger?.error({ err, privyId }, "credit_auth_deduct_error");
-    return false;
-  }
-}
-
-/**
- * Credit authentication middleware
+ * Privy authentication bypass middleware
  *
  * Must be applied AFTER authResolver and BEFORE x402Middleware
  *
  * @example
  * ```typescript
  * app.guard({
- *   beforeHandle: [
- *     authResolver({ required: true }),
- *     creditAuthMiddleware({ creditCost: 1 }),
- *   ]
- * }, (app) => app.use(x402Middleware()).post("/api/chat", handler));
+ *   beforeHandle: [authResolver({ required: false })]
+ * }, (app) => 
+ *   app
+ *     .use(privyAuthBypass())
+ *     .use(x402Middleware())
+ *     .post("/api/chat", handler)
+ * );
  * ```
  */
-export function creditAuthMiddleware(options: CreditAuthOptions = {}) {
-  const {
-    creditCost = 1,
-    immediateDeduct = true,
-    skipForMethods = ["x402", "anonymous"],
-  } = options;
+export function privyAuthBypass(options: PrivyAuthBypassOptions = {}) {
+  const { skipForMethods = ["x402", "anonymous"] } = options;
 
-  const plugin = new Elysia({ name: "credit-auth-middleware" });
+  const plugin = new Elysia({ name: "privy-auth-bypass" });
 
   plugin.onBeforeHandle(
     { as: "scoped" },
@@ -190,7 +82,7 @@ export function creditAuthMiddleware(options: CreditAuthOptions = {}) {
 
       // Skip if no auth context (authResolver hasn't run)
       if (!auth) {
-        logger?.debug({ path }, "credit_auth_skipped_no_auth");
+        logger?.debug({ path }, "privy_bypass_skipped_no_auth");
         return;
       }
 
@@ -198,67 +90,36 @@ export function creditAuthMiddleware(options: CreditAuthOptions = {}) {
       if (skipForMethods.includes(auth.method)) {
         logger?.debug(
           { path, method: auth.method },
-          "credit_auth_skipped_method"
+          "privy_bypass_skipped_method"
         );
         return;
       }
 
-      // Look up Privy ID
+      // Look up Privy ID to confirm this is a Privy-authenticated user
       const privyId = await getPrivyId(auth.userId);
       if (!privyId) {
         logger?.debug(
           { path, userId: auth.userId },
-          "credit_auth_no_privy_id"
+          "privy_bypass_no_privy_id"
         );
         return; // Let x402 handle payment
       }
 
-      // Check credit balance
-      const credits = await getUserCredits(privyId);
-
-      if (credits < creditCost) {
-        logger?.info(
-          { path, privyId, credits, required: creditCost },
-          "credit_auth_insufficient_credits"
-        );
-        return; // Let x402 handle payment
-      }
-
-      // Deduct credits if immediate mode
-      if (immediateDeduct) {
-        const deducted = await deductCredits(privyId, creditCost);
-        if (!deducted) {
-          logger?.warn(
-            { path, privyId, creditCost },
-            "credit_auth_deduct_failed_fallback_to_x402"
-          );
-          return; // Let x402 handle payment
-        }
-
-        logger?.info(
-          { path, privyId, creditCost, remainingCredits: credits - creditCost },
-          "credit_auth_credits_deducted"
-        );
-      }
-
-      // Set bypass flags for x402 middleware
+      // User is Privy-authenticated - set bypass flags
       (request as any).bypassX402 = true;
       (request as any).authenticatedUser = {
         userId: auth.userId,
         privyId,
         authMethod: auth.method,
-        creditsPaid: creditCost,
       };
 
       // Set synthetic x402Settlement so handlers work without modification
-      // This allows handlers to use x402Settlement.payer for user identification
       (request as any).x402Settlement = {
         success: true,
-        transaction: `credit:${privyId}:${Date.now()}`, // Synthetic "transaction" for tracking
-        network: "credits", // Indicates credit-based payment
-        payer: auth.userId, // User ID as "payer"
-        paymentMethod: "credits",
-        creditCost,
+        transaction: `privy:${privyId}:${Date.now()}`,
+        network: "privy",
+        payer: auth.userId,
+        paymentMethod: "privy",
       };
 
       logger?.info(
@@ -267,9 +128,8 @@ export function creditAuthMiddleware(options: CreditAuthOptions = {}) {
           userId: auth.userId,
           privyId,
           authMethod: auth.method,
-          creditCost,
         },
-        "credit_auth_bypass_x402_set"
+        "privy_auth_bypass_x402_set"
       );
     }
   );
@@ -277,4 +137,7 @@ export function creditAuthMiddleware(options: CreditAuthOptions = {}) {
   return plugin;
 }
 
-export default creditAuthMiddleware;
+// Export with old name for backward compatibility
+export const creditAuthMiddleware = privyAuthBypass;
+
+export default privyAuthBypass;
