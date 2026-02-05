@@ -14,6 +14,7 @@ import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
 import { x402DeepResearchRoute } from "./routes/x402/deep-research";
 import { x402AgentsRoute } from "./routes/x402/agents";
+import { initializeX402Service } from "./middleware/x402/service";
 import { b402Route } from "./routes/b402";
 import { b402ChatRoute } from "./routes/b402/chat";
 import { b402DeepResearchRoute } from "./routes/b402/deep-research";
@@ -396,6 +397,18 @@ app.listen(
         `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
       );
       console.log(`Job queue: ${isJobQueueEnabled() ? "enabled" : "disabled"}`);
+    }
+
+    // Initialize x402 payment service (validates CDP auth if configured)
+    try {
+      await initializeX402Service();
+    } catch (error) {
+      if (logger) {
+        logger.error({ error }, "x402_initialization_failed");
+      } else {
+        console.error("x402 initialization failed:", error);
+      }
+      // Don't exit - server can still run, just x402 payments will fail
     }
 
     // Start Redis subscription for WebSocket notifications if job queue is enabled

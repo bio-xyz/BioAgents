@@ -69,32 +69,45 @@ export function usdToBaseUnits(amountUSD: string): string {
 }
 
 /**
+ * Facilitator configuration type from @coinbase/x402
+ */
+interface FacilitatorConfig {
+  url: string;
+  createAuthHeaders?: () => Promise<{
+    verify: Record<string, string>;
+    settle: Record<string, string>;
+    supported: Record<string, string>;
+    [key: string]: Record<string, string>;
+  }>;
+}
+
+/**
  * x402 V2 Service
  * 
  * Handles payment verification and settlement using the x402 V2 protocol.
  */
 export class X402Service {
   private facilitatorClient: HTTPFacilitatorClient;
+  private facilitatorConfig: FacilitatorConfig;
+  private _initialized = false;
 
   constructor() {
-    let clientConfig: Parameters<typeof HTTPFacilitatorClient>[0];
-    
     // Use official Coinbase facilitator config if CDP credentials are available
     if (isCdpFacilitator && hasCdpAuth) {
       // Use @coinbase/x402's createFacilitatorConfig which handles JWT auth properly
-      clientConfig = createFacilitatorConfig(
+      this.facilitatorConfig = createFacilitatorConfig(
         x402Config.cdpApiKeyId,
         x402Config.cdpApiKeySecret
       );
       if (logger) {
         logger.info({
-          facilitatorUrl: clientConfig.url,
+          facilitatorUrl: this.facilitatorConfig.url,
           cdpAuthEnabled: true,
         }, "x402_v2_cdp_auth_enabled");
       }
     } else if (isCdpFacilitator && !hasCdpAuth) {
       // CDP facilitator URL but no credentials - will fail
-      clientConfig = { url: x402Config.facilitatorUrl };
+      this.facilitatorConfig = { url: x402Config.facilitatorUrl };
       if (logger) {
         logger.warn(
           "x402_v2_cdp_auth_missing: CDP facilitator URL detected but CDP_API_KEY_ID/SECRET not set. " +
@@ -103,16 +116,16 @@ export class X402Service {
       }
     } else {
       // Non-CDP facilitator (e.g., x402.org)
-      clientConfig = { url: x402Config.facilitatorUrl };
+      this.facilitatorConfig = { url: x402Config.facilitatorUrl };
     }
     
-    this.facilitatorClient = new HTTPFacilitatorClient(clientConfig);
+    this.facilitatorClient = new HTTPFacilitatorClient(this.facilitatorConfig);
 
     if (logger) {
       logger.info(
         {
           environment: x402Config.environment,
-          facilitatorUrl: x402Config.facilitatorUrl,
+          facilitatorUrl: this.facilitatorConfig.url,
           network: x402Config.network,
           paymentAddress: x402Config.paymentAddress,
           x402Version: X402_VERSION,
@@ -121,6 +134,67 @@ export class X402Service {
         "x402_v2_service_initialized",
       );
     }
+  }
+
+  /**
+   * Initialize the service and validate CDP authentication if configured.
+   * Call this at startup to catch auth issues early.
+   * 
+   * @throws Error if CDP auth is configured but fails to generate headers
+   */
+  async initialize(): Promise<void> {
+    if (this._initialized) return;
+
+    // Validate CDP auth at startup if configured
+    if (isCdpFacilitator && hasCdpAuth && this.facilitatorConfig.createAuthHeaders) {
+      if (logger) {
+        logger.info("x402_v2_validating_cdp_auth: Testing JWT generation...");
+      }
+
+      try {
+        const authHeaders = await this.facilitatorConfig.createAuthHeaders();
+        
+        // Check that we actually got Authorization headers
+        const hasVerifyAuth = authHeaders.verify?.Authorization;
+        const hasSettleAuth = authHeaders.settle?.Authorization;
+        
+        if (!hasVerifyAuth || !hasSettleAuth) {
+          throw new Error(
+            "CDP auth headers missing Authorization. " +
+            "Check CDP_API_KEY_ID and CDP_API_KEY_SECRET are valid."
+          );
+        }
+
+        // Log success (without exposing the actual token)
+        if (logger) {
+          logger.info({
+            verifyAuthPresent: !!hasVerifyAuth,
+            settleAuthPresent: !!hasSettleAuth,
+            correlationContextPresent: !!authHeaders.verify?.["Correlation-Context"],
+          }, "x402_v2_cdp_auth_validated: JWT generation successful");
+        }
+      } catch (error: any) {
+        const message = error?.message || String(error);
+        if (logger) {
+          logger.error({
+            error: message,
+          }, "x402_v2_cdp_auth_failed: Could not generate CDP JWT");
+        }
+        throw new Error(`x402 CDP auth validation failed: ${message}`);
+      }
+    }
+
+    this._initialized = true;
+    if (logger) {
+      logger.info("x402_v2_service_ready");
+    }
+  }
+
+  /**
+   * Check if service is initialized
+   */
+  isInitialized(): boolean {
+    return this._initialized;
   }
 
   getFacilitatorUrl(): string {
@@ -415,6 +489,16 @@ export class X402Service {
 
 // Export singleton instance
 export const x402Service = new X402Service();
+
+/**
+ * Initialize the x402 service (validates CDP auth if configured).
+ * Call this at server startup to catch configuration issues early.
+ */
+export async function initializeX402Service(): Promise<void> {
+  if (x402Config.enabled) {
+    await x402Service.initialize();
+  }
+}
 
 /**
  * Consolidated 402 response generator for all x402 routes
