@@ -233,7 +233,7 @@ export async function regeneratePlanFromFeedback(input: {
       query: query.substring(0, 100),
       feedback: feedback.substring(0, 100),
       model,
-      datasetCount: availableDatasets?.length || 0,
+      datasetCount: datasets?.length ?? 0,
     },
     "regenerating_clarification_plan",
   );

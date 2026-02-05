@@ -32,7 +32,6 @@ import type {
   ClarificationQuestion,
 } from "../types/clarification";
 import logger from "../utils/logger";
-import { generateUUID } from "../utils/uuid";
 
 /**
  * Response type for generate-questions endpoint
@@ -122,9 +121,14 @@ export const clarificationRoute = new Elysia().guard(
           // Extract optional datasets
           const datasets = parsedBody.datasets;
 
-          // Get userId from auth context
+          // Get userId from auth context - require authentication
           const auth = (request as any).auth as AuthContext | undefined;
-          let userId = auth?.userId || generateUUID();
+          if (!auth?.userId && !(auth?.method === "x402" && auth?.externalId)) {
+            set.status = 401;
+            return { ok: false, error: "Authentication required" };
+          }
+
+          let userId = auth.userId!;
 
           // For x402 users, ensure wallet user record exists
           if (auth?.method === "x402" && auth?.externalId) {
@@ -207,7 +211,12 @@ export const clarificationRoute = new Elysia().guard(
 
           // Get userId from auth context
           const auth = (request as any).auth as AuthContext | undefined;
-          let userId = auth?.userId || generateUUID();
+          if (!auth?.userId && !(auth?.method === "x402" && auth?.externalId)) {
+            set.status = 401;
+            return { ok: false, error: "Authentication required" };
+          }
+
+          let userId = auth.userId!;
 
           if (auth?.method === "x402" && auth?.externalId) {
             const { user } = await getOrCreateUserByWallet(auth.externalId);
@@ -324,9 +333,14 @@ export const clarificationRoute = new Elysia().guard(
             };
           }
 
-          // Get userId from auth context
+          // Get userId from auth context - require authentication
           const auth = (request as any).auth as AuthContext | undefined;
-          let userId = auth?.userId || generateUUID();
+          if (!auth?.userId && !(auth?.method === "x402" && auth?.externalId)) {
+            set.status = 401;
+            return { ok: false, error: "Authentication required" };
+          }
+
+          let userId = auth.userId!;
 
           if (auth?.method === "x402" && auth?.externalId) {
             const { user } = await getOrCreateUserByWallet(auth.externalId);
@@ -452,9 +466,14 @@ export const clarificationRoute = new Elysia().guard(
           const { params, set, request } = ctx;
           const { sessionId } = params;
 
-          // Get userId from auth context
+          // Get userId from auth context - require authentication
           const auth = (request as any).auth as AuthContext | undefined;
-          let userId = auth?.userId || generateUUID();
+          if (!auth?.userId && !(auth?.method === "x402" && auth?.externalId)) {
+            set.status = 401;
+            return { ok: false, error: "Authentication required" };
+          }
+
+          let userId = auth.userId!;
 
           if (auth?.method === "x402" && auth?.externalId) {
             const { user } = await getOrCreateUserByWallet(auth.externalId);

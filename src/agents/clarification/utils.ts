@@ -129,7 +129,7 @@ export async function generateQuestions(
         q.category &&
         q.question &&
         q.priority &&
-        ["ambiguity", "data_requirements", "scope_constraints", "methodology"].includes(q.category) &&
+        ["ambiguity", "data_requirements", "scope_constraints", "methodology", "output"].includes(q.category) &&
         ["high", "medium", "low"].includes(q.priority),
     );
 
