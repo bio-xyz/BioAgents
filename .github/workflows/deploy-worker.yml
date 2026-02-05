@@ -2,7 +2,7 @@ name: Deploy Worker
 
 on:
   push:
-    branches: [raw-deployment]
+    branches: [dev]
     paths:
       - 'src/**'
       - 'Dockerfile'
