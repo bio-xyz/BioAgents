@@ -1,9 +1,10 @@
 import { Elysia, t } from "elysia";
-import { x402Middleware } from "../../middleware/x402/middleware";
+import { x402Middleware, type X402Settlement } from "../../middleware/x402/middleware";
 import { create402Response } from "../../middleware/x402/service";
 import { routePricing } from "../../middleware/x402/pricing";
 import { authResolver } from "../../middleware/authResolver";
 import logger from "../../utils/logger";
+import type { Message, PlanTask, ConversationState, Discovery } from "../../types/core";
 
 // Import agents
 import { literatureAgent, type BioLiteratureMode } from "../../agents/literature";
@@ -13,6 +14,59 @@ import { discoveryAgent } from "../../agents/discovery";
 import { reflectionAgent } from "../../agents/reflection";
 import { planningAgent } from "../../agents/planning";
 import { replyAgent } from "../../agents/reply";
+
+/**
+ * Helper to get x402Settlement from request
+ */
+function getX402Settlement(request: Request): X402Settlement | undefined {
+  return (request as Request & { x402Settlement?: X402Settlement }).x402Settlement;
+}
+
+/**
+ * Create a minimal Message object for agent input
+ */
+function createMessage(content: string, userId: string): Message {
+  return {
+    id: crypto.randomUUID(),
+    userId,
+    timestamp: new Date().toISOString(),
+    content,
+  };
+}
+
+/**
+ * Create a minimal ConversationState for agent input
+ */
+function createConversationState(
+  userId: string,
+  values: {
+    currentHypothesis?: string;
+    discoveries?: Discovery[];
+  } = {}
+): ConversationState {
+  return {
+    id: crypto.randomUUID(),
+    userId,
+    values: {
+      objective: "",
+      ...values,
+    },
+  };
+}
+
+/**
+ * Convert partial task data to PlanTask array
+ */
+function createCompletedTasks(
+  tasks: Array<{ objective: string; output: string }>
+): PlanTask[] {
+  return tasks.map((t) => ({
+    id: crypto.randomUUID(),
+    objective: t.objective,
+    output: t.output,
+    status: "completed" as const,
+  }));
+}
 
 /**
  * x402 V2 Agent Routes - Payment-gated access to individual BioAgents
@@ -55,7 +109,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/literature", ({ request }) => create402Response(request, "/api/x402/agents/literature"))
   .post("/literature", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/literature");
 
     const { objective, type = "OPENSCHOLAR" } = body as {
@@ -88,7 +142,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/reply", ({ request }) => create402Response(request, "/api/x402/agents/reply"))
   .post("/reply", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/reply");
 
     const { message, context = [], systemPrompt } = body as {
@@ -144,7 +198,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/planning", ({ request }) => create402Response(request, "/api/x402/agents/planning"))
   .post("/planning", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/planning");
 
     const { objective, existingPlan } = body as {
@@ -187,7 +241,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/hypothesis", ({ request }) => create402Response(request, "/api/x402/agents/hypothesis"))
   .post("/hypothesis", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/hypothesis");
 
     const { objective, completedTasks = [], currentHypothesis } = body as {
@@ -215,18 +269,11 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
           timestamp: new Date().toISOString(),
           content: objective,
         },
-        conversationState: {
-          id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
-          values: {
-            currentHypothesis,
-            discoveries: [],
-          },
-        } as any,
-        completedTasks: completedTasks.map((t) => ({
-          ...t,
-          status: "completed" as const,
-        })) as any,
+        conversationState: createConversationState(
+          x402Settlement.payer || "x402-user",
+          { currentHypothesis, discoveries: [] }
+        ),
+        completedTasks: createCompletedTasks(completedTasks),
       });
 
       return {
@@ -247,7 +294,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/analysis", ({ request }) => create402Response(request, "/api/x402/agents/analysis"))
   .post("/analysis", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/analysis");
 
     const { objective, datasets, type = "BIO" } = body as {
@@ -301,7 +348,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/reflection", ({ request }) => create402Response(request, "/api/x402/agents/reflection"))
   .post("/reflection", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/reflection");
 
     const { objective, hypothesis, discoveries = [], completedTasks = [] } = body as {
@@ -325,19 +372,11 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
           timestamp: new Date().toISOString(),
           content: objective,
         },
-        conversationState: {
-          id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
-          values: {
-            currentHypothesis: hypothesis,
-            discoveries: discoveries as any,
-          },
-        } as any,
-        completedTasks: completedTasks.map((t, i) => ({
-          id: `task-${i}`,
-          ...t,
-          status: "completed" as const,
-        })) as any,
+        conversationState: createConversationState(
+          x402Settlement.payer || "x402-user",
+          { currentHypothesis: hypothesis, discoveries: discoveries as Discovery[] }
+        ),
+        completedTasks: createCompletedTasks(completedTasks),
       });
 
       return {
@@ -358,7 +397,7 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // =====================================================
   .get("/discovery", ({ request }) => create402Response(request, "/api/x402/agents/discovery"))
   .post("/discovery", async ({ body, request, set }) => {
-    const x402Settlement = (request as any).x402Settlement;
+    const x402Settlement = getX402Settlement(request);
     if (!x402Settlement) return create402Response(request, "/api/x402/agents/discovery");
 
     const { hypothesis, completedTasks = [], existingDiscoveries = [] } = body as {
@@ -385,17 +424,11 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
           timestamp: new Date().toISOString(),
           content: "",
         },
-        conversationState: {
-          id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
-          values: {
-            discoveries: existingDiscoveries as any,
-          },
-        } as any,
-        tasksToConsider: completedTasks.map((t) => ({
-          ...t,
-          status: "completed" as const,
-        })) as any,
+        conversationState: createConversationState(
+          x402Settlement.payer || "x402-user",
+          { discoveries: existingDiscoveries as Discovery[] }
+        ),
+        tasksToConsider: createCompletedTasks(completedTasks),
         hypothesis,
       });
 

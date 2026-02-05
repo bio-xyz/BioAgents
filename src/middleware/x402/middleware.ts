@@ -23,6 +23,25 @@ export interface X402MiddlewareOptions {
   enabled?: boolean;
 }
 
+/**
+ * Settlement information attached to request after successful x402 payment
+ */
+export interface X402Settlement {
+  success: boolean;
+  transaction?: string;
+  network?: string;
+  payer?: string;
+  errorReason?: string;
+}
+
+/**
+ * Extended request with x402 settlement info
+ */
+export interface X402Request extends Request {
+  x402Settlement?: X402Settlement;
+  x402Requirement?: unknown;
+}
+
 export function x402Middleware(options: X402MiddlewareOptions = {}) {
   const enabled = options.enabled ?? x402Config.enabled;
   const plugin = new Elysia({ name: "x402-v2-middleware" });
