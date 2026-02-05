@@ -2,7 +2,6 @@ import { Elysia } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
 import { create402Response } from "../../middleware/x402/service";
 import { authResolver } from "../../middleware/authResolver";
-import { privyAuthBypass } from "../../middleware/creditAuth";
 import { deepResearchStartHandler } from "../deep-research/start";
 import { deepResearchStatusHandler } from "../deep-research/status";
 
@@ -12,13 +11,9 @@ import { deepResearchStatusHandler } from "../deep-research/status";
  * Uses x402 V2 payment protocol instead of API key authentication.
  * Reuses the same handler logic as the standard deep-research routes.
  *
- * Authentication:
- * - Privy-authenticated users bypass x402 payment
- * - Anonymous users must pay via x402 protocol
- *
  * Security:
  * - GET /start: Returns 402 with payment requirements (discovery)
- * - POST /start: Requires Privy auth or x402 payment
+ * - POST /start: Requires x402 payment (handled by x402Middleware)
  * - GET /status: Free (no payment), but requires userId query param
  */
 
@@ -30,10 +25,8 @@ export const x402DeepResearchRoute = new Elysia()
     return create402Response(request, "/api/x402/deep-research/start");
   })
   // POST /start with payment validation
-  // Order matters: authResolver -> creditAuth -> x402Middleware
-  .onBeforeHandle(authResolver({ required: false }))
-  .use(privyAuthBypass())
   .use(x402Middleware())
+  .onBeforeHandle(authResolver({ required: false }))
   .post("/api/x402/deep-research/start", async (ctx: any) => {
     const { body, request } = ctx;
     const x402Settlement = (request as any).x402Settlement;

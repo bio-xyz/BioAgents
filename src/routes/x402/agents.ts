@@ -3,7 +3,6 @@ import { x402Middleware, type X402Settlement } from "../../middleware/x402/middl
 import { create402Response } from "../../middleware/x402/service";
 import { routePricing } from "../../middleware/x402/pricing";
 import { authResolver } from "../../middleware/authResolver";
-import { privyAuthBypass } from "../../middleware/creditAuth";
 import logger from "../../utils/logger";
 import type { Message, PlanTask, ConversationState, Discovery } from "../../types/core";
 
@@ -101,12 +100,9 @@ export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
     };
   })
 
-  // Apply authentication and payment middleware to all agent routes
-  // Order matters: authResolver -> creditAuth -> x402Middleware
-  // Privy-authenticated users with credits bypass x402, otherwise x402 handles payment
-  .onBeforeHandle(authResolver({ required: false }))
-  .use(privyAuthBypass())
+  // Apply x402 middleware to all agent routes
   .use(x402Middleware())
+  .onBeforeHandle(authResolver({ required: false }))
 
   // =====================================================
   // LITERATURE AGENT - Standalone, simple input
