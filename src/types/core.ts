@@ -71,6 +71,21 @@ export interface ConversationStateValues extends StateValues {
     content?: string; // Parsed text content (for PDFs, extracted text; for CSVs, preview rows)
     size?: number; // File size in bytes
   }>;
+
+  // Clarification context from pre-research planning (optional)
+  clarificationContext?: {
+    sessionId: string;
+    refinedObjective: string;
+    questionsAndAnswers: Array<{
+      question: string;
+      answer: string;
+    }>;
+    initialTasks?: Array<{
+      objective: string;
+      type: "LITERATURE" | "ANALYSIS";
+      datasetFilenames: string[]; // Filenames to match against uploadedDatasets
+    }>; // Tasks for first iteration (used once, then cleared)
+  };
 }
 
 // TODO: add expiry to state rows in DB

@@ -6,6 +6,7 @@ import { Elysia } from "elysia";
 import { artifactsRoute } from "./routes/artifacts";
 import { authRoute } from "./routes/auth";
 import { chatRoute } from "./routes/chat";
+import { clarificationRoute } from "./routes/clarification";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { deepResearchPaperRoute } from "./routes/deep-research/paper";
@@ -253,6 +254,7 @@ const app = new Elysia()
 
   // API routes (not protected by UI auth)
   .use(chatRoute) // GET and POST /api/chat for agent-based chat
+  .use(clarificationRoute) // GET and POST /api/clarification/* for pre-research clarification
   .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
