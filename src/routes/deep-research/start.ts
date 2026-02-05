@@ -95,8 +95,16 @@ export const deepResearchStartRoute = new Elysia().guard(
 /**
  * Deep Research Start Handler - Core logic for POST /api/deep-research/start
  * Exported for reuse in x402 routes
+ *
+ * Options:
+ * - skipStorage: If true, skips all DB operations (stateless mode for x402)
  */
-export async function deepResearchStartHandler(ctx: any) {
+export interface DeepResearchHandlerOptions {
+  skipStorage?: boolean;
+}
+
+export async function deepResearchStartHandler(ctx: any, options: DeepResearchHandlerOptions = {}) {
+  const { skipStorage = false } = options;
   const { body, set, request } = ctx;
 
   const parsedBody = body as any;
@@ -185,72 +193,108 @@ export async function deepResearchStartHandler(ctx: any) {
     );
   }
 
-  // Ensure user and conversation exist
-  // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
-  const setupResult = await ensureUserAndConversation(userId, conversationId, {
-    skipUserCreation: isX402User,
-  });
-  if (!setupResult.success) {
-    set.status = 500;
-    return { ok: false, error: setupResult.error || "Setup failed" };
-  }
+  // Variables for DB records (or ephemeral equivalents)
+  let conversationStateRecord: { id: string; values: any };
+  let stateRecord: { id: string };
+  let createdMessage: { id: string; conversation_id: string; question: string; source: string };
 
-  // Setup conversation data
-  const dataSetup = await setupConversationData(
-    conversationId,
-    userId,
-    source,
-    false, // isExternal
-    message,
-    files.length,
-  );
-  if (!dataSetup.success) {
-    set.status = 500;
-    return { ok: false, error: dataSetup.error || "Data setup failed" };
-  }
+  // Reconcile researchMode (used in both paths)
+  let researchMode: ResearchMode = requestedResearchMode || "semi-autonomous";
 
-  const { conversationStateRecord, stateRecord } = dataSetup.data!;
+  if (skipStorage) {
+    // Stateless mode: create ephemeral records (no DB operations)
+    logger.info({ userId, conversationId }, "skip_storage_mode_using_ephemeral_records");
 
-  // Log with state IDs now that we have them
-  logger.info(
-    {
-      userId,
-      conversationId,
-      conversationStateId: conversationStateRecord.id,
-      stateId: stateRecord.id,
-      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
-      messageLength: message.length,
-    },
-    "deep_research_state_initialized",
-  );
-
-  // Reconcile researchMode: request takes priority, then existing state, then default
-  const researchMode: ResearchMode = requestedResearchMode
-    || conversationStateRecord.values.researchMode
-    || "semi-autonomous";
-
-  // Save researchMode to conversation state (allows it to change per request)
-  conversationStateRecord.values.researchMode = researchMode;
-
-  // Create message record
-  const messageResult = await createMessageRecord({
-    conversationId,
-    userId,
-    message,
-    source,
-    stateId: stateRecord.id,
-    files,
-    isExternal: false,
-  });
-  if (!messageResult.success) {
-    set.status = 500;
-    return {
-      ok: false,
-      error: messageResult.error || "Message creation failed",
+    const { generateUUID } = await import("../../utils/uuid");
+    const ephemeralMessageId = generateUUID();
+    conversationStateRecord = {
+      id: generateUUID(),
+      values: {
+        objective: "",
+        keyInsights: [],
+        discoveries: [],
+        uploadedDatasets: [],
+        researchMode,
+      },
     };
-  }
+    stateRecord = { id: generateUUID() };
+    createdMessage = {
+      id: ephemeralMessageId,
+      conversation_id: conversationId,
+      question: message,
+      source,
+    };
+  } else {
+    // Normal mode: full DB operations
 
-  const createdMessage = messageResult.message!;
+    // Ensure user and conversation exist
+    // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
+    const setupResult = await ensureUserAndConversation(userId, conversationId, {
+      skipUserCreation: isX402User,
+    });
+    if (!setupResult.success) {
+      set.status = 500;
+      return { ok: false, error: setupResult.error || "Setup failed" };
+    }
+
+    // Setup conversation data
+    const dataSetup = await setupConversationData(
+      conversationId,
+      userId,
+      source,
+      false, // isExternal
+      message,
+      files.length,
+    );
+    if (!dataSetup.success) {
+      set.status = 500;
+      return { ok: false, error: dataSetup.error || "Data setup failed" };
+    }
+
+    conversationStateRecord = dataSetup.data!.conversationStateRecord;
+    stateRecord = dataSetup.data!.stateRecord;
+
+    // Log with state IDs now that we have them
+    logger.info(
+      {
+        userId,
+        conversationId,
+        conversationStateId: conversationStateRecord.id,
+        stateId: stateRecord.id,
+        messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+        messageLength: message.length,
+      },
+      "deep_research_state_initialized",
+    );
+
+    // Reconcile researchMode: request takes priority, then existing state, then default
+    researchMode = requestedResearchMode
+      || conversationStateRecord.values.researchMode
+      || "semi-autonomous";
+
+    // Save researchMode to conversation state (allows it to change per request)
+    conversationStateRecord.values.researchMode = researchMode;
+
+    // Create message record
+    const messageResult = await createMessageRecord({
+      conversationId,
+      userId,
+      message,
+      source,
+      stateId: stateRecord.id,
+      files,
+      isExternal: false,
+    });
+    if (!messageResult.success) {
+      set.status = 500;
+      return {
+        ok: false,
+        error: messageResult.error || "Message creation failed",
+      };
+    }
+
+    createdMessage = messageResult.message!;
+  }
 
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled

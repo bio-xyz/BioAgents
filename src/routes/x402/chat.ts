@@ -45,6 +45,6 @@ export const x402ChatRoute = new Elysia()
       };
     }
 
-    // Has message - process as normal chat request
-    return chatHandler(ctx);
+    // Has message - process as stateless chat request (no DB storage)
+    return chatHandler(ctx, { skipStorage: true });
   });

@@ -48,6 +48,6 @@ export const x402DeepResearchRoute = new Elysia()
       };
     }
 
-    // Has query - process as normal deep research request
-    return deepResearchStartHandler(ctx);
+    // Has query - process as stateless deep research request (no DB storage)
+    return deepResearchStartHandler(ctx, { skipStorage: true });
   });
