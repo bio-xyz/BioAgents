@@ -153,7 +153,6 @@ export async function reflectionAgent(input: {
 
     logger.info(
       {
-        updatedWorld: text,
         thought,
         reflectionDocs,
       },
