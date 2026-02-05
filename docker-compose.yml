@@ -55,14 +55,6 @@ services:
     ports:
       - "${PORT:-3000}:3000"
 
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.bioagents-staging-api.rule=Host(`bioagent-staging-platform.bioagents.dev`)"
-      - traefik.http.routers.bioagents-staging-api.entryPoints=https
-      - traefik.http.routers.bioagents-staging-api.tls=true
-      - traefik.http.routers.bioagents-staging-api.tls.certresolver=letsencrypt
-      - traefik.http.services.bioagents-staging-api.loadbalancer.server.port=3000
-
     environment:
       # Required: LLM API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -143,10 +135,6 @@ services:
       retries: 3
       start_period: 40s
 
-    networks:
-      - coolify
-      - default
-
   # ==========================================================================
   # Redis - Message broker for BullMQ job queue
   # ==========================================================================
@@ -178,10 +166,3 @@ volumes:
     driver: local
   redis-data:
     driver: local
-
-# Networks - connect to Coolify's Traefik proxy network
-networks:
-  coolify:
-    external: true
-  default:
-    driver: bridge
