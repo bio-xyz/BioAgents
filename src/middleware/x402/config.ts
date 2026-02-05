@@ -25,7 +25,7 @@ export type X402Config = z.infer<typeof X402ConfigSchema>;
 
 const NETWORK_CONFIG = {
   testnet: {
-    network: "base-sepolia",
+    network: "eip155:84532", // CAIP-2 format for Base Sepolia
     // Using x402.org facilitator (open-source, no auth required)
     facilitatorUrl: "https://x402.org/facilitator",
     usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
@@ -35,7 +35,7 @@ const NETWORK_CONFIG = {
     useCdpFacilitator: false,
   },
   mainnet: {
-    network: "base",
+    network: "eip155:8453", // CAIP-2 format for Base mainnet
     // Recommended: Use CDP facilitator for production (set X402_FACILITATOR_URL in .env)
     // CDP: https://api.cdp.coinbase.com/platform/v2/x402 (requires CDP_API_KEY_ID/SECRET)
     facilitatorUrl: "https://api.cdp.coinbase.com/platform/v2/x402",
