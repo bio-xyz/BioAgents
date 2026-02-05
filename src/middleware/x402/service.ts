@@ -268,9 +268,8 @@ export class X402Service {
       options,
     );
 
-    // Build payment required response
-    // Note: 'error' field is added for client compatibility but is not part of v2 spec
-    const paymentRequired: PaymentRequired & { error?: string } = {
+    // Build payment required response (v2 spec compliant - no error field)
+    const paymentRequired: PaymentRequired = {
       x402Version: X402_VERSION,
       resource: {
         url: resource,
@@ -278,7 +277,6 @@ export class X402Service {
         mimeType: "application/json",
       },
       accepts: [requirements],
-      error: "Payment required",
     };
 
     // Add outputSchema for discovery

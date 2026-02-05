@@ -89,8 +89,17 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
     },
   )
   .get("/health", async ({ set }) => {
+    const HEALTH_CHECK_TIMEOUT_MS = 5000; // 5 second timeout
+    
     try {
-      const response = await fetch(`${x402Service.getFacilitatorUrl()}/supported`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+      
+      const response = await fetch(`${x402Service.getFacilitatorUrl()}/supported`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      
       const supported = await response.json();
 
       return {
@@ -99,13 +108,20 @@ export const x402Route = new Elysia({ prefix: "/api/x402" })
         facilitatorAvailable: response.ok,
         supported,
       };
-    } catch (error) {
-      if (logger) logger.error({ error }, "x402_v2_health_check_failed");
+    } catch (error: unknown) {
+      const isTimeout = error instanceof Error && error.name === "AbortError";
+      if (logger) {
+        logger.error(
+          { error: error instanceof Error ? error.message : String(error), isTimeout },
+          "x402_v2_health_check_failed"
+        );
+      }
       set.status = 503;
       return {
         ok: false,
         x402Version: 2,
         facilitatorAvailable: false,
+        error: isTimeout ? "Facilitator health check timed out" : "Facilitator unavailable",
       };
     }
   })
