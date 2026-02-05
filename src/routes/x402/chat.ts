@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
 import { create402Response } from "../../middleware/x402/service";
 import { authResolver } from "../../middleware/authResolver";
+import { creditAuthMiddleware } from "../../middleware/creditAuth";
 import { chatHandler } from "../chat";
 
 /**
@@ -10,10 +11,15 @@ import { chatHandler } from "../chat";
  * Uses x402 V2 payment protocol instead of API key authentication.
  * Reuses the same chatHandler logic as the standard /api/chat route.
  *
+ * Supports two payment methods:
+ * 1. Credits (Privy-authenticated users): Deducts from user's credit balance
+ * 2. x402 (crypto payment): Direct USDC payment via x402 protocol
+ *
  * Flow:
  * - GET: Returns 402 with payment requirements (discovery)
- * - POST without payment: Middleware returns 402
- * - POST with valid payment: Middleware validates, then chatHandler processes
+ * - POST with Privy auth + credits: creditAuthMiddleware bypasses x402
+ * - POST with x402 payment: x402Middleware validates payment
+ * - POST without payment/credits: Returns 402
  */
 
 export const x402ChatRoute = new Elysia()
@@ -22,8 +28,10 @@ export const x402ChatRoute = new Elysia()
     return create402Response(request, "/api/x402/chat");
   })
   // POST endpoint with payment validation
-  .use(x402Middleware())
+  // Order matters: authResolver -> creditAuth -> x402Middleware
   .onBeforeHandle(authResolver({ required: false }))
+  .use(creditAuthMiddleware({ creditCost: 1 }))
+  .use(x402Middleware())
   .post("/api/x402/chat", async (ctx: any) => {
     const { body, request } = ctx;
     const x402Settlement = (request as any).x402Settlement;

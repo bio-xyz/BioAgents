@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { x402Middleware } from "../../middleware/x402/middleware";
 import { create402Response } from "../../middleware/x402/service";
 import { authResolver } from "../../middleware/authResolver";
+import { creditAuthMiddleware } from "../../middleware/creditAuth";
 import { deepResearchStartHandler } from "../deep-research/start";
 import { deepResearchStatusHandler } from "../deep-research/status";
 
@@ -11,9 +12,13 @@ import { deepResearchStatusHandler } from "../deep-research/status";
  * Uses x402 V2 payment protocol instead of API key authentication.
  * Reuses the same handler logic as the standard deep-research routes.
  *
+ * Supports two payment methods:
+ * 1. Credits (Privy-authenticated users): Deducts from user's credit balance
+ * 2. x402 (crypto payment): Direct USDC payment via x402 protocol
+ *
  * Security:
  * - GET /start: Returns 402 with payment requirements (discovery)
- * - POST /start: Requires x402 payment (handled by x402Middleware)
+ * - POST /start: Requires credits or x402 payment
  * - GET /status: Free (no payment), but requires userId query param
  */
 
@@ -25,8 +30,10 @@ export const x402DeepResearchRoute = new Elysia()
     return create402Response(request, "/api/x402/deep-research/start");
   })
   // POST /start with payment validation
-  .use(x402Middleware())
+  // Order matters: authResolver -> creditAuth -> x402Middleware
   .onBeforeHandle(authResolver({ required: false }))
+  .use(creditAuthMiddleware({ creditCost: 10 })) // Deep research costs more credits
+  .use(x402Middleware())
   .post("/api/x402/deep-research/start", async (ctx: any) => {
     const { body, request } = ctx;
     const x402Settlement = (request as any).x402Settlement;
