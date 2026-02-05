@@ -45,6 +45,8 @@ services:
   bioagents:
     build: .
     container_name: bioagents-api
+    expose:
+      - "${PORT:-3000}"
 
     volumes:
       - bioagents-docs:/app/docs
