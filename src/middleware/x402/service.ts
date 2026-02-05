@@ -12,6 +12,7 @@ import type {
   SettleResponse,
   Network,
 } from "@x402/core/types";
+import { createFacilitatorConfig } from "@coinbase/x402";
 import logger from "../../utils/logger";
 import { x402Config, networkConfig, X402_VERSION, hasCdpAuth, isCdpFacilitator } from "./config";
 import { routePricing } from "./pricing";
@@ -68,34 +69,6 @@ export function usdToBaseUnits(amountUSD: string): string {
 }
 
 /**
- * Create CDP auth headers for facilitator requests
- * Returns headers object with auth for verify, settle, and supported operations
- */
-async function createCdpAuthHeaders(): Promise<{
-  verify: Record<string, string>;
-  settle: Record<string, string>;
-  supported: Record<string, string>;
-}> {
-  if (!x402Config.cdpApiKeyId || !x402Config.cdpApiKeySecret) {
-    return { verify: {}, settle: {}, supported: {} };
-  }
-  
-  // CDP uses API key authentication via header
-  // Format: Basic base64(api_key_id:api_key_secret)
-  const credentials = Buffer.from(
-    `${x402Config.cdpApiKeyId}:${x402Config.cdpApiKeySecret}`
-  ).toString("base64");
-  
-  const authHeader = { Authorization: `Basic ${credentials}` };
-  
-  return {
-    verify: authHeader,
-    settle: authHeader,
-    supported: authHeader,
-  };
-}
-
-/**
  * x402 V2 Service
  * 
  * Handles payment verification and settlement using the x402 V2 protocol.
@@ -104,31 +77,33 @@ export class X402Service {
   private facilitatorClient: HTTPFacilitatorClient;
 
   constructor() {
-    // Initialize HTTP facilitator client with optional CDP auth
-    const clientConfig: {
-      url: string;
-      createAuthHeaders?: () => Promise<{
-        verify: Record<string, string>;
-        settle: Record<string, string>;
-        supported: Record<string, string>;
-      }>;
-    } = {
-      url: x402Config.facilitatorUrl,
-    };
+    let clientConfig: Parameters<typeof HTTPFacilitatorClient>[0];
     
-    // Add CDP auth if using CDP facilitator and credentials are available
+    // Use official Coinbase facilitator config if CDP credentials are available
     if (isCdpFacilitator && hasCdpAuth) {
-      clientConfig.createAuthHeaders = createCdpAuthHeaders;
+      // Use @coinbase/x402's createFacilitatorConfig which handles JWT auth properly
+      clientConfig = createFacilitatorConfig(
+        x402Config.cdpApiKeyId,
+        x402Config.cdpApiKeySecret
+      );
       if (logger) {
-        logger.info("x402_v2_cdp_auth_enabled");
+        logger.info({
+          facilitatorUrl: clientConfig.url,
+          cdpAuthEnabled: true,
+        }, "x402_v2_cdp_auth_enabled");
       }
     } else if (isCdpFacilitator && !hasCdpAuth) {
+      // CDP facilitator URL but no credentials - will fail
+      clientConfig = { url: x402Config.facilitatorUrl };
       if (logger) {
         logger.warn(
           "x402_v2_cdp_auth_missing: CDP facilitator URL detected but CDP_API_KEY_ID/SECRET not set. " +
           "Auth will fail for mainnet. Set credentials or use X402_FACILITATOR_URL=https://x402.org/facilitator for testing."
         );
       }
+    } else {
+      // Non-CDP facilitator (e.g., x402.org)
+      clientConfig = { url: x402Config.facilitatorUrl };
     }
     
     this.facilitatorClient = new HTTPFacilitatorClient(clientConfig);
