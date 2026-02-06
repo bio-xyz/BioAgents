@@ -6,20 +6,30 @@ import { deepResearchStartHandler } from "../deep-research/start";
 import { deepResearchStatusHandler } from "../deep-research/status";
 
 /**
- * x402 V2 Deep Research Routes - Payment-gated deep research endpoints
+ * x402 V2 Deep Research Routes - Payment-gated access to the full BIOS orchestrator
  *
- * Uses x402 V2 payment protocol instead of API key authentication.
- * Reuses the same handler logic as the standard deep-research routes.
+ * Exposes the complete deep research system (all subagents: planning, literature,
+ * analysis, hypothesis, reflection, discovery, reply) via x402 payment protocol.
+ *
+ * The orchestrator runs iterative research cycles asynchronously. Results are
+ * persisted to DB and polled via the status endpoint.
  *
  * Security:
  * - GET /start: Returns 402 with payment requirements (discovery)
  * - POST /start: Requires x402 payment (handled by x402Middleware)
- * - GET /status: Free (no payment), but requires userId query param
+ * - GET /status: Free (no payment), requires auth for ownership validation
  */
 
 export const x402DeepResearchRoute = new Elysia()
-  // Status endpoint - FREE, no payment required (ownership validated in handler)
-  .get("/api/x402/deep-research/status/:messageId", deepResearchStatusHandler)
+  // Status endpoint - FREE, no payment required, but requires auth for ownership check
+  .guard(
+    { beforeHandle: [authResolver({ required: true })] },
+    (app) =>
+      app.get(
+        "/api/x402/deep-research/status/:messageId",
+        deepResearchStatusHandler,
+      ),
+  )
   // GET /start for discovery - returns 402 with schema
   .get("/api/x402/deep-research/start", async ({ request }) => {
     return create402Response(request, "/api/x402/deep-research/start");
@@ -36,9 +46,9 @@ export const x402DeepResearchRoute = new Elysia()
       return create402Response(request, "/api/x402/deep-research/start");
     }
 
-    // Handle test requests (valid payment but no query)
-    const query = (body as any)?.query;
-    if (!query) {
+    // Handle test requests (valid payment but no message)
+    const message = (body as any)?.message;
+    if (!message) {
       // Payment was validated - return success
       return {
         text: `Payment verified successfully. Transaction: ${x402Settlement.transaction}`,
@@ -48,6 +58,7 @@ export const x402DeepResearchRoute = new Elysia()
       };
     }
 
-    // Has query - process as stateless deep research request (no DB storage)
-    return deepResearchStartHandler(ctx, { skipStorage: true });
+    // Has message - run full orchestrator (all subagents in iterative cycles)
+    // Deep research is async and stateful: results persisted to DB, polled via status endpoint
+    return deepResearchStartHandler(ctx);
   });
