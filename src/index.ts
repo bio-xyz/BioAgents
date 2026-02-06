@@ -14,6 +14,8 @@ import { filesRoute } from "./routes/files";
 import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
 import { x402DeepResearchRoute } from "./routes/x402/deep-research";
+import { x402AgentsRoute } from "./routes/x402/agents";
+import { initializeX402Service } from "./middleware/x402/service";
 import { b402Route } from "./routes/b402";
 import { b402ChatRoute } from "./routes/b402/chat";
 import { b402DeepResearchRoute } from "./routes/b402/deep-research";
@@ -89,11 +91,14 @@ const app = new Elysia()
         "Authorization",
         "X-API-Key",
         "X-Requested-With",
-        "X-PAYMENT", // x402 payment proof header
+        "X-PAYMENT", // x402 v1 payment proof header (b402 compatibility)
+        "PAYMENT-SIGNATURE", // x402 v2 payment proof header
       ],
       exposeHeaders: [
         "Content-Type",
-        "X-PAYMENT-RESPONSE", // x402 settlement response header
+        "X-PAYMENT-RESPONSE", // x402 v1 settlement response (b402 compatibility)
+        "PAYMENT-RESPONSE", // x402 v2 settlement response header
+        "PAYMENT-REQUIRED", // x402 v2 payment required header
       ],
       maxAge: 86400, // Cache preflight for 24 hours
     }),
@@ -261,10 +266,11 @@ const app = new Elysia()
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
   .use(filesRoute) // POST /api/files/* for direct S3 file uploads
 
-  // x402 payment routes - Base Sepolia (USDC)
+  // x402 payment routes - Base (USDC)
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
   .use(x402ChatRoute) // POST /api/x402/chat for payment-gated chat
   .use(x402DeepResearchRoute) // POST /api/x402/deep-research/start, GET /api/x402/deep-research/status/:messageId
+  .use(x402AgentsRoute) // POST /api/x402/agents/* for individual agent access
 
   // b402 payment routes - BNB Chain (USDT)
   .use(b402Route) // GET /api/b402/* for config, pricing, health
@@ -393,6 +399,18 @@ app.listen(
         `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
       );
       console.log(`Job queue: ${isJobQueueEnabled() ? "enabled" : "disabled"}`);
+    }
+
+    // Initialize x402 payment service (validates CDP auth if configured)
+    try {
+      await initializeX402Service();
+    } catch (error) {
+      if (logger) {
+        logger.error({ error }, "x402_initialization_failed");
+      } else {
+        console.error("x402 initialization failed:", error);
+      }
+      // Don't exit - server can still run, just x402 payments will fail
     }
 
     // Start Redis subscription for WebSocket notifications if job queue is enabled
