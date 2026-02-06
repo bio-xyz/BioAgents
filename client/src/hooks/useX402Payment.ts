@@ -7,8 +7,9 @@ import {
   type Chain,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
-import { wrapFetchWithPayment, decodeXPaymentResponse } from "x402-fetch";
-import type { Signer } from "x402/types";
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
+import type { WalletClient } from "viem";
 import { useToast } from "./useToast";
 
 // Protocol type
@@ -84,7 +85,7 @@ export interface UseX402PaymentReturn {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => Promise<void>;
   fetchWithPayment: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  decodePaymentResponse: typeof decodeXPaymentResponse;
+  decodePaymentResponse: (header: string) => any;
   checkBalance: () => Promise<void>;
   setEmbeddedWalletClient: (client: any, address: string) => void;
 }
@@ -99,8 +100,8 @@ export function useX402Payment(): UseX402PaymentReturn {
   const [isConnecting, setIsConnecting] = useState(false);
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
   const [isCheckingBalance, setIsCheckingBalance] = useState(false);
-  const signerRef = useRef<Signer | null>(null);
-  const signerPromiseRef = useRef<Promise<Signer | null> | null>(null);
+  const signerRef = useRef<WalletClient | null>(null);
+  const x402ClientRef = useRef<x402Client | null>(null);
   const providerRef = useRef<any>(null);
   const providerListenersAttachedRef = useRef(false);
   const handleAccountsChangedRef = useRef<(accounts: string[]) => void>(() => {});
@@ -117,7 +118,7 @@ export function useX402Payment(): UseX402PaymentReturn {
 
     providerRef.current = null;
     signerRef.current = null;
-    signerPromiseRef.current = null;
+    x402ClientRef.current = null;
     setWalletAddress(null);
     setUsdcBalance(null);
   }, []);
@@ -326,12 +327,20 @@ export function useX402Payment(): UseX402PaymentReturn {
         transport: custom(provider),
       }).extend(publicActions);
 
-      signerRef.current = walletClient as unknown as Signer;
-      signerPromiseRef.current = Promise.resolve(walletClient as unknown as Signer);
+      signerRef.current = walletClient as unknown as WalletClient;
 
-      // Create wrapped fetch with x402 payment capability
-      // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
-      wrappedFetchRef.current = wrapFetchWithPayment(fetch, walletClient as any);
+      // Create x402 v2 client and register EVM scheme
+      const client = new x402Client();
+      // Get network in CAIP-2 format (e.g., "eip155:8453" for Base mainnet)
+      const networkId = chain.id === 8453 ? "eip155:8453" : "eip155:84532";
+      registerExactEvmScheme(client, {
+        signer: walletClient as any,
+        networks: [networkId],
+      });
+      x402ClientRef.current = client;
+
+      // Create wrapped fetch with x402 v2 payment capability
+      wrappedFetchRef.current = wrapFetchWithPayment(fetch, client);
 
       console.log("[useX402Payment] MetaMask wrapped fetch created:", {
         hasWrappedFetch: !!wrappedFetchRef.current,
@@ -356,8 +365,8 @@ export function useX402Payment(): UseX402PaymentReturn {
             resetSigner();
           } else {
             setWalletAddress(accounts[0] as Address);
-            signerRef.current = walletClient as unknown as Signer;
-            signerPromiseRef.current = Promise.resolve(walletClient as unknown as Signer);
+            signerRef.current = walletClient as unknown as WalletClient;
+            // x402ClientRef is already set
           }
         };
 
@@ -475,12 +484,20 @@ export function useX402Payment(): UseX402PaymentReturn {
     setWalletAddress(address as Address);
 
     // Set signer
-    signerRef.current = client as unknown as Signer;
-    signerPromiseRef.current = Promise.resolve(client as unknown as Signer);
+    signerRef.current = client as unknown as WalletClient;
 
-    // Create wrapped fetch with x402 payment capability
-    // @ts-ignore - wrapFetchWithPayment types are compatible but TypeScript is overly strict
-    wrappedFetchRef.current = wrapFetchWithPayment(fetch, client as any);
+    // Create x402 v2 client and register EVM scheme
+    const x402ClientInstance = new x402Client();
+    // Get network from config, default to testnet
+    const networkId = config?.network === "base" ? "eip155:8453" : "eip155:84532";
+    registerExactEvmScheme(x402ClientInstance, {
+      signer: client as any,
+      networks: [networkId],
+    });
+    x402ClientRef.current = x402ClientInstance;
+
+    // Create wrapped fetch with x402 v2 payment capability
+    wrappedFetchRef.current = wrapFetchWithPayment(fetch, x402ClientInstance);
 
     // Create an EIP-1193 provider shim for balance checking
     const providerShim = {
@@ -501,7 +518,7 @@ export function useX402Payment(): UseX402PaymentReturn {
     setTimeout(async () => {
       await checkBalanceForAddress(address, providerShim);
     }, 500);
-  }, [checkBalanceForAddress]);
+  }, [checkBalanceForAddress, config?.network]);
 
   return {
     config,
@@ -523,7 +540,14 @@ export function useX402Payment(): UseX402PaymentReturn {
     connectWallet,
     disconnectWallet,
     fetchWithPayment,
-    decodePaymentResponse: decodeXPaymentResponse,
+    decodePaymentResponse: (header: string) => {
+      // V2: Payment response is base64 encoded JSON
+      try {
+        return JSON.parse(atob(header));
+      } catch {
+        return null;
+      }
+    },
     checkBalance,
     setEmbeddedWalletClient,
   };
