@@ -9,6 +9,10 @@ on:
       - 'Dockerfile'
       - 'package.json'
       - 'bun.lockb'
+      - 'docker-compose.yml'
+      - 'docker-compose.swarm.yml'
+      - 'docker-compose.worker.yml'
+      - 'deploy-worker.yml'
 
   # Allow manual trigger with options
   workflow_dispatch:
