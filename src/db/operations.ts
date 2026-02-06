@@ -473,6 +473,10 @@ export async function getConversation(id: string) {
     .single();
 
   if (error) {
+    // PGRST116 = "The result contains 0 rows" - conversation doesn't exist
+    if (error.code === "PGRST116") {
+      return null;
+    }
     logger.error(
       `[getConversation] Error getting conversation: ${error.message}`,
     );
