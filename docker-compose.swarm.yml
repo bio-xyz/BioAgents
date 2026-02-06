@@ -120,16 +120,16 @@ services:
       - PAPER_GENERATION_CONCURRENCY=${PAPER_GENERATION_CONCURRENCY:-1}
       - MAX_CONCURRENT_PAPER_JOBS=${MAX_CONCURRENT_PAPER_JOBS:-3}
 
-      # Storage Configuration
+      # Storage Configuration (code expects AWS_* or S3_*_ID variants)
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-}
       - S3_ENDPOINT=${S3_ENDPOINT:-}
       - S3_BUCKET=${S3_BUCKET:-}
       - S3_REGION=${S3_REGION:-}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
-      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_REGION=${AWS_REGION:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
 
       # Production
       - NODE_ENV=production
