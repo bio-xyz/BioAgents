@@ -10,6 +10,10 @@ import { planningAgent } from "../../agents/planning";
 import { reflectionAgent } from "../../agents/reflection";
 import { replyAgent } from "../../agents/reply";
 import {
+  getClarificationSessionForUser,
+  linkSessionToConversation,
+} from "../../db/clarification";
+import {
   getMessagesByConversation,
   getOrCreateUserByWallet,
   updateConversationState,
@@ -95,16 +99,8 @@ export const deepResearchStartRoute = new Elysia().guard(
 /**
  * Deep Research Start Handler - Core logic for POST /api/deep-research/start
  * Exported for reuse in x402 routes
- *
- * Options:
- * - skipStorage: If true, skips all DB operations (stateless mode for x402)
  */
-export interface DeepResearchHandlerOptions {
-  skipStorage?: boolean;
-}
-
-export async function deepResearchStartHandler(ctx: any, options: DeepResearchHandlerOptions = {}) {
-  const { skipStorage = false } = options;
+export async function deepResearchStartHandler(ctx: any) {
   const { body, set, request } = ctx;
 
   const parsedBody = body as any;
@@ -168,6 +164,9 @@ export async function deepResearchStartHandler(ctx: any, options: DeepResearchHa
   type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
   const requestedResearchMode: ResearchMode | undefined = parsedBody.researchMode;
 
+  // Extract clarificationSessionId from request (optional)
+  const clarificationSessionId: string | undefined = parsedBody.clarificationSessionId;
+
   // Extract files from parsed body
   let files: File[] = [];
   if (parsedBody.files) {
@@ -187,114 +186,179 @@ export async function deepResearchStartHandler(ctx: any, options: DeepResearchHa
         source,
         message: message,
         fileCount: files.length,
+        requestedResearchMode,
         routeType: "deep-research-v2-start",
       },
       "deep_research_start_request_received",
     );
   }
 
-  // Variables for DB records (or ephemeral equivalents)
-  let conversationStateRecord: { id: string; values: any };
-  let stateRecord: { id: string };
-  let createdMessage: { id: string; conversation_id: string; question: string; source: string };
+  // Ensure user and conversation exist
+  // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
+  const setupResult = await ensureUserAndConversation(userId, conversationId, {
+    skipUserCreation: isX402User,
+  });
+  if (!setupResult.success) {
+    set.status = 500;
+    return { ok: false, error: setupResult.error || "Setup failed" };
+  }
 
-  // Reconcile researchMode (used in both paths)
-  let researchMode: ResearchMode = requestedResearchMode || "semi-autonomous";
+  // Setup conversation data
+  const dataSetup = await setupConversationData(
+    conversationId,
+    userId,
+    source,
+    false, // isExternal
+    message,
+    files.length,
+  );
+  if (!dataSetup.success) {
+    set.status = 500;
+    return { ok: false, error: dataSetup.error || "Data setup failed" };
+  }
 
-  if (skipStorage) {
-    // Stateless mode: create ephemeral records (no DB operations)
-    logger.info({ userId, conversationId }, "skip_storage_mode_using_ephemeral_records");
+  const { conversationStateRecord, stateRecord } = dataSetup.data!;
 
-    const { generateUUID } = await import("../../utils/uuid");
-    const ephemeralMessageId = generateUUID();
-    conversationStateRecord = {
-      id: generateUUID(),
-      values: {
-        objective: "",
-        keyInsights: [],
-        discoveries: [],
-        uploadedDatasets: [],
-        researchMode,
-      },
-    };
-    stateRecord = { id: generateUUID() };
-    createdMessage = {
-      id: ephemeralMessageId,
-      conversation_id: conversationId,
-      question: message,
-      source,
-    };
-  } else {
-    // Normal mode: full DB operations
-
-    // Ensure user and conversation exist
-    // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
-    const setupResult = await ensureUserAndConversation(userId, conversationId, {
-      skipUserCreation: isX402User,
-    });
-    if (!setupResult.success) {
-      set.status = 500;
-      return { ok: false, error: setupResult.error || "Setup failed" };
-    }
-
-    // Setup conversation data
-    const dataSetup = await setupConversationData(
-      conversationId,
+  // Log with state IDs now that we have them
+  logger.info(
+    {
       userId,
-      source,
-      false, // isExternal
-      message,
-      files.length,
-    );
-    if (!dataSetup.success) {
-      set.status = 500;
-      return { ok: false, error: dataSetup.error || "Data setup failed" };
-    }
-
-    conversationStateRecord = dataSetup.data!.conversationStateRecord;
-    stateRecord = dataSetup.data!.stateRecord;
-
-    // Log with state IDs now that we have them
-    logger.info(
-      {
-        userId,
-        conversationId,
-        conversationStateId: conversationStateRecord.id,
-        stateId: stateRecord.id,
-        messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
-        messageLength: message.length,
-      },
-      "deep_research_state_initialized",
-    );
-
-    // Reconcile researchMode: request takes priority, then existing state, then default
-    researchMode = requestedResearchMode
-      || conversationStateRecord.values.researchMode
-      || "semi-autonomous";
-
-    // Save researchMode to conversation state (allows it to change per request)
-    conversationStateRecord.values.researchMode = researchMode;
-
-    // Create message record
-    const messageResult = await createMessageRecord({
       conversationId,
-      userId,
-      message,
-      source,
+      conversationStateId: conversationStateRecord.id,
       stateId: stateRecord.id,
-      files,
-      isExternal: false,
-    });
-    if (!messageResult.success) {
-      set.status = 500;
+      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+      messageLength: message.length,
+    },
+    "deep_research_state_initialized",
+  );
+
+  // Reconcile researchMode: request takes priority, then existing state, then default
+  const researchMode: ResearchMode = requestedResearchMode
+    || conversationStateRecord.values.researchMode
+    || "semi-autonomous";
+
+  // Save researchMode to conversation state (allows it to change per request)
+  conversationStateRecord.values.researchMode = researchMode;
+
+  logger.info(
+    {
+      researchMode,
+      requestedResearchMode,
+      stateResearchMode: conversationStateRecord.values.researchMode,
+    },
+    "research_mode_resolved",
+  );
+
+  // =========================================================================
+  // CLARIFICATION CONTEXT: Process approved plan from clarification session
+  // =========================================================================
+  if (clarificationSessionId) {
+    logger.info(
+      { clarificationSessionId, userId },
+      "processing_clarification_session",
+    );
+
+    // Get and validate clarification session
+    const clarificationSession = await getClarificationSessionForUser(
+      clarificationSessionId,
+      userId,
+    );
+
+    if (!clarificationSession) {
+      set.status = 404;
       return {
         ok: false,
-        error: messageResult.error || "Message creation failed",
+        error: "Clarification session not found or access denied",
       };
     }
 
-    createdMessage = messageResult.message!;
+    if (clarificationSession.status !== "plan_approved") {
+      set.status = 400;
+      return {
+        ok: false,
+        error: `Clarification session must be approved. Current status: ${clarificationSession.status}`,
+      };
+    }
+
+    if (!clarificationSession.plan) {
+      set.status = 400;
+      return {
+        ok: false,
+        error: "Clarification session has no approved plan",
+      };
+    }
+
+    // Build questions and answers array
+    const questionsAndAnswers = clarificationSession.questions.map((q, i) => {
+      const answer = clarificationSession.answers.find((a) => a.questionIndex === i);
+      return {
+        question: q.question,
+        answer: answer?.answer || "",
+      };
+    });
+
+    // Build clarification context (refined objective + Q&A + initial tasks for planning)
+    // The worker will handle promoting initialTasks to the plan on first iteration
+    // Note: initialTasks use datasetFilenames (just names) that get resolved to actual dataset objects at execution time
+    conversationStateRecord.values.clarificationContext = {
+      sessionId: clarificationSessionId,
+      refinedObjective: clarificationSession.plan.objective,
+      questionsAndAnswers,
+      initialTasks: clarificationSession.plan.initialTasks.length > 0
+        ? clarificationSession.plan.initialTasks.map((task) => ({
+            objective: task.objective,
+            type: task.type,
+            datasetFilenames: task.datasetFilenames || [],
+          }))
+        : undefined,
+    };
+
+    logger.info(
+      {
+        initialTaskCount: clarificationSession.plan.initialTasks.length,
+        taskTypes: clarificationSession.plan.initialTasks.map((t) => t.type),
+      },
+      "clarification_context_with_initial_tasks_stored",
+    );
+
+    // Link clarification session to conversation
+    await linkSessionToConversation(clarificationSessionId, conversationId);
+
+    // Persist clarification context and plan to DB (needed for worker mode)
+    await updateConversationState(
+      conversationStateRecord.id,
+      conversationStateRecord.values,
+    );
+
+    logger.info(
+      {
+        clarificationSessionId,
+        conversationId,
+        qaCount: questionsAndAnswers.length,
+      },
+      "clarification_context_added_to_conversation",
+    );
   }
+
+  // Create message record
+  const messageResult = await createMessageRecord({
+    conversationId,
+    userId,
+    message,
+    source,
+    stateId: stateRecord.id,
+    files,
+    isExternal: false,
+  });
+  if (!messageResult.success) {
+    set.status = 500;
+    return {
+      ok: false,
+      error: messageResult.error || "Message creation failed",
+    };
+  }
+
+  const createdMessage = messageResult.message!;
 
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
@@ -557,6 +621,99 @@ async function runDeepResearch(params: {
           { newLevel, currentObjective },
           "continuation_using_promoted_tasks",
         );
+      } else if (
+        iterationCount === 1 &&
+        conversationState.values.clarificationContext?.initialTasks?.length
+      ) {
+        // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
+        const clarCtx = conversationState.values.clarificationContext;
+        const initialTasks = clarCtx.initialTasks!;
+        const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+
+        logger.info(
+          { taskCount: initialTasks.length, uploadedDatasetCount: uploadedDatasets.length },
+          "using_clarification_initial_tasks",
+        );
+
+        // Get current plan or initialize empty
+        const currentPlan = conversationState.values.plan || [];
+
+        // Find max level in current plan
+        const maxLevel =
+          currentPlan?.length > 0
+            ? Math.max(...currentPlan.map((t) => t.level || 0))
+            : -1;
+
+        // Add tasks from clarification with appropriate level and IDs
+        // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
+        newLevel = maxLevel + 1;
+        const newTasks = initialTasks.map((task) => {
+          const taskId =
+            task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+
+          // Resolve datasetFilenames to full dataset objects
+          const resolvedDatasets = (task.datasetFilenames || [])
+            .map((filename) => {
+              const dataset = uploadedDatasets.find((d) => d.filename === filename);
+              if (!dataset) {
+                logger.warn(
+                  { filename, availableDatasets: uploadedDatasets.map((d) => d.filename) },
+                  "clarification_dataset_not_found",
+                );
+                return null;
+              }
+              return {
+                filename: dataset.filename,
+                id: dataset.id,
+                description: dataset.description,
+                path: dataset.path,
+              };
+            })
+            .filter((d): d is NonNullable<typeof d> => d !== null);
+
+          return {
+            objective: task.objective,
+            type: task.type,
+            datasets: resolvedDatasets,
+            id: taskId,
+            level: newLevel,
+            start: undefined,
+            end: undefined,
+            output: undefined,
+          } as PlanTask;
+        });
+
+        // Use refined objective from clarification
+        currentObjective = clarCtx.refinedObjective;
+
+        // Append to plan and update state
+        conversationState.values.plan = [...currentPlan, ...newTasks];
+        conversationState.values.currentObjective = currentObjective;
+        conversationState.values.currentLevel = newLevel;
+
+        // Initialize main objective from clarification (only if not already set)
+        if (!conversationState.values.objective) {
+          conversationState.values.objective = clarCtx.refinedObjective;
+        }
+
+        // Clear initialTasks after use (one-time use)
+        conversationState.values.clarificationContext = {
+          ...clarCtx,
+          initialTasks: undefined,
+        };
+
+        // Update state in DB
+        if (conversationState.id) {
+          await updateConversationState(
+            conversationState.id,
+            conversationState.values,
+          );
+
+          logger.info(
+            { newLevel, taskCount: newTasks.length, currentObjective },
+            "clarification_tasks_promoted_to_plan",
+          );
+        }
       } else {
         // INITIAL: Execute planning agent
         logger.info(

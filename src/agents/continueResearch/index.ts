@@ -215,8 +215,11 @@ export async function continueResearchAgent(input: {
         confidence: result.confidence,
         triggerReason: result.triggerReason,
         reasoning: result.reasoning,
+        researchMode,
+        iterationCount,
+        userLastMessagePreview: userLastMessage?.substring(0, 100),
       },
-      "continue_research_agent_completed",
+      "continue_research_decision",
     );
 
     return {
