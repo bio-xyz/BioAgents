@@ -1,10 +1,11 @@
 /**
- * LLM prompts for paper generation
+ * LLM prompts for paper generation (Markdown output pipeline)
  */
 
-import { escapeLatex, truncateText } from "./utils/escapeLatex";
+import { truncateText } from "./utils/escapeLatex";
 import type { Discovery, PlanTask, ConversationStateValues } from "../../types/core";
 import type { FigureInfo } from "./types";
+import type { CitationKeyInfo } from "./bib/extractKeys";
 
 /**
  * Generate prompt for creating paper front matter (title, abstract, research snapshot)
@@ -75,9 +76,8 @@ Return ONLY valid JSON with this structure:
 
 # Requirements
 
-- Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
-- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
-- DO NOT include LaTeX formatting commands (\\section, \\textbf, etc.) - just plain text
+- Write plain text. For math, use $...$ for inline and $$...$$ for display.
+- DO NOT include any formatting commands - just plain text
 - Write in professional, scientific tone
 - Be specific and concrete, referencing actual discoveries
 - The content should be publication-quality
@@ -89,10 +89,12 @@ Generate the front matter now:`;
  * Generate prompt for creating Background/Introduction section
  * @param state - Conversation state
  * @param evidenceTasks - Tasks referenced in discovery evidence
+ * @param availableKeys - Citation keys available for [@key] references
  */
 export function generateBackgroundPrompt(
   state: ConversationStateValues,
   evidenceTasks: PlanTask[],
+  availableKeys: CitationKeyInfo[],
 ): string {
   const objective = state.objective || "Not specified";
   const currentObjective = state.currentObjective || objective;
@@ -129,6 +131,16 @@ ${truncatedOutput}
   const agentDescription = agentName
     ? `conducted by ${agentName}, an AI research agent`
     : "conducted by an AI research agent";
+
+  // Format available citation keys for the prompt
+  const keyList = availableKeys.length > 0
+    ? availableKeys
+        .map((k) => {
+          const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
+          return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
+        })
+        .join("\n")
+    : "(No citation keys available)";
 
   return `You are writing the Background/Introduction section for a scientific research paper ${agentDescription}.
 
@@ -171,7 +183,7 @@ Generate a comprehensive Background section that serves as the introduction to t
    - Provide a high-level overview of relevant prior work
    - Show how existing literature supports or contextualizes this research
    - Identify gaps or questions that this research addresses
-   - Cite sources using \\cite{doi:10.xxxx/xxxxx} format when referencing literature
+   - Cite sources using Pandoc citation syntax: [@key]
 
 4. **Research Approach** (1 paragraph):
    - Brief overview of how this research addresses the problem
@@ -182,14 +194,14 @@ Generate a comprehensive Background section that serves as the introduction to t
 
 Return ONLY valid JSON with this structure:
 {
-  "background": "The complete Background section content as plain text (4-7 paragraphs total)..."
+  "background": "The complete Background section content as Markdown (4-7 paragraphs total)..."
 }
 
 # Requirements
 
-- Use proper LaTeX commands, NOT Unicode (e.g., $\\geq$ not ≥, $\\alpha$ not α)
-- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
-- DO NOT include LaTeX formatting commands (\\section, \\subsection, \\textbf, etc.) - just plain text
+- Write in Markdown format
+- For math, use $...$ for inline and $$...$$ for display
+- DO NOT include section headings (no # or ##) - just flowing paragraphs
 - Write in professional, scientific tone appropriate for a research paper introduction
 - For the Literature Overview subsection, focus on LITERATURE type tasks
 - The content should flow naturally as a cohesive introduction
@@ -197,28 +209,27 @@ Return ONLY valid JSON with this structure:
 
 # Citation Guidelines
 
-CRITICAL: When referencing literature or prior work, you MUST cite sources using this EXACT format:
-- Format: [doi:10.xxxx/xxxxx] (with the actual DOI from the task outputs, wrapped in square brackets)
-- Example: [doi:10.1038/nature12345] or (Smith et al., 2023) [doi:10.1038/nature12345]
-- Multiple citations: [doi:10.1234/a,doi:10.5678/b] (comma-separated, NO SPACES, all in one set of brackets)
-- DO NOT use LaTeX \\cite{} commands directly - use square brackets with [doi:...]
-- DO NOT use spaces inside the brackets
-- DO NOT make up or hallucinate DOIs - only use DOIs that appear in the task outputs
+Use Pandoc citation syntax: [@key] for parenthetical citations.
+ONLY use keys from the provided list below. Do NOT invent citation keys.
+Multiple citations: [@key1; @key2]
 
-The DOIs are already present in the task outputs above. When you reference findings from literature tasks, include the DOI citation inline where it makes sense. The system will automatically convert [doi:...] to proper LaTeX \\cite{} commands.
+Available citation keys:
+${keyList}
+
+DO NOT make up or hallucinate citations. Only use keys from the list above.
 
 Generate the Background section now:`;
 }
 
 /**
- * Generate prompt for creating a discovery section
+ * Generate prompt for creating a discovery section (Markdown output)
  */
 export function generateDiscoverySectionPrompt(
   discovery: Discovery,
   discoveryIndex: number,
   allowedTasks: PlanTask[],
   figures: FigureInfo[],
-  allowedDOIs: string[],
+  availableKeys: CitationKeyInfo[],
 ): string {
   const derivedTitle = discovery.title || `Discovery ${discoveryIndex}`;
 
@@ -255,12 +266,17 @@ ${truncatedOutput}
     ?.map((ev) => `- Job ID ${ev.jobId}: ${ev.explanation || "(no explanation)"}`)
     .join("\n") || "(No evidence explanations provided)";
 
-  // Prepare allowed DOIs list
-  const doiList = allowedDOIs.length > 0
-    ? allowedDOIs.map((doi) => `- ${doi}`).join("\n")
-    : "(No DOIs found in task outputs)";
+  // Format available citation keys for the prompt
+  const keyList = availableKeys.length > 0
+    ? availableKeys
+        .map((k) => {
+          const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
+          return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
+        })
+        .join("\n")
+    : "(No citation keys available)";
 
-  return `You are writing a section for a scientific research paper. Generate a LaTeX section for Discovery ${discoveryIndex}.
+  return `You are writing a section for a scientific research paper. Generate a Markdown section for Discovery ${discoveryIndex}.
 
 # Discovery Information
 Title: ${derivedTitle}
@@ -280,43 +296,38 @@ ${taskDetails}
 # Available Figures
 ${figures.length > 0 ? "IMPORTANT: You have been provided with the actual figure images above. Carefully analyze each image and integrate insights from what you see into your writing. Reference specific patterns, trends, or visual elements from the images in your Results & Discussion." : ""}
 
-You may ONLY reference figures from this list. Use \\includegraphics[width=0.8\\textwidth]{filename} to include them.
-Set \\graphicspath{{figures/}} so LaTeX can find them.
+You may ONLY reference figures from this list. Use Markdown image syntax: ![caption](figures/filename.png)
+Pandoc will convert these to proper LaTeX \\begin{figure}+\\includegraphics.
 
 ${figureList}
 
 # Citation Guidelines
-CRITICAL: You MUST cite sources using EXACT format: \\cite{doi:10.xxxx/xxxxx}
+Use Pandoc citation syntax: [@key] for parenthetical citations.
+ONLY use keys from the provided list below. Do NOT invent citation keys.
+Multiple citations: [@key1; @key2]
 
-Rules:
-- Format: \\cite{doi:10.1234/example} (NO SPACES in the citation key)
-- Multiple citations: \\cite{doi:10.1234/a,doi:10.5678/b} (comma-separated, NO SPACES)
-- DO NOT use spaces: \\cite{doi 10 1234} is INVALID
-- DO NOT use underscores: \\cite{doi_10_1234} is INVALID (that comes later)
-- Use the EXACT DOI from the list below (including case and punctuation)
+Available citation keys:
+${keyList}
 
-You may ONLY cite DOIs that appear verbatim in the task outputs above. Here are the DOIs found:
-${doiList}
-
-DO NOT invent or hallucinate DOIs. Only use DOIs from the list above.
+DO NOT make up or hallucinate citations. Only use keys from the list above.
 
 # Required Section Structure
-Generate a LaTeX section with EXACTLY this structure:
+Generate a Markdown section with this structure:
 
-\\section{Discovery ${discoveryIndex}: ${escapeLatex(derivedTitle)}}
+# Discovery ${discoveryIndex}: ${derivedTitle}
 
-\\subsection{Background}
+## Background
 [Provide context and background for this discovery. What was known before? Why is this important?]
 
-\\subsection{Results \\& Discussion}
+## Results & Discussion
 [Present the main findings and results.]
-${figures.length > 0 ? "[CRITICAL: You have been shown the actual figure images above. Analyze what you see in each image and integrate those visual insights here. Reference specific patterns, trends, data points, or visual elements you observe. Include the figures using \\includegraphics{filename} with \\caption{description based on what you see in the image}.]" : "[Include figures if available using \\includegraphics.]"}
+${figures.length > 0 ? "[CRITICAL: You have been shown the actual figure images above. Analyze what you see in each image and integrate those visual insights here. Include figures using ![caption](figures/filename.png).]" : "[Include figures if available using ![caption](figures/filename.png).]"}
 [Discuss what these results mean and how the visual evidence supports the claims.]
 
-\\subsection{Novelty}
+## Novelty
 [Explain what is novel about this discovery. Why is this new or important?]
 
-\\subsection{Tasks Used}
+## Tasks Used
 [List the tasks that contributed to this discovery. IMPORTANT: Use ONLY the Job IDs provided below, NOT any abbreviated task IDs like "ana-3":]
 ${discovery.evidenceArray && discovery.evidenceArray.length > 0
   ? discovery.evidenceArray
@@ -329,28 +340,17 @@ ${discovery.evidenceArray && discovery.evidenceArray.length > 0
 # Output Format
 Return ONLY valid JSON with this structure:
 {
-  "sectionLatex": "...full LaTeX section...",
+  "sectionMarkdown": "...full Markdown section...",
   "usedDois": ["10.xxxx/xxxx", "10.yyyy/yyyy"]
 }
 
 DO NOT include any markdown code blocks or additional text. Return ONLY the JSON object.
 
-The sectionLatex field must contain valid LaTeX code with:
-- Properly escaped special characters
-- Valid \\cite{doi:...} commands for references
-- Only figures from the available figures list
+The sectionMarkdown field must contain valid Markdown with:
+- [@key] citations from the available keys list
+- Only figures from the available figures list using ![caption](figures/filename.png)
 - All content derived from the allowed tasks
-
-CRITICAL: Use proper LaTeX commands instead of Unicode characters:
-- Use $\\geq$ instead of ≥
-- Use $\\leq$ instead of ≤
-- Use $\\pm$ instead of ±
-- Use $\\times$ instead of ×
-- Use $\\alpha$, $\\beta$, $\\mu$ etc. instead of Greek letter Unicode characters (α, β, μ)
-- Use $\\sim$ for ~, $\\approx$ for ≈, etc.
-- CRITICAL: Every opening $ must have a closing $ - unbalanced math mode will break compilation
-- DO NOT use any Unicode mathematical symbols or Greek letters directly
+- For math, use $...$ for inline and $$...$$ for display
 
 Generate the section now:`;
 }
-
