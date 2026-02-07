@@ -22,32 +22,23 @@ export type FigureInfo = {
 
 export type DiscoverySection = {
   discoveryIndex: number;
-  sectionLatex: string;
+  sectionMarkdown: string;
   usedDois: string[];
 };
 
 export type BibTeXEntry = {
-  doi: string;
+  doi: string; // empty string for non-DOI entries
   citekey: string;
   bibtex: string;
-};
-
-export type DiscoveryContext = {
-  discovery: Discovery;
-  index: number;
-  allowedTasks: PlanTask[];
-  figures: FigureInfo[];
+  url?: string; // source URL for non-DOI entries
 };
 
 export type PaperMetadata = {
   title: string;
-  authors: string; // LaTeX-formatted author string
+  authors: string;
   abstract: string;
-  background: string; // Background/Introduction section
+  background: string; // Background/Introduction section (Markdown)
   researchSnapshot: string;
   keyInsights: string[];
   summaryOfDiscoveries: string;
-  inlineBibliography: string; // BibTeX from inline DOI citations (for reference)
-  inlineBibEntries: BibTeXEntry[]; // Structured BibTeX entries from inline DOI citations
-  inlineDOIToCitekey: Map<string, string>; // DOI → author-year citekey mapping for inline citations
 };
