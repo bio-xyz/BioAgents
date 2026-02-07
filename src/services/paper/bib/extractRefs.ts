@@ -53,11 +53,13 @@ export function extractReferences(text: string): ExtractedRef[] {
       if (/https?:\/\/\S*$/.test(before)) continue;
 
       seenIds.add(doi);
+      // Use raw match (not normalized doi) so indexOf finds it in the original line
+      const rawMatch = doiMatch[0];
       refs.push({
         type: "doi",
         url: `https://doi.org/${doi}`,
         id: doi,
-        title: extractTitleFromLine(line, doiMatch[0]),
+        title: extractTitleFromLine(line, rawMatch),
       });
     }
   }
