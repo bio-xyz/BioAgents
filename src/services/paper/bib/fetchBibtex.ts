@@ -1,7 +1,8 @@
 /**
- * Fetch BibTeX entries for DOIs and write to disk
+ * Fetch BibTeX entries for references and write to disk
  *
- * Thin wrapper around resolveMultipleDOIs + generateBibTeXFile
+ * Handles both DOI-based references (resolved via doi.org/Crossref)
+ * and non-DOI references (PMC, PMID, NCT, ArXiv, generic URLs) as @misc entries.
  */
 
 import * as fs from "fs";
@@ -12,21 +13,52 @@ import {
   generateBibTeXFile,
   resolveMultipleDOIs,
 } from "../utils/bibtex";
-
+import type { ExtractedRef } from "./extractRefs";
+import {
+  refToCitekey,
+  createMiscBibtexEntry,
+  noteForRefType,
+} from "./extractRefs";
 export async function fetchAndWriteBibtex(
-  dois: string[],
+  refs: ExtractedRef[],
   outputPath: string,
 ): Promise<{ bibPath: string; entries: BibTeXEntry[] }> {
-  logger.info({ doiCount: dois.length, outputPath }, "fetching_bibtex_for_dois");
+  logger.info({ refCount: refs.length, outputPath }, "fetching_bibtex_for_refs");
 
-  const entries = await resolveMultipleDOIs(dois);
-  const deduped = deduplicateAndResolveCollisions(entries);
+  // Split refs by type: DOIs get full metadata, others get @misc entries
+  const doiRefs = refs.filter((r) => r.type === "doi");
+  const nonDoiRefs = refs.filter((r) => r.type !== "doi");
+
+  // Resolve DOI refs via doi.org / Crossref
+  const doiEntries = await resolveMultipleDOIs(doiRefs.map((r) => r.id));
+
+  // Create @misc entries for non-DOI refs (titles from regex extraction)
+  const miscEntries: BibTeXEntry[] = nonDoiRefs.map((ref) => {
+    const citekey = refToCitekey(ref);
+    const note = noteForRefType(ref);
+    const bibtex = createMiscBibtexEntry(citekey, ref.title, ref.url, note);
+    return {
+      doi: "",
+      citekey,
+      bibtex,
+      url: ref.url,
+    };
+  });
+
+  // Merge and deduplicate
+  const allEntries = [...doiEntries, ...miscEntries];
+  const deduped = deduplicateAndResolveCollisions(allEntries);
   const bibContent = generateBibTeXFile(deduped);
 
   fs.writeFileSync(outputPath, bibContent, "utf-8");
 
   logger.info(
-    { resolved: deduped.length, total: dois.length, bibPath: outputPath },
+    {
+      resolved: deduped.length,
+      doiCount: doiRefs.length,
+      miscCount: miscEntries.length,
+      bibPath: outputPath,
+    },
     "bibtex_file_written",
   );
 

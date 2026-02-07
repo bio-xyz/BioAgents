@@ -327,15 +327,18 @@ export function rewriteBibTeXCitekey(
 export function deduplicateAndResolveCollisions(
   entries: BibTeXEntry[],
 ): BibTeXEntry[] {
-  const doiMap = new Map<string, BibTeXEntry>();
+  const dedupMap = new Map<string, BibTeXEntry>();
   for (const entry of entries) {
-    const normalizedDOI = normalizeDOI(entry.doi);
-    if (!doiMap.has(normalizedDOI)) {
-      doiMap.set(normalizedDOI, entry);
+    // For DOI entries, dedup by normalized DOI; for non-DOI, dedup by citekey
+    const dedupKey = entry.doi
+      ? `doi:${normalizeDOI(entry.doi)}`
+      : `key:${entry.citekey}`;
+    if (!dedupMap.has(dedupKey)) {
+      dedupMap.set(dedupKey, entry);
     }
   }
 
-  const dedupedEntries = Array.from(doiMap.values());
+  const dedupedEntries = Array.from(dedupMap.values());
   const citekeyUsage = new Map<string, number>();
   const finalEntries: BibTeXEntry[] = [];
 
@@ -354,6 +357,7 @@ export function deduplicateAndResolveCollisions(
         doi: entry.doi,
         citekey: finalCitekey,
         bibtex: updatedBibtex,
+        url: entry.url,
       });
     } else {
       finalEntries.push(entry);
@@ -369,7 +373,12 @@ export function deduplicateAndResolveCollisions(
 export function generateBibTeXFile(entries: BibTeXEntry[]): string {
   const header = `% BibTeX references for Deep Research paper\n\n`;
   const bibContent = entries
-    .map((entry) => `% DOI: ${entry.doi}\n${entry.bibtex}\n`)
+    .map((entry) => {
+      const comment = entry.doi
+        ? `% DOI: ${entry.doi}`
+        : `% URL: ${entry.url || "unknown"}`;
+      return `${comment}\n${entry.bibtex}\n`;
+    })
     .join("\n");
   return header + bibContent;
 }

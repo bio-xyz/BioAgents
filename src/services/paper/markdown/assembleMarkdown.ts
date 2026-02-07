@@ -48,6 +48,8 @@ export function assembleMarkdown(opts: AssembleMarkdownOptions): string {
     `abstract: |`,
     ...abstract.split("\n").map((line) => `  ${line}`),
     `bibliography: ${bibFilename}`,
+    `biblio-style: unsrtnat`,
+    `natbiboptions: numbers`,
     `header-includes: |`,
     `  \\usepackage{amsmath}`,
     `  \\usepackage{amssymb}`,
