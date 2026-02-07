@@ -520,31 +520,21 @@ async function generatePaperMetadata(
     apiKey,
   } as any);
 
-  // Generate front matter (title, abstract, snapshot)
+  // Generate front matter (title, abstract, snapshot) — retry once on parse failure
   const frontMatterPrompt = generateFrontMatterPrompt(state);
-
-  const frontMatterResponse = await llm.createChatCompletion({
-    messages: [{ role: "user", content: frontMatterPrompt }],
-    model: LLM_MODEL,
-    temperature: 0.3,
-    maxTokens: 3000,
-    paperId,
-    usageType: "paper-generation",
-  });
-
-  const frontMatterContent = frontMatterResponse.content || "";
-  const frontMatterJsonMatch = frontMatterContent.match(/\{[\s\S]*\}/);
-  if (!frontMatterJsonMatch) {
-    throw new Error(
-      `No JSON found in LLM response for front matter. Content preview: ${frontMatterContent.substring(0, 300)}`,
-    );
-  }
-
-  const frontMatterParsed = JSON.parse(frontMatterJsonMatch[0]) as {
+  const frontMatterParsed = await callLLMWithRetry<{
     title?: string;
     abstract?: string;
     researchSnapshot?: string;
-  };
+  }>(
+    llm,
+    frontMatterPrompt,
+    LLM_MODEL,
+    3000,
+    "front matter",
+    (parsed) => !!(parsed.title && parsed.abstract && parsed.researchSnapshot),
+    paperId,
+  );
 
   if (
     !frontMatterParsed.title ||
@@ -556,34 +546,24 @@ async function generatePaperMetadata(
     );
   }
 
-  // Generate background section (with citations)
+  // Generate background section (with citations) — retry once on parse failure
   logger.info("generating_background_section");
   const backgroundPrompt = generateBackgroundPrompt(
     state,
     evidenceTasks,
     availableKeys,
   );
-
-  const backgroundResponse = await llm.createChatCompletion({
-    messages: [{ role: "user", content: backgroundPrompt }],
-    model: LLM_MODEL,
-    temperature: 0.3,
-    maxTokens: 5000,
-    paperId,
-    usageType: "paper-generation",
-  });
-
-  const backgroundContent = backgroundResponse.content || "";
-  const backgroundJsonMatch = backgroundContent.match(/\{[\s\S]*\}/);
-  if (!backgroundJsonMatch) {
-    throw new Error(
-      `No JSON found in LLM response for background. Content preview: ${backgroundContent.substring(0, 300)}`,
-    );
-  }
-
-  const backgroundParsed = JSON.parse(backgroundJsonMatch[0]) as {
+  const backgroundParsed = await callLLMWithRetry<{
     background?: string;
-  };
+  }>(
+    llm,
+    backgroundPrompt,
+    LLM_MODEL,
+    5000,
+    "background",
+    (parsed) => !!parsed.background,
+    paperId,
+  );
 
   if (!backgroundParsed.background) {
     throw new Error(
@@ -876,6 +856,67 @@ async function generateDiscoverySection(
 
       prompt +=
         "\n\nThe previous response was invalid. Return ONLY valid JSON with sectionMarkdown and usedDois fields. No markdown code blocks.";
+    }
+  }
+
+  throw new Error("Unreachable");
+}
+
+/**
+ * Call LLM and parse JSON response, retrying once on parse failure.
+ */
+async function callLLMWithRetry<T extends Record<string, any>>(
+  llm: InstanceType<typeof LLM>,
+  prompt: string,
+  model: string,
+  maxTokens: number,
+  label: string,
+  validate: (parsed: T) => boolean,
+  paperId?: string,
+  maxAttempts = 2,
+): Promise<T> {
+  let currentPrompt = prompt;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await llm.createChatCompletion({
+      messages: [{ role: "user", content: currentPrompt }],
+      model,
+      temperature: 0.3,
+      maxTokens,
+      paperId,
+      usageType: "paper-generation",
+    });
+
+    const content = response.content || "";
+
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error(
+          `No JSON found in LLM response for ${label}. Content preview: ${content.substring(0, 300)}`,
+        );
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as T;
+
+      if (!validate(parsed)) {
+        throw new Error(
+          `Invalid ${label} response. Keys found: ${Object.keys(parsed).join(", ")}`,
+        );
+      }
+
+      return parsed;
+    } catch (error) {
+      logger.warn(
+        { attempt, label, error: error instanceof Error ? error.message : String(error) },
+        "llm_json_parse_failed",
+      );
+
+      if (attempt >= maxAttempts) throw error;
+
+      currentPrompt =
+        prompt +
+        "\n\nThe previous response was invalid. Return ONLY valid JSON with no markdown code blocks or extra text.";
     }
   }
 

@@ -131,6 +131,8 @@ export async function checkPandocInstalled(): Promise<void> {
   });
 }
 
+const PANDOC_TIMEOUT_MS = 60_000; // 60 seconds
+
 /**
  * Run pandoc with given arguments
  */
@@ -149,6 +151,12 @@ function runPandoc(
 
     let stdout = "";
     let stderr = "";
+    let killed = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      proc.kill("SIGKILL");
+    }, PANDOC_TIMEOUT_MS);
 
     proc.stdout?.on("data", (data) => {
       stdout += data.toString();
@@ -159,10 +167,16 @@ function runPandoc(
     });
 
     proc.on("close", (code) => {
-      resolve({ success: code === 0, stdout, stderr });
+      clearTimeout(timer);
+      if (killed) {
+        resolve({ success: false, stdout, stderr: `Pandoc timed out after ${PANDOC_TIMEOUT_MS / 1000}s\n${stderr}` });
+      } else {
+        resolve({ success: code === 0, stdout, stderr });
+      }
     });
 
     proc.on("error", (error) => {
+      clearTimeout(timer);
       resolve({ success: false, stdout: "", stderr: error.message });
     });
   });

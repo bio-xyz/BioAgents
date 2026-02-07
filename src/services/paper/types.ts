@@ -33,13 +33,6 @@ export type BibTeXEntry = {
   url?: string; // source URL for non-DOI entries
 };
 
-export type DiscoveryContext = {
-  discovery: Discovery;
-  index: number;
-  allowedTasks: PlanTask[];
-  figures: FigureInfo[];
-};
-
 export type PaperMetadata = {
   title: string;
   authors: string;

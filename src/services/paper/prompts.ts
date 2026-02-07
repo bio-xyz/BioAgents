@@ -2,7 +2,7 @@
  * LLM prompts for paper generation (Markdown output pipeline)
  */
 
-import { truncateText } from "./utils/escapeLatex";
+import { truncateText } from "./utils/textUtils";
 import type { Discovery, PlanTask, ConversationStateValues } from "../../types/core";
 import type { FigureInfo } from "./types";
 import type { CitationKeyInfo } from "./bib/extractKeys";
