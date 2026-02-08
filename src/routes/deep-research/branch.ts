@@ -248,8 +248,11 @@ async function deepResearchBranchHandler(ctx: any) {
         },
         "deep_research_branch_fetch_messages_failed",
       );
-      await supabase.from("conversations").delete().eq("id", branchedConversationId);
-      await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+      const { error: deleteConvError } = await supabase.from("conversations").delete().eq("id", branchedConversationId);
+      const { error: deleteStateError } = await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+      if (deleteConvError || deleteStateError) {
+        logger.error({ deleteConvError, deleteStateError, branchedConversationId }, "deep_research_branch_rollback_failed");
+      }
       set.status = 500;
       return {
         ok: false,
@@ -287,8 +290,11 @@ async function deepResearchBranchHandler(ctx: any) {
           },
           "deep_research_branch_copy_messages_failed",
         );
-        await supabase.from("conversations").delete().eq("id", branchedConversationId);
-        await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+        const { error: deleteConvError } = await supabase.from("conversations").delete().eq("id", branchedConversationId);
+        const { error: deleteStateError } = await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+        if (deleteConvError || deleteStateError) {
+          logger.error({ deleteConvError, deleteStateError, branchedConversationId }, "deep_research_branch_rollback_failed");
+        }
         set.status = 500;
         return {
           ok: false,
