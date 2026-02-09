@@ -15,7 +15,7 @@ import { filesRoute } from "./routes/files";
 import { x402Route } from "./routes/x402";
 import { x402ChatRoute } from "./routes/x402/chat";
 import { x402DeepResearchRoute } from "./routes/x402/deep-research";
-import { x402AgentsRoute } from "./routes/x402/agents";
+import { x402IndividualAgentsRoute } from "./routes/x402/agents";
 import { initializeX402Service } from "./middleware/x402/service";
 import { b402Route } from "./routes/b402";
 import { b402ChatRoute } from "./routes/b402/chat";
@@ -272,7 +272,7 @@ const app = new Elysia()
   .use(x402Route) // GET /api/x402/* for config, pricing, payments, health
   .use(x402ChatRoute) // POST /api/x402/chat for payment-gated chat
   .use(x402DeepResearchRoute) // POST /api/x402/deep-research/start, GET /api/x402/deep-research/status/:messageId
-  .use(x402AgentsRoute) // POST /api/x402/agents/* for individual agent access
+  .use(x402IndividualAgentsRoute) // POST /api/x402/agents/* for individual agent access
 
   // b402 payment routes - BNB Chain (USDT)
   .use(b402Route) // GET /api/b402/* for config, pricing, health
