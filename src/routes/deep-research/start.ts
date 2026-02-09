@@ -40,6 +40,7 @@ import {
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
+import { generatePollToken } from "../../services/pollToken";
 
 initKnowledgeBase();
 
@@ -52,6 +53,7 @@ type DeepResearchStartResponse = {
   userId: string; // Important: Return userId so external platforms can check status
   status: "processing";
   pollUrl?: string; // Full URL for x402 users to check status
+  pollToken?: string; // Signed token for x402 status endpoint auth
   error?: string;
 };
 
@@ -65,6 +67,7 @@ type DeepResearchQueuedResponse = {
   userId: string;
   status: "queued";
   pollUrl: string;
+  pollToken?: string; // Signed token for x402 status endpoint auth
 };
 
 /**
@@ -360,6 +363,16 @@ export async function deepResearchStartHandler(ctx: any) {
 
   const createdMessage = messageResult.message!;
 
+  // Generate poll token for x402 users (signed JWT for status endpoint auth)
+  let pollToken: string | null = null;
+  if (isX402User) {
+    pollToken = await generatePollToken(createdMessage.id);
+    logger.info(
+      { messageId: createdMessage.id, hasPollToken: !!pollToken },
+      "x402_poll_token_generated",
+    );
+  }
+
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
@@ -424,12 +437,16 @@ export async function deepResearchStartHandler(ctx: any) {
     );
 
     // Build pollUrl - use full URL for x402 users (external API consumers)
+    // x402 users get the x402 status endpoint with poll token appended
     let pollUrl = `/api/deep-research/status/${createdMessage.id}`;
     if (isX402User) {
       const url = new URL(request.url);
       const forwardedProto = request.headers.get("x-forwarded-proto");
       const protocol = forwardedProto || url.protocol.replace(":", "");
-      pollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
+      const statusPath = `/api/x402/deep-research/status/${createdMessage.id}`;
+      pollUrl = pollToken
+        ? `${protocol}://${url.host}${statusPath}?token=${pollToken}`
+        : `${protocol}://${url.host}${statusPath}`;
     }
 
     const response: DeepResearchQueuedResponse = {
@@ -439,6 +456,7 @@ export async function deepResearchStartHandler(ctx: any) {
       userId,
       status: "queued",
       pollUrl,
+      ...(pollToken && { pollToken }),
     };
 
     return new Response(JSON.stringify(response), {
@@ -459,13 +477,16 @@ export async function deepResearchStartHandler(ctx: any) {
 
   // Return immediately with message ID
   // Include userId so external platforms (x402) can check status later
-  // Build pollUrl for x402 users (external API consumers)
+  // Build pollUrl for x402 users - points to x402 status endpoint with poll token
   let statusPollUrl: string | undefined;
   if (isX402User) {
     const url = new URL(request.url);
     const forwardedProto = request.headers.get("x-forwarded-proto");
     const protocol = forwardedProto || url.protocol.replace(":", "");
-    statusPollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
+    const statusPath = `/api/x402/deep-research/status/${createdMessage.id}`;
+    statusPollUrl = pollToken
+      ? `${protocol}://${url.host}${statusPath}?token=${pollToken}`
+      : `${protocol}://${url.host}${statusPath}`;
   }
 
   const response: DeepResearchStartResponse = {
@@ -474,6 +495,7 @@ export async function deepResearchStartHandler(ctx: any) {
     userId, // Important for x402 users who may not have provided one
     status: "processing",
     ...(statusPollUrl && { pollUrl: statusPollUrl }),
+    ...(pollToken && { pollToken }),
   };
 
   // Run the actual deep research in the background

@@ -3,7 +3,9 @@ import { x402Middleware } from "../../middleware/x402/middleware";
 import { create402Response } from "../../middleware/x402/service";
 import { authResolver } from "../../middleware/authResolver";
 import { deepResearchStartHandler } from "../deep-research/start";
-import { getMessage, getState } from "../../db/operations";
+import { getDeepResearchStatus } from "../deep-research/statusUtils";
+import { verifyPollToken } from "../../services/pollToken";
+import { extractBearerToken } from "../../services/jwt";
 import logger from "../../utils/logger";
 
 /**
@@ -17,18 +19,16 @@ import logger from "../../utils/logger";
  *
  * Security model:
  * - POST /start: Requires x402 payment — this is the ONLY paid endpoint
- * - GET /status: FREE, no payment, no auth — messageId UUID is the security token
- *   (same pattern as /api/chat/status/:jobId — unguessable UUID = authorization)
+ * - GET /status: FREE, no payment — requires signed poll token (issued at start)
  * - GET /start: Returns 402 with payment requirements (discovery)
  */
 
 export const x402DeepResearchRoute = new Elysia()
-  // Status endpoint - FREE, no payment, no auth required
-  // The unguessable messageId UUID (only returned to the payer) serves as the auth token
-  // This follows the same pattern as /api/chat/status/:jobId
+  // Status endpoint - FREE, no payment required, but requires signed poll token
+  // The poll token is issued when the job starts and returned to the payer
   .get(
     "/api/x402/deep-research/status/:messageId",
-    async ({ params, set }: any) => {
+    async ({ params, set, request }: any) => {
       const messageId = params.messageId;
 
       if (!messageId) {
@@ -36,98 +36,60 @@ export const x402DeepResearchRoute = new Elysia()
         return { ok: false, error: "Missing required parameter: messageId" };
       }
 
-      try {
-        // Fetch the message
-        const message = await getMessage(messageId);
-        if (!message) {
-          set.status = 404;
-          return { ok: false, error: "Message not found" };
-        }
+      // Extract poll token from query param or Authorization header
+      const url = new URL(request.url);
+      const tokenFromQuery = url.searchParams.get("token");
+      const tokenFromHeader = extractBearerToken(
+        request.headers.get("Authorization"),
+      );
+      const token = tokenFromQuery || tokenFromHeader;
 
-        // No ownership check — messageId UUID is unguessable and only returned to the payer
-
-        // Fetch the state
-        const stateId = message.state_id;
-        if (!stateId) {
-          set.status = 500;
-          return { ok: false, error: "Message has no associated state" };
-        }
-
-        const state = await getState(stateId);
-        if (!state) {
-          set.status = 404;
-          return { ok: false, error: "State not found" };
-        }
-
-        // Determine status based on state values
-        const stateValues = state.values || {};
-        const steps = stateValues.steps || {};
-
-        // Check if there's an error
-        if (stateValues.status === "failed" || stateValues.error) {
-          return {
-            status: "failed",
-            messageId,
-            conversationId: message.conversation_id,
-            error: stateValues.error || "Deep research failed",
-          };
-        }
-
-        // Check if completed (finalResponse exists and no active steps)
-        const hasActiveSteps = Object.values(steps).some(
-          (step: any) => step.start && !step.end,
-        );
-
-        if (stateValues.finalResponse && !hasActiveSteps) {
-          const rawFiles = stateValues.rawFiles;
-          const fileMetadata =
-            rawFiles?.length > 0
-              ? rawFiles.map((f: any) => ({
-                  filename: f.filename,
-                  mimeType: f.mimeType,
-                  size: f.metadata?.size,
-                }))
-              : undefined;
-
-          const papers = [
-            ...(stateValues.finalPapers || []),
-            ...(stateValues.openScholarPapers || []),
-            ...(stateValues.semanticScholarPapers || []),
-            ...(stateValues.kgPapers || []),
-          ];
-
-          return {
-            status: "completed",
-            messageId,
-            conversationId: message.conversation_id,
-            result: {
-              text: stateValues.finalResponse,
-              files: fileMetadata,
-              papers: papers.length > 0 ? papers : undefined,
-              webSearchResults: stateValues.webSearchResults,
-            },
-          };
-        }
-
-        // Still processing
-        const completedSteps = Object.keys(steps).filter(
-          (stepName) => steps[stepName].end,
-        );
-        const currentStep = Object.keys(steps).find(
-          (stepName) => steps[stepName].start && !steps[stepName].end,
-        );
-
+      if (!token) {
+        set.status = 401;
         return {
-          status: "processing",
-          messageId,
-          conversationId: message.conversation_id,
-          progress: {
-            currentStep,
-            completedSteps,
-          },
+          ok: false,
+          error: "Poll token required",
+          hint: "Include ?token=<pollToken> query param or Authorization: Bearer <pollToken> header",
         };
+      }
+
+      // Verify the poll token
+      const verification = await verifyPollToken(token);
+      if (!verification.valid) {
+        set.status = 401;
+        return {
+          ok: false,
+          error: verification.error || "Invalid poll token",
+        };
+      }
+
+      // Validate that the token's messageId matches the route parameter
+      if (verification.messageId !== messageId) {
+        logger.warn(
+          {
+            tokenMessageId: verification.messageId,
+            routeMessageId: messageId,
+          },
+          "x402_poll_token_messageId_mismatch",
+        );
+        set.status = 403;
+        return {
+          ok: false,
+          error: "Poll token does not match requested messageId",
+        };
+      }
+
+      // Token is valid and matches — fetch status using shared utility
+      try {
+        const { response, httpStatus } =
+          await getDeepResearchStatus(messageId);
+        set.status = httpStatus;
+        return response;
       } catch (err) {
-        logger.error({ err, messageId }, "x402_deep_research_status_check_failed");
+        logger.error(
+          { err, messageId },
+          "x402_deep_research_status_check_failed",
+        );
         set.status = 500;
         return { ok: false, error: "Failed to check deep research status" };
       }
