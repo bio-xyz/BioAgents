@@ -116,7 +116,7 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   // Get userId from auth context (set by authResolver middleware)
-  // Auth context handles: x402 wallet > JWT token > API key > body.userId > anonymous
+  // Auth context handles: x402 payment > JWT token > API key > body.userId > anonymous
   const auth = (request as any).auth as AuthContext | undefined;
   let userId = auth?.userId || generateUUID();
   const source = auth?.method === "x402" ? "x402" : "api";

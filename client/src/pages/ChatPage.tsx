@@ -78,7 +78,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   };
 
   // Determine which user ID to use
-  // Priority: x402 wallet > JWT auth userId > localStorage fallback
+  // Priority: x402 payment > JWT auth userId > localStorage fallback
   const actualUserId = x402Enabled
     ? embeddedWalletAddress
       ? walletAddressToUUID(embeddedWalletAddress)

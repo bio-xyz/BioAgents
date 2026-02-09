@@ -92,7 +92,7 @@ function getAgentPricing() {
     }));
 }
 
-export const x402AgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
+export const x402IndividualAgentsRoute = new Elysia({ prefix: "/api/x402/agents" })
   // List all available agents and their pricing
   .get("/", () => {
     return {
