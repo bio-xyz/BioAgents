@@ -11,17 +11,17 @@ type BranchBody = {
   objective?: string;
 };
 
-type DbMessageRow = {
-  question: string | null;
-  content: string;
-  source: string | null;
-  files: unknown;
-  summary: string | null;
-  clean_content: string | null;
-  citation_metadata: unknown;
-  response_time: number | null;
-  created_at: string;
-};
+const COPY_MESSAGE_COLUMNS = [
+  "question",
+  "content",
+  "source",
+  "files",
+  "summary",
+  "clean_content",
+  "citation_metadata",
+  "response_time",
+  "created_at",
+] as const;
 
 const DEEP_RESEARCH_PREFIX = "[Deep Research]";
 
@@ -115,11 +115,12 @@ async function deepResearchBranchHandler(ctx: any) {
   const supabase = getServiceClient();
 
   try {
-    const { data: sourceConversation, error: sourceConversationError } = await supabase
-      .from("conversations")
-      .select("id, user_id, conversation_state_id")
-      .eq("id", sourceConversationId)
-      .single();
+    const { data: sourceConversation, error: sourceConversationError } =
+      await supabase
+        .from("conversations")
+        .select("id, user_id, conversation_state_id")
+        .eq("id", sourceConversationId)
+        .single();
 
     if (sourceConversationError || !sourceConversation) {
       set.status = 404;
@@ -145,11 +146,12 @@ async function deepResearchBranchHandler(ctx: any) {
       };
     }
 
-    const { data: sourceConversationState, error: sourceStateError } = await supabase
-      .from("conversation_states")
-      .select("id, values")
-      .eq("id", sourceConversation.conversation_state_id)
-      .single();
+    const { data: sourceConversationState, error: sourceStateError } =
+      await supabase
+        .from("conversation_states")
+        .select("id, values")
+        .eq("id", sourceConversation.conversation_state_id)
+        .single();
 
     if (sourceStateError || !sourceConversationState) {
       set.status = 404;
@@ -232,9 +234,7 @@ async function deepResearchBranchHandler(ctx: any) {
 
     const { data: sourceMessages, error: sourceMessagesError } = await supabase
       .from("messages")
-      .select(
-        "question, content, source, files, summary, clean_content, citation_metadata, response_time, created_at",
-      )
+      .select(COPY_MESSAGE_COLUMNS.join(", "))
       .eq("conversation_id", sourceConversationId)
       .order("created_at", { ascending: true });
 
@@ -248,10 +248,19 @@ async function deepResearchBranchHandler(ctx: any) {
         },
         "deep_research_branch_fetch_messages_failed",
       );
-      const { error: deleteConvError } = await supabase.from("conversations").delete().eq("id", branchedConversationId);
-      const { error: deleteStateError } = await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+      const { error: deleteConvError } = await supabase
+        .from("conversations")
+        .delete()
+        .eq("id", branchedConversationId);
+      const { error: deleteStateError } = await supabase
+        .from("conversation_states")
+        .delete()
+        .eq("id", newConversationState.id);
       if (deleteConvError || deleteStateError) {
-        logger.error({ deleteConvError, deleteStateError, branchedConversationId }, "deep_research_branch_rollback_failed");
+        logger.error(
+          { deleteConvError, deleteStateError, branchedConversationId },
+          "deep_research_branch_rollback_failed",
+        );
       }
       set.status = 500;
       return {
@@ -261,19 +270,14 @@ async function deepResearchBranchHandler(ctx: any) {
     }
 
     if (sourceMessages && sourceMessages.length > 0) {
-      const copiedMessages = (sourceMessages as DbMessageRow[]).map((message) => ({
+      const copiedMessages = (
+        sourceMessages as unknown as Record<string, unknown>[]
+      ).map((row) => ({
+        ...row,
+        source: row.source ?? "ui",
         conversation_id: branchedConversationId,
         user_id: userId,
-        question: message.question,
-        content: message.content,
-        source: message.source ?? "ui",
-        files: message.files ?? null,
-        summary: message.summary ?? null,
-        clean_content: message.clean_content ?? null,
-        citation_metadata: message.citation_metadata ?? null,
-        response_time: message.response_time ?? null,
         state_id: null,
-        created_at: message.created_at,
       }));
 
       const { error: copyMessagesError } = await supabase
@@ -290,10 +294,19 @@ async function deepResearchBranchHandler(ctx: any) {
           },
           "deep_research_branch_copy_messages_failed",
         );
-        const { error: deleteConvError } = await supabase.from("conversations").delete().eq("id", branchedConversationId);
-        const { error: deleteStateError } = await supabase.from("conversation_states").delete().eq("id", newConversationState.id);
+        const { error: deleteConvError } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", branchedConversationId);
+        const { error: deleteStateError } = await supabase
+          .from("conversation_states")
+          .delete()
+          .eq("id", newConversationState.id);
         if (deleteConvError || deleteStateError) {
-          logger.error({ deleteConvError, deleteStateError, branchedConversationId }, "deep_research_branch_rollback_failed");
+          logger.error(
+            { deleteConvError, deleteStateError, branchedConversationId },
+            "deep_research_branch_rollback_failed",
+          );
         }
         set.status = 500;
         return {
