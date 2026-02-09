@@ -1,0 +1,227 @@
+# ==========================================================================
+# Worker Docker Swarm Stack
+# ==========================================================================
+#
+# Deploy workers with zero-downtime rolling updates using Docker Swarm.
+#
+# Key features:
+#   - parallelism: 3 - Update all 3 workers simultaneously
+#   - order: start-first - New workers start BEFORE old ones stop
+#   - 8-hour drain period - Old workers finish their current jobs
+#   - Zero downtime - Queue always has active workers
+#
+# SETUP:
+#   1. Initialize swarm (once): docker swarm init
+#   2. Create .env file with your credentials
+#   3. Deploy: docker stack deploy -c docker-compose.swarm.yml bioagents-worker
+#
+# UPDATE (triggers rolling update):
+#   docker service update --image <registry>/bioagents-worker:<tag> bioagents-worker_worker
+#
+#   Or redeploy the stack:
+#   docker stack deploy -c docker-compose.swarm.yml bioagents-worker
+#
+# SCALE:
+#   docker service scale bioagents-worker_worker=5
+#
+# MONITOR:
+#   docker service ps bioagents-worker_worker
+#   docker service logs -f bioagents-worker_worker
+#
+# IMPORTANT: Swarm requires images from a registry (not local builds).
+#   docker build -t your-registry/bioagents-worker:v1.0.0 .
+#   docker push your-registry/bioagents-worker:v1.0.0
+#
+# ==========================================================================
+
+services:
+  worker:
+    image: ${WORKER_IMAGE:-biosagent/bios:latest}
+    command: ["bun", "run", "src/worker.ts"]
+
+    environment:
+      # Required: Redis URL (Upstash or your managed Redis)
+      - REDIS_URL=${REDIS_URL}
+      - USE_JOB_QUEUE=true
+
+      # Required: Database
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      - SUPABASE_FULL_URL=${SUPABASE_FULL_URL:-}
+
+      # Authentication
+      - BIOAGENTS_SECRET=${BIOAGENTS_SECRET:-}
+      - AUTH_MODE=${AUTH_MODE:-none}
+
+      # Required: LLM API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+
+      # Agent Configuration
+      - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
+      - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-google}
+      - REPLY_LLM_MODEL=${REPLY_LLM_MODEL:-gemini-2.5-pro}
+      - HYP_LLM_PROVIDER=${HYP_LLM_PROVIDER:-google}
+      - HYP_LLM_MODEL=${HYP_LLM_MODEL:-gemini-2.5-pro}
+      - PLANNING_LLM_PROVIDER=${PLANNING_LLM_PROVIDER:-google}
+      - PLANNING_LLM_MODEL=${PLANNING_LLM_MODEL:-gemini-2.5-flash}
+      - STRUCTURED_LLM_PROVIDER=${STRUCTURED_LLM_PROVIDER:-google}
+      - STRUCTURED_LLM_MODEL=${STRUCTURED_LLM_MODEL:-gemini-2.5-flash}
+
+      # Continue Research Agent
+      - CONTINUE_RESEARCH_LLM_PROVIDER=${CONTINUE_RESEARCH_LLM_PROVIDER:-anthropic}
+      - CONTINUE_RESEARCH_LLM_MODEL=${CONTINUE_RESEARCH_LLM_MODEL:-claude-sonnet-4-5-20250929}
+      - MAX_AUTO_ITERATIONS=${MAX_AUTO_ITERATIONS:-5}
+
+      # Embedding Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - TEXT_EMBEDDING_MODEL=${TEXT_EMBEDDING_MODEL:-text-embedding-3-large}
+
+      # Literature & Analysis Agents
+      - PRIMARY_LITERATURE_AGENT=${PRIMARY_LITERATURE_AGENT:-}
+      - PRIMARY_ANALYSIS_AGENT=${PRIMARY_ANALYSIS_AGENT:-}
+      - EDISON_API_URL=${EDISON_API_URL:-}
+      - EDISON_API_KEY=${EDISON_API_KEY:-}
+      - BIOAGENTS_API_URL=${BIOAGENTS_API_URL:-}
+      - BIO_LIT_AGENT_API_URL=${BIO_LIT_AGENT_API_URL:-}
+      - BIO_LIT_AGENT_API_KEY=${BIO_LIT_AGENT_API_KEY:-}
+      - DATA_ANALYSIS_API_URL=${DATA_ANALYSIS_API_URL:-}
+      - DATA_ANALYSIS_API_KEY=${DATA_ANALYSIS_API_KEY:-}
+
+      # Task Timeouts
+      - BIO_ANALYSIS_TASK_TIMEOUT_MINUTES=${BIO_ANALYSIS_TASK_TIMEOUT_MINUTES:-60}
+      - BIO_LITERATURE_TASK_TIMEOUT_MINUTES=${BIO_LITERATURE_TASK_TIMEOUT_MINUTES:-60}
+      - EDISON_TASK_TIMEOUT_MINUTES=${EDISON_TASK_TIMEOUT_MINUTES:-30}
+      - FILE_STATUS_TTL_MINUTES=${FILE_STATUS_TTL_MINUTES:-60}
+
+      # Vector Search Configuration
+      - CHUNK_SIZE=${CHUNK_SIZE:-2000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - VECTOR_SEARCH_LIMIT=${VECTOR_SEARCH_LIMIT:-20}
+      - RERANK_FINAL_LIMIT=${RERANK_FINAL_LIMIT:-5}
+      - USE_RERANKING=${USE_RERANKING:-true}
+      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.45}
+      - RERANKER_SCORE_THRESHOLD=${RERANKER_SCORE_THRESHOLD:-0.3}
+      - KNOWLEDGE_DOCS_PATH=${KNOWLEDGE_DOCS_PATH:-docs}
+
+      # Character Configuration
+      - CHARACTER_FILE=${CHARACTER_FILE:-characters/bios.json}
+      - CHARACTER_JSON=${CHARACTER_JSON:-}
+      - AGENT_NAME=${AGENT_NAME:-}
+      - AGENT_EMAIL=${AGENT_EMAIL:-}
+
+      # Worker Concurrency
+      - CHAT_QUEUE_CONCURRENCY=${CHAT_QUEUE_CONCURRENCY:-5}
+      - DEEP_RESEARCH_QUEUE_CONCURRENCY=${DEEP_RESEARCH_QUEUE_CONCURRENCY:-3}
+      - PAPER_GENERATION_CONCURRENCY=${PAPER_GENERATION_CONCURRENCY:-1}
+      - MAX_CONCURRENT_PAPER_JOBS=${MAX_CONCURRENT_PAPER_JOBS:-3}
+
+      # Storage Configuration (code expects AWS_* or S3_*_ID variants)
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_REGION=${S3_REGION:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+
+      # Production
+      - NODE_ENV=production
+
+    # CRITICAL: Allow workers 8 hours to finish long-running jobs before force kill
+    # After SIGTERM, worker stops accepting new jobs and drains current work
+    stop_grace_period: 8h
+
+    # Health check - Swarm uses this to determine when new workers are ready
+    # New workers must pass health check before old workers receive SIGTERM
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # =========================================================================
+    # SWARM DEPLOY CONFIGURATION
+    # =========================================================================
+    deploy:
+      mode: replicated
+      replicas: 3
+
+      
+      # -----------------------------------------------------------------------
+      # Rolling Update Strategy
+      # -----------------------------------------------------------------------
+      # With parallelism=3 and order=start-first:
+      #
+      # 1. All 3 NEW workers start simultaneously
+      # 2. Swarm waits for NEW workers to pass healthcheck (30s start_period)
+      # 3. Swarm monitors NEW workers for stability (monitor: 60s)
+      # 4. Only then: all 3 OLD workers receive SIGTERM
+      # 5. OLD workers drain (finish current jobs) for up to 8 hours
+      # 6. Queue is NEVER without workers - new ones handle jobs while old drain
+      #
+      # Timeline:
+      #   t=0     [OLD-1] [OLD-2] [OLD-3]           processing jobs
+      #   t=1     [OLD-1] [OLD-2] [OLD-3]           still running
+      #           [NEW-1] [NEW-2] [NEW-3]           starting up
+      #   t=60s   [OLD-1] [OLD-2] [OLD-3]           receive SIGTERM, drain
+      #           [NEW-1✓][NEW-2✓][NEW-3✓]          healthy, accepting jobs
+      #   t=???   [OLD workers finish their jobs and exit]
+      #           [NEW-1✓][NEW-2✓][NEW-3✓]          all traffic
+      # -----------------------------------------------------------------------
+      update_config:
+        parallelism: 3        # Update all 3 workers at once
+        order: start-first    # Start new workers BEFORE stopping old ones
+        delay: 10s            # Wait 10s between update batches (if replicas > parallelism)
+        failure_action: rollback
+        monitor: 60s          # Monitor new containers for 60s before considering healthy
+        max_failure_ratio: 0  # Rollback if any container fails
+
+      # Rollback uses same strategy - start new (old version) before stopping failed
+      rollback_config:
+        parallelism: 3
+        order: start-first
+        delay: 10s
+
+      # Restart policy for crashed containers (not during updates)
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      # Resource constraints
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+      # Optional: Placement constraints
+      # Uncomment to control which nodes run workers
+      # placement:
+      #   constraints:
+      #     - node.role == worker
+      #     - node.labels.type == compute
+
+# =========================================================================
+# Networks
+# =========================================================================
+# Workers need to reach:
+#   - Redis (REDIS_URL) - usually external/managed
+#   - Supabase (SUPABASE_URL) - external
+#   - LLM APIs - external (internet)
+#   - Analysis/Literature services - external
+#
+# If Redis is in the same Swarm, create an overlay network:
+# networks:
+#   bioagents-net:
+#     driver: overlay
+#     attachable: true
