@@ -2,7 +2,7 @@ name: Deploy Worker
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, main]
     paths:
       - 'src/**'
       - 'client/**'
@@ -40,7 +40,23 @@ jobs:
           username: biosagent
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push
+      # Dev branch: tag as 'dev' and commit SHA
+      - name: Build and Push (dev)
+        if: github.ref == 'refs/heads/dev'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            biosagent/bios:dev
+            biosagent/bios:dev-${{ github.sha }}
+          no-cache: ${{ inputs.no_cache == true }}
+          cache-from: ${{ inputs.no_cache == true && '' || 'type=gha,scope=dev' }}
+          cache-to: type=gha,mode=max,scope=dev
+
+      # Main branch: tag as 'latest' and commit SHA
+      - name: Build and Push (main)
+        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -49,17 +65,32 @@ jobs:
             biosagent/bios:latest
             biosagent/bios:${{ github.sha }}
           no-cache: ${{ inputs.no_cache == true }}
-          cache-from: ${{ inputs.no_cache == true && '' || 'type=gha' }}
-          cache-to: type=gha,mode=max
+          cache-from: ${{ inputs.no_cache == true && '' || 'type=gha,scope=main' }}
+          cache-to: type=gha,mode=max,scope=main
 
-      - name: Trigger Portainer Webhook
+      # Trigger dev webhook
+      - name: Trigger Portainer Webhook (dev)
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL_DEV }}" -k --fail --silent --show-error
+          echo "Dev webhook triggered successfully"
+
+      # Trigger production webhook
+      - name: Trigger Portainer Webhook (main)
+        if: github.ref == 'refs/heads/main'
         run: |
           curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" -k --fail --silent --show-error
-          echo "Portainer webhook triggered successfully"
+          echo "Production webhook triggered successfully"
 
       - name: Summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image:** biosagent/bios:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
+            echo "- **Image:** biosagent/bios:dev-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Environment:** Development" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Image:** biosagent/bios:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          fi
