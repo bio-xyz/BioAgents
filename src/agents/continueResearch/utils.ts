@@ -38,6 +38,7 @@ export type ContinueResearchDecision = {
  */
 export async function decideContinuation(
   originalObjective: string,
+  evolvingObjective: string,
   currentObjective: string,
   iterationCount: number,
   hypothesis: string,
@@ -83,6 +84,7 @@ export async function decideContinuation(
   // Build prompt
   const promptInstruction = continueResearchPrompt
     .replace("{{originalObjective}}", originalObjective)
+    .replace("{{evolvingObjective}}", evolvingObjective || originalObjective)
     .replace("{{currentObjective}}", currentObjective || originalObjective)
     .replace("{{iterationCount}}", String(iterationCount))
     .replace("{{hypothesis}}", hypothesis || "No hypothesis formulated yet.")

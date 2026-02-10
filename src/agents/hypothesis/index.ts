@@ -86,6 +86,11 @@ export async function hypothesisAgent(input: {
         `Main Objective: ${conversationState.values.objective}`,
       );
     }
+    if (conversationState.values.evolvingObjective) {
+      contextParts.push(
+        `Evolving Research Direction: ${conversationState.values.evolvingObjective}`,
+      );
+    }
     if (conversationState.values.currentObjective) {
       contextParts.push(
         `Current Objective: ${conversationState.values.currentObjective}`,

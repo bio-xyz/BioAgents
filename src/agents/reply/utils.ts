@@ -25,6 +25,7 @@ export type ReplyContext = {
   discoveries: Discovery[];
   methodology?: string;
   currentObjective?: string;
+  evolvingObjective?: string;
   uploadedDatasets?: UploadedDataset[];
   // Conversation history for classifier context (handles "continue", "yes", etc.)
   // Passed from replyAgent which fetches it internally
@@ -134,6 +135,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
 
     replyInstruction = answerModePrompt
       .replace("{{question}}", question)
+      .replace("{{evolvingObjective}}", context.evolvingObjective || "Not set")
       .replace("{{keyInsights}}", keyInsightsText)
       .replace("{{discoveries}}", discoveriesText)
       .replace(
@@ -147,6 +149,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
     logger.info({ mode: "REPORT" }, "using_report_mode_prompt"); // DEBUG
     replyInstruction = reportModePrompt
       .replace("{{question}}", question)
+      .replace("{{evolvingObjective}}", context.evolvingObjective || "Not set")
       .replace("{{completedTasks}}", completedTasksText)
       .replace(
         "{{hypothesis}}",

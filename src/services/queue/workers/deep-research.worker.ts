@@ -278,6 +278,11 @@ async function processDeepResearchJob(
         conversationState.values.objective = clarCtx.refinedObjective;
       }
 
+      // Initialize evolving objective (only if not already set)
+      if (!conversationState.values.evolvingObjective) {
+        conversationState.values.evolvingObjective = clarCtx.refinedObjective;
+      }
+
       // Clear initialTasks after use (one-time use)
       conversationState.values.clarificationContext = {
         ...clarCtx,
@@ -350,6 +355,11 @@ async function processDeepResearchJob(
       // Initialize main objective from first message (only if not already set)
       if (!conversationState.values.objective && messageRecord.question) {
         conversationState.values.objective = messageRecord.question;
+      }
+
+      // Initialize evolving objective (only if not already set)
+      if (!conversationState.values.evolvingObjective && messageRecord.question) {
+        conversationState.values.evolvingObjective = messageRecord.question;
       }
 
       // Update state in DB
@@ -602,11 +612,10 @@ async function processDeepResearchJob(
     ]);
 
     // Update conversation state with reflection results
-    if (reflectionResult.objective) {
-      // Only update main objective if reflection detected a fundamental direction change
-      conversationState.values.objective = reflectionResult.objective;
-    }
     conversationState.values.conversationTitle = reflectionResult.conversationTitle;
+    if (reflectionResult.evolvingObjective) {
+      conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+    }
     conversationState.values.currentObjective = reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;
     conversationState.values.methodology = reflectionResult.methodology;

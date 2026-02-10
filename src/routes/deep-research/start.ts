@@ -696,6 +696,11 @@ async function runDeepResearch(params: {
           conversationState.values.objective = clarCtx.refinedObjective;
         }
 
+        // Initialize evolving objective (only if not already set)
+        if (!conversationState.values.evolvingObjective) {
+          conversationState.values.evolvingObjective = clarCtx.refinedObjective;
+        }
+
         // Clear initialTasks after use (one-time use)
         conversationState.values.clarificationContext = {
           ...clarCtx,
@@ -772,6 +777,11 @@ async function runDeepResearch(params: {
         // Initialize main objective from first message (only if not already set)
         if (!conversationState.values.objective && createdMessage.question) {
           conversationState.values.objective = createdMessage.question;
+        }
+
+        // Initialize evolving objective (only if not already set)
+        if (!conversationState.values.evolvingObjective && createdMessage.question) {
+          conversationState.values.evolvingObjective = createdMessage.question;
         }
 
         // Update state in DB
@@ -1130,12 +1140,11 @@ These molecular changes align with established longevity pathways (Converging nu
       ]);
 
       // Update conversation state with reflection results
-      if (reflectionResult.objective) {
-        // Only update main objective if reflection detected a fundamental direction change
-        conversationState.values.objective = reflectionResult.objective;
-      }
       conversationState.values.conversationTitle =
         reflectionResult.conversationTitle;
+      if (reflectionResult.evolvingObjective) {
+        conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+      }
       conversationState.values.currentObjective =
         reflectionResult.currentObjective;
       conversationState.values.keyInsights = reflectionResult.keyInsights;

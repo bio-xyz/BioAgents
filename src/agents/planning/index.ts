@@ -379,6 +379,12 @@ async function buildContextFromState(
     );
   }
 
+  if (conversationState.values.evolvingObjective) {
+    contextParts.push(
+      `Evolving Research Direction (the high-level research goal, evolves slowly across iterations): ${conversationState.values.evolvingObjective}`,
+    );
+  }
+
   if (conversationState.values.currentObjective) {
     contextParts.push(
       `Current Objective (the current goal of the research, updated after each research iteration): ${conversationState.values.currentObjective}`,

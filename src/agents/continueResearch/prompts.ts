@@ -93,6 +93,7 @@ DECISION CRITERIA
 
 INPUTS
 - Original Research Question: {{originalObjective}}
+- Evolving Research Direction: {{evolvingObjective}}
 - Current Objective: {{currentObjective}}
 - Iteration Count: {{iterationCount}}
 - Current Hypothesis: {{hypothesis}}
