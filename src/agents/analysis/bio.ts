@@ -292,7 +292,7 @@ async function awaitBioTask(
       return taskResult;
     }
 
-    logger.info(
+    logger.debug(
       { taskId, status: taskResult.status },
       "bio_analysis_task_still_running",
     );

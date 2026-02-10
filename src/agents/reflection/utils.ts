@@ -18,6 +18,7 @@ export type ReflectionOptions = {
   usageType?: "chat" | "deep-research" | "paper-generation";
   // Existing values to preserve on parse failure
   existingObjective?: string;
+  existingEvolvingObjective?: string;
   existingInsights?: string[];
   existingMethodology?: string;
   existingTitle?: string;
@@ -25,8 +26,8 @@ export type ReflectionOptions = {
 
 export type ReflectionResult = {
   text: {
-    objective?: string; // Only set if research direction fundamentally changed
     conversationTitle?: string;
+    evolvingObjective?: string;
     currentObjective?: string;
     keyInsights: string[];
     discoveries: string[];
@@ -115,6 +116,7 @@ export async function reflectOnWorld(
         // Preserve existing values from conversation state
         parsedResponse = {
           currentObjective: options.existingObjective || "",
+          evolvingObjective: options.existingEvolvingObjective || "",
           keyInsights: options.existingInsights || [],
           discoveries: [],
           methodology: options.existingMethodology || "",
@@ -136,7 +138,7 @@ export async function reflectOnWorld(
         conversationTitle: parsedResponse.conversationTitle,
         insightsCount: parsedResponse.keyInsights.length,
         discoveriesCount: parsedResponse.discoveries.length,
-        hasObjective: !!parsedResponse.currentObjective,
+        hasCurrentObjective: !!parsedResponse.currentObjective,
         hasMethodology: !!parsedResponse.methodology,
         docCount: documents.length,
       },
@@ -145,8 +147,8 @@ export async function reflectOnWorld(
 
     return {
       text: {
-        objective: parsedResponse.objective, // Only present if direction fundamentally changed
         conversationTitle: parsedResponse.conversationTitle,
+        evolvingObjective: parsedResponse.evolvingObjective,
         currentObjective: parsedResponse.currentObjective,
         keyInsights: parsedResponse.keyInsights,
         discoveries: parsedResponse.discoveries,

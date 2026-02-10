@@ -193,6 +193,112 @@ async function processDeepResearchJob(
         { jobId: job.id, newLevel, currentObjective },
         "continuation_using_promoted_tasks",
       );
+    } else if (
+      isInitialIteration &&
+      conversationState.values.clarificationContext?.initialTasks?.length
+    ) {
+      // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
+      const clarCtx = conversationState.values.clarificationContext;
+      const initialTasks = clarCtx.initialTasks!;
+      const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+
+      // Log what filenames are expected vs what's available
+      const allRequestedFilenames = initialTasks
+        .filter((t) => t.type === "ANALYSIS")
+        .flatMap((t) => t.datasetFilenames || []);
+
+      logger.info(
+        {
+          jobId: job.id,
+          taskCount: initialTasks.length,
+          uploadedDatasetCount: uploadedDatasets.length,
+          requestedFilenames: allRequestedFilenames,
+          availableFilenames: uploadedDatasets.map((d) => d.filename),
+        },
+        "using_clarification_initial_tasks",
+      );
+
+      // Get current plan or initialize empty
+      const currentPlan = conversationState.values.plan || [];
+
+      // Find max level in current plan
+      const maxLevel =
+        currentPlan?.length > 0
+          ? Math.max(...currentPlan.map((t) => t.level || 0))
+          : -1;
+
+      // Add tasks from clarification with appropriate level and IDs
+      // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
+      newLevel = maxLevel + 1;
+      const newTasks = initialTasks.map((task) => {
+        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+
+        // Resolve datasetFilenames to full dataset objects
+        const resolvedDatasets = (task.datasetFilenames || [])
+          .map((filename) => {
+            const dataset = uploadedDatasets.find((d) => d.filename === filename);
+            if (!dataset) {
+              logger.warn(
+                { jobId: job.id, filename, availableDatasets: uploadedDatasets.map((d) => d.filename) },
+                "clarification_dataset_not_found",
+              );
+              return null;
+            }
+            return {
+              filename: dataset.filename,
+              id: dataset.id,
+              description: dataset.description,
+              path: dataset.path,
+            };
+          })
+          .filter((d): d is NonNullable<typeof d> => d !== null);
+
+        return {
+          objective: task.objective,
+          type: task.type,
+          datasets: resolvedDatasets,
+          id: taskId,
+          level: newLevel,
+          start: undefined,
+          end: undefined,
+          output: undefined,
+        } as PlanTask;
+      });
+
+      // Use refined objective from clarification
+      currentObjective = clarCtx.refinedObjective;
+
+      // Append to plan and update state
+      conversationState.values.plan = [...currentPlan, ...newTasks];
+      conversationState.values.currentObjective = currentObjective;
+      conversationState.values.currentLevel = newLevel;
+
+      // Initialize main objective from clarification (only if not already set)
+      if (!conversationState.values.objective) {
+        conversationState.values.objective = clarCtx.refinedObjective;
+      }
+
+      // Initialize evolving objective (only if not already set)
+      if (!conversationState.values.evolvingObjective) {
+        conversationState.values.evolvingObjective = clarCtx.refinedObjective;
+      }
+
+      // Clear initialTasks after use (one-time use)
+      conversationState.values.clarificationContext = {
+        ...clarCtx,
+        initialTasks: undefined,
+      };
+
+      // Update state in DB
+      if (conversationState.id) {
+        await updateConversationState(conversationState.id, conversationState.values);
+        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+      }
+
+      logger.info(
+        { jobId: job.id, newLevel, taskCount: newTasks.length, currentObjective },
+        "clarification_tasks_promoted_to_plan",
+      );
     } else {
       // INITIAL: Execute planning agent
       logger.info({ jobId: job.id }, "deep_research_job_planning");
@@ -249,6 +355,11 @@ async function processDeepResearchJob(
       // Initialize main objective from first message (only if not already set)
       if (!conversationState.values.objective && messageRecord.question) {
         conversationState.values.objective = messageRecord.question;
+      }
+
+      // Initialize evolving objective (only if not already set)
+      if (!conversationState.values.evolvingObjective && messageRecord.question) {
+        conversationState.values.evolvingObjective = messageRecord.question;
       }
 
       // Update state in DB
@@ -501,11 +612,10 @@ async function processDeepResearchJob(
     ]);
 
     // Update conversation state with reflection results
-    if (reflectionResult.objective) {
-      // Only update main objective if reflection detected a fundamental direction change
-      conversationState.values.objective = reflectionResult.objective;
-    }
     conversationState.values.conversationTitle = reflectionResult.conversationTitle;
+    if (reflectionResult.evolvingObjective) {
+      conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+    }
     conversationState.values.currentObjective = reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;
     conversationState.values.methodology = reflectionResult.methodology;

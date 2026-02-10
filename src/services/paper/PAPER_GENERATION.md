@@ -1,123 +1,171 @@
-# Paper Generation API
+# Paper Generation Pipeline
 
 ## Overview
 
-The Paper Generation API generates a LaTeX research paper from a Deep Research conversation, compiles it to PDF, and uploads it to object storage. The paper follows a structured format with specific sections derived from the conversation's discoveries.
+Generates a PDF research paper from a Deep Research conversation using a **Markdown → Pandoc → LaTeX → PDF** pipeline. The LLM writes Markdown with Pandoc citation syntax (`[@key]`), Pandoc converts to LaTeX with natbib citations, and XeLaTeX compiles the final PDF.
 
-## Endpoint
+## Pipeline Stages
 
+```
+1. Validate conversation ownership
+2. Index tasks by jobId, map discoveries → evidence tasks
+3. Extract references (DOIs, PMC, PMID, ArXiv, URLs) from task outputs
+4. Fetch BibTeX for DOIs via doi.org / Crossref → write refs.bib
+5. Extract available citation keys for LLM prompts
+6. LLM: Generate front matter (title, abstract, research snapshot)
+7. LLM: Generate background section (with citations)
+8. Download figure artifacts from ANALYSIS tasks
+9. LLM: Generate discovery sections (parallel, max 3 concurrent)
+10. Assemble Markdown document with YAML frontmatter
+11. Validate Markdown (strip unknown citations, check math balance)
+12. Pandoc convert Markdown → LaTeX (.tex)
+13. XeLaTeX + BibTeX compile → PDF
+14. Upload PDF + .tex to storage
+15. Cleanup temp directory
+```
+
+## Endpoints
+
+### Sync (blocking)
 ```
 POST /api/deep-research/conversations/:conversationId/paper
 ```
+Returns `{ paperId, pdfUrl, rawLatexUrl }` when complete.
 
-## Authentication
-
-**Required**: Yes (Classic JWT or x402 payment proof)
-
-The authenticated user must be the owner of the conversation. Otherwise, a 403 Forbidden error is returned.
-
-## Request
-
-### Route Parameters
-- `conversationId` (string, required): UUID of the conversation to generate a paper from
-
-### Request Body
-The request body is optional and can be empty.
-
-### Example Request
-
-```bash
-curl -X POST https://your-domain.com/api/deep-research/conversations/123e4567-e89b-12d3-a456-426614174000/paper \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json"
+### Async (queue-based, requires `USE_JOB_QUEUE=true`)
+```
+POST /api/deep-research/conversations/:conversationId/paper/async
+```
+Returns `202 Accepted` with `{ paperId, statusUrl }`. Poll status at:
+```
+GET /api/deep-research/paper/:paperId/status
 ```
 
-## Response
-
-### Success Response (200 OK)
-
-```json
-{
-  "success": true,
-  "paperId": "987fbc97-4bed-5078-9f07-9141ba07c9f3",
-  "conversationId": "123e4567-e89b-12d3-a456-426614174000",
-  "conversationStateId": "456e7890-e89b-12d3-a456-426614174111",
-  "pdfPath": "papers/987fbc97-4bed-5078-9f07-9141ba07c9f3/paper.pdf",
-  "pdfUrl": "https://storage.example.com/signed-url-to-pdf?expires=...",
-  "sourceZipUrl": "https://storage.example.com/signed-url-to-source?expires=..."
-}
+### Other
+```
+GET /api/deep-research/paper/:paperId          — Get paper with fresh presigned URLs
+GET /api/deep-research/conversations/:id/papers — List all papers for a conversation
 ```
 
-### Error Responses
-
-#### 401 Unauthorized
-```json
-{
-  "error": "Authentication required",
-  "message": "Valid authentication is required to generate papers"
-}
-```
-
-#### 403 Forbidden
-```json
-{
-  "error": "Access denied",
-  "message": "You do not have permission to generate a paper for this conversation"
-}
-```
-
-#### 404 Not Found
-```json
-{
-  "error": "Resource not found",
-  "message": "Conversation not found: 123e4567-e89b-12d3-a456-426614174000"
-}
-```
-
-#### 500 Internal Server Error (Compilation Failed)
-```json
-{
-  "error": "LaTeX compilation failed",
-  "message": "LaTeX compilation failed:\n... error logs ...",
-  "hint": "The paper content could not be compiled to PDF. Check the LaTeX syntax and citations."
-}
-```
+All endpoints require authentication.
 
 ## Paper Structure
 
-The generated paper has the following sections in this exact order:
-
-1. **Title**: "Deep Research Discovery Report: [objective]"
-2. **Research Objective**: From `state.objective`
-3. **Key Insights**: Bullet list from `state.keyInsights`
-4. **Research Snapshot**: Combines `currentObjective`, `currentHypothesis`, and optionally `methodology`
-5. **Summary of Discoveries**: Brief summary of all discoveries
-6. **Discovery 1..N**: Each discovery gets 1-2 pages with subsections:
+1. **Title** — LLM-generated, max 15 words
+2. **Abstract** — LLM-generated, 150-200 words
+3. **Research Snapshot** — Current objective, hypothesis, approach
+4. **Background** — LLM-generated introduction with literature citations
+5. **Key Insights** — Bullet list from conversation state
+6. **Summary of Discoveries** — One-line summary per discovery
+7. **Discovery 1..N** — Each gets 1-2 pages with subsections:
    - Background
-   - Results & Discussion
+   - Results & Discussion (with figures)
    - Novelty
    - Tasks Used
-7. **References**: BibTeX-derived citations
+8. **References** — BibTeX-derived bibliography (natbib, numerical)
 
-## Citation Policy
+## Citation Pipeline
 
-- Citations use DOI placeholders: `\cite{doi:10.xxxx/xxxxx}`
-- Only DOIs found in task outputs are allowed
-- DOIs are resolved to BibTeX via doi.org or Crossref API
-- Citekeys are generated from DOIs (e.g., `doi_10_1234_nature`)
-- If a DOI cannot be resolved, it is removed in a repair pass
+1. **Reference extraction** (`bib/extractRefs.ts`): Scans task outputs for DOIs, PMC/PMID links, ArXiv, ClinicalTrials.gov, and generic URLs
+2. **BibTeX resolution** (`utils/bibtex.ts`): DOIs resolved via doi.org (with Crossref fallback). Non-DOI refs become `@misc` entries
+3. **Citation keys** (`bib/extractKeys.ts`): Extracts key + metadata from BibTeX entries, injected into LLM prompts so the model knows which `[@key]` citations are valid
+4. **Validation** (`markdown/validateMarkdown.ts`): Strips unknown `[@key]` references, replaces raw URL citations with proper `[@key]` syntax
+5. **Pandoc** converts `[@key]` → `\citep{key}` (natbib)
 
-## Figures & Artifacts
+Citation key format:
+- DOI refs: `doi_10_1234_nature_12345`
+- PMC: `pmc_12345`
+- PMID: `pmid_99999`
+- ArXiv: `arxiv_2401_12345`
+- URL refs: `url_<hash>`
 
-- Analysis task artifacts are automatically downloaded
-- Only image files (png, jpg, jpeg, svg, pdf) are included
-- Figures are named: `d{discoveryIndex}_{sanitizedName}.{ext}`
-- Captions come from `artifact.description` or fallback to task reference
-- LLM may only reference figures provided to it for each discovery
+## Figures
 
-## Database Schema
+- Only ANALYSIS task artifacts with image extensions (png, jpg, jpeg, gif, webp)
+- Downloaded to `figures/d{discoveryIndex}_{sanitizedName}.{ext}`
+- For Anthropic Claude: images are base64-encoded and sent as vision content
+- For other providers: text-only prompts, figures referenced by filename
+- LLM writes `![caption](figures/filename.png)` → Pandoc converts to `\includegraphics`
 
-A new `paper` table stores metadata:
+## File Structure
+
+```
+src/services/paper/
+├── generatePaper.ts           # Main orchestration (single entry point)
+├── types.ts                   # Type definitions
+├── prompts.ts                 # LLM prompt builders
+├── bib/
+│   ├── fetchBibtex.ts         # Fetch BibTeX + write refs.bib
+│   ├── extractRefs.ts         # Extract DOIs/URLs from task text
+│   └── extractKeys.ts         # Extract citation key metadata for prompts
+├── convert/
+│   └── pandocConvert.ts       # Markdown → LaTeX via Pandoc (60s timeout)
+├── markdown/
+│   ├── assembleMarkdown.ts    # YAML frontmatter + body assembly
+│   └── validateMarkdown.ts    # Citation validation, math balance check
+└── utils/
+    ├── bibtex.ts              # DOI resolution, dedup, citekey sanitization
+    ├── compile.ts             # XeLaTeX compilation (latexmk or manual 3-pass)
+    ├── artifacts.ts           # Figure downloading from storage
+    ├── doi.ts                 # DOI normalization and validation
+    └── textUtils.ts           # Filename sanitization, text truncation
+```
+
+## Environment Variables
+
+### Required
+```bash
+PAPER_GEN_LLM_PROVIDER=openai|anthropic|google   # Default: openai
+PAPER_GEN_LLM_MODEL=gpt-4o|claude-3-5-sonnet|... # Default: gpt-4o
+OPENAI_API_KEY=           # Or ANTHROPIC_API_KEY / GOOGLE_API_KEY
+STORAGE_PROVIDER=s3       # For PDF + .tex upload
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+S3_BUCKET=
+AWS_REGION=
+```
+
+### Optional
+```bash
+AGENT_NAME=BioAgent           # Appears as co-author
+AGENT_EMAIL=research@bio.xyz  # Appears in author line
+MAX_CONCURRENT_PAPER_JOBS=3   # Global limit for async queue
+ARTIFACT_BASE_URL=            # Fallback URL for figure downloads
+```
+
+## System Requirements
+
+**XeLaTeX** (not pdflatex) is required for native Unicode support (Greek letters, accented chars).
+
+**Pandoc** converts Markdown → LaTeX with `--standalone --natbib --bibliography`.
+
+```bash
+# Ubuntu/Debian (also in Dockerfile)
+apt-get install texlive-xetex texlive-latex-extra texlive-fonts-recommended latexmk pandoc
+
+# macOS
+brew install --cask mactex && brew install pandoc
+```
+
+## Timeouts
+
+| Process | Timeout | Notes |
+|---------|---------|-------|
+| Pandoc | 60s | Kills process on hang |
+| latexmk | 120s | Full multi-pass compilation |
+| xelatex (per pass) | 60s | Manual fallback: 3 passes |
+| bibtex | 60s | Single pass |
+| DOI fetch (per request) | 10s | 3 retries with exponential backoff |
+
+## Error Handling
+
+- On any error, the paper DB record is deleted (rollback) and temp directory is cleaned
+- DOI resolution failures are skipped (paper still generates with fewer citations)
+- LLM calls retry once on JSON parse failure (front matter, background, and discovery sections)
+- LaTeX compilation falls back from latexmk to manual 3-pass (xelatex + bibtex)
+- Compilation errors include last 200 lines of LaTeX logs
+
+## Database
 
 ```sql
 CREATE TABLE public.paper (
@@ -125,150 +173,22 @@ CREATE TABLE public.paper (
   user_id UUID NOT NULL REFERENCES users(id),
   conversation_id UUID NOT NULL REFERENCES conversations(id),
   pdf_path TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status TEXT DEFAULT 'pending',  -- pending | processing | completed | failed
+  progress TEXT,                   -- Current stage (for async tracking)
+  error TEXT,                      -- Error message (for failed status)
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-## Storage
+## Async Queue Flow
 
-Generated files are uploaded to the configured object storage:
+When `USE_JOB_QUEUE=true`:
+1. Route handler pre-creates paper record with `pending` status
+2. Job enqueued to BullMQ `paper-generation` queue
+3. Worker picks up job, calls `generatePaperFromConversation()` with progress callback
+4. Progress callback updates paper record status at each stage
+5. On completion: status → `completed`, presigned URLs available via status endpoint
+6. On failure: status → `failed`, error message stored
 
-- PDF: `papers/{paperId}/paper.pdf`
-- Source ZIP: `papers/{paperId}/source.zip`
-
-Both are accessible via signed URLs (expires in 1 hour).
-
-## Environment Variables
-
-Required:
-- `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_ANON_KEY`: Supabase anonymous key
-- `STORAGE_PROVIDER`: Set to "s3"
-- `AWS_ACCESS_KEY_ID`: S3/R2 access key
-- `AWS_SECRET_ACCESS_KEY`: S3/R2 secret key
-- `S3_BUCKET`: S3/R2 bucket name
-- `AWS_REGION`: S3 region
-- `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`: For LLM (discovery section generation)
-- `LLM_PROVIDER`: "openai" or "anthropic" (default: "openai")
-- `LLM_MODEL`: Model name (default: "gpt-4")
-
-Optional:
-- `ARTIFACT_BASE_URL`: Fallback URL for artifact downloads if storage provider is unavailable
-- `S3_ENDPOINT`: Custom endpoint for S3-compatible storage (R2, MinIO, etc.)
-
-## LaTeX Requirements
-
-The server must have LaTeX installed:
-
-**Preferred**: `latexmk` (handles multiple compilation passes automatically)
-
-**Fallback**: `pdflatex` and `bibtex`
-
-Ubuntu/Debian:
-```bash
-apt-get install texlive-latex-base texlive-latex-extra texlive-fonts-recommended latexmk
-```
-
-macOS:
-```bash
-brew install --cask mactex
-```
-
-## Implementation Details
-
-### Service Architecture
-
-```
-src/services/paper/
-├── types.ts              # TypeScript type definitions
-├── generatePaper.ts      # Main orchestration service
-├── prompts.ts            # LLM prompts for discovery sections
-├── utils/
-│   ├── escapeLatex.ts    # LaTeX character escaping
-│   ├── doi.ts            # DOI extraction and normalization
-│   ├── bibtex.ts         # BibTeX resolution and manipulation
-│   ├── compile.ts        # PDF compilation (latexmk / pdflatex)
-│   └── artifacts.ts      # Figure downloading from storage
-```
-
-### Route Handler
-
-```
-src/routes/deep-research/paper.ts
-```
-
-Handles POST requests, enforces authentication, validates ownership, and calls the main service.
-
-### Workflow
-
-1. Authenticate user and verify conversation ownership
-2. Create `paper` DB record to get `paperId`
-3. Create temp workspace: `os.tmpdir()/paper/{paperId}/`
-4. Index tasks by `jobId`
-5. Map discoveries to their allowed tasks
-6. Write deterministic sections (title, objective, insights, snapshot, summary)
-7. Download figures for all discoveries
-8. Generate discovery sections with LLM (parallel, max 3 concurrent)
-9. Assemble `main.tex`
-10. Extract DOIs and resolve to BibTeX
-11. Write `references.bib`
-12. Rewrite citations from `doi:` placeholders to citekeys
-13. Run repair pass if needed (remove unresolved DOIs)
-14. Compile PDF with `latexmk` or `pdflatex+bibtex`
-15. Create `source.zip` of LaTeX source
-16. Upload PDF and source.zip to storage
-17. Return signed URLs
-18. Cleanup temp directory
-
-### Error Handling
-
-- On any error, the `paper` DB record is deleted (rollback)
-- Temp directory is cleaned up in all cases (success or failure)
-- Compilation errors include last 200 lines of LaTeX logs
-
-## Migration
-
-To apply the database migration:
-
-```bash
-# For Supabase
-supabase migration up
-
-# Or apply manually
-psql $DATABASE_URL -f supabase/migrations/20251225000000_create_paper_table.sql
-```
-
-## Testing
-
-Example curl request:
-
-```bash
-# Assuming you have a conversation with discoveries
-export CONVERSATION_ID="your-conversation-uuid"
-export JWT_TOKEN="your-jwt-token"
-
-curl -X POST "http://localhost:3000/api/deep-research/conversations/$CONVERSATION_ID/paper" \
-  -H "Authorization: Bearer $JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -v
-
-# Response will include pdfUrl and sourceZipUrl for download
-```
-
-## Limitations
-
-- Synchronous operation (no job queue support)
-- Large papers may timeout (consider increasing server timeout)
-- Requires LaTeX installation on server
-- One repair pass maximum (LLM may not always fix citation issues)
-- PDF compilation failures are not retryable (must fix LaTeX manually)
-
-## Future Enhancements
-
-- Async job queue support for long papers
-- Custom LaTeX templates
-- Multiple papers per conversation
-- Paper versioning
-- Custom citation styles
-- Support for additional artifact types (tables, code snippets)
+Limits: 1 concurrent job per user, 3 globally (configurable via `MAX_CONCURRENT_PAPER_JOBS`).

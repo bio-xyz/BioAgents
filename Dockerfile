@@ -4,8 +4,9 @@ FROM oven/bun:latest AS base
 # Set working directory
 WORKDIR /app
 
-# Install ca-certificates and LaTeX (for paper generation)
+# Install ca-certificates, LaTeX, and Pandoc (for paper generation)
 # Using XeLaTeX for native Unicode support (handles β, ′, accented chars, etc.)
+# Pandoc converts Markdown → LaTeX as part of the paper pipeline
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   texlive-latex-base \
@@ -14,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   texlive-bibtex-extra \
   texlive-xetex \
   latexmk \
+  pandoc \
+  lmodern \
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 

@@ -34,6 +34,7 @@ AVAILABLE TASK TYPES (only these two):
   - And other similar tasks
 
 - ANALYSIS: Perform computational/data analysis on datasets. ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
+  - Read user-uploaded PDFs (LITERATURE cannot read user files)
   - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" � Load RNA-seq data and perform differential expression analysis
   - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" � Cluster analysis on transcriptomic datasets comparing multiple interventions
   - "What's the optimal dose range based on our dose-response survival data?" � Fit curves to uploaded lifespan datasets and find optimal parameters
@@ -150,6 +151,7 @@ AVAILABLE TASK TYPES (only these two):
   - And other similar tasks
 
 - ANALYSIS: Perform computational/data analysis on datasets (which are included in the world state). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
+  - Read user-uploaded PDFs (LITERATURE cannot read user files)
   - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" � Load RNA-seq data and perform differential expression analysis
   - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" � Cluster analysis on transcriptomic datasets comparing multiple interventions
   - "What's the optimal dose range based on our dose-response survival data?" � Fit curves to uploaded lifespan datasets and find optimal parameters
@@ -278,6 +280,7 @@ AVAILABLE TASK TYPES (only these two):
   - And other similar tasks
 
 - ANALYSIS: Perform computational/data analysis on datasets (which are included in the world state). ANALYSIS tasks have access to a data scientist agent which can execute Python code in notebooks. Use it to:
+  - Read user-uploaded PDFs (LITERATURE cannot read user files)
   - "Which genes show the strongest response to rapamycin treatment in our mouse liver dataset?" � Load RNA-seq data and perform differential expression analysis
   - "Are there patterns in how different longevity compounds affect gene expression in our aging study?" � Cluster analysis on transcriptomic datasets comparing multiple interventions
   - "What's the optimal dose range based on our dose-response survival data?" � Fit curves to uploaded lifespan datasets and find optimal parameters

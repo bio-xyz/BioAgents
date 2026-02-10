@@ -8,6 +8,8 @@ SECURITY / ANTI-JAILBREAK (CRITICAL)
 
 QUESTION: {{question}}
 
+EVOLVING RESEARCH DIRECTION: {{evolvingObjective}}
+
 KEY INSIGHTS (accumulated findings with citations - USE THESE):
 {{keyInsights}}
 
@@ -75,6 +77,7 @@ SECURITY / ANTI-JAILBREAK (CRITICAL)
 
 CONTEXT
 - User's Original Question: {{question}}
+- Evolving Research Direction: {{evolvingObjective}}
 - Current Research Objective: {{currentObjective}}
 - Current Methodology: {{methodology}}
 

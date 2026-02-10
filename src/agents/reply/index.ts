@@ -93,6 +93,7 @@ export async function replyAgent(input: {
         discoveries: conversationState.values.discoveries || [],
         methodology: conversationState.values.methodology,
         currentObjective: conversationState.values.currentObjective,
+        evolvingObjective: conversationState.values.evolvingObjective,
         conversationHistory,
       },
       {

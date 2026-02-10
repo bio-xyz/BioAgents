@@ -3,6 +3,9 @@ import * as path from "path";
 import * as fs from "fs";
 import logger from "../../../utils/logger";
 
+const LATEXMK_TIMEOUT_MS = 120_000; // 120 seconds for full latexmk run
+const XELATEX_PASS_TIMEOUT_MS = 60_000; // 60 seconds per xelatex/bibtex pass
+
 export async function compileLatexToPDF(
   workDir: string,
   mainTexFile: string = "main.tex",
@@ -50,6 +53,12 @@ async function tryLatexmk(
 
     let stdout = "";
     let stderr = "";
+    let killed = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      proc.kill("SIGKILL");
+    }, LATEXMK_TIMEOUT_MS);
 
     proc.stdout?.on("data", (data) => {
       stdout += data.toString();
@@ -60,10 +69,13 @@ async function tryLatexmk(
     });
 
     proc.on("close", (code) => {
+      clearTimeout(timer);
       const logs = stdout + "\n" + stderr;
       const pdfPath = path.join(latexDir, mainTexFile.replace(".tex", ".pdf"));
 
-      if (code === 0 && fs.existsSync(pdfPath)) {
+      if (killed) {
+        resolve({ success: false, logs: `latexmk timed out after ${LATEXMK_TIMEOUT_MS / 1000}s\n${logs}` });
+      } else if (code === 0 && fs.existsSync(pdfPath)) {
         logger.info("latexmk_succeeded");
         resolve({ success: true, pdfPath, logs });
       } else {
@@ -72,6 +84,7 @@ async function tryLatexmk(
     });
 
     proc.on("error", (error) => {
+      clearTimeout(timer);
       resolve({ success: false, logs: error.message });
     });
   });
@@ -135,6 +148,7 @@ async function runCommand(
   command: string,
   args: string[],
   cwd: string,
+  timeoutMs: number = XELATEX_PASS_TIMEOUT_MS,
 ): Promise<{ success: boolean; logs: string }> {
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
@@ -147,6 +161,12 @@ async function runCommand(
 
     let stdout = "";
     let stderr = "";
+    let killed = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      proc.kill("SIGKILL");
+    }, timeoutMs);
 
     proc.stdout?.on("data", (data) => {
       stdout += data.toString();
@@ -157,11 +177,17 @@ async function runCommand(
     });
 
     proc.on("close", (code) => {
+      clearTimeout(timer);
       const logs = stdout + "\n" + stderr;
-      resolve({ success: code === 0, logs });
+      if (killed) {
+        resolve({ success: false, logs: `${command} timed out after ${timeoutMs / 1000}s\n${logs}` });
+      } else {
+        resolve({ success: code === 0, logs });
+      }
     });
 
     proc.on("error", (error) => {
+      clearTimeout(timer);
       resolve({ success: false, logs: error.message });
     });
   });

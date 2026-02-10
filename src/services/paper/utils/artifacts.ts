@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import logger from "../../../utils/logger";
 import { getStorageProvider } from "../../../storage";
-import { sanitizeFilename } from "./escapeLatex";
+import { sanitizeFilename } from "./textUtils";
 import type { AnalysisArtifact, PlanTask } from "../../../types/core";
 import type { FigureInfo } from "../types";
 

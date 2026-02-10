@@ -282,6 +282,38 @@ async function buildContextFromState(
 ): Promise<string> {
   const contextParts: string[] = [];
 
+  // =========================================================================
+  // CURRENT ITERATION LEVEL
+  // =========================================================================
+  const currentLevel = conversationState.values.currentLevel;
+  if (currentLevel !== undefined) {
+    contextParts.push(`Current Iteration: ${currentLevel + 1}`);
+  }
+
+  // =========================================================================
+  // CLARIFICATION CONTEXT (from pre-research questions)
+  // =========================================================================
+  if (conversationState.values.clarificationContext) {
+    const clarCtx = conversationState.values.clarificationContext;
+
+    const clarificationParts: string[] = [
+      "Pre-Research Clarifications (initial user guidance, may be overridden by later messages - less important as research level increases):",
+      "",
+      `Refined Objective: ${clarCtx.refinedObjective}`,
+    ];
+
+    // Add Q&A pairs
+    if (clarCtx.questionsAndAnswers.length > 0) {
+      clarificationParts.push("");
+      clarCtx.questionsAndAnswers.forEach((qa, i) => {
+        clarificationParts.push(`Q${i + 1}: ${qa.question}`);
+        clarificationParts.push(`A${i + 1}: ${qa.answer}`);
+      });
+    }
+
+    contextParts.push(clarificationParts.join("\n"));
+  }
+
   // Add recent conversation history if available
   if (conversationId) {
     try {
@@ -344,6 +376,12 @@ async function buildContextFromState(
   if (conversationState.values.objective) {
     contextParts.push(
       `Main Objective (the user message that kicked off the research): ${conversationState.values.objective}`,
+    );
+  }
+
+  if (conversationState.values.evolvingObjective) {
+    contextParts.push(
+      `Evolving Research Direction (the high-level research goal, evolves slowly across iterations): ${conversationState.values.evolvingObjective}`,
     );
   }
 

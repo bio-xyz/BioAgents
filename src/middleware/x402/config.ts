@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export type Environment = "testnet" | "mainnet";
 
+/**
+ * x402 Protocol Version - single source of truth
+ */
+export const X402_VERSION = 2;
+
 export const X402ConfigSchema = z.object({
   enabled: z.boolean().default(false),
   environment: z.enum(["testnet", "mainnet"]).default("testnet"),
@@ -11,27 +16,36 @@ export const X402ConfigSchema = z.object({
   asset: z.string().default("USDC"),
   usdcAddress: z.string(),
   defaultTimeout: z.number().default(30),
+  // CDP facilitator credentials (required for mainnet CDP facilitator)
+  cdpApiKeyId: z.string().optional(),
+  cdpApiKeySecret: z.string().optional(),
 });
 
 export type X402Config = z.infer<typeof X402ConfigSchema>;
 
 const NETWORK_CONFIG = {
   testnet: {
-    network: "base-sepolia",
+    network: "eip155:84532", // CAIP-2 format for Base Sepolia
     // Using x402.org facilitator (open-source, no auth required)
     facilitatorUrl: "https://x402.org/facilitator",
     usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    // EIP-712 domain must match the contract's name() and version()
+    usdcName: "USDC",       // Base Sepolia USDC contract name() returns "USDC"
+    usdcVersion: "2",
     chainId: 84532,
     rpcUrl: "https://sepolia.base.org",
     explorer: "https://sepolia.basescan.org",
     useCdpFacilitator: false,
   },
   mainnet: {
-    network: "base",
+    network: "eip155:8453", // CAIP-2 format for Base mainnet
     // Recommended: Use CDP facilitator for production (set X402_FACILITATOR_URL in .env)
     // CDP: https://api.cdp.coinbase.com/platform/v2/x402 (requires CDP_API_KEY_ID/SECRET)
     facilitatorUrl: "https://api.cdp.coinbase.com/platform/v2/x402",
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    // EIP-712 domain must match the contract's name() and version()
+    usdcName: "USD Coin",   // Base mainnet USDC contract name() returns "USD Coin"
+    usdcVersion: "2",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
     explorer: "https://basescan.org",
@@ -61,7 +75,20 @@ export const x402Config: X402Config = {
   usdcAddress:
     process.env.X402_USDC_ADDRESS || networkDefaults.usdcAddress,
   defaultTimeout: Number(process.env.X402_TIMEOUT || 30),
+  // CDP credentials for authenticated facilitator
+  cdpApiKeyId: process.env.CDP_API_KEY_ID,
+  cdpApiKeySecret: process.env.CDP_API_KEY_SECRET,
 };
+
+/**
+ * Check if CDP facilitator authentication is available
+ */
+export const hasCdpAuth = Boolean(x402Config.cdpApiKeyId && x402Config.cdpApiKeySecret);
+
+/**
+ * Check if using CDP facilitator URL
+ */
+export const isCdpFacilitator = x402Config.facilitatorUrl.includes("cdp.coinbase.com");
 
 export const networkConfig = {
   ...networkDefaults,
