@@ -169,7 +169,19 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
 }
 
 /**
- * Build form data for Bio task based on storage configuration
+ * Build form data for Bio task based on storage configuration.
+ *
+ * Handles two dataset delivery modes:
+ * 1. Shared storage (S3): datasets have a `path` — send file_paths so the
+ *    cloud service reads directly from the shared S3 bucket.
+ * 2. Direct upload: datasets have inline `content` (e.g. from x402 callers
+ *    who send base64-encoded data in the request body) — send the bytes as
+ *    multipart data_files.
+ *
+ * When shared storage is enabled, datasets are checked per-item: those with
+ * a `path` use the S3 reference, those with only `content` fall back to
+ * direct upload. This allows mixed-origin datasets and ensures x402/stateless
+ * callers work even when S3 is configured server-side.
  */
 function buildTaskFormData(
   config: BioAnalysisConfig,
@@ -184,9 +196,16 @@ function buildTaskFormData(
   if (config.supportsSharedStorage) {
     const basePath = getConversationBasePath(userId, conversationStateId);
     formData.append("base_path", basePath);
+
     for (const dataset of datasets) {
       if (dataset.path) {
+        // Dataset lives on shared S3 — send the path reference
         formData.append("file_paths", dataset.path);
+      } else if (dataset.content) {
+        // Dataset has inline content but no S3 path (e.g. x402 caller) —
+        // fall back to direct upload so the cloud service still gets the data
+        const blob = new Blob([new Uint8Array(dataset.content)]);
+        formData.append("data_files", blob, dataset.filename);
       }
     }
   } else {
