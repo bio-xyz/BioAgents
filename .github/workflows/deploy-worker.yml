@@ -64,19 +64,19 @@ jobs:
             biosagent/bios:${{ github.sha }}
           no-cache: true
 
-      # Trigger dev webhook
+      # Trigger dev webhook with specific image tag to avoid stale cache
       - name: Trigger Portainer Webhook (dev)
         if: github.ref == 'refs/heads/dev'
         run: |
-          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL_DEV }}" -k --fail --silent --show-error
-          echo "Dev webhook triggered successfully"
+          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL_DEV }}?tag=dev-${{ github.sha }}" -k --fail --silent --show-error
+          echo "Dev webhook triggered with tag: dev-${{ github.sha }}"
 
-      # Trigger production webhook
+      # Trigger production webhook with specific image tag to avoid stale cache
       - name: Trigger Portainer Webhook (main)
         if: github.ref == 'refs/heads/main'
         run: |
-          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}" -k --fail --silent --show-error
-          echo "Production webhook triggered successfully"
+          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}?tag=${{ github.sha }}" -k --fail --silent --show-error
+          echo "Production webhook triggered with tag: ${{ github.sha }}"
 
       - name: Summary
         run: |
