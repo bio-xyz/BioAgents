@@ -66,7 +66,7 @@ export async function pandocConvert(
 function patchForXelatex(tex: string): string {
   let result = tex;
 
-  // Replace \usepackage[utf8]{inputenc} with fontspec (XeLaTeX)
+  // For older Pandoc: replace inputenc with fontspec (XeLaTeX native Unicode)
   result = result.replace(
     /\\usepackage\[utf8\]\{inputenc\}/g,
     "\\usepackage{fontspec}",
@@ -74,6 +74,14 @@ function patchForXelatex(tex: string): string {
 
   // Remove \usepackage[T1]{fontenc} — XeLaTeX uses fontspec instead
   result = result.replace(/\\usepackage\[T1\]\{fontenc\}\n?/g, "");
+
+  // Replace Latin Modern with Linux Libertine for full Unicode support
+  // (Greek, math operators, superscripts/subscripts — 2000+ glyphs)
+  // Latin Modern lacks glyphs for direct Unicode Greek (κ,γ,η,etc.) and math symbols (≈,≤,≥,etc.)
+  result = result.replace(
+    /\\usepackage\{lmodern\}/g,
+    "\\setmainfont{Linux Libertine O}\n\\setsansfont{Linux Biolinum O}",
+  );
 
   // Ensure graphicspath is set for figures
   if (!result.includes("\\graphicspath")) {

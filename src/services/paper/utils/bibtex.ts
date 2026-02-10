@@ -272,6 +272,10 @@ export function extractAndSanitizeBibTeXEntry(
   // With XeLaTeX, Unicode is handled natively - no conversion needed
   let sanitizedBibtex = decodeHtmlEntitiesForLatex(bibtex);
 
+  // Escape special LaTeX characters in BibTeX text field values
+  // (e.g., underscores in gene names like vb_paep_ya3 → vb\_paep\_ya3)
+  sanitizedBibtex = escapeBibTeXFieldUnderscores(sanitizedBibtex);
+
   if (sanitizedCitekey !== originalCitekey) {
     sanitizedBibtex = rewriteBibTeXCitekey(sanitizedBibtex, sanitizedCitekey);
     logger.info(
@@ -368,6 +372,38 @@ export function deduplicateAndResolveCollisions(
 
   logger.info({ total: finalEntries.length }, "deduplicated_bibtex");
   return finalEntries;
+}
+
+/**
+ * Escape unescaped underscores in BibTeX text field values.
+ * DOI resolvers often return titles with raw underscores (e.g., gene names
+ * like vb_paep_ya3) which cause "Missing $ inserted" errors in LaTeX.
+ * Skips url, doi, and eprint fields where underscores are valid.
+ */
+export function escapeBibTeXFieldUnderscores(bibtex: string): string {
+  const skipFields = new Set([
+    "url",
+    "doi",
+    "eprint",
+    "file",
+    "archiveprefix",
+    "primaryclass",
+  ]);
+
+  return bibtex.replace(
+    /(\b(\w+)\s*=\s*\{)((?:[^{}]|\{[^{}]*\})*)\}/gi,
+    (match, prefix, fieldName, value) => {
+      if (skipFields.has(fieldName.toLowerCase())) {
+        return match;
+      }
+      // Escape unescaped underscores (don't double-escape already-escaped ones)
+      const sanitized = value
+        .split("\\_")
+        .map((part: string) => part.replace(/_/g, "\\_"))
+        .join("\\_");
+      return `${prefix}${sanitized}}`;
+    },
+  );
 }
 
 export function generateBibTeXFile(entries: BibTeXEntry[]): string {
