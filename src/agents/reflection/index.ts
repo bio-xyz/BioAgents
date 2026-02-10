@@ -7,8 +7,8 @@ import logger from "../../utils/logger";
 import { reflectOnWorld, type ReflectionDoc } from "./utils";
 
 type ReflectionResult = {
-  objective?: string; // Only set if research direction fundamentally changed
   conversationTitle?: string;
+  evolvingObjective?: string;
   currentObjective?: string;
   keyInsights: string[];
   methodology?: string;
@@ -89,6 +89,11 @@ export async function reflectionAgent(input: {
         `Main Objective: ${conversationState.values.objective}`,
       );
     }
+    if (conversationState.values.evolvingObjective) {
+      worldContextParts.push(
+        `Evolving Research Direction: ${conversationState.values.evolvingObjective}`,
+      );
+    }
     if (conversationState.values.currentObjective) {
       worldContextParts.push(
         `Current Objective: ${conversationState.values.currentObjective}`,
@@ -118,6 +123,7 @@ export async function reflectionAgent(input: {
       const end = new Date().toISOString();
       return {
         conversationTitle: conversationState.values.conversationTitle,
+        evolvingObjective: conversationState.values.evolvingObjective,
         currentObjective: conversationState.values.currentObjective,
         keyInsights: conversationState.values.keyInsights || [],
         methodology: conversationState.values.methodology,
@@ -143,6 +149,7 @@ export async function reflectionAgent(input: {
         usageType: "deep-research",
         // Pass existing values to preserve on parse failure
         existingObjective: conversationState.values.currentObjective,
+        existingEvolvingObjective: conversationState.values.evolvingObjective,
         existingInsights: conversationState.values.keyInsights,
         existingMethodology: conversationState.values.methodology,
         existingTitle: conversationState.values.conversationTitle,

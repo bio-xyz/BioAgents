@@ -55,6 +55,7 @@ export interface ConversationStateValues extends StateValues {
   objective: string;
   conversationTitle?: string; // Concise title for the conversation (updated by reflection agent)
   currentObjective?: string;
+  evolvingObjective?: string; // Slowly-evolving high-level research direction (between objective and currentObjective)
   currentLevel?: number; // Current level of tasks being executed (for UI visualization)
   keyInsights?: string[];
   methodology?: string; // Methodology for the current goal

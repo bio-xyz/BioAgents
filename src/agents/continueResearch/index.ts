@@ -190,6 +190,7 @@ export async function continueResearchAgent(input: {
     // Call LLM for decision
     const result = await decideContinuation(
       conversationState.values.objective || message.question || "",
+      conversationState.values.evolvingObjective || conversationState.values.objective || message.question || "",
       conversationState.values.currentObjective || "",
       iterationCount,
       hypothesis,

@@ -80,6 +80,7 @@ export async function discoveryAgent(input: {
 
     // Build conversation history from recent messages
     let conversationHistory = `Research Question: ${message.question || conversationState.values.objective}
+Evolving Research Direction: ${conversationState.values.evolvingObjective || conversationState.values.objective || "Not set"}
 Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
 
     const conversationId = message.conversation_id;
