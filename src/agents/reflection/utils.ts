@@ -138,7 +138,7 @@ export async function reflectOnWorld(
         conversationTitle: parsedResponse.conversationTitle,
         insightsCount: parsedResponse.keyInsights.length,
         discoveriesCount: parsedResponse.discoveries.length,
-        hasObjective: !!parsedResponse.currentObjective,
+        hasCurrentObjective: !!parsedResponse.currentObjective,
         hasMethodology: !!parsedResponse.methodology,
         docCount: documents.length,
       },

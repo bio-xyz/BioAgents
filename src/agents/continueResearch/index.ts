@@ -63,7 +63,8 @@ export async function continueResearchAgent(input: {
       message.conversation_id,
       20, // Check last 20 messages
     );
-    // Find the most recent message with a non-empty question (user message)
+    // Messages are newest-first; find the most recent with a non-empty question.
+    // Continuation messages have question="" so they are skipped.
     const lastUserMsg = messages?.find((m) => m.question && m.question.trim());
     userLastMessage = lastUserMsg?.question || "";
   } catch (err) {
