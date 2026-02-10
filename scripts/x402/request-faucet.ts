@@ -16,7 +16,8 @@ if (!PRIVATE_KEY) {
   process.exit(1);
 }
 
-const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
+const pk = PRIVATE_KEY.startsWith("0x") ? PRIVATE_KEY : `0x${PRIVATE_KEY}`;
+const account = privateKeyToAccount(pk as `0x${string}`);
 const TEST_WALLET = account.address;
 
 async function requestFaucet() {

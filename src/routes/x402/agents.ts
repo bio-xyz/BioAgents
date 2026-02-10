@@ -4,7 +4,7 @@ import { create402Response } from "../../middleware/x402/service";
 import { routePricing } from "../../middleware/x402/pricing";
 import { authResolver } from "../../middleware/authResolver";
 import logger from "../../utils/logger";
-import type { Message, PlanTask, ConversationState, Discovery } from "../../types/core";
+import type { Message, PlanTask, ConversationState, Discovery, State } from "../../types/core";
 
 // Import agents
 import { literatureAgent, type BioLiteratureMode } from "../../agents/literature";
@@ -35,11 +35,24 @@ function createMessage(content: string, userId: string): Message {
 }
 
 /**
+ * Create a minimal State for agent input
+ */
+function createState(userId: string): State {
+  return {
+    id: crypto.randomUUID(),
+    values: {
+      userId,
+    },
+  };
+}
+
+/**
  * Create a minimal ConversationState for agent input
  */
 function createConversationState(
   userId: string,
   values: {
+    objective?: string;
     currentHypothesis?: string;
     discoveries?: Discovery[];
   } = {}
@@ -48,7 +61,7 @@ function createConversationState(
     id: crypto.randomUUID(),
     userId,
     values: {
-      objective: "",
+      objective: values.objective || "",
       ...values,
     },
   };
@@ -157,23 +170,19 @@ export const x402IndividualAgentsRoute = new Elysia({ prefix: "/api/x402/agents"
     }
 
     try {
-      // Build minimal message structure for reply agent
+      const userId = x402Settlement.payer || "x402-user";
+      // Build complete input matching replyAgent signature
       const result = await replyAgent({
-        objective: message,
+        conversationState: createConversationState(userId, { objective: message }),
         message: {
           id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
+          userId,
           timestamp: new Date().toISOString(),
           content: message,
         },
-        conversationHistory: context.map((c, i) => ({
-          id: `ctx-${i}`,
-          userId: c.role === "user" ? (x402Settlement.payer || "x402-user") : "assistant",
-          timestamp: new Date().toISOString(),
-          content: c.content,
-          role: c.role,
-        })),
-        systemPrompt,
+        completedMaxTasks: [], // No prior tasks in standalone x402 mode
+        nextPlan: [], // No next plan in standalone mode
+        isFinal: true,
       });
 
       return {
@@ -212,15 +221,25 @@ export const x402IndividualAgentsRoute = new Elysia({ prefix: "/api/x402/agents"
     }
 
     try {
-      const result = await planningAgent({
+      const userId = x402Settlement.payer || "x402-user";
+      const conversationState = createConversationState(userId, {
         objective,
+      });
+      // If an existing plan was provided, add it to conversation state
+      if (existingPlan) {
+        conversationState.values.plan = existingPlan;
+      }
+
+      const result = await planningAgent({
+        state: createState(userId),
+        conversationState,
         message: {
           id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
+          userId,
           timestamp: new Date().toISOString(),
           content: objective,
         },
-        existingPlan,
+        mode: existingPlan ? "next" : "initial",
       });
 
       return {
@@ -364,19 +383,21 @@ export const x402IndividualAgentsRoute = new Elysia({ prefix: "/api/x402/agents"
     }
 
     try {
+      const userId = x402Settlement.payer || "x402-user";
       const result = await reflectionAgent({
-        objective,
+        conversationState: createConversationState(userId, {
+          objective,
+          currentHypothesis: hypothesis,
+          discoveries: discoveries as Discovery[],
+        }),
         message: {
           id: crypto.randomUUID(),
-          userId: x402Settlement.payer || "x402-user",
+          userId,
           timestamp: new Date().toISOString(),
           content: objective,
         },
-        conversationState: createConversationState(
-          x402Settlement.payer || "x402-user",
-          { currentHypothesis: hypothesis, discoveries: discoveries as Discovery[] }
-        ),
-        completedTasks: createCompletedTasks(completedTasks),
+        completedMaxTasks: createCompletedTasks(completedTasks),
+        hypothesis,
       });
 
       return {
