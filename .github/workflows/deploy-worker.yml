@@ -50,9 +50,7 @@ jobs:
           tags: |
             biosagent/bios:dev
             biosagent/bios:dev-${{ github.sha }}
-          no-cache: ${{ inputs.no_cache == true }}
-          cache-from: ${{ inputs.no_cache == true && '' || 'type=gha,scope=dev' }}
-          cache-to: type=gha,mode=max,scope=dev
+          no-cache: true
 
       # Main branch: tag as 'latest' and commit SHA
       - name: Build and Push (main)
@@ -64,9 +62,7 @@ jobs:
           tags: |
             biosagent/bios:latest
             biosagent/bios:${{ github.sha }}
-          no-cache: ${{ inputs.no_cache == true }}
-          cache-from: ${{ inputs.no_cache == true && '' || 'type=gha,scope=main' }}
-          cache-to: type=gha,mode=max,scope=main
+          no-cache: true
 
       # Trigger dev webhook
       - name: Trigger Portainer Webhook (dev)
