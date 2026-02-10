@@ -40,14 +40,22 @@ const ANALYSIS_TIMEOUT_MS = 300_000; // 5 min for analysis agent (calls external
 
 // ── Test Payloads ──────────────────────────────────────────────────────────
 
-// Small CSV for analysis agent
+// Gene expression dataset for analysis agent (RNA-seq TPM values)
+// 10 genes × 6 samples (3 tumor + 3 normal), biologically plausible values.
+// Oncogenes (MYC, EGFR, KRAS) are upregulated in tumor; tumor suppressors
+// (TP53, BRCA1, PTEN) are downregulated; GAPDH/ACTB/B2M stable as controls.
 const SAMPLE_CSV = [
-  "gene,expression_level,sample_type",
-  "TP53,8.2,tumor",
-  "BRCA1,3.1,tumor",
-  "MYC,12.5,tumor",
-  "TP53,4.1,normal",
-  "BRCA1,5.8,normal",
+  "gene,tumor_1,tumor_2,tumor_3,normal_1,normal_2,normal_3",
+  "TP53,12.4,14.1,11.8,45.6,42.3,48.1",
+  "BRCA1,8.7,10.2,7.5,38.3,35.7,41.2",
+  "PTEN,9.8,11.5,8.9,41.7,39.2,44.5",
+  "MYC,85.3,78.9,91.2,22.7,25.4,20.1",
+  "EGFR,72.1,68.4,75.8,18.9,21.3,16.5",
+  "KRAS,48.2,52.1,44.8,15.3,17.1,13.8",
+  "CDK4,67.4,62.8,71.3,25.1,27.8,23.4",
+  "GAPDH,150.2,148.7,151.8,148.7,150.3,147.2",
+  "ACTB,180.5,177.3,182.1,177.3,179.8,175.9",
+  "B2M,95.4,93.8,96.7,93.8,95.1,92.5",
 ].join("\n");
 
 const SAMPLE_CSV_BASE64 = Buffer.from(SAMPLE_CSV).toString("base64");
@@ -147,13 +155,13 @@ const AGENT_TESTS: AgentTest[] = [
     price: "$0.025",
     input: {
       objective:
-        "Analyze gene expression patterns in tumor vs normal samples to identify differentially expressed genes",
+        "Analyze the gene expression data in the attached CSV file. Compare tumor vs normal samples and identify which genes are differentially expressed. Calculate fold changes and statistical significance.",
       datasets: [
         {
-          filename: "test_gene_expression.csv",
+          filename: "gene_expression.csv",
           id: "test-dataset-1",
           description:
-            "Gene expression levels for TP53, BRCA1, and MYC in tumor and normal tissue samples",
+            "RNA-seq normalized expression data (TPM) for 10 cancer-related genes across 6 samples (3 tumor, 3 normal). Includes oncogenes (MYC, EGFR, KRAS), tumor suppressors (TP53, BRCA1, PTEN), and housekeeping controls (GAPDH, ACTB, B2M).",
           content: SAMPLE_CSV_BASE64,
         },
       ],

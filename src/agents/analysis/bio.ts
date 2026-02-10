@@ -1,5 +1,6 @@
 import {
   getConversationBasePath,
+  getMimeTypeFromFilename,
   getStorageProvider,
   isStorageProviderAvailable,
 } from "../../storage";
@@ -194,8 +195,14 @@ function buildTaskFormData(
   const { userId, conversationStateId, datasets } = context;
 
   if (config.supportsSharedStorage) {
-    const basePath = getConversationBasePath(userId, conversationStateId);
-    formData.append("base_path", basePath);
+    // Only send base_path if at least one dataset uses S3 storage.
+    // Sending base_path when all datasets are inline (direct upload) can
+    // cause the cloud service to assume S3 mode and ignore data_files.
+    const hasS3Datasets = datasets.some((d) => !!d.path);
+    if (hasS3Datasets) {
+      const basePath = getConversationBasePath(userId, conversationStateId);
+      formData.append("base_path", basePath);
+    }
 
     for (const dataset of datasets) {
       if (dataset.path) {
@@ -203,16 +210,26 @@ function buildTaskFormData(
         formData.append("file_paths", dataset.path);
       } else if (dataset.content) {
         // Dataset has inline content but no S3 path (e.g. x402 caller) —
-        // fall back to direct upload so the cloud service still gets the data
-        const blob = new Blob([new Uint8Array(dataset.content)]);
-        formData.append("data_files", blob, dataset.filename);
+        // fall back to direct upload so the cloud service still gets the data.
+        // Use File (not Blob) so the multipart boundary includes the filename
+        // and content-type metadata that the cloud service requires.
+        const file = new File(
+          [new Uint8Array(dataset.content)],
+          dataset.filename,
+          { type: getMimeTypeFromFilename(dataset.filename) },
+        );
+        formData.append("data_files", file);
       }
     }
   } else {
     for (const dataset of datasets) {
       if (dataset.content) {
-        const blob = new Blob([new Uint8Array(dataset.content)]);
-        formData.append("data_files", blob, dataset.filename);
+        const file = new File(
+          [new Uint8Array(dataset.content)],
+          dataset.filename,
+          { type: getMimeTypeFromFilename(dataset.filename) },
+        );
+        formData.append("data_files", file);
       }
     }
   }
