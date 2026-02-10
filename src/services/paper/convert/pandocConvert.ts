@@ -66,7 +66,7 @@ export async function pandocConvert(
 function patchForXelatex(tex: string): string {
   let result = tex;
 
-  // Replace \usepackage[utf8]{inputenc} with fontspec (XeLaTeX)
+  // For older Pandoc: replace inputenc with fontspec (XeLaTeX native Unicode)
   result = result.replace(
     /\\usepackage\[utf8\]\{inputenc\}/g,
     "\\usepackage{fontspec}",
@@ -75,16 +75,43 @@ function patchForXelatex(tex: string): string {
   // Remove \usepackage[T1]{fontenc} — XeLaTeX uses fontspec instead
   result = result.replace(/\\usepackage\[T1\]\{fontenc\}\n?/g, "");
 
-  // Ensure graphicspath is set for figures
-  if (!result.includes("\\graphicspath")) {
-    const docBegin = result.indexOf("\\begin{document}");
-    if (docBegin !== -1) {
+  // Remove lmodern — Latin Modern lacks glyphs for Unicode Greek (κ,γ,η,etc.)
+  // and math symbols (≈,≤,≥,etc.)
+  result = result.replace(/\\usepackage\{lmodern\}\n?/g, "");
+
+  // Ensure Linux Libertine is set as main font (2000+ glyphs, full Unicode)
+  // and graphicspath is set — inject both before \begin{document}
+  const docBegin = result.indexOf("\\begin{document}");
+  if (docBegin !== -1) {
+    const preambleAdditions: string[] = [];
+
+    if (!result.includes("\\setmainfont")) {
+      // Use \IfFontExistsTF to handle both OTF ("Linux Libertine O" from Debian)
+      // and TTF ("Linux Libertine" from Homebrew/other) installations
+      preambleAdditions.push(
+        "\\IfFontExistsTF{Linux Libertine O}" +
+          "{\\setmainfont{Linux Libertine O}\\setsansfont{Linux Biolinum O}}" +
+          "{\\setmainfont{Linux Libertine}}",
+      );
+    }
+
+    if (!result.includes("\\graphicspath")) {
+      preambleAdditions.push("\\graphicspath{{figures/}}");
+    }
+
+    if (preambleAdditions.length > 0) {
       result =
         result.slice(0, docBegin) +
-        "\\graphicspath{{figures/}}\n\n" +
+        preambleAdditions.join("\n") +
+        "\n\n" +
         result.slice(docBegin);
     }
   }
+
+  logger.info(
+    { hasSetmainfont: result.includes("\\setmainfont") },
+    "patchForXelatex_complete",
+  );
 
   return result;
 }
