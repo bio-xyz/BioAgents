@@ -1,6 +1,13 @@
 import { Elysia } from "elysia";
 import { getMessage, getState } from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
+import {
+  acquireStartMutex,
+  getActiveRunForDedup,
+  markRunFinished,
+  markRunStarted,
+  releaseStartMutex,
+} from "../../services/deep-research/run-guard";
 import type { AuthContext } from "../../types/auth";
 import logger from "../../utils/logger";
 
@@ -284,6 +291,49 @@ async function deepResearchRetryHandler(ctx: any) {
     };
   }
 
+  const conversationStateId = job.data.conversationStateId;
+  const stateId = job.data.stateId;
+  const rootMessageId = job.data.rootMessageId || job.data.messageId;
+
+  if (!conversationStateId || !stateId || !rootMessageId) {
+    set.status = 500;
+    return {
+      ok: false,
+      error: "Job missing conversation run metadata for retry",
+    };
+  }
+
+  const startMutex = await acquireStartMutex(conversationStateId);
+  if (!startMutex.acquired && !startMutex.fallback) {
+    logger.warn(
+      { jobId, conversationStateId },
+      "deep_research_retry_proceeding_without_mutex",
+    );
+  }
+
+  try {
+    const activeRun = await getActiveRunForDedup(conversationStateId);
+    if (activeRun) {
+      set.status = 409;
+      return {
+        ok: false,
+        error: "Deep research is already running for this conversation",
+        messageId: activeRun.messageId,
+        jobId: activeRun.jobId,
+      };
+    }
+
+    await markRunStarted({
+      conversationStateId,
+      rootMessageId,
+      stateId,
+      mode: "queue",
+      jobId: job.id!,
+    });
+  } finally {
+    await releaseStartMutex(startMutex);
+  }
+
   try {
     // Retry the job - moves it back to waiting state
     await job.retry();
@@ -305,6 +355,21 @@ async function deepResearchRetryHandler(ctx: any) {
       previousAttempts: job.attemptsMade,
     };
   } catch (error) {
+    try {
+      await markRunFinished({
+        conversationStateId,
+        result: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+        rootMessageId,
+        stateId,
+      });
+    } catch (finishError) {
+      logger.warn(
+        { finishError, conversationStateId, rootMessageId, stateId },
+        "deep_research_retry_finish_mark_failed_on_retry_error",
+      );
+    }
+
     logger.error({ error, jobId }, "deep_research_manual_retry_failed");
     set.status = 500;
     return {

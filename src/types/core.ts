@@ -51,6 +51,20 @@ export type PlanTask = {
 
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
+  deepResearchRun?: {
+    isRunning: boolean;
+    rootMessageId: string;
+    stateId: string;
+    mode: "queue" | "in-process";
+    jobId?: string;
+    startedAt: string;
+    lastHeartbeatAt: string;
+    expiresAt: string;
+    lastResult?: "completed" | "failed" | "stale_recovered";
+    lastError?: string;
+    endedAt?: string;
+  };
+
   // Persistent conversation data
   objective: string;
   conversationTitle?: string; // Concise title for the conversation (updated by reflection agent)

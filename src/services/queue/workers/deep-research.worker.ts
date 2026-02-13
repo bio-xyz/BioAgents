@@ -30,6 +30,7 @@ import {
   getSessionCompletedTasks,
 } from "../../../utils/deep-research/continuation-utils";
 import logger from "../../../utils/logger";
+import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 
 /**
  * Process a deep research job - executes a SINGLE iteration
@@ -47,6 +48,7 @@ async function processDeepResearchJob(
     userId,
     conversationId,
     messageId,
+    rootMessageId: queuedRootMessageId,
     stateId,
     conversationStateId,
     message,
@@ -55,6 +57,7 @@ async function processDeepResearchJob(
     rootJobId,
     isInitialIteration = true,
   } = job.data;
+  const rootMessageId = queuedRootMessageId || (isInitialIteration ? messageId : undefined);
 
   // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
@@ -92,6 +95,19 @@ async function processDeepResearchJob(
   await notifyJobStarted(job.id!, conversationId, messageId, stateId);
 
   try {
+    try {
+      await touchRun({
+        conversationStateId,
+        rootMessageId,
+        stateId,
+      });
+    } catch (error) {
+      logger.warn(
+        { error, conversationStateId, rootMessageId, stateId },
+        "deep_research_worker_heartbeat_failed_at_start",
+      );
+    }
+
     // Import required modules
     const {
       getMessage,
@@ -864,6 +880,7 @@ async function processDeepResearchJob(
           userId,
           conversationId,
           messageId: nextMessageId, // Next iteration writes to new message
+          rootMessageId,
           message, // Original message for context
           authMethod: job.data.authMethod,
           stateId,
@@ -889,6 +906,19 @@ async function processDeepResearchJob(
         },
         "enqueued_next_iteration_job",
       );
+
+      try {
+        await touchRun({
+          conversationStateId,
+          rootMessageId,
+          stateId,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId, stateId },
+          "deep_research_worker_heartbeat_failed_after_enqueue",
+        );
+      }
     }
 
     // =========================================================================
@@ -914,6 +944,20 @@ async function processDeepResearchJob(
 
     // Complete credits when research is truly done (final iteration)
     if (isFinal) {
+      try {
+        await markRunFinished({
+          conversationStateId,
+          result: "completed",
+          rootMessageId,
+          stateId,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId, stateId },
+          "deep_research_worker_finish_mark_failed_on_success",
+        );
+      }
+
       try {
         const { getServiceClient } = await import("../../../db/client");
         const supabase = getServiceClient();
@@ -974,6 +1018,26 @@ async function processDeepResearchJob(
 
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
+
+        try {
+          await markRunFinished({
+            conversationStateId,
+            result: "failed",
+            error: error instanceof Error ? error.message : "Unknown error",
+            rootMessageId,
+            stateId,
+          });
+        } catch (finishError) {
+          logger.warn(
+            {
+              finishError,
+              conversationStateId,
+              rootMessageId,
+              stateId,
+            },
+            "deep_research_worker_finish_mark_failed_on_failure",
+          );
+        }
 
         // Refund credits on final failure
         const { getServiceClient } = await import("../../../db/client");
