@@ -23,7 +23,7 @@ import {
 } from "../notify";
 import { getDeepResearchQueue } from "../queues";
 import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
-import type { ConversationState, PlanTask, State } from "../../../types/core";
+import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../../types/core";
 import {
   createContinuationMessage,
   calculateSessionStartLevel,
@@ -416,6 +416,17 @@ async function processDeepResearchJob(
 
     // Execute all tasks concurrently
     const taskPromises = tasksToExecute.map(async (task) => {
+      // Callback to persist reasoning traces to conversation state on each poll
+      const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
+        if (reasoning) {
+          task.reasoning = reasoning;
+          if (conversationState.id) {
+            await updateConversationState(conversationState.id, conversationState.values);
+            await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+          }
+        }
+      };
+
       if (task.type === "LITERATURE") {
         task.start = new Date().toISOString();
         task.output = "";
@@ -455,6 +466,7 @@ async function processDeepResearchJob(
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           type: primaryLiteratureType,
+          onPollUpdate,
         }).then(async (result) => {
           task.output += `${result.output}\n\n`;
           // Capture jobId from primary literature (Edison)
@@ -517,6 +529,7 @@ async function processDeepResearchJob(
             type,
             userId: messageRecord.user_id,
             conversationStateId: conversationState.id!,
+            onPollUpdate,
           });
 
           task.output = `${analysisResult.output}\n\n`;

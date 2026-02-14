@@ -39,10 +39,10 @@ import {
   updateRunJobId,
 } from "../../services/deep-research/run-guard";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { notifyMessageUpdated } from "../../services/queue/notify";
+import { notifyMessageUpdated, notifyStateUpdated } from "../../services/queue/notify";
 import { getDeepResearchQueue } from "../../services/queue/queues";
 import type { AuthContext } from "../../types/auth";
-import type { ConversationState, PlanTask, State } from "../../types/core";
+import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../types/core";
 import {
   calculateSessionStartLevel,
   createContinuationMessage,
@@ -1035,6 +1035,24 @@ async function runDeepResearch(params: {
 
       // Execute all tasks concurrently
       const taskPromises = tasksToExecute.map(async (task) => {
+        // Callback to persist reasoning traces to conversation state on each poll
+        const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
+          if (reasoning) {
+            task.reasoning = reasoning;
+            if (conversationState.id) {
+              await updateConversationState(
+                conversationState.id,
+                conversationState.values,
+              );
+              await notifyStateUpdated(
+                `in-process-${currentMessage.id}`,
+                createdMessage.conversation_id,
+                conversationState.id,
+              );
+            }
+          }
+        };
+
         if (task.type === "LITERATURE") {
           // Set start timestamp
           task.start = new Date().toISOString();
@@ -1088,6 +1106,7 @@ async function runDeepResearch(params: {
           const primaryLiteraturePromise = literatureAgent({
             objective: task.objective,
             type: primaryLiteratureType,
+            onPollUpdate,
           }).then(async (result) => {
             // Always append for Edison/BioLit (no count filtering)
             task.output += `${result.output}\n\n`;
@@ -1251,6 +1270,7 @@ These molecular changes align with established longevity pathways (Converging nu
                 type,
                 userId: createdMessage.user_id,
                 conversationStateId: conversationStateId,
+                onPollUpdate,
               });
             }
 

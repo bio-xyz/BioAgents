@@ -46,8 +46,11 @@ export type PlanTask = {
   start?: string;
   end?: string;
   output?: string;
+  reasoning?: string[]; // Real-time reasoning trace from external agent (updated during polling)
   artifacts?: Array<AnalysisArtifact>;
 };
+
+export type OnPollUpdate = (update: { reasoning?: string[] }) => void | Promise<void>;
 
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
