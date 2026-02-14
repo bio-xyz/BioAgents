@@ -39,10 +39,18 @@ import {
   updateRunJobId,
 } from "../../services/deep-research/run-guard";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { notifyMessageUpdated, notifyStateUpdated } from "../../services/queue/notify";
+import {
+  notifyMessageUpdated,
+  notifyStateUpdated,
+} from "../../services/queue/notify";
 import { getDeepResearchQueue } from "../../services/queue/queues";
 import type { AuthContext } from "../../types/auth";
-import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../types/core";
+import type {
+  ConversationState,
+  OnPollUpdate,
+  PlanTask,
+  State,
+} from "../../types/core";
 import {
   calculateSessionStartLevel,
   createContinuationMessage,
@@ -190,10 +198,12 @@ export async function deepResearchStartHandler(ctx: any) {
   // Extract researchMode from request (will be reconciled with conversation state later)
   // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
   type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
-  const requestedResearchMode: ResearchMode | undefined = parsedBody.researchMode;
+  const requestedResearchMode: ResearchMode | undefined =
+    parsedBody.researchMode;
 
   // Extract clarificationSessionId from request (optional)
-  const clarificationSessionId: string | undefined = parsedBody.clarificationSessionId;
+  const clarificationSessionId: string | undefined =
+    parsedBody.clarificationSessionId;
 
   // Extract files from parsed body
   let files: File[] = [];
@@ -247,9 +257,7 @@ export async function deepResearchStartHandler(ctx: any) {
 
   const { conversationStateRecord, stateRecord } = dataSetup.data!;
   const queueEnabled = isJobQueueEnabled();
-  const runMode: "queue" | "in-process" = queueEnabled
-    ? "queue"
-    : "in-process";
+  const runMode: "queue" | "in-process" = queueEnabled ? "queue" : "in-process";
   let researchMode: ResearchMode = "semi-autonomous";
   let createdMessage: any | null = null;
   let runMarkedStarted = false;
@@ -261,7 +269,8 @@ export async function deepResearchStartHandler(ctx: any) {
       conversationId,
       conversationStateId: conversationStateRecord.id,
       stateId: stateRecord.id,
-      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+      messagePreview:
+        message.length > 200 ? message.substring(0, 200) + "..." : message,
       messageLength: message.length,
     },
     "deep_research_state_initialized",
@@ -351,7 +360,8 @@ export async function deepResearchStartHandler(ctx: any) {
         conversationStateRecord.id,
       );
       if (refreshedConversationStateRecord?.values) {
-        conversationStateRecord.values = refreshedConversationStateRecord.values;
+        conversationStateRecord.values =
+          refreshedConversationStateRecord.values;
       }
 
       logger.warn(
@@ -364,9 +374,10 @@ export async function deepResearchStartHandler(ctx: any) {
     }
 
     // Reconcile researchMode: request takes priority, then existing state, then default
-    researchMode = requestedResearchMode
-      || conversationStateRecord.values.researchMode
-      || "semi-autonomous";
+    researchMode =
+      requestedResearchMode ||
+      conversationStateRecord.values.researchMode ||
+      "semi-autonomous";
 
     // Save researchMode to conversation state (allows it to change per request)
     conversationStateRecord.values.researchMode = researchMode;
@@ -443,13 +454,14 @@ export async function deepResearchStartHandler(ctx: any) {
         sessionId: clarificationSessionId,
         refinedObjective: clarificationSession.plan.objective,
         questionsAndAnswers,
-        initialTasks: clarificationSession.plan.initialTasks.length > 0
-          ? clarificationSession.plan.initialTasks.map((task) => ({
-              objective: task.objective,
-              type: task.type,
-              datasetFilenames: task.datasetFilenames || [],
-            }))
-          : undefined,
+        initialTasks:
+          clarificationSession.plan.initialTasks.length > 0
+            ? clarificationSession.plan.initialTasks.map((task) => ({
+                objective: task.objective,
+                type: task.type,
+                datasetFilenames: task.datasetFilenames || [],
+              }))
+            : undefined,
       };
 
       logger.info(
@@ -858,10 +870,14 @@ async function runDeepResearch(params: {
         // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
         const clarCtx = conversationState.values.clarificationContext;
         const initialTasks = clarCtx.initialTasks!;
-        const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+        const uploadedDatasets =
+          conversationState.values.uploadedDatasets || [];
 
         logger.info(
-          { taskCount: initialTasks.length, uploadedDatasetCount: uploadedDatasets.length },
+          {
+            taskCount: initialTasks.length,
+            uploadedDatasetCount: uploadedDatasets.length,
+          },
           "using_clarification_initial_tasks",
         );
 
@@ -884,10 +900,15 @@ async function runDeepResearch(params: {
           // Resolve datasetFilenames to full dataset objects
           const resolvedDatasets = (task.datasetFilenames || [])
             .map((filename) => {
-              const dataset = uploadedDatasets.find((d) => d.filename === filename);
+              const dataset = uploadedDatasets.find(
+                (d) => d.filename === filename,
+              );
               if (!dataset) {
                 logger.warn(
-                  { filename, availableDatasets: uploadedDatasets.map((d) => d.filename) },
+                  {
+                    filename,
+                    availableDatasets: uploadedDatasets.map((d) => d.filename),
+                  },
                   "clarification_dataset_not_found",
                 );
                 return null;
@@ -1010,7 +1031,10 @@ async function runDeepResearch(params: {
         }
 
         // Initialize evolving objective (only if not already set)
-        if (!conversationState.values.evolvingObjective && createdMessage.question) {
+        if (
+          !conversationState.values.evolvingObjective &&
+          createdMessage.question
+        ) {
           conversationState.values.evolvingObjective = createdMessage.question;
         }
 
@@ -1033,17 +1057,28 @@ async function runDeepResearch(params: {
         (t) => t.level === newLevel,
       );
 
+      // Serialize DB writes to prevent concurrent updateConversationState calls
+      // from overwriting each other's changes
+      let stateWriteChain = Promise.resolve();
+      const writeStateSerialized = async () => {
+        const p = stateWriteChain.then(() =>
+          updateConversationState(
+            conversationState.id!,
+            conversationState.values,
+          ),
+        );
+        stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+        return p;
+      };
+
       // Execute all tasks concurrently
       const taskPromises = tasksToExecute.map(async (task) => {
         // Callback to persist reasoning traces to conversation state on each poll
         const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
-          if (reasoning) {
+          if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
             task.reasoning = reasoning;
             if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
+              await writeStateSerialized();
               await notifyStateUpdated(
                 `in-process-${currentMessage.id}`,
                 createdMessage.conversation_id,
@@ -1059,10 +1094,7 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
 
           logger.info(
@@ -1088,10 +1120,7 @@ async function runDeepResearch(params: {
                 task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
-                await updateConversationState(
-                  conversationState.id,
-                  conversationState.values,
-                );
+                await writeStateSerialized();
                 logger.info({ count: result.count }, "openscholar_completed");
               }
               logger.info(
@@ -1115,10 +1144,7 @@ async function runDeepResearch(params: {
               task.jobId = result.jobId;
             }
             if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
+              await writeStateSerialized();
             }
             logger.info(
               { outputLength: result.output.length, jobId: result.jobId },
@@ -1137,10 +1163,7 @@ async function runDeepResearch(params: {
                 task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
-                await updateConversationState(
-                  conversationState.id,
-                  conversationState.values,
-                );
+                await writeStateSerialized();
                 logger.info({ count: result.count }, "knowledge_completed");
               }
               logger.info(
@@ -1157,10 +1180,7 @@ async function runDeepResearch(params: {
           // Set end timestamp after all are done
           task.end = new Date().toISOString();
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
             logger.info("task_completed");
           }
         } else if (task.type === "ANALYSIS") {
@@ -1169,10 +1189,7 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
 
           logger.info(
@@ -1279,10 +1296,7 @@ These molecular changes align with established longevity pathways (Converging nu
             task.jobId = analysisResult.jobId;
 
             if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
+              await writeStateSerialized();
               logger.info(
                 { jobId: analysisResult.jobId },
                 "analysis_completed",
@@ -1310,10 +1324,7 @@ These molecular changes align with established longevity pathways (Converging nu
           // Set end timestamp
           task.end = new Date().toISOString();
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
         }
       });
@@ -1393,7 +1404,8 @@ These molecular changes align with established longevity pathways (Converging nu
       conversationState.values.conversationTitle =
         reflectionResult.conversationTitle;
       if (reflectionResult.evolvingObjective) {
-        conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+        conversationState.values.evolvingObjective =
+          reflectionResult.evolvingObjective;
       }
       conversationState.values.currentObjective =
         reflectionResult.currentObjective;
