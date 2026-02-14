@@ -414,6 +414,17 @@ async function processDeepResearchJob(
       "tasks_to_execute_for_iteration",
     );
 
+    // Serialize DB writes to prevent concurrent updateConversationState calls
+    // from overwriting each other's changes (matches in-process mode pattern)
+    let stateWriteChain = Promise.resolve();
+    const writeStateSerialized = async () => {
+      const p = stateWriteChain.then(() =>
+        updateConversationState(conversationState.id!, conversationState.values),
+      );
+      stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+      return p;
+    };
+
     // Execute all tasks concurrently
     const taskPromises = tasksToExecute.map(async (task) => {
       // Callback to persist reasoning traces to conversation state on each poll
@@ -421,7 +432,7 @@ async function processDeepResearchJob(
         if (reasoning) {
           task.reasoning = reasoning;
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await writeStateSerialized();
             await notifyStateUpdated(job.id!, conversationId, conversationState.id);
           }
         }
@@ -432,7 +443,7 @@ async function processDeepResearchJob(
         task.output = "";
 
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
         }
 
         logger.info(
@@ -456,7 +467,7 @@ async function processDeepResearchJob(
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
             if (conversationState.id) {
-              await updateConversationState(conversationState.id, conversationState.values);
+              await writeStateSerialized();
             }
           });
           literaturePromises.push(openScholarPromise);
@@ -474,7 +485,7 @@ async function processDeepResearchJob(
             task.jobId = result.jobId;
           }
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await writeStateSerialized();
           }
         });
         literaturePromises.push(primaryLiteraturePromise);
@@ -487,7 +498,7 @@ async function processDeepResearchJob(
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
             if (conversationState.id) {
-              await updateConversationState(conversationState.id, conversationState.values);
+              await writeStateSerialized();
             }
           });
           literaturePromises.push(knowledgePromise);
@@ -497,7 +508,7 @@ async function processDeepResearchJob(
 
         task.end = new Date().toISOString();
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
           await notifyStateUpdated(job.id!, conversationId, conversationState.id);
         }
       } else if (task.type === "ANALYSIS") {
@@ -509,7 +520,7 @@ async function processDeepResearchJob(
         task.output = "";
 
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
         }
 
         logger.info(
@@ -537,7 +548,7 @@ async function processDeepResearchJob(
           task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await writeStateSerialized();
           }
         } catch (error) {
           const errorMsg = error instanceof Error
@@ -554,7 +565,7 @@ async function processDeepResearchJob(
 
         task.end = new Date().toISOString();
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
           await notifyStateUpdated(job.id!, conversationId, conversationState.id);
         }
       }
