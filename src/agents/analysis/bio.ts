@@ -3,7 +3,7 @@ import {
   getStorageProvider,
   isStorageProviderAvailable,
 } from "../../storage";
-import { type AnalysisArtifact } from "../../types/core";
+import { type AnalysisArtifact, type OnPollUpdate } from "../../types/core";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 import type { Dataset } from "./index";
@@ -13,6 +13,7 @@ type BioDataAnalysisResult = {
   status: string;
   success: boolean;
   answer: string;
+  reasoning?: string[];
   artifacts: Array<AnalysisArtifact>;
 };
 
@@ -57,10 +58,12 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
+  onPollUpdate?: OnPollUpdate,
 ): Promise<{
   output: string;
   artifacts: Array<AnalysisArtifact>;
   jobId: string;
+  reasoning?: string[];
 }> {
   if (!objective) {
     logger.error("No question provided to Data Analysis Agent");
@@ -88,7 +91,7 @@ export async function analyzeWithBio(
     const taskResponse = await startBioTask(config, context, query);
     taskId = taskResponse.id;
     logger.info({ taskId }, "bio_analysis_task_started");
-    taskResult = await awaitBioTask(config, taskId);
+    taskResult = await awaitBioTask(config, taskId, onPollUpdate);
   } catch (err) {
     logger.error(
       { err, objective, datasetCount: datasets.length },
@@ -107,6 +110,7 @@ export async function analyzeWithBio(
     output: taskResult.answer,
     artifacts: taskResult.artifacts || [],
     jobId: taskId!,
+    reasoning: taskResult.reasoning,
   };
 }
 
@@ -245,6 +249,7 @@ async function startBioTask(
 async function awaitBioTask(
   config: BioAnalysisConfig,
   taskId: string,
+  onPollUpdate?: OnPollUpdate,
 ): Promise<BioDataAnalysisResult> {
   const timeoutMinutes = parseInt(
     process.env.BIO_ANALYSIS_TASK_TIMEOUT_MINUTES || "60",
@@ -282,6 +287,16 @@ async function awaitBioTask(
 
     const taskResult = (await response.json()) as BioDataAnalysisResult;
 
+    // Invoke onPollUpdate with reasoning trace from this poll iteration
+    const reasoning = Array.isArray(taskResult.reasoning) ? taskResult.reasoning : undefined;
+    if (onPollUpdate && reasoning) {
+      try {
+        await onPollUpdate({ reasoning });
+      } catch (err) {
+        logger.warn({ err, taskId }, "bio_analysis_on_poll_update_failed");
+      }
+    }
+
     if (taskResult.status === "completed" && taskResult.success === true) {
       logger.info({ taskId }, "task_completed_successfully");
       return taskResult;
@@ -293,7 +308,7 @@ async function awaitBioTask(
     }
 
     logger.debug(
-      { taskId, status: taskResult.status },
+      { taskId, status: taskResult.status, hasReasoning: Boolean(reasoning) },
       "bio_analysis_task_still_running",
     );
 

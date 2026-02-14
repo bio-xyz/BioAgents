@@ -44,6 +44,7 @@ export interface DeepResearchJobData {
   userId: string;
   conversationId: string;
   messageId: string; // The message THIS iteration writes to
+  rootMessageId?: string; // Root user message for the full deep research session
   message: string;
   authMethod: AuthMethod;
   fileIds?: string[];

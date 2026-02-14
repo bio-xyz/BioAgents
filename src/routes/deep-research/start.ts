@@ -14,6 +14,7 @@ import {
   linkSessionToConversation,
 } from "../../db/clarification";
 import {
+  getConversationState,
   getMessagesByConversation,
   getOrCreateUserByWallet,
   updateConversationState,
@@ -27,11 +28,29 @@ import {
   setupConversationData,
 } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
+import {
+  acquireStartMutex,
+  getActiveRunForDedupFromValues,
+  isStaleRun,
+  markRunFinished,
+  markRunStarted,
+  releaseStartMutex,
+  touchRun,
+  updateRunJobId,
+} from "../../services/deep-research/run-guard";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { notifyMessageUpdated } from "../../services/queue/notify";
+import {
+  notifyMessageUpdated,
+  notifyStateUpdated,
+} from "../../services/queue/notify";
 import { getDeepResearchQueue } from "../../services/queue/queues";
 import type { AuthContext } from "../../types/auth";
-import type { ConversationState, PlanTask, State } from "../../types/core";
+import type {
+  ConversationState,
+  OnPollUpdate,
+  PlanTask,
+  State,
+} from "../../types/core";
 import {
   calculateSessionStartLevel,
   createContinuationMessage,
@@ -52,6 +71,7 @@ type DeepResearchStartResponse = {
   userId: string; // Important: Return userId so external platforms can check status
   status: "processing";
   pollUrl?: string; // Full URL for x402 users to check status
+  deduplicated?: true;
   error?: string;
 };
 
@@ -59,13 +79,29 @@ type DeepResearchStartResponse = {
  * Response type for deep research start (queue mode)
  */
 type DeepResearchQueuedResponse = {
-  jobId: string;
+  jobId?: string;
   messageId: string;
   conversationId: string;
   userId: string;
   status: "queued";
   pollUrl: string;
+  deduplicated?: true;
 };
+
+function buildDeepResearchPollUrl(
+  request: Request,
+  messageId: string,
+  isX402User: boolean,
+): string {
+  if (!isX402User) {
+    return `/api/deep-research/status/${messageId}`;
+  }
+
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const protocol = forwardedProto || url.protocol.replace(":", "");
+  return `${protocol}://${url.host}/api/deep-research/status/${messageId}`;
+}
 
 /**
  * Deep Research Start Route - Returns immediately with messageId
@@ -162,10 +198,12 @@ export async function deepResearchStartHandler(ctx: any) {
   // Extract researchMode from request (will be reconciled with conversation state later)
   // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
   type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
-  const requestedResearchMode: ResearchMode | undefined = parsedBody.researchMode;
+  const requestedResearchMode: ResearchMode | undefined =
+    parsedBody.researchMode;
 
   // Extract clarificationSessionId from request (optional)
-  const clarificationSessionId: string | undefined = parsedBody.clarificationSessionId;
+  const clarificationSessionId: string | undefined =
+    parsedBody.clarificationSessionId;
 
   // Extract files from parsed body
   let files: File[] = [];
@@ -218,6 +256,11 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   const { conversationStateRecord, stateRecord } = dataSetup.data!;
+  const queueEnabled = isJobQueueEnabled();
+  const runMode: "queue" | "in-process" = queueEnabled ? "queue" : "in-process";
+  let researchMode: ResearchMode = "semi-autonomous";
+  let createdMessage: any | null = null;
+  let runMarkedStarted = false;
 
   // Log with state IDs now that we have them
   logger.info(
@@ -226,227 +269,391 @@ export async function deepResearchStartHandler(ctx: any) {
       conversationId,
       conversationStateId: conversationStateRecord.id,
       stateId: stateRecord.id,
-      messagePreview: message.length > 200 ? message.substring(0, 200) + "..." : message,
+      messagePreview:
+        message.length > 200 ? message.substring(0, 200) + "..." : message,
       messageLength: message.length,
     },
     "deep_research_state_initialized",
   );
 
-  // Reconcile researchMode: request takes priority, then existing state, then default
-  const researchMode: ResearchMode = requestedResearchMode
-    || conversationStateRecord.values.researchMode
-    || "semi-autonomous";
-
-  // Save researchMode to conversation state (allows it to change per request)
-  conversationStateRecord.values.researchMode = researchMode;
-
-  logger.info(
-    {
-      researchMode,
-      requestedResearchMode,
-      stateResearchMode: conversationStateRecord.values.researchMode,
-    },
-    "research_mode_resolved",
-  );
-
-  // =========================================================================
-  // CLARIFICATION CONTEXT: Process approved plan from clarification session
-  // =========================================================================
-  if (clarificationSessionId) {
-    logger.info(
-      { clarificationSessionId, userId },
-      "processing_clarification_session",
+  const startMutex = await acquireStartMutex(conversationStateRecord.id);
+  if (!startMutex.acquired && !startMutex.fallback) {
+    logger.warn(
+      { conversationStateId: conversationStateRecord.id },
+      "deep_research_start_proceeding_without_mutex",
     );
+  }
 
-    // Get and validate clarification session
-    const clarificationSession = await getClarificationSessionForUser(
-      clarificationSessionId,
-      userId,
+  try {
+    // Re-read latest state while inside start mutex
+    const latestConversationStateRecord = await getConversationState(
+      conversationStateRecord.id,
     );
-
-    if (!clarificationSession) {
-      set.status = 404;
-      return {
-        ok: false,
-        error: "Clarification session not found or access denied",
-      };
+    if (latestConversationStateRecord?.values) {
+      conversationStateRecord.values = latestConversationStateRecord.values;
     }
 
-    if (clarificationSession.status !== "plan_approved") {
-      set.status = 400;
-      return {
-        ok: false,
-        error: `Clarification session must be approved. Current status: ${clarificationSession.status}`,
+    const activeRun = getActiveRunForDedupFromValues(
+      conversationStateRecord.values,
+    );
+    if (activeRun) {
+      const pollUrl = buildDeepResearchPollUrl(
+        request,
+        activeRun.messageId,
+        isX402User,
+      );
+
+      logger.info(
+        {
+          conversationId,
+          conversationStateId: conversationStateRecord.id,
+          activeRootMessageId: activeRun.messageId,
+          activeJobId: activeRun.jobId,
+          activeRunMode: activeRun.mode,
+        },
+        "deep_research_start_deduplicated_active_run",
+      );
+
+      if (activeRun.mode === "queue") {
+        const dedupeResponse: DeepResearchQueuedResponse = {
+          ...(activeRun.jobId ? { jobId: activeRun.jobId } : {}),
+          messageId: activeRun.messageId,
+          conversationId,
+          userId,
+          status: "queued",
+          pollUrl,
+          deduplicated: true,
+        };
+
+        return new Response(JSON.stringify(dedupeResponse), {
+          status: 202,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+          },
+        });
+      }
+
+      const dedupeResponse: DeepResearchStartResponse = {
+        messageId: activeRun.messageId,
+        conversationId,
+        userId,
+        status: "processing",
+        pollUrl,
+        deduplicated: true,
       };
+
+      return new Response(JSON.stringify(dedupeResponse), {
+        status: 202,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+      });
     }
 
-    if (!clarificationSession.plan) {
-      set.status = 400;
-      return {
-        ok: false,
-        error: "Clarification session has no approved plan",
-      };
+    if (isStaleRun(conversationStateRecord.values.deepResearchRun)) {
+      await markRunFinished({
+        conversationStateId: conversationStateRecord.id,
+        result: "stale_recovered",
+      });
+
+      const refreshedConversationStateRecord = await getConversationState(
+        conversationStateRecord.id,
+      );
+      if (refreshedConversationStateRecord?.values) {
+        conversationStateRecord.values =
+          refreshedConversationStateRecord.values;
+      }
+
+      logger.warn(
+        {
+          conversationId,
+          conversationStateId: conversationStateRecord.id,
+        },
+        "deep_research_stale_run_recovered",
+      );
     }
 
-    // Build questions and answers array
-    const questionsAndAnswers = clarificationSession.questions.map((q, i) => {
-      const answer = clarificationSession.answers.find((a) => a.questionIndex === i);
-      return {
-        question: q.question,
-        answer: answer?.answer || "",
-      };
-    });
+    // Reconcile researchMode: request takes priority, then existing state, then default
+    researchMode =
+      requestedResearchMode ||
+      conversationStateRecord.values.researchMode ||
+      "semi-autonomous";
 
-    // Build clarification context (refined objective + Q&A + initial tasks for planning)
-    // The worker will handle promoting initialTasks to the plan on first iteration
-    // Note: initialTasks use datasetFilenames (just names) that get resolved to actual dataset objects at execution time
-    conversationStateRecord.values.clarificationContext = {
-      sessionId: clarificationSessionId,
-      refinedObjective: clarificationSession.plan.objective,
-      questionsAndAnswers,
-      initialTasks: clarificationSession.plan.initialTasks.length > 0
-        ? clarificationSession.plan.initialTasks.map((task) => ({
-            objective: task.objective,
-            type: task.type,
-            datasetFilenames: task.datasetFilenames || [],
-          }))
-        : undefined,
-    };
+    // Save researchMode to conversation state (allows it to change per request)
+    conversationStateRecord.values.researchMode = researchMode;
 
     logger.info(
       {
-        initialTaskCount: clarificationSession.plan.initialTasks.length,
-        taskTypes: clarificationSession.plan.initialTasks.map((t) => t.type),
+        researchMode,
+        requestedResearchMode,
+        stateResearchMode: conversationStateRecord.values.researchMode,
       },
-      "clarification_context_with_initial_tasks_stored",
+      "research_mode_resolved",
     );
 
-    // Link clarification session to conversation
-    await linkSessionToConversation(clarificationSessionId, conversationId);
-
-    // Persist clarification context and plan to DB (needed for worker mode)
+    // Persist researchMode before run starts so dedupe/continuations see latest mode immediately.
     await updateConversationState(
       conversationStateRecord.id,
       conversationStateRecord.values,
     );
 
-    logger.info(
-      {
+    // =========================================================================
+    // CLARIFICATION CONTEXT: Process approved plan from clarification session
+    // =========================================================================
+    if (clarificationSessionId) {
+      logger.info(
+        { clarificationSessionId, userId },
+        "processing_clarification_session",
+      );
+
+      // Get and validate clarification session
+      const clarificationSession = await getClarificationSessionForUser(
         clarificationSessionId,
-        conversationId,
-        qaCount: questionsAndAnswers.length,
-      },
-      "clarification_context_added_to_conversation",
-    );
+        userId,
+      );
+
+      if (!clarificationSession) {
+        set.status = 404;
+        return {
+          ok: false,
+          error: "Clarification session not found or access denied",
+        };
+      }
+
+      if (clarificationSession.status !== "plan_approved") {
+        set.status = 400;
+        return {
+          ok: false,
+          error: `Clarification session must be approved. Current status: ${clarificationSession.status}`,
+        };
+      }
+
+      if (!clarificationSession.plan) {
+        set.status = 400;
+        return {
+          ok: false,
+          error: "Clarification session has no approved plan",
+        };
+      }
+
+      // Build questions and answers array
+      const questionsAndAnswers = clarificationSession.questions.map((q, i) => {
+        const answer = clarificationSession.answers.find(
+          (a) => a.questionIndex === i,
+        );
+        return {
+          question: q.question,
+          answer: answer?.answer || "",
+        };
+      });
+
+      // Build clarification context (refined objective + Q&A + initial tasks for planning)
+      // The worker will handle promoting initialTasks to the plan on first iteration
+      // Note: initialTasks use datasetFilenames (just names) that get resolved to actual dataset objects at execution time
+      conversationStateRecord.values.clarificationContext = {
+        sessionId: clarificationSessionId,
+        refinedObjective: clarificationSession.plan.objective,
+        questionsAndAnswers,
+        initialTasks:
+          clarificationSession.plan.initialTasks.length > 0
+            ? clarificationSession.plan.initialTasks.map((task) => ({
+                objective: task.objective,
+                type: task.type,
+                datasetFilenames: task.datasetFilenames || [],
+              }))
+            : undefined,
+      };
+
+      logger.info(
+        {
+          initialTaskCount: clarificationSession.plan.initialTasks.length,
+          taskTypes: clarificationSession.plan.initialTasks.map((t) => t.type),
+        },
+        "clarification_context_with_initial_tasks_stored",
+      );
+
+      // Link clarification session to conversation
+      await linkSessionToConversation(clarificationSessionId, conversationId);
+
+      // Persist clarification context and plan to DB (needed for worker mode)
+      await updateConversationState(
+        conversationStateRecord.id,
+        conversationStateRecord.values,
+      );
+
+      logger.info(
+        {
+          clarificationSessionId,
+          conversationId,
+          qaCount: questionsAndAnswers.length,
+        },
+        "clarification_context_added_to_conversation",
+      );
+    }
+
+    // Create message record
+    const messageResult = await createMessageRecord({
+      conversationId,
+      userId,
+      message,
+      source,
+      stateId: stateRecord.id,
+      files,
+      isExternal: false,
+    });
+    if (!messageResult.success) {
+      set.status = 500;
+      return {
+        ok: false,
+        error: messageResult.error || "Message creation failed",
+      };
+    }
+
+    createdMessage = messageResult.message!;
+
+    await markRunStarted({
+      conversationStateId: conversationStateRecord.id,
+      rootMessageId: createdMessage.id,
+      stateId: stateRecord.id,
+      mode: runMode,
+    });
+    runMarkedStarted = true;
+  } finally {
+    await releaseStartMutex(startMutex);
   }
 
-  // Create message record
-  const messageResult = await createMessageRecord({
-    conversationId,
-    userId,
-    message,
-    source,
-    stateId: stateRecord.id,
-    files,
-    isExternal: false,
-  });
-  if (!messageResult.success) {
+  if (!createdMessage) {
     set.status = 500;
     return {
       ok: false,
-      error: messageResult.error || "Message creation failed",
+      error: "Failed to initialize deep research run",
     };
   }
-
-  const createdMessage = messageResult.message!;
 
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
-  if (isJobQueueEnabled()) {
-    // QUEUE MODE: Enqueue job and return immediately
-    logger.info(
-      { messageId: createdMessage.id, conversationId },
-      "deep_research_using_queue_mode",
-    );
-
-    // Process files synchronously before enqueuing (files can't be serialized)
-    if (files.length > 0) {
-      const conversationState: ConversationState = {
-        id: conversationStateRecord.id,
-        values: conversationStateRecord.values,
-      };
-
+  if (queueEnabled) {
+    try {
+      // QUEUE MODE: Enqueue job and return immediately
       logger.info(
-        { fileCount: files.length },
-        "processing_file_uploads_before_queue",
+        { messageId: createdMessage.id, conversationId },
+        "deep_research_using_queue_mode",
       );
 
-      await fileUploadAgent({
-        conversationState,
-        files,
+      // Process files synchronously before enqueuing (files can't be serialized)
+      if (files.length > 0) {
+        const conversationState: ConversationState = {
+          id: conversationStateRecord.id,
+          values: conversationStateRecord.values,
+        };
+
+        logger.info(
+          { fileCount: files.length },
+          "processing_file_uploads_before_queue",
+        );
+
+        await fileUploadAgent({
+          conversationState,
+          files,
+          userId,
+        });
+      }
+
+      // Enqueue the job (iteration 1)
+      const deepResearchQueue = getDeepResearchQueue();
+
+      const job = await deepResearchQueue.add(
+        `iteration-1-${createdMessage.id}`,
+        {
+          userId,
+          conversationId,
+          messageId: createdMessage.id,
+          rootMessageId: createdMessage.id,
+          message,
+          authMethod: auth?.method || "anonymous",
+          stateId: stateRecord.id,
+          conversationStateId: conversationStateRecord.id,
+          requestedAt: new Date().toISOString(),
+          researchMode,
+          // Iteration tracking (iteration-per-job architecture)
+          iterationNumber: 1,
+          isInitialIteration: true,
+          // rootJobId will be set by worker to job.id since this is the first job
+        },
+        {
+          jobId: createdMessage.id, // Use message ID as job ID for easy lookup
+        },
+      );
+
+      try {
+        await updateRunJobId({
+          conversationStateId: conversationStateRecord.id,
+          rootMessageId: createdMessage.id,
+          stateId: stateRecord.id,
+          jobId: job.id!,
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            error,
+            conversationStateId: conversationStateRecord.id,
+            messageId: createdMessage.id,
+            jobId: job.id,
+          },
+          "deep_research_run_job_id_update_failed",
+        );
+      }
+
+      logger.info(
+        {
+          jobId: job.id,
+          messageId: createdMessage.id,
+          conversationId,
+        },
+        "deep_research_job_enqueued",
+      );
+
+      const pollUrl = buildDeepResearchPollUrl(
+        request,
+        createdMessage.id,
+        isX402User,
+      );
+
+      const response: DeepResearchQueuedResponse = {
+        jobId: job.id!,
+        messageId: createdMessage.id,
+        conversationId,
         userId,
+        status: "queued",
+        pollUrl,
+      };
+
+      return new Response(JSON.stringify(response), {
+        status: 202, // Accepted
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
       });
+    } catch (err) {
+      if (runMarkedStarted) {
+        try {
+          await markRunFinished({
+            conversationStateId: conversationStateRecord.id,
+            result: "failed",
+            error: err instanceof Error ? err.message : "Unknown error",
+            rootMessageId: createdMessage.id,
+            stateId: stateRecord.id,
+          });
+        } catch (error) {
+          logger.warn(
+            { error, conversationStateId: conversationStateRecord.id },
+            "deep_research_run_finish_mark_failed_on_queue_error",
+          );
+        }
+      }
+      throw err;
     }
-
-    // Enqueue the job (iteration 1)
-    const deepResearchQueue = getDeepResearchQueue();
-
-    const job = await deepResearchQueue.add(
-      `iteration-1-${createdMessage.id}`,
-      {
-        userId,
-        conversationId,
-        messageId: createdMessage.id,
-        message,
-        authMethod: auth?.method || "anonymous",
-        stateId: stateRecord.id,
-        conversationStateId: conversationStateRecord.id,
-        requestedAt: new Date().toISOString(),
-        researchMode,
-        // Iteration tracking (iteration-per-job architecture)
-        iterationNumber: 1,
-        isInitialIteration: true,
-        // rootJobId will be set by worker to job.id since this is the first job
-      },
-      {
-        jobId: createdMessage.id, // Use message ID as job ID for easy lookup
-      },
-    );
-
-    logger.info(
-      {
-        jobId: job.id,
-        messageId: createdMessage.id,
-        conversationId,
-      },
-      "deep_research_job_enqueued",
-    );
-
-    // Build pollUrl - use full URL for x402 users (external API consumers)
-    let pollUrl = `/api/deep-research/status/${createdMessage.id}`;
-    if (isX402User) {
-      const url = new URL(request.url);
-      const forwardedProto = request.headers.get("x-forwarded-proto");
-      const protocol = forwardedProto || url.protocol.replace(":", "");
-      pollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
-    }
-
-    const response: DeepResearchQueuedResponse = {
-      jobId: job.id!,
-      messageId: createdMessage.id,
-      conversationId,
-      userId,
-      status: "queued",
-      pollUrl,
-    };
-
-    return new Response(JSON.stringify(response), {
-      status: 202, // Accepted
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-      },
-    });
   }
 
   // =========================================================================
@@ -460,13 +667,9 @@ export async function deepResearchStartHandler(ctx: any) {
   // Return immediately with message ID
   // Include userId so external platforms (x402) can check status later
   // Build pollUrl for x402 users (external API consumers)
-  let statusPollUrl: string | undefined;
-  if (isX402User) {
-    const url = new URL(request.url);
-    const forwardedProto = request.headers.get("x-forwarded-proto");
-    const protocol = forwardedProto || url.protocol.replace(":", "");
-    statusPollUrl = `${protocol}://${url.host}/api/deep-research/status/${createdMessage.id}`;
-  }
+  const statusPollUrl = isX402User
+    ? buildDeepResearchPollUrl(request, createdMessage.id, isX402User)
+    : undefined;
 
   const response: DeepResearchStartResponse = {
     messageId: createdMessage.id,
@@ -478,18 +681,40 @@ export async function deepResearchStartHandler(ctx: any) {
 
   // Run the actual deep research in the background
   // Don't await - let it run asynchronously
-  runDeepResearch({
-    stateRecord,
-    conversationStateRecord,
-    createdMessage,
-    files,
-    researchMode,
-  }).catch((err) => {
-    logger.error(
-      { err, messageId: createdMessage.id },
-      "deep_research_background_failed",
-    );
-  });
+  try {
+    runDeepResearch({
+      stateRecord,
+      conversationStateRecord,
+      createdMessage,
+      files,
+      researchMode,
+      rootMessageId: createdMessage.id,
+      conversationStateId: conversationStateRecord.id,
+    }).catch((err) => {
+      logger.error(
+        { err, messageId: createdMessage.id },
+        "deep_research_background_failed",
+      );
+    });
+  } catch (err) {
+    if (runMarkedStarted) {
+      try {
+        await markRunFinished({
+          conversationStateId: conversationStateRecord.id,
+          result: "failed",
+          error: err instanceof Error ? err.message : "Unknown error",
+          rootMessageId: createdMessage.id,
+          stateId: stateRecord.id,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId: conversationStateRecord.id },
+          "deep_research_run_finish_mark_failed_on_background_start_error",
+        );
+      }
+    }
+    throw err;
+  }
 
   if (logger) {
     logger.info(
@@ -515,6 +740,8 @@ async function runDeepResearch(params: {
   createdMessage: any;
   files: File[];
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
+  rootMessageId: string;
+  conversationStateId: string;
 }) {
   const {
     stateRecord,
@@ -522,6 +749,8 @@ async function runDeepResearch(params: {
     createdMessage,
     files,
     researchMode = "semi-autonomous",
+    rootMessageId,
+    conversationStateId,
   } = params;
 
   try {
@@ -599,6 +828,19 @@ async function runDeepResearch(params: {
     );
 
     while (shouldContinueLoop && iterationCount < maxAutoIterations) {
+      try {
+        await touchRun({
+          conversationStateId,
+          rootMessageId,
+          stateId: stateRecord.id,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId },
+          "deep_research_run_heartbeat_failed_at_iteration_start",
+        );
+      }
+
       iterationCount++;
       const iterationStartTime = Date.now();
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
@@ -628,10 +870,14 @@ async function runDeepResearch(params: {
         // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
         const clarCtx = conversationState.values.clarificationContext;
         const initialTasks = clarCtx.initialTasks!;
-        const uploadedDatasets = conversationState.values.uploadedDatasets || [];
+        const uploadedDatasets =
+          conversationState.values.uploadedDatasets || [];
 
         logger.info(
-          { taskCount: initialTasks.length, uploadedDatasetCount: uploadedDatasets.length },
+          {
+            taskCount: initialTasks.length,
+            uploadedDatasetCount: uploadedDatasets.length,
+          },
           "using_clarification_initial_tasks",
         );
 
@@ -654,10 +900,15 @@ async function runDeepResearch(params: {
           // Resolve datasetFilenames to full dataset objects
           const resolvedDatasets = (task.datasetFilenames || [])
             .map((filename) => {
-              const dataset = uploadedDatasets.find((d) => d.filename === filename);
+              const dataset = uploadedDatasets.find(
+                (d) => d.filename === filename,
+              );
               if (!dataset) {
                 logger.warn(
-                  { filename, availableDatasets: uploadedDatasets.map((d) => d.filename) },
+                  {
+                    filename,
+                    availableDatasets: uploadedDatasets.map((d) => d.filename),
+                  },
                   "clarification_dataset_not_found",
                 );
                 return null;
@@ -780,7 +1031,10 @@ async function runDeepResearch(params: {
         }
 
         // Initialize evolving objective (only if not already set)
-        if (!conversationState.values.evolvingObjective && createdMessage.question) {
+        if (
+          !conversationState.values.evolvingObjective &&
+          createdMessage.question
+        ) {
           conversationState.values.evolvingObjective = createdMessage.question;
         }
 
@@ -803,18 +1057,44 @@ async function runDeepResearch(params: {
         (t) => t.level === newLevel,
       );
 
+      // Serialize DB writes to prevent concurrent updateConversationState calls
+      // from overwriting each other's changes
+      let stateWriteChain = Promise.resolve();
+      const writeStateSerialized = async () => {
+        const p = stateWriteChain.then(() =>
+          updateConversationState(
+            conversationState.id!,
+            conversationState.values,
+          ),
+        );
+        stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+        return p;
+      };
+
       // Execute all tasks concurrently
       const taskPromises = tasksToExecute.map(async (task) => {
+        // Callback to persist reasoning traces to conversation state on each poll
+        const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
+          if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
+            task.reasoning = reasoning;
+            if (conversationState.id) {
+              await writeStateSerialized();
+              await notifyStateUpdated(
+                `in-process-${currentMessage.id}`,
+                createdMessage.conversation_id,
+                conversationState.id,
+              );
+            }
+          }
+        };
+
         if (task.type === "LITERATURE") {
           // Set start timestamp
           task.start = new Date().toISOString();
           task.output = "";
 
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
 
           logger.info(
@@ -840,10 +1120,7 @@ async function runDeepResearch(params: {
                 task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
-                await updateConversationState(
-                  conversationState.id,
-                  conversationState.values,
-                );
+                await writeStateSerialized();
                 logger.info({ count: result.count }, "openscholar_completed");
               }
               logger.info(
@@ -858,6 +1135,7 @@ async function runDeepResearch(params: {
           const primaryLiteraturePromise = literatureAgent({
             objective: task.objective,
             type: primaryLiteratureType,
+            onPollUpdate,
           }).then(async (result) => {
             // Always append for Edison/BioLit (no count filtering)
             task.output += `${result.output}\n\n`;
@@ -866,10 +1144,7 @@ async function runDeepResearch(params: {
               task.jobId = result.jobId;
             }
             if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
+              await writeStateSerialized();
             }
             logger.info(
               { outputLength: result.output.length, jobId: result.jobId },
@@ -888,10 +1163,7 @@ async function runDeepResearch(params: {
                 task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
-                await updateConversationState(
-                  conversationState.id,
-                  conversationState.values,
-                );
+                await writeStateSerialized();
                 logger.info({ count: result.count }, "knowledge_completed");
               }
               logger.info(
@@ -908,10 +1180,7 @@ async function runDeepResearch(params: {
           // Set end timestamp after all are done
           task.end = new Date().toISOString();
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
             logger.info("task_completed");
           }
         } else if (task.type === "ANALYSIS") {
@@ -920,10 +1189,7 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
 
           logger.info(
@@ -1021,6 +1287,7 @@ These molecular changes align with established longevity pathways (Converging nu
                 type,
                 userId: createdMessage.user_id,
                 conversationStateId: conversationStateId,
+                onPollUpdate,
               });
             }
 
@@ -1029,10 +1296,7 @@ These molecular changes align with established longevity pathways (Converging nu
             task.jobId = analysisResult.jobId;
 
             if (conversationState.id) {
-              await updateConversationState(
-                conversationState.id,
-                conversationState.values,
-              );
+              await writeStateSerialized();
               logger.info(
                 { jobId: analysisResult.jobId },
                 "analysis_completed",
@@ -1060,10 +1324,7 @@ These molecular changes align with established longevity pathways (Converging nu
           // Set end timestamp
           task.end = new Date().toISOString();
           if (conversationState.id) {
-            await updateConversationState(
-              conversationState.id,
-              conversationState.values,
-            );
+            await writeStateSerialized();
           }
         }
       });
@@ -1143,7 +1404,8 @@ These molecular changes align with established longevity pathways (Converging nu
       conversationState.values.conversationTitle =
         reflectionResult.conversationTitle;
       if (reflectionResult.evolvingObjective) {
-        conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+        conversationState.values.evolvingObjective =
+          reflectionResult.evolvingObjective;
       }
       conversationState.values.currentObjective =
         reflectionResult.currentObjective;
@@ -1334,6 +1596,19 @@ These molecular changes align with established longevity pathways (Converging nu
         currentMessage.id,
       );
 
+      try {
+        await touchRun({
+          conversationStateId,
+          rootMessageId,
+          stateId: stateRecord.id,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId },
+          "deep_research_run_heartbeat_failed_after_iteration_reply",
+        );
+      }
+
       // =========================================================================
       // PREPARE FOR NEXT ITERATION (if continuing)
       // =========================================================================
@@ -1426,6 +1701,20 @@ These molecular changes align with established longevity pathways (Converging nu
       },
       "deep_research_completed",
     );
+
+    try {
+      await markRunFinished({
+        conversationStateId,
+        result: "completed",
+        rootMessageId,
+        stateId: stateRecord.id,
+      });
+    } catch (error) {
+      logger.warn(
+        { error, conversationStateId, rootMessageId },
+        "deep_research_run_finish_mark_failed_on_success",
+      );
+    }
   } catch (err) {
     logger.error(
       { err, messageId: createdMessage.id },
@@ -1438,5 +1727,20 @@ These molecular changes align with established longevity pathways (Converging nu
       error: err instanceof Error ? err.message : "Unknown error",
       status: "failed",
     });
+
+    try {
+      await markRunFinished({
+        conversationStateId,
+        result: "failed",
+        error: err instanceof Error ? err.message : "Unknown error",
+        rootMessageId,
+        stateId: stateRecord.id,
+      });
+    } catch (error) {
+      logger.warn(
+        { error, conversationStateId, rootMessageId },
+        "deep_research_run_finish_mark_failed_on_failure",
+      );
+    }
   }
 }

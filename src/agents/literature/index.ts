@@ -1,3 +1,4 @@
+import type { OnPollUpdate } from "../../types/core";
 import logger from "../../utils/logger";
 import { searchBioLiterature } from "./bio";
 import { searchEdison } from "./edison";
@@ -18,6 +19,7 @@ type LiteratureResult = {
   output: string;
   count?: number;
   jobId?: string; // Job ID from Edison or BioLit
+  reasoning?: string[]; // Real-time reasoning trace from external agent
   start: string;
   end: string;
 };
@@ -38,8 +40,9 @@ type LiteratureResult = {
 export async function literatureAgent(input: {
   objective: string;
   type: LiteratureType;
+  onPollUpdate?: OnPollUpdate;
 }): Promise<LiteratureResult> {
-  const { objective, type } = input;
+  const { objective, type, onPollUpdate } = input;
   const start = new Date().toISOString();
 
   logger.info({ objective, type }, "literature_agent_started");
@@ -47,6 +50,7 @@ export async function literatureAgent(input: {
   let output: string;
   let count: number | undefined;
   let jobId: string | undefined;
+  let reasoning: string[] | undefined;
 
   try {
     switch (type) {
@@ -63,15 +67,17 @@ export async function literatureAgent(input: {
         break;
       }
       case "BIOLIT": {
-        const result = await searchBioLiterature(objective, "fast");
+        const result = await searchBioLiterature(objective, "fast", onPollUpdate);
         output = result.output;
         jobId = result.jobId;
+        reasoning = result.reasoning;
         break;
       }
       case "BIOLITDEEP": {
-        const result = await searchBioLiterature(objective, "deep");
+        const result = await searchBioLiterature(objective, "deep", onPollUpdate);
         output = result.output;
         jobId = result.jobId;
+        reasoning = result.reasoning;
         break;
       }
       case "EDISON": {
@@ -103,6 +109,7 @@ export async function literatureAgent(input: {
     output,
     count,
     jobId,
+    reasoning,
     start,
     end,
   };

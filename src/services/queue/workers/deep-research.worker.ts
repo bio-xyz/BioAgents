@@ -23,13 +23,14 @@ import {
 } from "../notify";
 import { getDeepResearchQueue } from "../queues";
 import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
-import type { ConversationState, PlanTask, State } from "../../../types/core";
+import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../../types/core";
 import {
   createContinuationMessage,
   calculateSessionStartLevel,
   getSessionCompletedTasks,
 } from "../../../utils/deep-research/continuation-utils";
 import logger from "../../../utils/logger";
+import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 
 /**
  * Process a deep research job - executes a SINGLE iteration
@@ -47,6 +48,7 @@ async function processDeepResearchJob(
     userId,
     conversationId,
     messageId,
+    rootMessageId: queuedRootMessageId,
     stateId,
     conversationStateId,
     message,
@@ -55,6 +57,7 @@ async function processDeepResearchJob(
     rootJobId,
     isInitialIteration = true,
   } = job.data;
+  const rootMessageId = queuedRootMessageId || (isInitialIteration ? messageId : undefined);
 
   // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
@@ -92,6 +95,19 @@ async function processDeepResearchJob(
   await notifyJobStarted(job.id!, conversationId, messageId, stateId);
 
   try {
+    try {
+      await touchRun({
+        conversationStateId,
+        rootMessageId,
+        stateId,
+      });
+    } catch (error) {
+      logger.warn(
+        { error, conversationStateId, rootMessageId, stateId },
+        "deep_research_worker_heartbeat_failed_at_start",
+      );
+    }
+
     // Import required modules
     const {
       getMessage,
@@ -398,14 +414,36 @@ async function processDeepResearchJob(
       "tasks_to_execute_for_iteration",
     );
 
+    // Serialize DB writes to prevent concurrent updateConversationState calls
+    // from overwriting each other's changes (matches in-process mode pattern)
+    let stateWriteChain = Promise.resolve();
+    const writeStateSerialized = async () => {
+      const p = stateWriteChain.then(() =>
+        updateConversationState(conversationState.id!, conversationState.values),
+      );
+      stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+      return p;
+    };
+
     // Execute all tasks concurrently
     const taskPromises = tasksToExecute.map(async (task) => {
+      // Callback to persist reasoning traces to conversation state on each poll
+      const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
+        if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
+          task.reasoning = reasoning;
+          if (conversationState.id) {
+            await writeStateSerialized();
+            await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+          }
+        }
+      };
+
       if (task.type === "LITERATURE") {
         task.start = new Date().toISOString();
         task.output = "";
 
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
         }
 
         logger.info(
@@ -429,7 +467,7 @@ async function processDeepResearchJob(
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
             if (conversationState.id) {
-              await updateConversationState(conversationState.id, conversationState.values);
+              await writeStateSerialized();
             }
           });
           literaturePromises.push(openScholarPromise);
@@ -439,6 +477,7 @@ async function processDeepResearchJob(
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           type: primaryLiteratureType,
+          onPollUpdate,
         }).then(async (result) => {
           task.output += `${result.output}\n\n`;
           // Capture jobId from primary literature (Edison)
@@ -446,7 +485,7 @@ async function processDeepResearchJob(
             task.jobId = result.jobId;
           }
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await writeStateSerialized();
           }
         });
         literaturePromises.push(primaryLiteraturePromise);
@@ -459,7 +498,7 @@ async function processDeepResearchJob(
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
             if (conversationState.id) {
-              await updateConversationState(conversationState.id, conversationState.values);
+              await writeStateSerialized();
             }
           });
           literaturePromises.push(knowledgePromise);
@@ -469,7 +508,7 @@ async function processDeepResearchJob(
 
         task.end = new Date().toISOString();
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
           await notifyStateUpdated(job.id!, conversationId, conversationState.id);
         }
       } else if (task.type === "ANALYSIS") {
@@ -481,7 +520,7 @@ async function processDeepResearchJob(
         task.output = "";
 
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
         }
 
         logger.info(
@@ -501,6 +540,7 @@ async function processDeepResearchJob(
             type,
             userId: messageRecord.user_id,
             conversationStateId: conversationState.id!,
+            onPollUpdate,
           });
 
           task.output = `${analysisResult.output}\n\n`;
@@ -508,7 +548,7 @@ async function processDeepResearchJob(
           task.jobId = analysisResult.jobId;
 
           if (conversationState.id) {
-            await updateConversationState(conversationState.id, conversationState.values);
+            await writeStateSerialized();
           }
         } catch (error) {
           const errorMsg = error instanceof Error
@@ -525,7 +565,7 @@ async function processDeepResearchJob(
 
         task.end = new Date().toISOString();
         if (conversationState.id) {
-          await updateConversationState(conversationState.id, conversationState.values);
+          await writeStateSerialized();
           await notifyStateUpdated(job.id!, conversationId, conversationState.id);
         }
       }
@@ -864,6 +904,7 @@ async function processDeepResearchJob(
           userId,
           conversationId,
           messageId: nextMessageId, // Next iteration writes to new message
+          rootMessageId,
           message, // Original message for context
           authMethod: job.data.authMethod,
           stateId,
@@ -889,6 +930,19 @@ async function processDeepResearchJob(
         },
         "enqueued_next_iteration_job",
       );
+
+      try {
+        await touchRun({
+          conversationStateId,
+          rootMessageId,
+          stateId,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId, stateId },
+          "deep_research_worker_heartbeat_failed_after_enqueue",
+        );
+      }
     }
 
     // =========================================================================
@@ -914,6 +968,20 @@ async function processDeepResearchJob(
 
     // Complete credits when research is truly done (final iteration)
     if (isFinal) {
+      try {
+        await markRunFinished({
+          conversationStateId,
+          result: "completed",
+          rootMessageId,
+          stateId,
+        });
+      } catch (error) {
+        logger.warn(
+          { error, conversationStateId, rootMessageId, stateId },
+          "deep_research_worker_finish_mark_failed_on_success",
+        );
+      }
+
       try {
         const { getServiceClient } = await import("../../../db/client");
         const supabase = getServiceClient();
@@ -974,6 +1042,26 @@ async function processDeepResearchJob(
 
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
+
+        try {
+          await markRunFinished({
+            conversationStateId,
+            result: "failed",
+            error: error instanceof Error ? error.message : "Unknown error",
+            rootMessageId,
+            stateId,
+          });
+        } catch (finishError) {
+          logger.warn(
+            {
+              finishError,
+              conversationStateId,
+              rootMessageId,
+              stateId,
+            },
+            "deep_research_worker_finish_mark_failed_on_failure",
+          );
+        }
 
         // Refund credits on final failure
         const { getServiceClient } = await import("../../../db/client");

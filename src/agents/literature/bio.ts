@@ -1,4 +1,5 @@
 import type { BioLiteratureMode } from ".";
+import type { OnPollUpdate } from "../../types/core";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
 
@@ -28,6 +29,7 @@ type BioLiteratureResponse = {
   results?: unknown;
   job_id?: string;
   status?: string;
+  reasoning?: string[];
   response?: {
     formatted_answer?: string;
     answer?: string;
@@ -126,6 +128,7 @@ async function pollBioLiteratureJob(
   baseUrl: string,
   apiKey: string,
   jobId: string,
+  onPollUpdate?: OnPollUpdate,
 ): Promise<BioLiteratureResponse> {
   const timeoutMinutes = parseInt(
     process.env.BIO_LITERATURE_TASK_TIMEOUT_MINUTES || "60",
@@ -174,8 +177,18 @@ async function pollBioLiteratureJob(
 
     const answer = extractAnswer(jobData);
 
+    // Invoke onPollUpdate with reasoning trace from this poll iteration
+    const reasoning = Array.isArray(jobData.reasoning) ? jobData.reasoning : undefined;
+    if (onPollUpdate && reasoning) {
+      try {
+        await onPollUpdate({ reasoning });
+      } catch (err) {
+        logger.warn({ err, jobId }, "bioliterature_on_poll_update_failed");
+      }
+    }
+
     logger.debug(
-      { jobId, status, hasAnswer: Boolean(answer) },
+      { jobId, status, hasAnswer: Boolean(answer), hasReasoning: Boolean(reasoning) },
       "bioliterature_deep_poll",
     );
 
@@ -203,7 +216,8 @@ async function pollBioLiteratureJob(
 export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
-): Promise<{ output: string; jobId?: string }> {
+  onPollUpdate?: OnPollUpdate,
+): Promise<{ output: string; jobId?: string; reasoning?: string[] }> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
@@ -258,6 +272,7 @@ export async function searchBioLiterature(
         baseUrl,
         BIO_LIT_AGENT_API_KEY,
         jobId,
+        onPollUpdate,
       );
     } else {
       logger.warn(
@@ -270,6 +285,7 @@ export async function searchBioLiterature(
   const answer = extractAnswer(finalData);
   const references = extractReferences(finalData);
   const contextPassages = extractContextPassages(finalData);
+  const finalReasoning = Array.isArray(finalData.reasoning) ? finalData.reasoning : undefined;
 
   logger.info(
     {
@@ -286,11 +302,13 @@ export async function searchBioLiterature(
     return {
       output: "No answer received from BioLiterature API",
       jobId,
+      reasoning: finalReasoning,
     };
   }
 
   return {
     output: answer,
     jobId,
+    reasoning: finalReasoning,
   };
 }
