@@ -429,7 +429,7 @@ async function processDeepResearchJob(
     const taskPromises = tasksToExecute.map(async (task) => {
       // Callback to persist reasoning traces to conversation state on each poll
       const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
-        if (reasoning) {
+        if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
           task.reasoning = reasoning;
           if (conversationState.id) {
             await writeStateSerialized();
