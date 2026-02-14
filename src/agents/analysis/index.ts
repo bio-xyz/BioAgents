@@ -1,4 +1,4 @@
-import type { AnalysisArtifact } from "../../types/core";
+import type { AnalysisArtifact, OnPollUpdate } from "../../types/core";
 import logger from "../../utils/logger";
 import { analyzeWithBio } from "./bio";
 import { analyzeWithEdison } from "./edison";
@@ -17,6 +17,7 @@ export type AnalysisResult = {
   objective: string;
   output: string;
   jobId?: string; // Edison task_id or Bio task id
+  reasoning?: string[]; // Real-time reasoning trace from external agent
   start?: string;
   end?: string;
   artifacts?: Array<AnalysisArtifact>;
@@ -39,8 +40,9 @@ export async function analysisAgent(input: {
   type: AnalysisType;
   userId: string;
   conversationStateId: string;
+  onPollUpdate?: OnPollUpdate;
 }): Promise<AnalysisResult> {
-  const { objective, datasets, type, userId, conversationStateId } = input;
+  const { objective, datasets, type, userId, conversationStateId, onPollUpdate } = input;
   let result: AnalysisResult = {
     objective,
     start: new Date().toISOString(),
@@ -71,15 +73,17 @@ export async function analysisAgent(input: {
         break;
       }
       case "BIO": {
-        const { output, artifacts, jobId } = await analyzeWithBio(
+        const { output, artifacts, jobId, reasoning } = await analyzeWithBio(
           objective,
           datasets,
           userId,
           conversationStateId,
+          onPollUpdate,
         );
         result.output = output;
         result.artifacts = artifacts;
         result.jobId = jobId;
+        result.reasoning = reasoning;
         break;
       }
       default:
