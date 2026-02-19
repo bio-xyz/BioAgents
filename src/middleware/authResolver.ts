@@ -16,16 +16,11 @@
  * 4. Anonymous (if mode=none or auth not required)
  */
 
-import type {
-  AuthContext,
-  AuthMode,
-  AuthResolverOptions,
-} from "../types/auth";
+import { extractBearerToken, verifyJWT } from "../services/jwt";
+import type { AuthContext, AuthResolverOptions } from "../types/auth";
 import { getAuthConfig } from "../types/auth";
-import { verifyJWT, extractBearerToken } from "../services/jwt";
-import { generateUUID } from "../utils/uuid";
-import { walletAddressToUUID } from "../utils/uuid";
 import logger from "../utils/logger";
+import { generateUUID, walletAddressToUUID } from "../utils/uuid";
 
 /**
  * Constant-time string comparison to prevent timing attacks
@@ -41,6 +36,36 @@ function constantTimeCompare(a: string, b: string): boolean {
   }
 
   return result === 0;
+}
+
+/**
+ * Resolve a caller-provided userId from the X-User-Id header, request body,
+ * or fall back to generating a new UUID.
+ *
+ * Priority: X-User-Id header > body.userId > generated UUID
+ *
+ * This is only used when the caller is already trusted (valid API key or
+ * AUTH_MODE=none), so accepting the provided userId is safe.
+ */
+function resolveProvidedUserId(request: Request, body?: any): string {
+  // 1. Check X-User-Id header (useful for GET requests that have no body)
+  const headerUserId = request.headers.get("X-User-Id");
+  if (
+    headerUserId &&
+    typeof headerUserId === "string" &&
+    headerUserId.length > 0
+  ) {
+    return headerUserId;
+  }
+
+  // 2. Check body.userId
+  const bodyUserId = body?.userId;
+  if (bodyUserId && typeof bodyUserId === "string" && bodyUserId.length > 0) {
+    return bodyUserId;
+  }
+
+  // 3. Generate a new UUID
+  return generateUUID();
 }
 
 /**
@@ -115,7 +140,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
         required,
         hasX402Settlement: !!(request as any).x402Settlement,
       },
-      "auth_resolver_start"
+      "auth_resolver_start",
     );
 
     // =====================================================
@@ -139,7 +164,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
           wallet: x402Settlement.payer,
           method: "x402",
         },
-        "auth_resolved_x402"
+        "auth_resolved_x402",
       );
     }
 
@@ -154,7 +179,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
       const token = extractBearerToken(authHeader);
 
       // Only verify if it looks like a JWT (has dots) or if we're in JWT mode
-      const shouldVerifyJwt = token && (config.mode === "jwt" || token.includes("."));
+      const shouldVerifyJwt =
+        token && (config.mode === "jwt" || token.includes("."));
 
       if (shouldVerifyJwt && token) {
         const result = await verifyJWT(token);
@@ -176,7 +202,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
               hasEmail: !!auth.email,
               hasOrgId: !!auth.orgId,
             },
-            "auth_resolved_jwt"
+            "auth_resolved_jwt",
           );
         } else if (config.mode === "jwt") {
           // JWT provided but invalid - only reject in strict JWT mode
@@ -185,7 +211,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
               error: result.error,
               path,
             },
-            "auth_jwt_invalid"
+            "auth_jwt_invalid",
           );
 
           // In JWT mode, invalid JWT = reject (don't fall through)
@@ -207,14 +233,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // =====================================================
     // Only used if JWT mode is not active or no JWT provided
     if (!auth && isValidApiKey(request)) {
-      // API key is valid - trust the caller's userId from body
-      const providedUserId = body?.userId;
-      const userId =
-        providedUserId &&
-        typeof providedUserId === "string" &&
-        providedUserId.length > 0
-          ? providedUserId
-          : generateUUID();
+      // API key is valid - trust the caller's userId from header/body
+      const userId = resolveProvidedUserId(request, body);
 
       auth = {
         userId,
@@ -226,9 +246,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
         {
           userId,
           method: "api_key",
-          userIdSource: providedUserId ? "body" : "generated",
         },
-        "auth_resolved_api_key"
+        "auth_resolved_api_key",
       );
     }
 
@@ -236,13 +255,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     // Priority 4: None Mode (Development)
     // =====================================================
     if (!auth && config.mode === "none") {
-      const providedUserId = body?.userId;
-      const userId =
-        providedUserId &&
-        typeof providedUserId === "string" &&
-        providedUserId.length > 0
-          ? providedUserId
-          : generateUUID();
+      const userId = resolveProvidedUserId(request, body);
 
       auth = {
         userId,
@@ -254,9 +267,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
         {
           userId,
           method: "anonymous",
-          userIdSource: providedUserId ? "body" : "generated",
         },
-        "auth_resolved_anonymous"
+        "auth_resolved_anonymous",
       );
     }
 
@@ -270,7 +282,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
             path,
             mode: config.mode,
           },
-          "auth_required_but_missing"
+          "auth_required_but_missing",
         );
 
         set.status = 401;
@@ -302,7 +314,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
           userId: auth.userId,
           method: "anonymous",
         },
-        "auth_resolved_anonymous_fallback"
+        "auth_resolved_anonymous_fallback",
       );
     }
 
@@ -316,7 +328,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
         verified: auth.verified,
         path,
       },
-      "auth_resolver_complete"
+      "auth_resolver_complete",
     );
   };
 }
@@ -341,7 +353,10 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  * @param body - Optional parsed request body (for userId extraction in dev mode)
  * @returns AuthContext with userId if authenticated
  */
-export async function resolveAuth(request: Request, body?: any): Promise<{
+export async function resolveAuth(
+  request: Request,
+  body?: any,
+): Promise<{
   authenticated: boolean;
   userId?: string;
   method?: string;
@@ -373,21 +388,11 @@ export async function resolveAuth(request: Request, body?: any): Promise<{
     }
   }
 
-  // Helper to get userId from body (same logic as authResolver middleware)
-  const getUserIdFromBody = () => {
-    const providedUserId = body?.userId;
-    return providedUserId &&
-      typeof providedUserId === "string" &&
-      providedUserId.length > 0
-      ? providedUserId
-      : generateUUID();
-  };
-
   // Check API key (legacy)
   if (isValidApiKey(request)) {
     return {
       authenticated: true,
-      userId: getUserIdFromBody(),
+      userId: resolveProvidedUserId(request, body),
       method: "api_key",
     };
   }
@@ -396,7 +401,7 @@ export async function resolveAuth(request: Request, body?: any): Promise<{
   if (config.mode === "none") {
     return {
       authenticated: true,
-      userId: getUserIdFromBody(),
+      userId: resolveProvidedUserId(request, body),
       method: "anonymous",
     };
   }
