@@ -47,7 +47,7 @@ export interface ClarificationAnswer {
  */
 export interface ClarificationPlanTask {
   objective: string;
-  type: "LITERATURE" | "ANALYSIS";
+  type: "LITERATURE" | "ANALYSIS" | "CLARITY";
   datasetFilenames: string[]; // Filenames to match against uploadedDatasets at execution time
 }
 

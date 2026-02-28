@@ -247,7 +247,12 @@ async function processDeepResearchJob(
       // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
       newLevel = maxLevel + 1;
       const newTasks = initialTasks.map((task) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+        const taskId =
+          task.type === "ANALYSIS"
+            ? `ana-${newLevel}`
+            : task.type === "CLARITY"
+              ? `clarity-${newLevel}`
+              : `lit-${newLevel}`;
 
         // Resolve datasetFilenames to full dataset objects
         const resolvedDatasets = (task.datasetFilenames || [])
@@ -352,7 +357,12 @@ async function processDeepResearchJob(
       // Add new tasks with appropriate level and assign IDs
       newLevel = maxLevel + 1;
       const newTasks = plan.map((task: PlanTask) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+        const taskId =
+          task.type === "ANALYSIS"
+            ? `ana-${newLevel}`
+            : task.type === "CLARITY"
+              ? `clarity-${newLevel}`
+              : `lit-${newLevel}`;
         return {
           ...task,
           id: taskId,
@@ -560,6 +570,51 @@ async function processDeepResearchJob(
           logger.error(
             { error, jobId: job.id, taskObjective: task.objective },
             "deep_research_job_analysis_failed",
+          );
+        }
+
+        task.end = new Date().toISOString();
+        if (conversationState.id) {
+          await writeStateSerialized();
+          await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+        }
+      } else if (task.type === "CLARITY") {
+        task.start = new Date().toISOString();
+        task.output = "";
+
+        if (conversationState.id) {
+          await writeStateSerialized();
+        }
+
+        logger.info(
+          { jobId: job.id, taskObjective: task.objective },
+          "deep_research_job_executing_clarity_task",
+        );
+
+        try {
+          const { clarityAgent } = await import("../../../agents/clarity");
+          const result = await clarityAgent({
+            objective: task.objective,
+            onPollUpdate,
+          });
+
+          task.output = `${result.output}\n\n`;
+          task.jobId = result.jobId;
+          task.reasoning = result.reasoning;
+
+          if (conversationState.id) {
+            await writeStateSerialized();
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error
+            ? error.message
+            : typeof error === 'object' && error !== null
+              ? JSON.stringify(error)
+              : String(error);
+          task.output = `Clarity Protocol query failed: ${errorMsg}`;
+          logger.error(
+            { error, jobId: job.id, taskObjective: task.objective },
+            "deep_research_job_clarity_failed",
           );
         }
 
@@ -845,7 +900,9 @@ async function processDeepResearchJob(
           const taskId =
             task.type === "ANALYSIS"
               ? `ana-${nextLevel}`
-              : `lit-${nextLevel}`;
+              : task.type === "CLARITY"
+                ? `clarity-${nextLevel}`
+                : `lit-${nextLevel}`;
           return {
             ...task,
             id: taskId,
