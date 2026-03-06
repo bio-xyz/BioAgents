@@ -23,7 +23,7 @@ export const FALLBACK_CONFIG: Record<
   { provider: string; model: string }
 > = {
   anthropic: { provider: "google", model: "gemini-2.5-pro" },
-  google: { provider: "anthropic", model: "claude-sonnet-4-6" },
+  google: { provider: "anthropic", model: "claude-sonnet-4-5-20250514" },
   openai: { provider: "google", model: "gemini-2.5-pro" },
   openrouter: { provider: "google", model: "gemini-2.5-pro" },
 };

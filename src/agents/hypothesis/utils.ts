@@ -71,8 +71,12 @@ export async function generateHypothesis(
     model,
     messages: [
       {
+        role: "assistant" as const,
+        content: `Use the following evidence set to formulate a hypothesis: ${documentText}`,
+      },
+      {
         role: "user" as const,
-        content: `Use the following evidence set to formulate a hypothesis:\n\n${documentText}\n\n---\n\n${hypGenInstruction}`,
+        content: hypGenInstruction,
       },
     ],
     maxTokens: options.maxTokens ?? 4000,

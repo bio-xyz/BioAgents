@@ -156,8 +156,8 @@ async function run(): Promise<void> {
         displayName: 'Anthropic',
         apiKey: anthropicKey,
         baseUrl: process.env.ANTHROPIC_BASE_URL,
-        chatModel: process.env.ANTHROPIC_CHAT_MODEL ?? 'claude-sonnet-4-6',
-        webSearchModel: process.env.ANTHROPIC_WEB_SEARCH_MODEL ?? 'claude-opus-4-6',
+        chatModel: process.env.ANTHROPIC_CHAT_MODEL ?? 'claude-sonnet-4-5-20250929',
+        webSearchModel: process.env.ANTHROPIC_WEB_SEARCH_MODEL ?? 'claude-opus-4-1-20250805',
         chatRequest: {
           systemInstruction:
             'You are an insightful assistant. Provide thoughtful but concise answers.',

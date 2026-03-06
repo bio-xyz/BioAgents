@@ -51,7 +51,7 @@ export async function decideContinuation(
   options: ContinueResearchOptions = {},
 ): Promise<ContinueResearchDecision> {
   const model =
-    process.env.CONTINUE_RESEARCH_LLM_MODEL || "claude-sonnet-4-6";
+    process.env.CONTINUE_RESEARCH_LLM_MODEL || "claude-sonnet-4-5-20250929";
 
   // Build document content (all task outputs)
   const allTaskOutputs = documents

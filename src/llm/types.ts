@@ -16,7 +16,6 @@ export interface LLMRequest {
   systemInstruction?: string;
   tools?: LLMTool[];
   thinkingBudget?: number;
-  effort?: 'low' | 'medium' | 'high'; // Anthropic Claude 4.6+ adaptive thinking effort level
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';

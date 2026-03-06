@@ -22,11 +22,6 @@ interface BuildRequestOptions {
   includeWebSearch?: boolean;
 }
 
-interface AnthropicAdaptiveThinkingExtension {
-  thinking: { type: "adaptive" };
-  output_config: { effort: "low" | "medium" | "high" };
-}
-
 export class AnthropicAdapter extends LLMAdapter {
   private client: Anthropic;
 
@@ -265,17 +260,12 @@ export class AnthropicAdapter extends LLMAdapter {
         }
       });
 
-    // Detect Opus 4.6 models which require adaptive thinking (budget_tokens is deprecated)
-    const isOpus46 = request.model.includes("opus-4-6");
-    const useAdaptiveThinking = isOpus46 && (request.thinkingBudget !== undefined || request.effort !== undefined);
-
-    // For adaptive thinking (Opus 4.6), no need to inflate max_tokens with thinking budget
-    // For budget_tokens mode (Sonnet 4.6 and older), max_tokens must be > budget_tokens
+    // Anthropic requires max_tokens > thinking.budget_tokens
+    // We handle this by adding thinkingBudget to maxTokens so developers can think of them as separate budgets
     const baseMaxTokens = request.maxTokens ?? 5000;
-    const effectiveMaxTokens =
-      request.thinkingBudget && !useAdaptiveThinking
-        ? baseMaxTokens + request.thinkingBudget
-        : baseMaxTokens;
+    const effectiveMaxTokens = request.thinkingBudget
+      ? baseMaxTokens + request.thinkingBudget
+      : baseMaxTokens;
 
     const anthropicRequest: MessageCreateParamsNonStreaming = {
       model: request.model,
@@ -296,16 +286,7 @@ export class AnthropicAdapter extends LLMAdapter {
       anthropicRequest.temperature = 1;
     }
 
-    if (useAdaptiveThinking) {
-      // Opus 4.6: Use adaptive thinking with effort parameter (GA, no beta needed)
-      const effort = request.effort ?? (request.thinkingBudget !== undefined
-        ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
-        : "medium");
-      const adaptiveRequest = anthropicRequest as MessageCreateParamsNonStreaming & AnthropicAdaptiveThinkingExtension;
-      adaptiveRequest.thinking = { type: "adaptive" };
-      adaptiveRequest.output_config = { effort };
-    } else if (request.thinkingBudget !== undefined) {
-      // Sonnet 4.6 and older models: Use budget_tokens (still supported)
+    if (request.thinkingBudget !== undefined) {
       anthropicRequest.thinking = {
         type: "enabled",
         budget_tokens: request.thinkingBudget,
@@ -480,16 +461,6 @@ export class AnthropicAdapter extends LLMAdapter {
     });
 
     return Array.from(deduped.values());
-  }
-
-  /**
-   * Maps thinkingBudget (token count) to Anthropic effort level for adaptive thinking.
-   * Used for Opus 4.6+ where budget_tokens is deprecated.
-   */
-  private mapThinkingBudgetToEffort(thinkingBudget: number): "low" | "medium" | "high" {
-    if (thinkingBudget <= 1024) return "low";
-    if (thinkingBudget <= 4096) return "medium";
-    return "high";
   }
 
   private normalizeUrl(url: string): string {
