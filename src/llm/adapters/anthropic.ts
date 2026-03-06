@@ -262,7 +262,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Detect Opus 4.6 models which require adaptive thinking (budget_tokens is deprecated)
     const isOpus46 = request.model.includes("opus-4-6");
-    const useAdaptiveThinking = isOpus46 && request.thinkingBudget !== undefined;
+    const useAdaptiveThinking = isOpus46 && (request.thinkingBudget !== undefined || request.effort !== undefined);
 
     // For adaptive thinking (Opus 4.6), no need to inflate max_tokens with thinking budget
     // For budget_tokens mode (Sonnet 4.6 and older), max_tokens must be > budget_tokens
@@ -294,7 +294,9 @@ export class AnthropicAdapter extends LLMAdapter {
     if (useAdaptiveThinking) {
       // Opus 4.6: Use adaptive thinking with effort parameter (GA, no beta needed)
       (anthropicRequest as any).thinking = { type: "adaptive" };
-      const effort = request.effort ?? this.mapThinkingBudgetToEffort(request.thinkingBudget!);
+      const effort = request.effort ?? (request.thinkingBudget !== undefined
+        ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
+        : "medium");
       (anthropicRequest as any).output_config = { effort };
     } else if (request.thinkingBudget !== undefined) {
       // Sonnet 4.6 and older models: Use budget_tokens (still supported)
