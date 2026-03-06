@@ -22,6 +22,11 @@ interface BuildRequestOptions {
   includeWebSearch?: boolean;
 }
 
+interface AnthropicAdaptiveThinkingExtension {
+  thinking: { type: "adaptive" };
+  output_config: { effort: "low" | "medium" | "high" };
+}
+
 export class AnthropicAdapter extends LLMAdapter {
   private client: Anthropic;
 
@@ -293,11 +298,12 @@ export class AnthropicAdapter extends LLMAdapter {
 
     if (useAdaptiveThinking) {
       // Opus 4.6: Use adaptive thinking with effort parameter (GA, no beta needed)
-      (anthropicRequest as any).thinking = { type: "adaptive" };
       const effort = request.effort ?? (request.thinkingBudget !== undefined
         ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
         : "medium");
-      (anthropicRequest as any).output_config = { effort };
+      const adaptiveRequest = anthropicRequest as MessageCreateParamsNonStreaming & AnthropicAdaptiveThinkingExtension;
+      adaptiveRequest.thinking = { type: "adaptive" };
+      adaptiveRequest.output_config = { effort };
     } else if (request.thinkingBudget !== undefined) {
       // Sonnet 4.6 and older models: Use budget_tokens (still supported)
       anthropicRequest.thinking = {
