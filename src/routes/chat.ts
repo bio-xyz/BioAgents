@@ -15,6 +15,15 @@ import type { ConversationState, PlanTask, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
+// Agent loop imports
+import { createSSEResponse, NoOpSSEWriter } from "../chat-agent/stream";
+import { runAgentLoop } from "../chat-agent/loop";
+import { getToolCount } from "../chat-agent/registry";
+
+// Register tools (side-effect imports)
+import "../chat-agent/tools/random-number";
+import "../chat-agent/tools/literature-search";
+
 /**
  * Response type for synchronous chat (in-process mode)
  */
@@ -64,7 +73,7 @@ export const chatRoute = new Elysia()
             apiDocumentation: "https://your-docs-url.com/api",
           };
         })
-        .post("/api/chat", chatHandler)
+        .post("/api/chat", chatAgentHandler)
         // Manual retry endpoint for failed jobs
         .post("/api/chat/retry/:jobId", chatRetryHandler),
   );
@@ -221,6 +230,238 @@ async function chatRetryHandler(ctx: any) {
     };
   }
 }
+
+// =============================================================================
+// Agent-based Chat Handler (replaces fixed pipeline)
+// =============================================================================
+
+const AGENT_SYSTEM_PROMPT = `You are a helpful AI research assistant specializing in bioscience and life sciences. You have access to tools that you can use to help answer the user's questions.
+
+Use your judgment on when to use tools:
+- For questions that need current research, specific papers, or evidence-based claims, use the literature_search tool.
+- For basic definitions, general knowledge, or simple explanations, answer directly from your training data.
+- You can search multiple sources (openscholar, biolit, knowledge) by calling the tool multiple times with different source parameters to cross-reference findings.
+
+After getting tool results, synthesize the information into a clear, evidence-based response. Include relevant citations (DOIs, paper titles) from the search results.
+
+If a tool returns an error, explain what went wrong and try a different source or approach.`;
+
+const DEFAULT_AGENT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MAX_TOOL_CALLS = 10;
+const DEFAULT_MAX_TOKENS = 4096;
+
+/**
+ * Agent-based chat handler for POST /api/chat.
+ * Uses an agent loop where the LLM decides which tools to call.
+ *
+ * Dual mode:
+ * - SSE streaming: when Accept header includes "text/event-stream" or query param stream=true
+ * - JSON response: default, returns { text: string } for frontend compatibility
+ */
+async function chatAgentHandler(ctx: any) {
+  const { body, set, request } = ctx;
+  const startTime = Date.now();
+  const parsedBody = body as any;
+
+  // Extract message (REQUIRED)
+  const message = parsedBody.message;
+  if (!message || typeof message !== "string") {
+    set.status = 400;
+    return { ok: false, error: "Missing required field: message" };
+  }
+
+  // Auth
+  const auth = (request as any).auth as AuthContext | undefined;
+  const userId = auth?.userId || generateUUID();
+  const conversationId = parsedBody.conversationId || generateUUID();
+
+  // Determine response mode: SSE streaming vs JSON
+  const acceptHeader = request.headers.get("Accept") || "";
+  const url = new URL(request.url);
+  const wantsSSE =
+    acceptHeader.includes("text/event-stream") ||
+    url.searchParams.get("stream") === "true" ||
+    parsedBody.stream === true;
+
+  logger.info(
+    {
+      userId,
+      conversationId,
+      messageLength: message.length,
+      toolCount: getToolCount(),
+      authMethod: auth?.method || "unknown",
+      responseMode: wantsSSE ? "sse" : "json",
+    },
+    "chat_agent_request_received",
+  );
+
+  // Resolve API key
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    set.status = 500;
+    return { ok: false, error: "Anthropic API key not configured" };
+  }
+
+  const agentConfig = {
+    model: process.env.CHAT_AGENT_MODEL || DEFAULT_AGENT_MODEL,
+    systemPrompt: AGENT_SYSTEM_PROMPT,
+    maxToolCalls:
+      parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || DEFAULT_MAX_TOOL_CALLS,
+    maxTokens:
+      parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || DEFAULT_MAX_TOKENS,
+    apiKey,
+  };
+
+  // ── SSE Streaming Mode ──
+  if (wantsSSE) {
+    const [response, sse] = createSSEResponse();
+
+    (async () => {
+      try {
+        const { messageId } = await setupDBRecords(userId, conversationId, message, sse);
+        if (!messageId) return;
+
+        const result = await runAgentLoop(message, agentConfig, sse);
+
+        await saveResponse(messageId, result.finalText, startTime);
+        logCompletion(messageId, conversationId, result, startTime);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Internal server error";
+        logger.error({ error: errorMessage }, "chat_agent_unhandled_error");
+        await sse.send({ type: "error", message: errorMessage });
+      } finally {
+        await sse.close();
+      }
+    })();
+
+    return response;
+  }
+
+  // ── JSON Mode (default — frontend compatibility) ──
+  try {
+    const noOpSSE = new NoOpSSEWriter();
+
+    // DB setup
+    const setupResult = await ensureUserAndConversation(userId, conversationId);
+    if (!setupResult.success) {
+      set.status = 500;
+      return { ok: false, error: setupResult.error || "Setup failed" };
+    }
+
+    const dataSetup = await setupConversationData(
+      conversationId, userId, "api", false, message, 0,
+    );
+    if (!dataSetup.success) {
+      set.status = 500;
+      return { ok: false, error: dataSetup.error || "Data setup failed" };
+    }
+
+    const stateRecord = dataSetup.data!.stateRecord;
+
+    const msgResult = await createMessageRecord({
+      conversationId, userId, message, source: "api",
+      stateId: stateRecord.id, files: [],
+    });
+    if (!msgResult.success) {
+      set.status = 500;
+      return { ok: false, error: msgResult.error || "Message creation failed" };
+    }
+
+    const messageId = msgResult.message.id;
+
+    // Run the agent loop (no-op SSE — events are silently discarded)
+    const result = await runAgentLoop(message, agentConfig, noOpSSE);
+
+    await saveResponse(messageId, result.finalText, startTime);
+    logCompletion(messageId, conversationId, result, startTime);
+
+    // Return JSON matching the frontend's expected format
+    return new Response(JSON.stringify({ text: result.finalText, userId }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Encoding": "identity",
+      },
+    });
+  } catch (error: any) {
+    logger.error(
+      { error: error.message, stack: error.stack },
+      "chat_agent_unhandled_error",
+    );
+    set.status = 500;
+    return { ok: false, error: error.message || "Internal server error" };
+  }
+}
+
+// ── Helper: setup DB records (for SSE mode, sends errors via SSE) ──
+async function setupDBRecords(
+  userId: string,
+  conversationId: string,
+  message: string,
+  sse: { send: (event: any) => Promise<void>; close: () => Promise<void> },
+): Promise<{ messageId: string | null }> {
+  const setupResult = await ensureUserAndConversation(userId, conversationId);
+  if (!setupResult.success) {
+    await sse.send({ type: "error", message: setupResult.error || "Setup failed" });
+    await sse.close();
+    return { messageId: null };
+  }
+
+  const dataSetup = await setupConversationData(
+    conversationId, userId, "api", false, message, 0,
+  );
+  if (!dataSetup.success) {
+    await sse.send({ type: "error", message: dataSetup.error || "Data setup failed" });
+    await sse.close();
+    return { messageId: null };
+  }
+
+  const stateRecord = dataSetup.data!.stateRecord;
+
+  const msgResult = await createMessageRecord({
+    conversationId, userId, message, source: "api",
+    stateId: stateRecord.id, files: [],
+  });
+  if (!msgResult.success) {
+    await sse.send({ type: "error", message: msgResult.error || "Message creation failed" });
+    await sse.close();
+    return { messageId: null };
+  }
+
+  return { messageId: msgResult.message.id };
+}
+
+// ── Helper: save response to DB ──
+async function saveResponse(messageId: string, text: string, startTime: number) {
+  const { updateMessage } = await import("../db/operations");
+  await updateMessage(messageId, { content: text });
+  const responseTime = Date.now() - startTime;
+  await updateMessageResponseTime(messageId, responseTime);
+}
+
+// ── Helper: log completion ──
+function logCompletion(
+  messageId: string,
+  conversationId: string,
+  result: { toolCallCount: number; totalInputTokens: number; totalOutputTokens: number },
+  startTime: number,
+) {
+  logger.info(
+    {
+      messageId,
+      conversationId,
+      toolCallCount: result.toolCallCount,
+      totalInputTokens: result.totalInputTokens,
+      totalOutputTokens: result.totalOutputTokens,
+      responseTime: Date.now() - startTime,
+    },
+    "chat_agent_completed",
+  );
+}
+
+// =============================================================================
+// Legacy Chat Handler (kept for x402/b402 backwards compatibility)
+// =============================================================================
 
 /**
  * Check if the question requires a hypothesis using LLM
