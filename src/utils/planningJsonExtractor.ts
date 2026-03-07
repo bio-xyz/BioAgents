@@ -106,11 +106,11 @@ function extractFieldsWithRegex(content: string): PlanningResult {
 
   // Extract plan tasks - look for LITERATURE or ANALYSIS task patterns
   const taskPattern =
-    /"type"\s*:\s*"(LITERATURE|ANALYSIS)"[\s\S]*?"objective"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+    /"type"\s*:\s*"(LITERATURE|ANALYSIS|CLARITY)"[\s\S]*?"objective"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
   let match;
   while ((match = taskPattern.exec(content)) !== null) {
     const task: PlanTask = {
-      type: match[1] as "LITERATURE" | "ANALYSIS",
+      type: match[1] as "LITERATURE" | "ANALYSIS" | "CLARITY",
       objective: match[2]?.replace(/\\"/g, '"') || "",
       datasets: [],
       level: result.plan.length + 1,

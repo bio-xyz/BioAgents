@@ -122,7 +122,7 @@ Return a JSON object with this exact structure:
   "initialTasks": [
     {
       "objective": "Specific task objective",
-      "type": "LITERATURE" | "ANALYSIS",
+      "type": "LITERATURE" | "ANALYSIS" | "CLARITY",
       "datasetFilenames": ["exact_filename.csv"]
     }
   ]
@@ -183,7 +183,7 @@ Return a JSON object with this exact structure:
   "initialTasks": [
     {
       "objective": "Specific task objective",
-      "type": "LITERATURE" | "ANALYSIS",
+      "type": "LITERATURE" | "ANALYSIS" | "CLARITY",
       "datasetFilenames": ["exact_filename.csv"]
     }
   ]

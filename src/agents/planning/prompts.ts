@@ -20,7 +20,7 @@ CURRENT RESEARCH STATE:
 USER'S MESSAGE:
 {userMessage}
 
-AVAILABLE TASK TYPES (only these two):
+AVAILABLE TASK TYPES (only these three):
 - LITERATURE: Search and gather scientific papers and knowledge from literature databases. Use it to:
   - Find recent research
   - Search Specialized Medical Databases (UniProt, PubChem...)
@@ -42,9 +42,13 @@ AVAILABLE TASK TYPES (only these two):
   - "Are the survival differences significant in our treatment groups dataset?" � Statistical analysis of uploaded lifespan/healthspan data
   - "How do aging biomarkers change over time in our longitudinal study?" � Time-series analysis of uploaded longitudinal datasets
 
+
+- CLARITY: Query Clarity Protocol for protein fold predictions (AlphaFold2), structural confidence scores (pLDDT/PAE), clinical variant annotations (ClinVar pathogenicity, gnomAD allele frequency), and AI agent research findings for a specific protein variant. Use when the research involves a known disease-linked protein mutation and you need structural or clinical context. Clarity Protocol covers Alzheimer's (tau, amyloid-beta, APOE, presenilin), Parkinson's (alpha-synuclein, LRRK2, PINK1, Parkin), ALS (SOD1, TDP-43, FUS), and other disease variants.
+
 TASK OBJECTIVE FORMATTING:
 - For LITERATURE tasks: describe the objective simply in 1-2 sentences, focusing on what information to gather
 - For ANALYSIS tasks: Use format "GOAL: <goal> DATASETS: <short dataset descriptions> OUTPUT: <desired output>". Keep each section simple (1-3 sentences). Focus on WHAT, not HOW.
+- For CLARITY tasks: mention the protein name and variant notation (e.g., "Query fold data for SOD1 A4V" or "Get structural and clinical data for tau P301L")
 
 OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
 {
@@ -53,7 +57,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
     {
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
-      "type": "LITERATURE or ANALYSIS"
+      "type": "LITERATURE, ANALYSIS, or CLARITY"
     }
   ]
 }
@@ -65,6 +69,7 @@ NOTES:
 - Tasks will be executed in PARALLEL, so if tasks depend on each other, only plan the first ones
 - Plan only 1-3 tasks maximum
 - For LITERATURE tasks: datasets array should be EMPTY []
+- For CLARITY tasks: datasets array should be EMPTY []. The objective should name the protein and variant.
 - PRESERVING USER'S ORIGINAL PHRASING (for LITERATURE tasks): If the user's message is already a sensible, well-formed query for literature search, use it VERBATIM as the task objective. Do NOT rephrase for the sake of rephrasing—unnecessary rewording degrades search results. Only modify when you have a concrete reason: adding constraints mentioned elsewhere, clarifying genuine ambiguity, or combining multiple requests. When in doubt, preserve the user's exact wording.
 - For ANALYSIS tasks: Only include if datasets are mentioned in the user's message
   - If there's an open source dataset linked in the message, DO NOT put it in the datasets array. Instead use the task objective to let the data scientist agent know that it should download and use the open source dataset.
@@ -137,7 +142,7 @@ CURRENT RESEARCH STATE:
 USER'S LATEST MESSAGE:
 {userMessage}
 
-AVAILABLE TASK TYPES (only these two):
+AVAILABLE TASK TYPES (only these three):
 - LITERATURE: Search and gather scientific papers and knowledge from literature databases. Use it to:
   - Find recent research
   - Search Specialized Medical Databases (UniProt, PubChem...)
@@ -159,9 +164,13 @@ AVAILABLE TASK TYPES (only these two):
   - "Are the survival differences significant in our treatment groups dataset?" � Statistical analysis of uploaded lifespan/healthspan data
   - "How do aging biomarkers change over time in our longitudinal study?" � Time-series analysis of uploaded longitudinal datasets
 
+
+- CLARITY: Query Clarity Protocol for protein fold predictions (AlphaFold2), structural confidence scores (pLDDT/PAE), clinical variant annotations (ClinVar pathogenicity, gnomAD allele frequency), and AI agent research findings for a specific protein variant. Use when the research involves a known disease-linked protein mutation and you need structural or clinical context. Clarity Protocol covers Alzheimer's (tau, amyloid-beta, APOE, presenilin), Parkinson's (alpha-synuclein, LRRK2, PINK1, Parkin), ALS (SOD1, TDP-43, FUS), and other disease variants.
+
 TASK OBJECTIVE FORMATTING:
 - For LITERATURE tasks: describe the objective simply in 1-2 sentences
 - For ANALYSIS tasks: Describe the objective in this format "GOAL: <goal> DATASETS: <short dataset descriptions> OUTPUT: <desired output>". Each section should be relatively simple, 1-3 sentences max. Do not overexplain so that you allow the data scientist agent to be creative and come up with the best solution. Focus on the what, not on the how.
+- For CLARITY tasks: mention the protein name and variant notation (e.g., "Query fold data for SOD1 A4V" or "Get structural and clinical data for tau P301L")
 
 OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
 {
@@ -170,7 +179,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
     {
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks. Leave empty for LITERATURE tasks.
-      "type": "LITERATURE or ANALYSIS"
+      "type": "LITERATURE, ANALYSIS, or CLARITY"
     }
   ]
 }
@@ -179,6 +188,7 @@ NOTES:
 - Choose LITERATURE if: You need to find, read, or synthesize information from scientific papers
 - Choose ANALYSIS if: You have datasets that need coding, statistics, visualization, or any computational processing
 - For LITERATURE tasks: datasets array should be EMPTY []
+- For CLARITY tasks: datasets array should be EMPTY []. The objective should name the protein and variant.
 - PRESERVING USER'S ORIGINAL PHRASING (for LITERATURE tasks): If the user's message/feedback is already a sensible, well-formed query for literature search, use it VERBATIM as the task objective. Do NOT rephrase for the sake of rephrasing—unnecessary rewording degrades search results. Only modify when you have a concrete reason: adding constraints mentioned elsewhere, clarifying genuine ambiguity, or combining multiple requests. When in doubt, preserve the user's exact wording.
 - For ANALYSIS tasks: SELECT which uploaded datasets (shown in the CURRENT RESEARCH STATE above) are relevant for the analysis task
   - Only include datasets that are directly relevant to the specific analysis objective
@@ -266,7 +276,7 @@ CURRENT RESEARCH STATE:
 USER'S LATEST MESSAGE:
 {userMessage}
 
-AVAILABLE TASK TYPES (only these two):
+AVAILABLE TASK TYPES (only these three):
 - LITERATURE: Search and gather scientific papers and knowledge from literature databases. Use it to:
   - Find recent research
   - Search Specialized Medical Databases (UniProt, PubChem...)
@@ -288,9 +298,13 @@ AVAILABLE TASK TYPES (only these two):
   - "Are the survival differences significant in our treatment groups dataset?" � Statistical analysis of uploaded lifespan/healthspan data
   - "How do aging biomarkers change over time in our longitudinal study?" � Time-series analysis of uploaded longitudinal datasets
 
+
+- CLARITY: Query Clarity Protocol for protein fold predictions (AlphaFold2), structural confidence scores (pLDDT/PAE), clinical variant annotations (ClinVar pathogenicity, gnomAD allele frequency), and AI agent research findings for a specific protein variant. Use when the research involves a known disease-linked protein mutation and you need structural or clinical context. Clarity Protocol covers Alzheimer's (tau, amyloid-beta, APOE, presenilin), Parkinson's (alpha-synuclein, LRRK2, PINK1, Parkin), ALS (SOD1, TDP-43, FUS), and other disease variants.
+
 TASK OBJECTIVE FORMATTING:
 - For LITERATURE tasks: describe the objective simply in 1-2 sentences
 - For ANALYSIS tasks: Describe the objective in this format "GOAL: <goal> DATASETS: <short dataset descriptions> OUTPUT: <desired output>". Each section should be relatively simple, 1-3 sentences max. Do not overexplain so that you allow the data scientist agent to be creative and come up with the best solution. Focus on the what, not on the how.
+- For CLARITY tasks: mention the protein name and variant notation (e.g., "Query fold data for SOD1 A4V" or "Get structural and clinical data for tau P301L")
 
 OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
 {
@@ -299,7 +313,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
     {
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
-      "type": "LITERATURE or ANALYSIS"
+      "type": "LITERATURE, ANALYSIS, or CLARITY"
     }
   ]
 }
@@ -308,6 +322,7 @@ NOTES:
 - Choose LITERATURE if: You need to find, read, or synthesize information from scientific papers
 - Choose ANALYSIS if: You have datasets that need coding, statistics, visualization, or any computational processing
 - For LITERATURE tasks: datasets array should be EMPTY []
+- For CLARITY tasks: datasets array should be EMPTY []. The objective should name the protein and variant.
 - For ANALYSIS tasks: SELECT which uploaded datasets (shown in the CURRENT RESEARCH STATE above) are relevant for the analysis task
   - Only include datasets that are directly relevant to the specific analysis objective
   - Copy the exact dataset objects (filename, id, description) from the "Uploaded Datasets" section above

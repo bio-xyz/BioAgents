@@ -41,7 +41,7 @@ export type PlanTask = {
     description: string;
     path?: string;
   }>;
-  type: "LITERATURE" | "ANALYSIS";
+  type: "LITERATURE" | "ANALYSIS" | "CLARITY";
   level?: number;
   start?: string;
   end?: string;
@@ -100,7 +100,7 @@ export interface ConversationStateValues extends StateValues {
     }>;
     initialTasks?: Array<{
       objective: string;
-      type: "LITERATURE" | "ANALYSIS";
+      type: "LITERATURE" | "ANALYSIS" | "CLARITY";
       datasetFilenames: string[]; // Filenames to match against uploadedDatasets
     }>; // Tasks for first iteration (used once, then cleared)
   };

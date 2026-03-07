@@ -895,7 +895,11 @@ async function runDeepResearch(params: {
         newLevel = maxLevel + 1;
         const newTasks = initialTasks.map((task) => {
           const taskId =
-            task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+            task.type === "ANALYSIS"
+              ? `ana-${newLevel}`
+              : task.type === "CLARITY"
+                ? `clarity-${newLevel}`
+                : `lit-${newLevel}`;
 
           // Resolve datasetFilenames to full dataset objects
           const resolvedDatasets = (task.datasetFilenames || [])
@@ -1009,7 +1013,11 @@ async function runDeepResearch(params: {
         newLevel = maxLevel + 1;
         const newTasks = plan.map((task: PlanTask) => {
           const taskId =
-            task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+            task.type === "ANALYSIS"
+              ? `ana-${newLevel}`
+              : task.type === "CLARITY"
+                ? `clarity-${newLevel}`
+                : `lit-${newLevel}`;
           return {
             ...task,
             id: taskId,
@@ -1326,6 +1334,59 @@ These molecular changes align with established longevity pathways (Converging nu
           if (conversationState.id) {
             await writeStateSerialized();
           }
+        } else if (task.type === "CLARITY") {
+          // Set start timestamp
+          task.start = new Date().toISOString();
+          task.output = "";
+
+          if (conversationState.id) {
+            await writeStateSerialized();
+          }
+
+          logger.info(
+            { taskObjective: task.objective },
+            "executing_clarity_task",
+          );
+
+          try {
+            const { clarityAgent } = await import("../../agents/clarity");
+            const result = await clarityAgent({
+              objective: task.objective,
+              onPollUpdate,
+            });
+
+            task.output = `${result.output}\n\n`;
+            task.jobId = result.jobId;
+            task.reasoning = result.reasoning;
+
+            if (conversationState.id) {
+              await writeStateSerialized();
+              logger.info("clarity_task_completed");
+            }
+
+            logger.info(
+              { outputLength: result.output.length },
+              "clarity_result_received",
+            );
+          } catch (error) {
+            const errorMsg =
+              error instanceof Error
+                ? error.message
+                : typeof error === "object" && error !== null
+                  ? JSON.stringify(error)
+                  : String(error);
+            task.output = `Clarity Protocol query failed: ${errorMsg}`;
+            logger.error(
+              { error, taskObjective: task.objective },
+              "clarity_task_failed",
+            );
+          }
+
+          // Set end timestamp
+          task.end = new Date().toISOString();
+          if (conversationState.id) {
+            await writeStateSerialized();
+          }
         }
       });
 
@@ -1632,7 +1693,9 @@ These molecular changes align with established longevity pathways (Converging nu
             const taskId =
               task.type === "ANALYSIS"
                 ? `ana-${nextLevel}`
-                : `lit-${nextLevel}`;
+                : task.type === "CLARITY"
+                  ? `clarity-${nextLevel}`
+                  : `lit-${nextLevel}`;
             return {
               ...task,
               id: taskId,
