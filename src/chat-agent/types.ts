@@ -1,0 +1,64 @@
+/**
+ * Self-contained types for the agent-based chat mode.
+ * Independent from src/llm/types.ts to avoid modifying shared interfaces.
+ */
+
+/**
+ * A registered tool with its JSON Schema and executor.
+ */
+export interface AgentTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>; // JSON Schema for Anthropic API
+  execute: (input: Record<string, unknown>) => Promise<AgentToolResult>;
+}
+
+/**
+ * Result of executing a tool.
+ */
+export interface AgentToolResult {
+  content: string; // Stringified result for the LLM
+  isError?: boolean; // If true, sent as is_error to the model
+}
+
+/**
+ * Configuration for the agent loop.
+ */
+export interface AgentLoopConfig {
+  model: string;
+  systemPrompt: string;
+  maxToolCalls: number;
+  maxTokens: number;
+  temperature?: number;
+  apiKey: string;
+}
+
+/**
+ * SSE event types streamed to the client.
+ */
+export type AgentSSEEvent =
+  | { type: "text_delta"; content: string }
+  | {
+      type: "tool_call_start";
+      toolName: string;
+      toolCallId: string;
+      input: unknown;
+    }
+  | {
+      type: "tool_call_result";
+      toolCallId: string;
+      result: string;
+      isError: boolean;
+    }
+  | { type: "turn_complete"; totalToolCalls: number }
+  | { type: "error"; message: string; code?: string };
+
+/**
+ * Result returned by the agent loop.
+ */
+export interface AgentLoopResult {
+  finalText: string;
+  toolCallCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
