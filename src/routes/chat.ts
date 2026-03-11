@@ -632,7 +632,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
     if (!skipStorage) {
       try {
         const { getMessagesByConversation } = await import("../db/operations");
-        // Fetch 4 messages (newest first), skip current, reverse to chronological
+        // Fetch 4 newest messages, skip current (first), yielding up to 3 prior exchanges
         const recentMessages = await getMessagesByConversation(conversationId, 4);
 
         if (recentMessages && recentMessages.length > 1) {

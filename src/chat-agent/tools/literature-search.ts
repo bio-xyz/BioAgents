@@ -72,6 +72,10 @@ registerTool({
     try {
       const { literatureAgent } = await import("../../agents/literature");
 
+      // Note: Promise.race does not cancel the losing promise. On timeout,
+      // the literatureAgent HTTP request continues in the background until it
+      // completes. Proper cancellation requires adding AbortSignal support
+      // to literatureAgent, which is shared across multiple consumers.
       const result = await Promise.race([
         literatureAgent({
           objective: query,

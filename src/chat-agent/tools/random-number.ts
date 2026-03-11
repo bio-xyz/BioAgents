@@ -25,8 +25,9 @@ registerTool({
   },
   execute: async (input) => {
     const parsed = InputSchema.parse(input);
-    const { min, max } = parsed;
-    const result = Math.floor(Math.random() * (max - min + 1)) + min;
+    const lo = Math.min(parsed.min, parsed.max);
+    const hi = Math.max(parsed.min, parsed.max);
+    const result = Math.floor(Math.random() * (hi - lo + 1)) + lo;
     return {
       content: JSON.stringify({ random_number: result, min, max }),
     };
