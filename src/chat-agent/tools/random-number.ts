@@ -29,7 +29,7 @@ registerTool({
     const hi = Math.max(parsed.min, parsed.max);
     const result = Math.floor(Math.random() * (hi - lo + 1)) + lo;
     return {
-      content: JSON.stringify({ random_number: result, min, max }),
+      content: JSON.stringify({ random_number: result, min: lo, max: hi }),
     };
   },
 });

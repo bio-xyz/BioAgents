@@ -82,17 +82,7 @@ export async function runAgentLoop(
       (block): block is ToolUseBlock => block.type === "tool_use",
     );
 
-    // If no tool calls — we're done
-    if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
-      finalText = response.content
-        .filter((block): block is TextBlock => block.type === "text")
-        .map((block) => block.text)
-        .join("\n\n");
-
-      await sse.send({ type: "turn_complete", totalToolCalls: toolCallCount });
-      break;
-    }
-
+    // Check max_tokens first — it also has no tool blocks, but needs an error event
     if (response.stop_reason === "max_tokens") {
       finalText = response.content
         .filter((block): block is TextBlock => block.type === "text")
@@ -104,6 +94,17 @@ export async function runAgentLoop(
         message: "Response truncated: max tokens reached",
         code: "max_tokens",
       });
+      await sse.send({ type: "turn_complete", totalToolCalls: toolCallCount });
+      break;
+    }
+
+    // If no tool calls — we're done
+    if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
+      finalText = response.content
+        .filter((block): block is TextBlock => block.type === "text")
+        .map((block) => block.text)
+        .join("\n\n");
+
       await sse.send({ type: "turn_complete", totalToolCalls: toolCallCount });
       break;
     }
