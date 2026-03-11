@@ -22,6 +22,17 @@ export interface AgentToolResult {
 }
 
 /**
+ * Info passed to the onToolResult callback after each tool execution.
+ */
+export interface ToolCallInfo {
+  toolName: string;
+  toolCallId: string;
+  input: unknown;
+  result: AgentToolResult;
+  toolCallCount: number; // Running total of tool calls so far
+}
+
+/**
  * Configuration for the agent loop.
  */
 export interface AgentLoopConfig {
@@ -31,6 +42,8 @@ export interface AgentLoopConfig {
   maxTokens: number;
   temperature?: number;
   apiKey: string;
+  /** Called after each tool execution. Use for DB state updates, progress notifications, etc. */
+  onToolResult?: (info: ToolCallInfo) => Promise<void>;
 }
 
 /**

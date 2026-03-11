@@ -26,11 +26,14 @@ export async function runAgentLoop(
   userMessage: string,
   config: AgentLoopConfig,
   sse: SSEWriter,
+  history?: MessageParam[],
 ): Promise<AgentLoopResult> {
   const client = new Anthropic({ apiKey: config.apiKey, timeout: 120_000 });
   const toolDefs = getToolDefinitions();
 
+  // Prepend conversation history (if any) before the current user message
   const messages: MessageParam[] = [
+    ...(history || []),
     { role: "user", content: userMessage },
   ];
 
@@ -54,6 +57,7 @@ export async function runAgentLoop(
       messages,
       max_tokens: config.maxTokens,
       temperature: config.temperature ?? 1,
+      // Cast: registry returns loose JSON Schema objects; SDK expects strict Tool type
       tools: !isAtCap && toolDefs.length > 0 ? toolDefs as any : undefined,
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
     };
@@ -134,6 +138,25 @@ export async function runAgentLoop(
         toolBlock.input as Record<string, unknown>,
       );
 
+      // Notify caller (e.g. for DB state updates)
+      if (config.onToolResult) {
+        try {
+          await config.onToolResult({
+            toolName: toolBlock.name,
+            toolCallId: toolBlock.id,
+            input: toolBlock.input,
+            result,
+            toolCallCount,
+          });
+        } catch (err) {
+          logger.warn(
+            { error: err, toolName: toolBlock.name },
+            "on_tool_result_callback_failed",
+          );
+          // Don't break the loop — DB update failure shouldn't stop the agent
+        }
+      }
+
       await sse.send({
         type: "tool_call_result",
         toolCallId: toolBlock.id,
@@ -141,6 +164,7 @@ export async function runAgentLoop(
         isError: result.isError ?? false,
       });
 
+      // Cast: SDK types don't export ToolResultBlockParam directly
       toolResults.push({
         type: "tool_result",
         tool_use_id: toolBlock.id,

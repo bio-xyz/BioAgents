@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { LLM } from "../llm/provider";
+
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import type { AuthContext } from "../types/auth";
@@ -11,12 +11,12 @@ import {
   createMessageRecord,
   updateMessageResponseTime,
 } from "../services/chat/tools";
-import type { ConversationState, PlanTask, State } from "../types/core";
+import type { ConversationState, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
 // Agent loop imports
-import { createSSEResponse, NoOpSSEWriter } from "../chat-agent/stream";
+import { NoOpSSEWriter } from "../chat-agent/stream";
 import { runAgentLoop } from "../chat-agent/loop";
 import { getToolCount } from "../chat-agent/registry";
 
@@ -73,7 +73,7 @@ export const chatRoute = new Elysia()
             apiDocumentation: "https://your-docs-url.com/api",
           };
         })
-        .post("/api/chat", chatAgentHandler)
+        .post("/api/chat", chatHandler)
         // Manual retry endpoint for failed jobs
         .post("/api/chat/retry/:jobId", chatRetryHandler),
   );
@@ -232,7 +232,7 @@ async function chatRetryHandler(ctx: any) {
 }
 
 // =============================================================================
-// Agent-based Chat Handler (replaces fixed pipeline)
+// Agent loop configuration
 // =============================================================================
 
 const AGENT_SYSTEM_PROMPT = `You are a helpful AI research assistant specializing in bioscience and life sciences. You have access to tools that you can use to help answer the user's questions.
@@ -249,300 +249,6 @@ If a tool returns an error, explain what went wrong and try a different source o
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-20250514";
 const DEFAULT_MAX_TOOL_CALLS = 10;
 const DEFAULT_MAX_TOKENS = 4096;
-
-/**
- * Agent-based chat handler for POST /api/chat.
- * Uses an agent loop where the LLM decides which tools to call.
- *
- * Dual mode:
- * - SSE streaming: when Accept header includes "text/event-stream" or query param stream=true
- * - JSON response: default, returns { text: string } for frontend compatibility
- */
-async function chatAgentHandler(ctx: any) {
-  const { body, set, request } = ctx;
-  const startTime = Date.now();
-  const parsedBody = body as any;
-
-  // Extract message (REQUIRED)
-  const message = parsedBody.message;
-  if (!message || typeof message !== "string") {
-    set.status = 400;
-    return { ok: false, error: "Missing required field: message" };
-  }
-
-  // Auth
-  const auth = (request as any).auth as AuthContext | undefined;
-  const userId = auth?.userId || generateUUID();
-  const conversationId = parsedBody.conversationId || generateUUID();
-
-  // Determine response mode: SSE streaming vs JSON
-  const acceptHeader = request.headers.get("Accept") || "";
-  const url = new URL(request.url);
-  const wantsSSE =
-    acceptHeader.includes("text/event-stream") ||
-    url.searchParams.get("stream") === "true" ||
-    parsedBody.stream === true;
-
-  logger.info(
-    {
-      userId,
-      conversationId,
-      messageLength: message.length,
-      toolCount: getToolCount(),
-      authMethod: auth?.method || "unknown",
-      responseMode: wantsSSE ? "sse" : "json",
-    },
-    "chat_agent_request_received",
-  );
-
-  // Resolve API key
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    set.status = 500;
-    return { ok: false, error: "Anthropic API key not configured" };
-  }
-
-  const agentConfig = {
-    model: process.env.CHAT_AGENT_MODEL || DEFAULT_AGENT_MODEL,
-    systemPrompt: AGENT_SYSTEM_PROMPT,
-    maxToolCalls:
-      parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || DEFAULT_MAX_TOOL_CALLS,
-    maxTokens:
-      parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || DEFAULT_MAX_TOKENS,
-    apiKey,
-  };
-
-  // ── SSE Streaming Mode ──
-  if (wantsSSE) {
-    const [response, sse] = createSSEResponse();
-
-    (async () => {
-      try {
-        const { messageId } = await setupDBRecords(userId, conversationId, message, sse);
-        if (!messageId) return;
-
-        const result = await runAgentLoop(message, agentConfig, sse);
-
-        await saveResponse(messageId, result.finalText, startTime);
-        logCompletion(messageId, conversationId, result, startTime);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Internal server error";
-        logger.error({ error: errorMessage }, "chat_agent_unhandled_error");
-        await sse.send({ type: "error", message: errorMessage });
-      } finally {
-        await sse.close();
-      }
-    })();
-
-    return response;
-  }
-
-  // ── JSON Mode (default — frontend compatibility) ──
-  try {
-    const noOpSSE = new NoOpSSEWriter();
-
-    // DB setup
-    const setupResult = await ensureUserAndConversation(userId, conversationId);
-    if (!setupResult.success) {
-      set.status = 500;
-      return { ok: false, error: setupResult.error || "Setup failed" };
-    }
-
-    const dataSetup = await setupConversationData(
-      conversationId, userId, "api", false, message, 0,
-    );
-    if (!dataSetup.success) {
-      set.status = 500;
-      return { ok: false, error: dataSetup.error || "Data setup failed" };
-    }
-
-    const stateRecord = dataSetup.data!.stateRecord;
-
-    const msgResult = await createMessageRecord({
-      conversationId, userId, message, source: "api",
-      stateId: stateRecord.id, files: [],
-    });
-    if (!msgResult.success) {
-      set.status = 500;
-      return { ok: false, error: msgResult.error || "Message creation failed" };
-    }
-
-    const messageId = msgResult.message.id;
-
-    // Run the agent loop (no-op SSE — events are silently discarded)
-    const result = await runAgentLoop(message, agentConfig, noOpSSE);
-
-    await saveResponse(messageId, result.finalText, startTime);
-    logCompletion(messageId, conversationId, result, startTime);
-
-    // Return JSON matching the frontend's expected format
-    return new Response(JSON.stringify({ text: result.finalText, userId }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Content-Encoding": "identity",
-      },
-    });
-  } catch (error: any) {
-    logger.error(
-      { error: error.message, stack: error.stack },
-      "chat_agent_unhandled_error",
-    );
-    set.status = 500;
-    return { ok: false, error: error.message || "Internal server error" };
-  }
-}
-
-// ── Helper: setup DB records (for SSE mode, sends errors via SSE) ──
-async function setupDBRecords(
-  userId: string,
-  conversationId: string,
-  message: string,
-  sse: { send: (event: any) => Promise<void>; close: () => Promise<void> },
-): Promise<{ messageId: string | null }> {
-  const setupResult = await ensureUserAndConversation(userId, conversationId);
-  if (!setupResult.success) {
-    await sse.send({ type: "error", message: setupResult.error || "Setup failed" });
-    await sse.close();
-    return { messageId: null };
-  }
-
-  const dataSetup = await setupConversationData(
-    conversationId, userId, "api", false, message, 0,
-  );
-  if (!dataSetup.success) {
-    await sse.send({ type: "error", message: dataSetup.error || "Data setup failed" });
-    await sse.close();
-    return { messageId: null };
-  }
-
-  const stateRecord = dataSetup.data!.stateRecord;
-
-  const msgResult = await createMessageRecord({
-    conversationId, userId, message, source: "api",
-    stateId: stateRecord.id, files: [],
-  });
-  if (!msgResult.success) {
-    await sse.send({ type: "error", message: msgResult.error || "Message creation failed" });
-    await sse.close();
-    return { messageId: null };
-  }
-
-  return { messageId: msgResult.message.id };
-}
-
-// ── Helper: save response to DB ──
-async function saveResponse(messageId: string, text: string, startTime: number) {
-  const { updateMessage } = await import("../db/operations");
-  await updateMessage(messageId, { content: text });
-  const responseTime = Date.now() - startTime;
-  await updateMessageResponseTime(messageId, responseTime);
-}
-
-// ── Helper: log completion ──
-function logCompletion(
-  messageId: string,
-  conversationId: string,
-  result: { toolCallCount: number; totalInputTokens: number; totalOutputTokens: number },
-  startTime: number,
-) {
-  logger.info(
-    {
-      messageId,
-      conversationId,
-      toolCallCount: result.toolCallCount,
-      totalInputTokens: result.totalInputTokens,
-      totalOutputTokens: result.totalOutputTokens,
-      responseTime: Date.now() - startTime,
-    },
-    "chat_agent_completed",
-  );
-}
-
-// =============================================================================
-// Legacy Chat Handler (kept for x402/b402 backwards compatibility)
-// =============================================================================
-
-/**
- * Check if the question requires a hypothesis using LLM
- */
-async function requiresHypothesis(
-  question: string,
-  literatureResults: string,
-  messageId?: string, // For token usage tracking
-): Promise<boolean> {
-  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-  const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!apiKey) {
-    logger.warn("LLM API key not configured, defaulting to no hypothesis");
-    return false;
-  }
-
-  logger.info(
-    {
-      questionLength: question.length,
-      literatureResultsLength: literatureResults.length,
-      provider: PLANNING_LLM_PROVIDER,
-    },
-    "checking_hypothesis_requirement",
-  );
-
-  const llmProvider = new LLM({
-    // @ts-ignore
-    name: PLANNING_LLM_PROVIDER,
-    apiKey,
-  });
-
-  const prompt = `Analyze this user question and literature results to determine if a research hypothesis is needed.
-
-User Question: ${question}
-
-Literature Results Preview: ${literatureResults.slice(0, 1000)}
-
-A hypothesis IS needed if:
-- The question asks about mechanisms, predictions, or causal relationships
-- The question requires synthesizing multiple sources into a novel insight
-- The question is exploratory and needs a testable proposition
-
-A hypothesis IS NOT needed if:
-- The question asks for factual information or definitions
-- The question can be answered directly from literature
-- The question is a simple lookup or clarification
-
-Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
-
-  try {
-    const response = await llmProvider.createChatCompletion({
-      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
-      messages: [
-        {
-          role: "user" as const,
-          content: prompt,
-        },
-      ],
-      maxTokens: 10,
-      messageId,
-      usageType: "chat",
-    });
-
-    const answer = response.content.trim().toUpperCase();
-    logger.info(
-      {
-        answer,
-        questionLength: question.length,
-        decision:
-          answer === "YES" ? "hypothesis_required" : "hypothesis_not_required",
-      },
-      "hypothesis_requirement_check_completed",
-    );
-
-    return answer === "YES";
-  } catch (err) {
-    logger.error({ err }, "hypothesis_check_failed");
-    return false; // Default to no hypothesis on error
-  }
-}
 
 /**
  * Chat Handler - Core logic for POST /api/chat
@@ -779,6 +485,8 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
 
     if (isJobQueueEnabled()) {
       // QUEUE MODE: Enqueue job and return immediately
+      // NOTE: The worker (chat.worker.ts) still runs the legacy pipeline,
+      // not the new agent loop. This will be migrated once the agent loop is validated.
       logger.info(
         { messageId: createdMessage.id, conversationId },
         "chat_using_queue_mode",
@@ -913,351 +621,142 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       );
     }
 
-    // Step 2: Execute planning agent (literature only)
-    logger.info(
-      {
-        message: createdMessage.question,
-        existingPlan: conversationState.values.plan?.length || 0,
-      },
-      "starting_planning_agent",
-    );
+    // =======================================================================
+    // Load conversation history for multi-turn context
+    // =======================================================================
+    const conversationHistoryMessages: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }> = [];
 
-    const { planningAgent } = await import("../agents/planning");
+    if (!skipStorage) {
+      try {
+        const { getMessagesByConversation } = await import("../db/operations");
+        // Fetch 4 messages (newest first), skip current, reverse to chronological
+        const recentMessages = await getMessagesByConversation(conversationId, 4);
 
-    const planningResult = await planningAgent({
-      state,
-      conversationState,
-      message: createdMessage,
-      mode: "initial",
-      usageType: "chat",
-    });
+        if (recentMessages && recentMessages.length > 1) {
+          const previous = recentMessages.slice(1).reverse();
 
-    const plan = planningResult.plan;
-
-    logger.info(
-      {
-        currentObjective: planningResult.currentObjective,
-        totalPlannedTasks: plan.length,
-        taskTypes: plan.map((t) => t.type),
-        taskObjectives: plan.map((t) => t.objective),
-      },
-      "planning_agent_completed",
-    );
-
-    // Filter to only LITERATURE tasks (no ANALYSIS for regular chat)
-    const literatureTasks = plan.filter((task) => task.type === "LITERATURE");
-
-    logger.info(
-      {
-        totalTasks: plan.length,
-        literatureTasks: literatureTasks.length,
-        analysisTasks: plan.length - literatureTasks.length,
-        filteredTasks: literatureTasks.map((t) => ({
-          type: t.type,
-          objective: t.objective,
-        })),
-      },
-      "tasks_filtered_literature_only",
-    );
-
-    if (literatureTasks.length === 0) {
-      logger.info("no_literature_tasks_planned_skipping_to_reply");
-    }
-
-    // Step 3: Execute literature tasks (OPENSCHOLAR, KNOWLEDGE - no EDISON)
-    const { literatureAgent } = await import("../agents/literature");
-    const { updateConversationState } = await import("../db/operations");
-
-    const completedTasks: PlanTask[] = [];
-
-    for (const task of literatureTasks) {
-      task.start = new Date().toISOString();
-      task.output = "";
-
-      logger.info(
-        {
-          taskObjective: task.objective,
-          taskType: task.type,
-          taskStart: task.start,
-        },
-        "executing_literature_task",
-      );
-
-      const useBioLiterature =
-        process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
-
-      // Build list of literature promises based on configured sources
-      const literaturePromises: Promise<void>[] = [];
-
-      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
-      if (process.env.OPENSCHOLAR_API_URL) {
-        const openScholarPromise = literatureAgent({
-          objective: task.objective,
-          type: "OPENSCHOLAR",
-        }).then((result) => {
-          if (result.count && result.count > 0) {
-            task.output += `${result.output}\n\n`;
+          for (const msg of previous) {
+            // Only include complete exchanges (both question and response)
+            if (msg.question && msg.content) {
+              conversationHistoryMessages.push({
+                role: "user",
+                content: msg.question,
+              });
+              conversationHistoryMessages.push({
+                role: "assistant",
+                content:
+                  msg.content.length > 1000
+                    ? msg.content.substring(0, 1000) + "..."
+                    : msg.content,
+              });
+            }
           }
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              count: result.count,
-              outputPreview: result.output.substring(0, 200),
-            },
-            "openscholar_completed",
-          );
-        });
-        literaturePromises.push(openScholarPromise);
-      }
+        }
 
-      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
-      if (useBioLiterature) {
-        const bioLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          type: "BIOLIT",
-        }).then((result) => {
-          task.output += `${result.output}\n\n`;
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              outputPreview: result.output.substring(0, 200),
-            },
-            "bioliterature_completed",
-          );
-        });
-        literaturePromises.push(bioLiteraturePromise);
-      }
-
-      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
-      if (process.env.KNOWLEDGE_DOCS_PATH) {
-        const knowledgePromise = literatureAgent({
-          objective: task.objective,
-          type: "KNOWLEDGE",
-        }).then((result) => {
-          if (result.count && result.count > 0) {
-            task.output += `${result.output}\n\n`;
-          }
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              count: result.count,
-            },
-            "knowledge_completed",
-          );
-        });
-        literaturePromises.push(knowledgePromise);
-      }
-
-      await Promise.all(literaturePromises);
-
-      task.end = new Date().toISOString();
-      completedTasks.push(task);
-
-      logger.info(
-        {
-          taskObjective: task.objective,
-          taskType: task.type,
-          taskStart: task.start,
-          taskEnd: task.end,
-          outputLength: task.output?.length || 0,
-        },
-        "literature_task_completed",
-      );
-    }
-
-    logger.info(
-      {
-        completedTasksCount: completedTasks.length,
-        totalOutputLength: completedTasks.reduce(
-          (sum, t) => sum + (t.output?.length || 0),
-          0,
-        ),
-      },
-      "all_literature_tasks_completed",
-    );
-
-    // Step 4: Check if hypothesis is needed
-    const allLiteratureOutput = completedTasks
-      .map((t) => t.output)
-      .join("\n\n");
-
-    logger.info(
-      {
-        question: message,
-        literatureOutputLength: allLiteratureOutput.length,
-        completedTasksCount: completedTasks.length,
-      },
-      "checking_if_hypothesis_required",
-    );
-
-    const needsHypothesis = await requiresHypothesis(
-      message,
-      allLiteratureOutput,
-      createdMessage.id, // Track token usage per message
-    );
-
-    logger.info(
-      {
-        needsHypothesis,
-        question: message,
-        completedTasksCount: completedTasks.length,
-      },
-      "hypothesis_requirement_determined",
-    );
-
-    let hypothesisText: string | undefined;
-
-    // Step 5: Generate hypothesis if needed
-    if (needsHypothesis && completedTasks.length > 0) {
-      logger.info(
-        {
-          currentObjective: planningResult.currentObjective,
-          completedTasksCount: completedTasks.length,
-          existingHypothesis: conversationState.values.currentHypothesis,
-        },
-        "starting_hypothesis_generation",
-      );
-
-      const { hypothesisAgent } = await import("../agents/hypothesis");
-
-      const hypothesisResult = await hypothesisAgent({
-        objective: planningResult.currentObjective,
-        message: createdMessage,
-        conversationState,
-        completedTasks,
-      });
-
-      hypothesisText = hypothesisResult.hypothesis;
-      conversationState.values.currentHypothesis = hypothesisText;
-
-      logger.info(
-        {
-          mode: hypothesisResult.mode,
-          hypothesisLength: hypothesisText.length,
-          hypothesisPreview: hypothesisText.substring(0, 200),
-        },
-        "hypothesis_generated",
-      );
-
-      if (conversationState.id && !skipStorage) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
         logger.info(
           {
-            conversationStateId: conversationState.id,
-            mode: hypothesisResult.mode,
+            conversationId,
+            historyExchanges: conversationHistoryMessages.length / 2,
           },
-          "hypothesis_saved_to_conversation_state",
+          "conversation_history_loaded",
         );
+      } catch (err) {
+        logger.warn(
+          { error: err, conversationId },
+          "conversation_history_load_failed",
+        );
+        // Continue without history — don't break the chat
       }
-
-      // Step 6: Run reflection agent
-      logger.info(
-        {
-          completedTasksCount: completedTasks.length,
-          hypothesisLength: hypothesisText.length,
-        },
-        "starting_reflection_agent",
-      );
-
-      const { reflectionAgent } = await import("../agents/reflection");
-
-      const reflectionResult = await reflectionAgent({
-        conversationState,
-        message: createdMessage,
-        completedMaxTasks: completedTasks,
-        hypothesis: hypothesisText,
-      });
-
-      logger.info(
-        {
-          currentObjective: reflectionResult.currentObjective,
-          keyInsightsCount: reflectionResult.keyInsights.length,
-          discoveriesCount: reflectionResult.discoveries.length,
-          methodology: reflectionResult.methodology,
-          keyInsights: reflectionResult.keyInsights,
-          discoveries: reflectionResult.discoveries,
-        },
-        "reflection_agent_completed",
-      );
-
-      // Update conversation state with reflection results
-      conversationState.values.currentObjective =
-        reflectionResult.currentObjective;
-      conversationState.values.keyInsights = reflectionResult.keyInsights;
-      conversationState.values.discoveries = reflectionResult.discoveries;
-      conversationState.values.methodology = reflectionResult.methodology;
-
-      if (conversationState.id && !skipStorage) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
-        logger.info(
-          {
-            conversationStateId: conversationState.id,
-            keyInsightsCount: reflectionResult.keyInsights.length,
-            discoveriesCount: reflectionResult.discoveries.length,
-          },
-          "reflection_results_saved_to_conversation_state",
-        );
-      }
-    } else {
-      logger.info(
-        {
-          needsHypothesis,
-          completedTasksCount: completedTasks.length,
-          reason: !needsHypothesis
-            ? "question_does_not_require_hypothesis"
-            : "no_completed_tasks",
-        },
-        "skipping_hypothesis_and_reflection",
-      );
     }
 
-    // Step 7: Generate reply (chat-specific - concise, no next steps)
+    // =======================================================================
+    // Agent loop: LLM decides which tools to call
+    // =======================================================================
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      logger.error("anthropic_api_key_not_configured");
+      set.status = 500;
+      return { ok: false, error: "Anthropic API key not configured" };
+    }
+
+    const agentConfig: import("../chat-agent/types").AgentLoopConfig = {
+      model: process.env.CHAT_AGENT_MODEL || DEFAULT_AGENT_MODEL,
+      systemPrompt: AGENT_SYSTEM_PROMPT,
+      maxToolCalls:
+        parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || DEFAULT_MAX_TOOL_CALLS,
+      maxTokens:
+        parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || DEFAULT_MAX_TOKENS,
+      apiKey,
+      // Update conversation state in DB after each tool call so frontend
+      // can show progress via existing WebSocket/polling
+      onToolResult: skipStorage
+        ? undefined
+        : async (info) => {
+            if (!conversationState.id) return;
+            try {
+              const { updateConversationState } = await import("../db/operations");
+              await updateConversationState(conversationState.id, {
+                ...conversationState.values,
+                agentProgress: {
+                  stage: `tool:${info.toolName}`,
+                  toolCallCount: info.toolCallCount,
+                  lastToolCallId: info.toolCallId,
+                  isError: info.result.isError ?? false,
+                },
+              });
+
+              logger.info(
+                {
+                  conversationStateId: conversationState.id,
+                  toolName: info.toolName,
+                  toolCallCount: info.toolCallCount,
+                },
+                "conversation_state_updated_after_tool_call",
+              );
+            } catch (err) {
+              logger.warn(
+                { error: err, toolName: info.toolName },
+                "conversation_state_update_failed",
+              );
+            }
+          },
+    };
+
     logger.info(
       {
-        completedTasksCount: completedTasks.length,
-        hasHypothesis: !!hypothesisText,
-        keyInsightsCount: conversationState.values.keyInsights?.length || 0,
-        uploadedDatasetsCount: conversationState.values.uploadedDatasets?.length || 0,
-      },
-      "starting_chat_reply_generation",
-    );
-
-    const { generateChatReply } = await import("../agents/reply/utils");
-
-    const replyText = await generateChatReply(
-      message,
-      {
-        completedTasks,
-        hypothesis: hypothesisText,
-        nextPlan: [], // No next plan for regular chat
-        keyInsights: conversationState.values.keyInsights || [],
-        discoveries: conversationState.values.discoveries || [],
-        methodology: conversationState.values.methodology,
-        currentObjective: conversationState.values.currentObjective,
-        uploadedDatasets: conversationState.values.uploadedDatasets || [],
-      },
-      {
-        maxTokens: 1024,
         messageId: createdMessage.id,
-        usageType: "chat",
+        conversationId,
+        toolCount: getToolCount(),
+        model: agentConfig.model,
       },
+      "agent_loop_starting",
     );
+
+    const noOpSSE = new NoOpSSEWriter();
+    const agentResult = await runAgentLoop(
+      message,
+      agentConfig,
+      noOpSSE,
+      conversationHistoryMessages.length > 0
+        ? conversationHistoryMessages
+        : undefined,
+    );
+
+    const replyText = agentResult.finalText;
 
     logger.info(
       {
+        messageId: createdMessage.id,
+        conversationId,
+        toolCallCount: agentResult.toolCallCount,
+        totalInputTokens: agentResult.totalInputTokens,
+        totalOutputTokens: agentResult.totalOutputTokens,
         replyLength: replyText.length,
-        replyPreview: replyText.substring(0, 200),
       },
-      "chat_reply_generated",
+      "agent_loop_completed",
     );
 
     const response: ChatV2Response = {
@@ -1308,8 +807,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
         responseTextLength: response.text?.length || 0,
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
-        needsHypothesis,
-        completedTasksCount: completedTasks.length,
+        toolCallCount: agentResult.toolCallCount,
       },
       "chat_completed_successfully",
     );
