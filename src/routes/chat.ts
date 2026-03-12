@@ -16,12 +16,10 @@ import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
 // Agent loop imports
-import { NoOpSSEWriter } from "../chat-agent/stream";
 import { runAgentLoop } from "../chat-agent/loop";
 import { getToolCount } from "../chat-agent/registry";
 
 // Register tools (side-effect imports)
-import "../chat-agent/tools/random-number";
 import "../chat-agent/tools/literature-search";
 
 /**
@@ -735,11 +733,9 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       "agent_loop_starting",
     );
 
-    const noOpSSE = new NoOpSSEWriter();
     const agentResult = await runAgentLoop(
       message,
       agentConfig,
-      noOpSSE,
       conversationHistoryMessages.length > 0
         ? conversationHistoryMessages
         : undefined,

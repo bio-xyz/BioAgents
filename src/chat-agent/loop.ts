@@ -11,21 +11,18 @@ import type {
   TextBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import type { AgentLoopConfig, AgentLoopResult } from "./types";
-import type { SSEWriter } from "./stream";
 import { getToolDefinitions, executeTool } from "./registry";
 import logger from "../utils/logger";
 
 /**
  * Run the agent loop: send message to LLM, execute tool calls, loop until done.
  *
- * The loop streams text deltas and tool call events via SSE.
  * When the tool call cap is reached, the next LLM call omits tools
  * to force a text-only response (soft cap).
  */
 export async function runAgentLoop(
   userMessage: string,
   config: AgentLoopConfig,
-  sse: SSEWriter,
   history?: MessageParam[],
 ): Promise<AgentLoopResult> {
   const client = new Anthropic({ apiKey: config.apiKey, timeout: 120_000 });
@@ -62,14 +59,7 @@ export async function runAgentLoop(
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
     };
 
-    // Stream text deltas in real-time
-    const stream = client.messages.stream(requestParams);
-
-    stream.on("text", (text) => {
-      sse.send({ type: "text_delta", content: text });
-    });
-
-    const response = await stream.finalMessage();
+    const response = await client.messages.create(requestParams);
 
     // Track token usage
     if (response.usage) {
@@ -82,19 +72,14 @@ export async function runAgentLoop(
       (block): block is ToolUseBlock => block.type === "tool_use",
     );
 
-    // Check max_tokens first — it also has no tool blocks, but needs an error event
+    // Check max_tokens first — it also has no tool blocks, but needs logging
     if (response.stop_reason === "max_tokens") {
       finalText = response.content
         .filter((block): block is TextBlock => block.type === "text")
         .map((block) => block.text)
         .join("\n\n");
 
-      await sse.send({
-        type: "error",
-        message: "Response truncated: max tokens reached",
-        code: "max_tokens",
-      });
-      await sse.send({ type: "turn_complete", totalToolCalls: toolCallCount });
+      logger.warn({ toolCallCount }, "agent_loop_max_tokens_reached");
       break;
     }
 
@@ -104,8 +89,6 @@ export async function runAgentLoop(
         .filter((block): block is TextBlock => block.type === "text")
         .map((block) => block.text)
         .join("\n\n");
-
-      await sse.send({ type: "turn_complete", totalToolCalls: toolCallCount });
       break;
     }
 
@@ -121,13 +104,6 @@ export async function runAgentLoop(
 
     for (const toolBlock of toolUseBlocks) {
       toolCallCount++;
-
-      await sse.send({
-        type: "tool_call_start",
-        toolName: toolBlock.name,
-        toolCallId: toolBlock.id,
-        input: toolBlock.input,
-      });
 
       logger.info(
         { toolName: toolBlock.name, toolCallId: toolBlock.id, toolCallCount },
@@ -157,13 +133,6 @@ export async function runAgentLoop(
           // Don't break the loop — DB update failure shouldn't stop the agent
         }
       }
-
-      await sse.send({
-        type: "tool_call_result",
-        toolCallId: toolBlock.id,
-        result: result.content,
-        isError: result.isError ?? false,
-      });
 
       // Cast: SDK types don't export ToolResultBlockParam directly
       toolResults.push({

@@ -47,26 +47,6 @@ export interface AgentLoopConfig {
 }
 
 /**
- * SSE event types streamed to the client.
- */
-export type AgentSSEEvent =
-  | { type: "text_delta"; content: string }
-  | {
-      type: "tool_call_start";
-      toolName: string;
-      toolCallId: string;
-      input: unknown;
-    }
-  | {
-      type: "tool_call_result";
-      toolCallId: string;
-      result: string;
-      isError: boolean;
-    }
-  | { type: "turn_complete"; totalToolCalls: number }
-  | { type: "error"; message: string; code?: string };
-
-/**
  * Result returned by the agent loop.
  */
 export interface AgentLoopResult {
