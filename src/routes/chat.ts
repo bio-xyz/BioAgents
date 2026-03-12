@@ -743,6 +743,13 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
 
     const replyText = agentResult.finalText;
 
+    // Handle empty response from max_tokens truncation
+    if (!replyText && agentResult.hitMaxTokens) {
+      logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
+      set.status = 500;
+      return { ok: false, error: "Response was truncated. Please try a shorter question." };
+    }
+
     logger.info(
       {
         messageId: createdMessage.id,

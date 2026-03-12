@@ -54,4 +54,5 @@ export interface AgentLoopResult {
   toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  hitMaxTokens?: boolean;
 }

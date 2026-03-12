@@ -79,8 +79,8 @@ export async function runAgentLoop(
         .map((block) => block.text)
         .join("\n\n");
 
-      logger.warn({ toolCallCount }, "agent_loop_max_tokens_reached");
-      break;
+      logger.warn({ toolCallCount, hasText: finalText.length > 0 }, "agent_loop_max_tokens_reached");
+      return { finalText, toolCallCount, totalInputTokens, totalOutputTokens, hitMaxTokens: true };
     }
 
     // If no tool calls — we're done
