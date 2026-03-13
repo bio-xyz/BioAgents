@@ -104,6 +104,14 @@ export interface ConversationStateValues extends StateValues {
       datasetFilenames: string[]; // Filenames to match against uploadedDatasets
     }>; // Tasks for first iteration (used once, then cleared)
   };
+
+  // Agent loop progress (chat mode)
+  agentProgress?: {
+    stage: string;
+    toolCallCount: number;
+    lastToolCallId: string;
+    isError: boolean;
+  };
 }
 
 // TODO: add expiry to state rows in DB
