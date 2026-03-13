@@ -646,8 +646,8 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
               conversationHistoryMessages.push({
                 role: "assistant",
                 content:
-                  msg.content.length > 1000
-                    ? msg.content.substring(0, 1000) + "..."
+                  msg.content.length > 4000
+                    ? msg.content.substring(0, 4000) + "..."
                     : msg.content,
               });
             }
@@ -744,7 +744,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
     const replyText = agentResult.finalText;
 
     // Handle empty response from max_tokens truncation
-    if (!replyText && agentResult.hitMaxTokens) {
+    if (!replyText || agentResult.hitMaxTokens) {
       logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
       set.status = 500;
       return { ok: false, error: "Response was truncated. Please try a shorter question." };
