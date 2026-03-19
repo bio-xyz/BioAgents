@@ -88,9 +88,11 @@ export async function runChatAgent(
       .slice(0, 3) // Cap at 3 datasets
       .map((d) => {
         let entry = `### ${d.filename.replace(/[\r\n]/g, " ")}`;
-        if (d.description) entry += `\n${d.description}`;
-        if (d.content)
-          entry += `\n\`\`\`\n${d.content.slice(0, 2000)}${d.content.length > 2000 ? "\n..." : ""}\n\`\`\``;
+        if (d.description) entry += `\n${d.description.replace(/[\r\n]/g, " ")}`;
+        if (d.content) {
+          const sanitized = d.content.slice(0, 2000).replace(/```/g, "` ` `");
+          entry += `\n\`\`\`\n${sanitized}${d.content.length > 2000 ? "\n..." : ""}\n\`\`\``;
+        }
         return entry;
       })
       .join("\n\n");
