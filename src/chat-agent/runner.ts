@@ -90,7 +90,7 @@ export async function runChatAgent(
         let entry = `### ${d.filename.replace(/[\r\n]/g, " ")}`;
         if (d.description) entry += `\n${d.description.replace(/[\r\n]/g, " ")}`;
         if (d.content) {
-          const sanitized = d.content.slice(0, 2000).replace(/```/g, "` ` `");
+          const sanitized = d.content.slice(0, 2000).replace(/`{3,}/g, "` ` `");
           entry += `\n\`\`\`\n${sanitized}${d.content.length > 2000 ? "\n..." : ""}\n\`\`\``;
         }
         return entry;
