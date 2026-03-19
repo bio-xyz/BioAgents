@@ -9,11 +9,12 @@ import logger from "../utils/logger";
 const tools = new Map<string, AgentTool>();
 
 /**
- * Register a tool. Throws if duplicate name.
+ * Register a tool. Skips silently if already registered (idempotent).
  */
 export function registerTool(tool: AgentTool): void {
   if (tools.has(tool.name)) {
-    throw new Error(`Tool "${tool.name}" is already registered`);
+    logger.debug({ toolName: tool.name }, "agent_tool_already_registered");
+    return;
   }
   tools.set(tool.name, tool);
   logger.info({ toolName: tool.name }, "agent_tool_registered");

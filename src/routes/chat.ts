@@ -15,13 +15,6 @@ import type { ConversationState, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
-// Agent loop imports
-import { runAgentLoop } from "../chat-agent/loop";
-import { getToolCount } from "../chat-agent/registry";
-
-// Register tools (side-effect imports)
-import "../chat-agent/tools/literature-search";
-
 /**
  * Response type for synchronous chat (in-process mode)
  */
@@ -228,25 +221,6 @@ async function chatRetryHandler(ctx: any) {
     };
   }
 }
-
-// =============================================================================
-// Agent loop configuration
-// =============================================================================
-
-const AGENT_SYSTEM_PROMPT = `You are a helpful AI research assistant specializing in bioscience and life sciences. You have access to tools that you can use to help answer the user's questions.
-
-Use your judgment on when to use tools:
-- For questions that need current research, specific papers, or evidence-based claims, use the literature_search tool.
-- For basic definitions, general knowledge, or simple explanations, answer directly from your training data.
-- You can search multiple sources (openscholar, biolit, knowledge) by calling the tool multiple times with different source parameters to cross-reference findings.
-
-After getting tool results, synthesize the information into a clear, evidence-based response. Include relevant citations (DOIs, paper titles) from the search results.
-
-If a tool returns an error, explain what went wrong and try a different source or approach.`;
-
-const DEFAULT_AGENT_MODEL = "claude-sonnet-4-20250514";
-const DEFAULT_MAX_TOOL_CALLS = 10;
-const DEFAULT_MAX_TOKENS = 4096;
 
 /**
  * Chat Handler - Core logic for POST /api/chat
@@ -483,8 +457,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
 
     if (isJobQueueEnabled()) {
       // QUEUE MODE: Enqueue job and return immediately
-      // NOTE: The worker (chat.worker.ts) still runs the legacy pipeline,
-      // not the new agent loop. This will be migrated once the agent loop is validated.
+      // Worker runs agent loop (CHAT_AGENT_QUEUE_ENABLED=true) or legacy pipeline (default).
       logger.info(
         { messageId: createdMessage.id, conversationId },
         "chat_using_queue_mode",
@@ -620,82 +593,23 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
     }
 
     // =======================================================================
-    // Load conversation history for multi-turn context
-    // =======================================================================
-    const conversationHistoryMessages: Array<{
-      role: "user" | "assistant";
-      content: string;
-    }> = [];
-
-    if (!skipStorage) {
-      try {
-        const { getMessagesByConversation } = await import("../db/operations");
-        // Fetch 4 newest messages, skip current (first), yielding up to 3 prior exchanges
-        const recentMessages = await getMessagesByConversation(conversationId, 4);
-
-        if (recentMessages && recentMessages.length > 1) {
-          const previous = recentMessages.slice(1).reverse();
-
-          for (const msg of previous) {
-            // Only include complete exchanges (both question and response)
-            if (msg.question && msg.content) {
-              conversationHistoryMessages.push({
-                role: "user",
-                content: msg.question,
-              });
-              conversationHistoryMessages.push({
-                role: "assistant",
-                content:
-                  msg.content.length > 4000
-                    ? msg.content.substring(0, 4000) + "..."
-                    : msg.content,
-              });
-            }
-          }
-        }
-
-        logger.info(
-          {
-            conversationId,
-            historyExchanges: conversationHistoryMessages.length / 2,
-          },
-          "conversation_history_loaded",
-        );
-      } catch (err) {
-        logger.warn(
-          { error: err, conversationId },
-          "conversation_history_load_failed",
-        );
-        // Continue without history — don't break the chat
-      }
-    }
-
-    // =======================================================================
     // Agent loop: LLM decides which tools to call
     // =======================================================================
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      logger.error("anthropic_api_key_not_configured");
-      set.status = 500;
-      return { ok: false, error: "Anthropic API key not configured" };
-    }
+    const { runChatAgent } = await import("../chat-agent/runner");
 
-    const agentConfig: import("../chat-agent/types").AgentLoopConfig = {
-      model: process.env.CHAT_AGENT_MODEL || DEFAULT_AGENT_MODEL,
-      systemPrompt: AGENT_SYSTEM_PROMPT,
-      maxToolCalls:
-        parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || DEFAULT_MAX_TOOL_CALLS,
-      maxTokens:
-        parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || DEFAULT_MAX_TOKENS,
-      apiKey,
-      // Update conversation state in DB after each tool call so frontend
-      // can show progress via existing WebSocket/polling
+    const agentResult = await runChatAgent({
+      conversationId,
+      message,
+      uploadedDatasets: conversationState.values.uploadedDatasets,
+      loadHistory: !skipStorage,
       onToolResult: skipStorage
         ? undefined
         : async (info) => {
             if (!conversationState.id) return;
             try {
-              const { updateConversationState } = await import("../db/operations");
+              const { updateConversationState } = await import(
+                "../db/operations"
+              );
               await updateConversationState(conversationState.id, {
                 ...conversationState.values,
                 agentProgress: {
@@ -721,33 +635,21 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
               );
             }
           },
-    };
+    });
 
-    logger.info(
-      {
-        messageId: createdMessage.id,
-        conversationId,
-        toolCount: getToolCount(),
-        model: agentConfig.model,
-      },
-      "agent_loop_starting",
-    );
-
-    const agentResult = await runAgentLoop(
-      message,
-      agentConfig,
-      conversationHistoryMessages.length > 0
-        ? conversationHistoryMessages
-        : undefined,
-    );
-
-    const replyText = agentResult.finalText;
+    const replyText = agentResult.replyText;
 
     // Handle empty response from max_tokens truncation
     if (!replyText || agentResult.hitMaxTokens) {
-      logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
+      logger.error(
+        { messageId: createdMessage.id },
+        "agent_loop_empty_max_tokens",
+      );
       set.status = 500;
-      return { ok: false, error: "Response was truncated. Please try a shorter question." };
+      return {
+        ok: false,
+        error: "Response was truncated. Please try a shorter question.",
+      };
     }
 
     logger.info(

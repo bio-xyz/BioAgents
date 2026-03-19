@@ -16,6 +16,7 @@ import {
   notifyJobProgress,
   notifyJobStarted,
   notifyMessageUpdated,
+  notifyStateUpdated,
 } from "../notify";
 import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
 
@@ -170,6 +171,22 @@ async function processChatJob(
         }
       }
     }
+
+    // Feature flag: use new agent loop or legacy pipeline
+    const useAgentLoop = process.env.CHAT_AGENT_QUEUE_ENABLED === "true";
+
+    if (useAgentLoop) {
+      return await processWithAgentLoop(
+        job,
+        conversationId,
+        messageId,
+        message,
+        conversationState,
+        startTime,
+      );
+    }
+
+    // === LEGACY PATH: planning → literature → hypothesis → reflection → reply ===
 
     // Update progress: Planning
     await job.updateProgress({ stage: "planning", percent: 10 } as JobProgress);
@@ -426,6 +443,111 @@ async function processChatJob(
     // Re-throw to trigger retry (if attempts remaining)
     throw error;
   }
+}
+
+/**
+ * Process a chat job using the new agent loop (behind CHAT_AGENT_QUEUE_ENABLED flag).
+ * Same outer contract as the legacy path: saves reply, updates response time, sends notifications.
+ */
+async function processWithAgentLoop(
+  job: Job<ChatJobData, ChatJobResult>,
+  conversationId: string,
+  messageId: string,
+  message: string,
+  conversationState: ConversationState,
+  startTime: number,
+): Promise<ChatJobResult> {
+  const { userId } = job.data;
+
+  // Emit "planning" stage for frontend compatibility
+  await job.updateProgress({ stage: "planning", percent: 10 } as JobProgress);
+  await notifyJobProgress(job.id!, conversationId, "planning", 10);
+
+  const { runChatAgent } = await import("../../../chat-agent/runner");
+  const { updateMessage } = await import("../../../db/operations");
+  const { updateMessageResponseTime } = await import("../../chat/tools");
+
+  let literatureEmitted = false;
+
+  const result = await runChatAgent({
+    conversationId,
+    message,
+    uploadedDatasets: conversationState.values.uploadedDatasets,
+    onToolResult: async (info) => {
+      // 1. Update conversation state in DB + notify frontend
+      if (conversationState.id) {
+        try {
+          const { updateConversationState } = await import(
+            "../../../db/operations"
+          );
+          await updateConversationState(conversationState.id, {
+            ...conversationState.values,
+            agentProgress: {
+              stage: `tool:${info.toolName}`,
+              toolCallCount: info.toolCallCount,
+              lastToolCallId: info.toolCallId,
+              isError: info.result.isError ?? false,
+            },
+          });
+          await notifyStateUpdated(
+            job.id!,
+            conversationId,
+            conversationState.id,
+          );
+        } catch (err) {
+          logger.warn(
+            { error: err },
+            "worker_conversation_state_update_failed",
+          );
+        }
+      }
+
+      // 2. Emit backward-compatible progress stages
+      if (info.toolName === "literature_search" && !literatureEmitted) {
+        literatureEmitted = true;
+        await job.updateProgress({
+          stage: "literature",
+          percent: 40,
+        } as JobProgress);
+        await notifyJobProgress(job.id!, conversationId, "literature", 40);
+      }
+    },
+  });
+
+  // Handle truncation — use UnrecoverableError to skip BullMQ retries
+  // (same prompt will hit same token limit, retrying wastes 3 attempts)
+  if (!result.replyText || result.hitMaxTokens) {
+    const { UnrecoverableError } = await import("bullmq");
+    throw new UnrecoverableError(
+      "Agent loop response truncated (max_tokens)",
+    );
+  }
+
+  // Emit reply stage
+  await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
+  await notifyJobProgress(job.id!, conversationId, "reply", 90);
+
+  // Save reply to DB
+  await updateMessage(messageId, { content: result.replyText });
+  const responseTime = Date.now() - startTime;
+  await updateMessageResponseTime(messageId, responseTime);
+
+  // Notify frontend
+  await notifyMessageUpdated(job.id!, conversationId, messageId);
+  await notifyJobCompleted(job.id!, conversationId, messageId);
+
+  logger.info(
+    {
+      jobId: job.id,
+      messageId,
+      responseTime,
+      responseTimeSec: (responseTime / 1000).toFixed(2),
+      toolCallCount: result.toolCallCount,
+    },
+    "chat_job_agent_loop_completed",
+  );
+
+  return { text: result.replyText, userId, responseTime };
 }
 
 /**
