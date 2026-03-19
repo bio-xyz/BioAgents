@@ -87,7 +87,7 @@ export async function runChatAgent(
     const datasetContext = params.uploadedDatasets
       .slice(0, 3) // Cap at 3 datasets
       .map((d) => {
-        let entry = `### ${d.filename}`;
+        let entry = `### ${d.filename.replace(/[\r\n]/g, " ")}`;
         if (d.description) entry += `\n${d.description}`;
         if (d.content)
           entry += `\n\`\`\`\n${d.content.slice(0, 2000)}${d.content.length > 2000 ? "\n..." : ""}\n\`\`\``;

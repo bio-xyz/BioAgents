@@ -435,8 +435,12 @@ async function processChatJob(
       "chat_job_failed",
     );
 
-    // Notify: Job failed (only on final attempt)
-    if (job.attemptsMade + 1 >= (job.opts.attempts || 3)) {
+    // Notify: Job failed (on final attempt, or immediately for unrecoverable errors)
+    const { UnrecoverableError } = await import("bullmq");
+    if (
+      job.attemptsMade + 1 >= (job.opts.attempts || 3) ||
+      error instanceof UnrecoverableError
+    ) {
       await notifyJobFailed(job.id!, conversationId, messageId);
     }
 
@@ -473,6 +477,7 @@ async function processWithAgentLoop(
     conversationId,
     message,
     uploadedDatasets: conversationState.values.uploadedDatasets,
+    loadHistory: true, // Queue path always stores messages
     onToolResult: async (info) => {
       // 1. Update conversation state in DB + notify frontend
       if (conversationState.id) {
