@@ -528,18 +528,25 @@ async function processWithAgentLoop(
     );
   }
 
-  // Emit reply stage
-  await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
-  await notifyJobProgress(job.id!, conversationId, "reply", 90);
-
-  // Save reply to DB
-  await updateMessage(messageId, { content: result.replyText });
+  // Critical: persist the reply first. If this fails, retrying is correct
+  // because the LLM result would otherwise be lost.
   const responseTime = Date.now() - startTime;
+  await updateMessage(messageId, { content: result.replyText });
   await updateMessageResponseTime(messageId, responseTime);
 
-  // Notify frontend
-  await notifyMessageUpdated(job.id!, conversationId, messageId);
-  await notifyJobCompleted(job.id!, conversationId, messageId);
+  // Best-effort: progress updates and notifications. Reply is already saved,
+  // so failures here should not trigger a retry or mark the job as failed.
+  try {
+    await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
+    await notifyJobProgress(job.id!, conversationId, "reply", 90);
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+    await notifyJobCompleted(job.id!, conversationId, messageId);
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, messageId, jobId: job.id },
+      "chat_job_post_reply_notify_failed",
+    );
+  }
 
   logger.info(
     {
