@@ -467,6 +467,12 @@ async function processWithAgentLoop(
   await job.updateProgress({ stage: "planning", percent: 10 } as JobProgress);
   await notifyJobProgress(job.id!, conversationId, "planning", 10);
 
+  // Misconfigured API key won't self-heal between retries — fail fast
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const { UnrecoverableError } = await import("bullmq");
+    throw new UnrecoverableError("Anthropic API key is not configured");
+  }
+
   const { runChatAgent } = await import("../../../chat-agent/runner");
   const { updateMessage } = await import("../../../db/operations");
   const { updateMessageResponseTime } = await import("../../chat/tools");
