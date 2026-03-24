@@ -70,7 +70,7 @@ export async function runChatAgent(
   }
 
   const model =
-    process.env.CHAT_AGENT_MODEL || "claude-sonnet-4-20250514";
+    process.env.CHAT_AGENT_MODEL || "claude-sonnet-4-6";
   const maxToolCalls =
     parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || 10;
   const maxTokens =
