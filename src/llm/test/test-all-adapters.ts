@@ -116,8 +116,8 @@ async function run(): Promise<void> {
         displayName: 'OpenAI',
         apiKey: openaiKey,
         baseUrl: process.env.OPENAI_BASE_URL,
-        chatModel: process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini',
-        webSearchModel: process.env.OPENAI_WEB_SEARCH_MODEL ?? 'gpt-5',
+        chatModel: process.env.OPENAI_CHAT_MODEL ?? 'gpt-5.4',
+        webSearchModel: process.env.OPENAI_WEB_SEARCH_MODEL ?? 'gpt-5.4',
         chatRequest: {
           systemInstruction:
             'You are a concise assistant that replies in one sentence, ending each sentence with "hahaha".',

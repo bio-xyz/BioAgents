@@ -4,6 +4,8 @@ AI-powered research assistant for bioscience literature and data analysis.
 
 ## Related Documentation
 
+- [ARCHITECTURE_OVERVIEW.md](documentation/docs/ARCHITECTURE_OVERVIEW.md) - **Complete system architecture reference**
+- [FLOWS.md](documentation/docs/FLOWS.md) - **End-to-end code flow traces** (every step → file:line)
 - [AUTH.md](documentation/docs/AUTH.md) - Authentication (JWT, x402/b402 payments)
 - [SETUP.md](documentation/docs/SETUP.md) - Environment setup and LLM configuration
 - [JOB_QUEUE.md](documentation/docs/JOB_QUEUE.md) - BullMQ queue system architecture
