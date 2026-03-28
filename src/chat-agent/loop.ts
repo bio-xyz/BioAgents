@@ -14,6 +14,8 @@ import type { AgentLoopConfig, AgentLoopResult } from "./types";
 import { getToolDefinitions, executeTool } from "./registry";
 import logger from "../utils/logger";
 
+const DEFAULT_TEMPERATURE = 0.3;
+
 /**
  * Run the agent loop: send message to LLM, execute tool calls, loop until done.
  *
@@ -53,7 +55,7 @@ export async function runAgentLoop(
       system: config.systemPrompt,
       messages,
       max_tokens: config.maxTokens,
-      temperature: config.temperature ?? 1,
+      temperature: config.temperature ?? DEFAULT_TEMPERATURE,
       // Cast: registry returns loose JSON Schema objects; SDK expects strict Tool type
       tools: !isAtCap && toolDefs.length > 0 ? toolDefs as any : undefined,
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
