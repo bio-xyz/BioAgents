@@ -30,16 +30,16 @@ Configure which LLM provider to use for each agent:
 ```bash
 # Choose provider for each agent
 REPLY_LLM_PROVIDER=openai          # or google, anthropic, openrouter
-REPLY_LLM_MODEL=gpt-4o
+REPLY_LLM_MODEL=gpt-5.4
 
 HYP_LLM_PROVIDER=openai
-HYP_LLM_MODEL=gpt-4o
+HYP_LLM_MODEL=gpt-5.4
 
 PLANNING_LLM_PROVIDER=openai
-PLANNING_LLM_MODEL=gpt-4o
+PLANNING_LLM_MODEL=gpt-5.4
 
 STRUCTURED_LLM_PROVIDER=openai
-STRUCTURED_LLM_MODEL=gpt-4o
+STRUCTURED_LLM_MODEL=gpt-5.4
 
 # Add API keys for your chosen providers
 OPENAI_API_KEY=sk-...
@@ -47,6 +47,10 @@ GOOGLE_API_KEY=...              # If using Google
 ANTHROPIC_API_KEY=...           # If using Anthropic
 OPENROUTER_API_KEY=...          # If using OpenRouter
 ```
+
+Deep Research agent selection is provider/model env-driven. The separate `/api/chat`
+agent loop currently uses the Anthropic SDK directly via `CHAT_AGENT_MODEL`, so moving
+that path to OpenAI requires code changes in addition to env changes.
 
 **Database:**
 
