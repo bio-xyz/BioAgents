@@ -29,6 +29,10 @@ import {
   calculateSessionStartLevel,
   getSessionCompletedTasks,
 } from "../../../utils/deep-research/continuation-utils";
+import {
+  clearDeepResearchActivity,
+  setDeepResearchActivity,
+} from "../../../utils/deep-research/activity";
 import logger from "../../../utils/logger";
 import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 
@@ -58,6 +62,49 @@ async function processDeepResearchJob(
     isInitialIteration = true,
   } = job.data;
   const rootMessageId = queuedRootMessageId || (isInitialIteration ? messageId : undefined);
+  let conversationState: ConversationState | null = null;
+  let updateConversationStateRef:
+    | ((
+        id: string,
+        values: any,
+        options?: { preserveUploadedDatasets?: boolean },
+      ) => Promise<any>)
+    | null = null;
+  let writeStateSerialized: (() => Promise<any>) | null = null;
+
+  const persistConversationActivity = async (
+    params: Parameters<typeof setDeepResearchActivity>[1],
+    options?: { serialized?: boolean; notify?: boolean },
+  ) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    setDeepResearchActivity(conversationState.values, params);
+
+    if (options?.serialized && writeStateSerialized) {
+      await writeStateSerialized();
+    } else {
+      await updateConversationStateRef(conversationState.id, conversationState.values);
+    }
+
+    if (options?.notify !== false) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+    }
+  };
+
+  const clearConversationActivity = async (notify = true) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    clearDeepResearchActivity(conversationState.values);
+    await updateConversationStateRef(conversationState.id, conversationState.values);
+
+    if (notify) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+    }
+  };
 
   // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
@@ -117,6 +164,7 @@ async function processDeepResearchJob(
       updateMessage,
       updateState,
     } = await import("../../../db/operations");
+    updateConversationStateRef = updateConversationState;
 
     // Get message record
     const messageRecord = await getMessage(messageId);
@@ -145,10 +193,14 @@ async function processDeepResearchJob(
       },
     };
 
-    const conversationState: ConversationState = {
+    conversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
+
+    if (!conversationState) {
+      throw new Error("Conversation state initialization failed");
+    }
 
     // Reconcile researchMode: request takes priority, then existing state, then default
     type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
@@ -192,6 +244,19 @@ async function processDeepResearchJob(
     // Update progress: Planning
     await job.updateProgress({ stage: "planning", percent: 5 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "planning", 5);
+
+    if (isInitialIteration) {
+      await persistConversationActivity({
+        phase: "planning",
+        objective:
+          conversationState.values.currentObjective
+          || conversationState.values.evolvingObjective
+          || conversationState.values.objective
+          || messageRecord.question
+          || message,
+        level: conversationState.values.currentLevel,
+      });
+    }
 
     // Get current level - if continuation, use existing; otherwise run planning agent
     let newLevel: number;
@@ -413,13 +478,17 @@ async function processDeepResearchJob(
       },
       "tasks_to_execute_for_iteration",
     );
+    const activeConversationState = conversationState;
 
     // Serialize DB writes to prevent concurrent updateConversationState calls
     // from overwriting each other's changes (matches in-process mode pattern)
     let stateWriteChain = Promise.resolve();
-    const writeStateSerialized = async () => {
+    writeStateSerialized = async () => {
       const p = stateWriteChain.then(() =>
-        updateConversationState(conversationState.id!, conversationState.values),
+        updateConversationState(
+          activeConversationState.id!,
+          activeConversationState.values,
+        ),
       );
       stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
       return p;
@@ -431,9 +500,13 @@ async function processDeepResearchJob(
       const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
         if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
           task.reasoning = reasoning;
-          if (conversationState.id) {
-            await writeStateSerialized();
-            await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
+            await notifyStateUpdated(
+              job.id!,
+              conversationId,
+              activeConversationState.id,
+            );
           }
         }
       };
@@ -442,8 +515,15 @@ async function processDeepResearchJob(
         task.start = new Date().toISOString();
         task.output = "";
 
-        if (conversationState.id) {
-          await writeStateSerialized();
+        if (activeConversationState.id) {
+          setDeepResearchActivity(activeConversationState.values, {
+            phase: "literature",
+            objective: task.objective,
+            level: task.level ?? newLevel,
+            taskType: task.type,
+          });
+          await writeStateSerialized!();
+          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
         }
 
         logger.info(
@@ -466,8 +546,8 @@ async function processDeepResearchJob(
             type: "OPENSCHOLAR",
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
-            if (conversationState.id) {
-              await writeStateSerialized();
+            if (activeConversationState.id) {
+              await writeStateSerialized!();
             }
           });
           literaturePromises.push(openScholarPromise);
@@ -484,8 +564,8 @@ async function processDeepResearchJob(
           if (result.jobId) {
             task.jobId = result.jobId;
           }
-          if (conversationState.id) {
-            await writeStateSerialized();
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
           }
         });
         literaturePromises.push(primaryLiteraturePromise);
@@ -497,8 +577,8 @@ async function processDeepResearchJob(
             type: "KNOWLEDGE",
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
-            if (conversationState.id) {
-              await writeStateSerialized();
+            if (activeConversationState.id) {
+              await writeStateSerialized!();
             }
           });
           literaturePromises.push(knowledgePromise);
@@ -507,9 +587,9 @@ async function processDeepResearchJob(
         await Promise.all(literaturePromises);
 
         task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await writeStateSerialized();
-          await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+        if (activeConversationState.id) {
+          await writeStateSerialized!();
+          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
         }
       } else if (task.type === "ANALYSIS") {
         // Update progress for analysis
@@ -519,8 +599,15 @@ async function processDeepResearchJob(
         task.start = new Date().toISOString();
         task.output = "";
 
-        if (conversationState.id) {
-          await writeStateSerialized();
+        if (activeConversationState.id) {
+          setDeepResearchActivity(activeConversationState.values, {
+            phase: "analysis",
+            objective: task.objective,
+            level: task.level ?? newLevel,
+            taskType: task.type,
+          });
+          await writeStateSerialized!();
+          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
         }
 
         logger.info(
@@ -539,7 +626,7 @@ async function processDeepResearchJob(
             datasets: task.datasets,
             type,
             userId: messageRecord.user_id,
-            conversationStateId: conversationState.id!,
+            conversationStateId: activeConversationState.id!,
             onPollUpdate,
           });
 
@@ -547,8 +634,8 @@ async function processDeepResearchJob(
           task.artifacts = analysisResult.artifacts || [];
           task.jobId = analysisResult.jobId;
 
-          if (conversationState.id) {
-            await writeStateSerialized();
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
           }
         } catch (error) {
           const errorMsg = error instanceof Error
@@ -564,9 +651,9 @@ async function processDeepResearchJob(
         }
 
         task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await writeStateSerialized();
-          await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+        if (activeConversationState.id) {
+          await writeStateSerialized!();
+          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
         }
       }
     });
@@ -582,6 +669,12 @@ async function processDeepResearchJob(
     // Update progress: Hypothesis
     await job.updateProgress({ stage: "hypothesis", percent: 70 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "hypothesis", 70);
+
+    await persistConversationActivity({
+      phase: "reflection",
+      objective: currentObjective || conversationState.values.currentObjective,
+      level: newLevel,
+    });
 
     // Step 3: Generate hypothesis
     logger.info({ jobId: job.id }, "deep_research_job_generating_hypothesis");
@@ -677,6 +770,12 @@ async function processDeepResearchJob(
     // Step 5: Plan next iteration
     logger.info({ jobId: job.id }, "deep_research_job_planning_next");
 
+    await persistConversationActivity({
+      phase: "next_steps",
+      objective: conversationState.values.currentObjective || currentObjective,
+      level: newLevel,
+    });
+
     const { planningAgent } = await import("../../../agents/planning");
     const nextPlanningResult = await planningAgent({
       state,
@@ -751,6 +850,12 @@ async function processDeepResearchJob(
     // =========================================================================
     await job.updateProgress({ stage: "reply", percent: 95 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
+
+    await persistConversationActivity({
+      phase: "reply",
+      objective: conversationState.values.currentObjective || currentObjective,
+      level: newLevel,
+    });
 
     logger.info(
       { jobId: job.id, iterationNumber, messageId: currentMessage.id, isFinal },
@@ -867,6 +972,17 @@ async function processDeepResearchJob(
           conversationState.id,
           conversationState.values,
         );
+        await persistConversationActivity(
+          {
+            phase: "planning",
+            objective:
+              promotedTasks[0]?.objective
+              || conversationState.values.currentObjective
+              || currentObjective,
+            level: nextLevel,
+          },
+          { notify: true },
+        );
         logger.info(
           {
             jobId: job.id,
@@ -963,6 +1079,10 @@ async function processDeepResearchJob(
       "deep_research_job_completed",
     );
 
+    if (isFinal) {
+      await clearConversationActivity();
+    }
+
     // Notify: Job completed
     await notifyJobCompleted(job.id!, conversationId, currentMessage.id, stateId);
 
@@ -1039,6 +1159,8 @@ async function processDeepResearchJob(
           error: error instanceof Error ? error.message : "Unknown error",
           status: "failed",
         });
+
+        await clearConversationActivity();
 
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);

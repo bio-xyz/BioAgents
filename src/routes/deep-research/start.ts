@@ -56,6 +56,10 @@ import {
   createContinuationMessage,
   getSessionCompletedTasks,
 } from "../../utils/deep-research/continuation-utils";
+import {
+  clearDeepResearchActivity,
+  setDeepResearchActivity,
+} from "../../utils/deep-research/activity";
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -261,6 +265,7 @@ export async function deepResearchStartHandler(ctx: any) {
   let researchMode: ResearchMode = "semi-autonomous";
   let createdMessage: any | null = null;
   let runMarkedStarted = false;
+  let activeConversationState: ConversationState | null = null;
 
   // Log with state IDs now that we have them
   logger.info(
@@ -586,6 +591,26 @@ export async function deepResearchStartHandler(ctx: any) {
         },
       );
 
+      activeConversationState = {
+        id: conversationStateRecord.id,
+        values: conversationStateRecord.values,
+      };
+      setDeepResearchActivity(activeConversationState.values, {
+        phase: "planning",
+        objective:
+          activeConversationState.values.currentObjective
+          || activeConversationState.values.evolvingObjective
+          || activeConversationState.values.objective
+          || createdMessage.question
+          || message,
+        level: activeConversationState.values.currentLevel,
+      });
+      await updateConversationState(
+        activeConversationState.id!,
+        activeConversationState.values,
+      );
+      await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+
       try {
         await updateRunJobId({
           conversationStateId: conversationStateRecord.id,
@@ -752,6 +777,7 @@ async function runDeepResearch(params: {
     rootMessageId,
     conversationStateId,
   } = params;
+  let activeConversationState: ConversationState | null = null;
 
   try {
     // Initialize state
@@ -771,6 +797,7 @@ async function runDeepResearch(params: {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
+    activeConversationState = conversationState;
 
     // Step 1: Process files if any
     if (files.length > 0) {
@@ -814,6 +841,51 @@ async function runDeepResearch(params: {
     // Track the current message being updated (changes when auto-continuing)
     let currentMessage = createdMessage;
 
+    const persistConversationActivity = async (
+      params: Parameters<typeof setDeepResearchActivity>[1],
+      options?: { write?: (() => Promise<any>) | null; notify?: boolean },
+    ) => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      setDeepResearchActivity(conversationState.values, params);
+
+      if (options?.write) {
+        await options.write();
+      } else {
+        await updateConversationState(
+          conversationState.id,
+          conversationState.values,
+        );
+      }
+
+      if (options?.notify !== false) {
+        await notifyStateUpdated(
+          `in-process-${currentMessage.id}`,
+          currentMessage.conversation_id,
+          conversationState.id,
+        );
+      }
+    };
+
+    const clearConversationActivity = async () => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      clearDeepResearchActivity(conversationState.values);
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
+      await notifyStateUpdated(
+        `in-process-${currentMessage.id}`,
+        currentMessage.conversation_id,
+        conversationState.id,
+      );
+    };
+
     // Flag to skip planning when continuing (tasks already promoted)
     let skipPlanning = false;
 
@@ -844,6 +916,19 @@ async function runDeepResearch(params: {
       iterationCount++;
       const iterationStartTime = Date.now();
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
+
+      if (!skipPlanning) {
+        await persistConversationActivity({
+          phase: "planning",
+          objective:
+            conversationState.values.currentObjective
+            || conversationState.values.evolvingObjective
+            || conversationState.values.objective
+            || currentMessage.question
+            || createdMessage.question,
+          level: conversationState.values.currentLevel,
+        });
+      }
 
       // Get current level - if skipPlanning, use existing; otherwise run planning agent
       let newLevel: number;
@@ -1094,7 +1179,18 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
+            setDeepResearchActivity(conversationState.values, {
+              phase: "literature",
+              objective: task.objective,
+              level: task.level ?? newLevel,
+              taskType: task.type,
+            });
             await writeStateSerialized();
+            await notifyStateUpdated(
+              `in-process-${currentMessage.id}`,
+              currentMessage.conversation_id,
+              conversationState.id,
+            );
           }
 
           logger.info(
@@ -1189,7 +1285,18 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
+            setDeepResearchActivity(conversationState.values, {
+              phase: "analysis",
+              objective: task.objective,
+              level: task.level ?? newLevel,
+              taskType: task.type,
+            });
             await writeStateSerialized();
+            await notifyStateUpdated(
+              `in-process-${currentMessage.id}`,
+              currentMessage.conversation_id,
+              conversationState.id,
+            );
           }
 
           logger.info(
@@ -1332,6 +1439,12 @@ These molecular changes align with established longevity pathways (Converging nu
       // Wait for all tasks to complete
       await Promise.all(taskPromises);
 
+      await persistConversationActivity({
+        phase: "reflection",
+        objective: currentObjective || conversationState.values.currentObjective,
+        level: newLevel,
+      });
+
       // Step 3: Generate/update hypothesis based on completed tasks
       logger.info("generating_hypothesis_from_completed_tasks");
 
@@ -1444,6 +1557,12 @@ These molecular changes align with established longevity pathways (Converging nu
       // Clear old suggestions before generating new ones (ensures fresh planning)
       conversationState.values.suggestedNextSteps = [];
 
+      await persistConversationActivity({
+        phase: "next_steps",
+        objective: conversationState.values.currentObjective || currentObjective,
+        level: newLevel,
+      });
+
       const nextPlanningResult = await planningAgent({
         state,
         conversationState,
@@ -1544,6 +1663,12 @@ These molecular changes align with established longevity pathways (Converging nu
         { iterationCount, messageId: currentMessage.id, isFinal },
         "generating_reply_for_iteration",
       );
+
+      await persistConversationActivity({
+        phase: "reply",
+        objective: conversationState.values.currentObjective || currentObjective,
+        level: newLevel,
+      });
 
       // Get completed tasks from this session, limited to last 3 levels max
       // This ensures reply covers work across continuations without overwhelming context
@@ -1654,6 +1779,14 @@ These molecular changes align with established longevity pathways (Converging nu
             conversationState.id,
             conversationState.values,
           );
+          await persistConversationActivity({
+            phase: "planning",
+            objective:
+              promotedTasks[0]?.objective
+              || conversationState.values.currentObjective
+              || currentObjective,
+            level: nextLevel,
+          });
           logger.info(
             {
               nextLevel,
@@ -1702,6 +1835,8 @@ These molecular changes align with established longevity pathways (Converging nu
       "deep_research_completed",
     );
 
+    await clearConversationActivity();
+
     try {
       await markRunFinished({
         conversationStateId,
@@ -1720,6 +1855,19 @@ These molecular changes align with established longevity pathways (Converging nu
       { err, messageId: createdMessage.id },
       "deep_research_execution_failed",
     );
+
+    if (activeConversationState?.id) {
+      clearDeepResearchActivity(activeConversationState.values);
+      await updateConversationState(
+        activeConversationState.id,
+        activeConversationState.values,
+      );
+      await notifyStateUpdated(
+        `in-process-${createdMessage?.id || stateRecord.id}`,
+        createdMessage?.conversation_id,
+        activeConversationState.id,
+      );
+    }
 
     // Update state to mark as failed
     await updateState(stateRecord.id, {
