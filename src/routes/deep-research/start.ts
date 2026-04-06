@@ -60,6 +60,13 @@ import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
 } from "../../utils/deep-research/activity";
+import {
+  completeObjectiveTrace,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  syncObjectiveTraceProgress,
+} from "../../utils/deep-research/objective-trace";
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -605,6 +612,13 @@ export async function deepResearchStartHandler(ctx: any) {
           || message,
         level: activeConversationState.values.currentLevel,
       });
+      await ensureObjectiveTrace(
+        activeConversationState.values,
+        getObjectiveTraceObjective(
+          activeConversationState.values,
+          createdMessage.question || message,
+        ),
+      );
       await updateConversationState(
         activeConversationState.id!,
         activeConversationState.values,
@@ -840,10 +854,54 @@ async function runDeepResearch(params: {
 
     // Track the current message being updated (changes when auto-continuing)
     let currentMessage = createdMessage;
+    type ConversationStateWriteOptions = {
+      ensureTraceObjective?: string;
+      completeTrace?: boolean;
+      staleTrace?: boolean;
+    };
+
+    const prepareConversationStateForWrite = async (
+      options?: ConversationStateWriteOptions,
+    ) => {
+      if (options?.ensureTraceObjective) {
+        await ensureObjectiveTrace(
+          conversationState.values,
+          options.ensureTraceObjective,
+        );
+      } else {
+        syncObjectiveTraceProgress(conversationState.values);
+      }
+
+      if (options?.completeTrace) {
+        completeObjectiveTrace(conversationState.values);
+      }
+
+      if (options?.staleTrace) {
+        markObjectiveTraceStale(conversationState.values);
+      }
+    };
+
+    const persistConversationState = async (
+      options?: ConversationStateWriteOptions,
+    ) => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      await prepareConversationStateForWrite(options);
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
+    };
 
     const persistConversationActivity = async (
       params: Parameters<typeof setDeepResearchActivity>[1],
-      options?: { write?: (() => Promise<any>) | null; notify?: boolean },
+      options?: {
+        write?: ((options?: ConversationStateWriteOptions) => Promise<any>) | null;
+        notify?: boolean;
+        ensureTraceObjective?: string;
+      },
     ) => {
       if (!conversationState.id) {
         return;
@@ -852,12 +910,13 @@ async function runDeepResearch(params: {
       setDeepResearchActivity(conversationState.values, params);
 
       if (options?.write) {
-        await options.write();
+        await options.write({
+          ensureTraceObjective: options.ensureTraceObjective,
+        });
       } else {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
+        await persistConversationState({
+          ensureTraceObjective: options?.ensureTraceObjective,
+        });
       }
 
       if (options?.notify !== false) {
@@ -869,16 +928,18 @@ async function runDeepResearch(params: {
       }
     };
 
-    const clearConversationActivity = async () => {
+    const clearConversationActivity = async (
+      options?: { completeTrace?: boolean; staleTrace?: boolean },
+    ) => {
       if (!conversationState.id) {
         return;
       }
 
       clearDeepResearchActivity(conversationState.values);
-      await updateConversationState(
-        conversationState.id,
-        conversationState.values,
-      );
+      await persistConversationState({
+        completeTrace: options?.completeTrace,
+        staleTrace: options?.staleTrace,
+      });
       await notifyStateUpdated(
         `in-process-${currentMessage.id}`,
         currentMessage.conversation_id,
@@ -927,6 +988,11 @@ async function runDeepResearch(params: {
             || currentMessage.question
             || createdMessage.question,
           level: conversationState.values.currentLevel,
+        }, {
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            currentMessage.question || createdMessage.question,
+          ),
         });
       }
 
@@ -1045,10 +1111,12 @@ async function runDeepResearch(params: {
 
         // Update state in DB
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentObjective,
+            ),
+          });
 
           logger.info(
             { newLevel, taskCount: newTasks.length, currentObjective },
@@ -1125,10 +1193,12 @@ async function runDeepResearch(params: {
 
         // Update state in DB
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentObjective,
+            ),
+          });
 
           logger.info(
             { newLevel, newTasks, newObjective: currentObjective },
@@ -1145,12 +1215,16 @@ async function runDeepResearch(params: {
       // Serialize DB writes to prevent concurrent updateConversationState calls
       // from overwriting each other's changes
       let stateWriteChain = Promise.resolve();
-      const writeStateSerialized = async () => {
-        const p = stateWriteChain.then(() =>
-          updateConversationState(
+      const writeStateSerialized = async (
+        options?: ConversationStateWriteOptions,
+      ) => {
+        const p = stateWriteChain.then(async () => {
+          await prepareConversationStateForWrite(options);
+          return updateConversationState(
             conversationState.id!,
             conversationState.values,
-          ),
+          );
+        },
         );
         stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
         return p;
@@ -1458,10 +1532,7 @@ These molecular changes align with established longevity pathways (Converging nu
       // Update conversation state with new hypothesis
       conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
+        await persistConversationState();
         logger.info(
           {
             mode: hypothesisResult.mode,
@@ -1537,10 +1608,12 @@ These molecular changes align with established longevity pathways (Converging nu
       }
 
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            reflectionResult.currentObjective,
+          ),
+        });
         logger.info(
           {
             insights: reflectionResult.keyInsights,
@@ -1584,10 +1657,12 @@ These molecular changes align with established longevity pathways (Converging nu
         }
 
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              nextPlanningResult.currentObjective || currentObjective,
+            ),
+          });
           logger.info(
             {
               nextPlanningSteps: nextPlanningResult.plan.map(
@@ -1775,10 +1850,6 @@ These molecular changes align with established longevity pathways (Converging nu
         conversationState.values.currentLevel = nextLevel;
 
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
           await persistConversationActivity({
             phase: "planning",
             objective:
@@ -1786,6 +1857,11 @@ These molecular changes align with established longevity pathways (Converging nu
               || conversationState.values.currentObjective
               || currentObjective,
             level: nextLevel,
+          }, {
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              conversationState.values.currentObjective || currentObjective,
+            ),
           });
           logger.info(
             {
@@ -1835,7 +1911,7 @@ These molecular changes align with established longevity pathways (Converging nu
       "deep_research_completed",
     );
 
-    await clearConversationActivity();
+    await clearConversationActivity({ completeTrace: true });
 
     try {
       await markRunFinished({
@@ -1858,6 +1934,11 @@ These molecular changes align with established longevity pathways (Converging nu
 
     if (activeConversationState?.id) {
       clearDeepResearchActivity(activeConversationState.values);
+      await ensureObjectiveTrace(
+        activeConversationState.values,
+        getObjectiveTraceObjective(activeConversationState.values),
+      );
+      markObjectiveTraceStale(activeConversationState.values);
       await updateConversationState(
         activeConversationState.id,
         activeConversationState.values,

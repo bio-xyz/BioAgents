@@ -71,6 +71,20 @@ export interface DeepResearchActivity {
   updatedAt: string;
 }
 
+export type DeepResearchObjectiveTraceStatus =
+  | "active"
+  | "completed"
+  | "stale";
+
+export interface DeepResearchObjectiveTrace {
+  objective: string;
+  steps: string[];
+  visibleCount: number;
+  generatedAt: string;
+  lastAdvancedAt: string;
+  status: DeepResearchObjectiveTraceStatus;
+}
+
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
   deepResearchRun?: {
@@ -100,6 +114,7 @@ export interface ConversationStateValues extends StateValues {
   plan?: Array<PlanTask>; // Actual plan being executed or already executed
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
   currentActivity?: DeepResearchActivity; // Compact top-level activity shown in the main deep research view
+  objectiveTrace?: DeepResearchObjectiveTrace; // Synthetic objective breakdown shown in the main loader
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;

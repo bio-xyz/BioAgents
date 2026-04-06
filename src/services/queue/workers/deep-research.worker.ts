@@ -33,6 +33,13 @@ import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
 } from "../../../utils/deep-research/activity";
+import {
+  completeObjectiveTrace,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  syncObjectiveTraceProgress,
+} from "../../../utils/deep-research/objective-trace";
 import logger from "../../../utils/logger";
 import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 
@@ -63,6 +70,11 @@ async function processDeepResearchJob(
   } = job.data;
   const rootMessageId = queuedRootMessageId || (isInitialIteration ? messageId : undefined);
   let conversationState: ConversationState | null = null;
+  type ConversationStateWriteOptions = {
+    ensureTraceObjective?: string;
+    completeTrace?: boolean;
+    staleTrace?: boolean;
+  };
   let updateConversationStateRef:
     | ((
         id: string,
@@ -70,11 +82,53 @@ async function processDeepResearchJob(
         options?: { preserveUploadedDatasets?: boolean },
       ) => Promise<any>)
     | null = null;
-  let writeStateSerialized: (() => Promise<any>) | null = null;
+  let writeStateSerialized:
+    | ((options?: ConversationStateWriteOptions) => Promise<any>)
+    | null = null;
+
+  const prepareConversationStateForWrite = async (
+    options?: ConversationStateWriteOptions,
+  ) => {
+    if (!conversationState) {
+      return;
+    }
+
+    if (options?.ensureTraceObjective) {
+      await ensureObjectiveTrace(
+        conversationState.values,
+        options.ensureTraceObjective,
+      );
+    } else {
+      syncObjectiveTraceProgress(conversationState.values);
+    }
+
+    if (options?.completeTrace) {
+      completeObjectiveTrace(conversationState.values);
+    }
+
+    if (options?.staleTrace) {
+      markObjectiveTraceStale(conversationState.values);
+    }
+  };
+
+  const persistConversationState = async (
+    options?: ConversationStateWriteOptions,
+  ) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    await prepareConversationStateForWrite(options);
+    await updateConversationStateRef(conversationState.id, conversationState.values);
+  };
 
   const persistConversationActivity = async (
     params: Parameters<typeof setDeepResearchActivity>[1],
-    options?: { serialized?: boolean; notify?: boolean },
+    options?: {
+      serialized?: boolean;
+      notify?: boolean;
+      ensureTraceObjective?: string;
+    },
   ) => {
     if (!conversationState?.id || !updateConversationStateRef) {
       return;
@@ -83,9 +137,13 @@ async function processDeepResearchJob(
     setDeepResearchActivity(conversationState.values, params);
 
     if (options?.serialized && writeStateSerialized) {
-      await writeStateSerialized();
+      await writeStateSerialized({
+        ensureTraceObjective: options.ensureTraceObjective,
+      });
     } else {
-      await updateConversationStateRef(conversationState.id, conversationState.values);
+      await persistConversationState({
+        ensureTraceObjective: options?.ensureTraceObjective,
+      });
     }
 
     if (options?.notify !== false) {
@@ -93,15 +151,24 @@ async function processDeepResearchJob(
     }
   };
 
-  const clearConversationActivity = async (notify = true) => {
+  const clearConversationActivity = async (
+    options?: {
+      notify?: boolean;
+      completeTrace?: boolean;
+      staleTrace?: boolean;
+    },
+  ) => {
     if (!conversationState?.id || !updateConversationStateRef) {
       return;
     }
 
     clearDeepResearchActivity(conversationState.values);
-    await updateConversationStateRef(conversationState.id, conversationState.values);
+    await persistConversationState({
+      completeTrace: options?.completeTrace,
+      staleTrace: options?.staleTrace,
+    });
 
-    if (notify) {
+    if (options?.notify !== false) {
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
   };
@@ -255,6 +322,11 @@ async function processDeepResearchJob(
           || messageRecord.question
           || message,
         level: conversationState.values.currentLevel,
+      }, {
+        ensureTraceObjective: getObjectiveTraceObjective(
+          conversationState.values,
+          messageRecord.question || message,
+        ),
       });
     }
 
@@ -372,7 +444,12 @@ async function processDeepResearchJob(
 
       // Update state in DB
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            currentObjective,
+          ),
+        });
         await notifyStateUpdated(job.id!, conversationId, conversationState.id);
       }
 
@@ -445,7 +522,12 @@ async function processDeepResearchJob(
 
       // Update state in DB
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            currentObjective,
+          ),
+        });
         await notifyStateUpdated(job.id!, conversationId, conversationState.id);
       }
 
@@ -483,12 +565,14 @@ async function processDeepResearchJob(
     // Serialize DB writes to prevent concurrent updateConversationState calls
     // from overwriting each other's changes (matches in-process mode pattern)
     let stateWriteChain = Promise.resolve();
-    writeStateSerialized = async () => {
-      const p = stateWriteChain.then(() =>
-        updateConversationState(
+    writeStateSerialized = async (options?: ConversationStateWriteOptions) => {
+      const p = stateWriteChain.then(async () => {
+        await prepareConversationStateForWrite(options);
+        return updateConversationState(
           activeConversationState.id!,
           activeConversationState.values,
-        ),
+        );
+      },
       );
       stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
       return p;
@@ -690,7 +774,7 @@ async function processDeepResearchJob(
 
     conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await persistConversationState();
     }
 
     // Update progress: Reflection
@@ -763,7 +847,12 @@ async function processDeepResearchJob(
     }
 
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await persistConversationState({
+        ensureTraceObjective: getObjectiveTraceObjective(
+          conversationState.values,
+          reflectionResult.currentObjective,
+        ),
+      });
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
@@ -795,7 +884,12 @@ async function processDeepResearchJob(
         conversationState.values.currentObjective = nextPlanningResult.currentObjective;
       }
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            nextPlanningResult.currentObjective || currentObjective,
+          ),
+        });
       }
       shouldContinue = true;
     }
@@ -968,10 +1062,6 @@ async function processDeepResearchJob(
       conversationState.values.currentLevel = nextLevel;
 
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
         await persistConversationActivity(
           {
             phase: "planning",
@@ -981,7 +1071,13 @@ async function processDeepResearchJob(
               || currentObjective,
             level: nextLevel,
           },
-          { notify: true },
+          {
+            notify: true,
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              conversationState.values.currentObjective || currentObjective,
+            ),
+          },
         );
         logger.info(
           {
@@ -1080,7 +1176,7 @@ async function processDeepResearchJob(
     );
 
     if (isFinal) {
-      await clearConversationActivity();
+      await clearConversationActivity({ completeTrace: true });
     }
 
     // Notify: Job completed
@@ -1160,7 +1256,7 @@ async function processDeepResearchJob(
           status: "failed",
         });
 
-        await clearConversationActivity();
+        await clearConversationActivity({ staleTrace: true });
 
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
