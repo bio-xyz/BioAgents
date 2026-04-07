@@ -10,8 +10,8 @@ import logger from "../logger";
 
 export const OBJECTIVE_TRACE_REVEAL_INTERVAL_MS = 60_000;
 
-const MIN_TRACE_STEPS = 30;
-const MAX_TRACE_STEPS = 60;
+const MIN_TRACE_STEPS = 5;
+const MAX_TRACE_STEPS = 15;
 const MAX_STEP_LENGTH = 80;
 
 const DEFAULT_OPENAI_MODEL = "gpt-5.4-nano";
@@ -138,7 +138,7 @@ function buildTracePrompt(objective: string, retry = false): string {
     "Break down the following deep research objective into a concise, sequential progress trace.",
     "",
     "Requirements:",
-    "- Return 30 to 60 steps.",
+    "- Return 5 to 15 steps.",
     "- Each step must be 3 to 8 words.",
     "- Use action-oriented planning phrases.",
     "- Do not use numbering, bullets, markdown, or explanations.",
@@ -150,7 +150,7 @@ function buildTracePrompt(objective: string, retry = false): string {
     "{\"steps\":[\"...\"]}",
     "",
     retry
-      ? "The previous output was invalid. Return only valid JSON with 30 to 60 unique steps."
+      ? "The previous output was invalid. Return only valid JSON with 5 to 15 unique steps."
       : "",
     "Objective:",
     objective,
