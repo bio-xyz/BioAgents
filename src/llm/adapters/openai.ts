@@ -238,10 +238,10 @@ export class OpenAIAdapter extends LLMAdapter {
       openaiRequest.temperature = request.temperature;
     }
 
-    // Map thinkingBudget to reasoning effort for GPT-5.2+ and o-series models
+    // Map thinkingBudget to Chat Completions reasoning_effort for GPT-5 family models.
     const reasoningEffort = this.mapThinkingBudgetToReasoningEffort(request.thinkingBudget);
     if (reasoningEffort) {
-      (openaiRequest as any).reasoning = { effort: reasoningEffort };
+      (openaiRequest as any).reasoning_effort = reasoningEffort;
     }
 
     const mappedTools = this.mapToolsForChat(request.tools);

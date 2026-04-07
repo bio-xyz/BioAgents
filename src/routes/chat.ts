@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { LLM } from "../llm/provider";
+
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import type { AuthContext } from "../types/auth";
@@ -11,7 +11,7 @@ import {
   createMessageRecord,
   updateMessageResponseTime,
 } from "../services/chat/tools";
-import type { ConversationState, PlanTask, State } from "../types/core";
+import type { ConversationState, State } from "../types/core";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
 
@@ -219,87 +219,6 @@ async function chatRetryHandler(ctx: any) {
       error: "Failed to retry job",
       message: error instanceof Error ? error.message : "Unknown error",
     };
-  }
-}
-
-/**
- * Check if the question requires a hypothesis using LLM
- */
-async function requiresHypothesis(
-  question: string,
-  literatureResults: string,
-  messageId?: string, // For token usage tracking
-): Promise<boolean> {
-  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-  const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!apiKey) {
-    logger.warn("LLM API key not configured, defaulting to no hypothesis");
-    return false;
-  }
-
-  logger.info(
-    {
-      questionLength: question.length,
-      literatureResultsLength: literatureResults.length,
-      provider: PLANNING_LLM_PROVIDER,
-    },
-    "checking_hypothesis_requirement",
-  );
-
-  const llmProvider = new LLM({
-    // @ts-ignore
-    name: PLANNING_LLM_PROVIDER,
-    apiKey,
-  });
-
-  const prompt = `Analyze this user question and literature results to determine if a research hypothesis is needed.
-
-User Question: ${question}
-
-Literature Results Preview: ${literatureResults.slice(0, 1000)}
-
-A hypothesis IS needed if:
-- The question asks about mechanisms, predictions, or causal relationships
-- The question requires synthesizing multiple sources into a novel insight
-- The question is exploratory and needs a testable proposition
-
-A hypothesis IS NOT needed if:
-- The question asks for factual information or definitions
-- The question can be answered directly from literature
-- The question is a simple lookup or clarification
-
-Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
-
-  try {
-    const response = await llmProvider.createChatCompletion({
-      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
-      messages: [
-        {
-          role: "user" as const,
-          content: prompt,
-        },
-      ],
-      maxTokens: 10,
-      messageId,
-      usageType: "chat",
-    });
-
-    const answer = response.content.trim().toUpperCase();
-    logger.info(
-      {
-        answer,
-        questionLength: question.length,
-        decision:
-          answer === "YES" ? "hypothesis_required" : "hypothesis_not_required",
-      },
-      "hypothesis_requirement_check_completed",
-    );
-
-    return answer === "YES";
-  } catch (err) {
-    logger.error({ err }, "hypothesis_check_failed");
-    return false; // Default to no hypothesis on error
   }
 }
 
@@ -538,6 +457,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
 
     if (isJobQueueEnabled()) {
       // QUEUE MODE: Enqueue job and return immediately
+      // Worker runs agent loop (CHAT_AGENT_QUEUE_ENABLED=true) or legacy pipeline (default).
       logger.info(
         { messageId: createdMessage.id, conversationId },
         "chat_using_queue_mode",
@@ -672,351 +592,76 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       );
     }
 
-    // Step 2: Execute planning agent (literature only)
-    logger.info(
-      {
-        message: createdMessage.question,
-        existingPlan: conversationState.values.plan?.length || 0,
-      },
-      "starting_planning_agent",
-    );
+    // =======================================================================
+    // Agent loop: LLM decides which tools to call
+    // =======================================================================
+    const { runChatAgent } = await import("../chat-agent/runner");
 
-    const { planningAgent } = await import("../agents/planning");
+    const agentResult = await runChatAgent({
+      conversationId,
+      message,
+      uploadedDatasets: conversationState.values.uploadedDatasets,
+      loadHistory: !skipStorage,
+      onToolResult: skipStorage
+        ? undefined
+        : async (info) => {
+            if (!conversationState.id) return;
+            try {
+              const { updateConversationState } = await import(
+                "../db/operations"
+              );
+              await updateConversationState(conversationState.id, {
+                ...conversationState.values,
+                agentProgress: {
+                  stage: `tool:${info.toolName}`,
+                  toolCallCount: info.toolCallCount,
+                  lastToolCallId: info.toolCallId,
+                  isError: info.result.isError ?? false,
+                },
+              });
 
-    const planningResult = await planningAgent({
-      state,
-      conversationState,
-      message: createdMessage,
-      mode: "initial",
-      usageType: "chat",
+              logger.info(
+                {
+                  conversationStateId: conversationState.id,
+                  toolName: info.toolName,
+                  toolCallCount: info.toolCallCount,
+                },
+                "conversation_state_updated_after_tool_call",
+              );
+            } catch (err) {
+              logger.warn(
+                { error: err, toolName: info.toolName },
+                "conversation_state_update_failed",
+              );
+            }
+          },
     });
 
-    const plan = planningResult.plan;
+    const replyText = agentResult.replyText;
 
-    logger.info(
-      {
-        currentObjective: planningResult.currentObjective,
-        totalPlannedTasks: plan.length,
-        taskTypes: plan.map((t) => t.type),
-        taskObjectives: plan.map((t) => t.objective),
-      },
-      "planning_agent_completed",
-    );
-
-    // Filter to only LITERATURE tasks (no ANALYSIS for regular chat)
-    const literatureTasks = plan.filter((task) => task.type === "LITERATURE");
-
-    logger.info(
-      {
-        totalTasks: plan.length,
-        literatureTasks: literatureTasks.length,
-        analysisTasks: plan.length - literatureTasks.length,
-        filteredTasks: literatureTasks.map((t) => ({
-          type: t.type,
-          objective: t.objective,
-        })),
-      },
-      "tasks_filtered_literature_only",
-    );
-
-    if (literatureTasks.length === 0) {
-      logger.info("no_literature_tasks_planned_skipping_to_reply");
-    }
-
-    // Step 3: Execute literature tasks (OPENSCHOLAR, KNOWLEDGE - no EDISON)
-    const { literatureAgent } = await import("../agents/literature");
-    const { updateConversationState } = await import("../db/operations");
-
-    const completedTasks: PlanTask[] = [];
-
-    for (const task of literatureTasks) {
-      task.start = new Date().toISOString();
-      task.output = "";
-
-      logger.info(
-        {
-          taskObjective: task.objective,
-          taskType: task.type,
-          taskStart: task.start,
-        },
-        "executing_literature_task",
+    // Handle empty response from max_tokens truncation
+    if (!replyText || agentResult.hitMaxTokens) {
+      logger.error(
+        { messageId: createdMessage.id },
+        "agent_loop_empty_max_tokens",
       );
-
-      const useBioLiterature =
-        process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
-
-      // Build list of literature promises based on configured sources
-      const literaturePromises: Promise<void>[] = [];
-
-      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
-      if (process.env.OPENSCHOLAR_API_URL) {
-        const openScholarPromise = literatureAgent({
-          objective: task.objective,
-          type: "OPENSCHOLAR",
-        }).then((result) => {
-          if (result.count && result.count > 0) {
-            task.output += `${result.output}\n\n`;
-          }
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              count: result.count,
-              outputPreview: result.output.substring(0, 200),
-            },
-            "openscholar_completed",
-          );
-        });
-        literaturePromises.push(openScholarPromise);
-      }
-
-      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
-      if (useBioLiterature) {
-        const bioLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          type: "BIOLIT",
-        }).then((result) => {
-          task.output += `${result.output}\n\n`;
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              outputPreview: result.output.substring(0, 200),
-            },
-            "bioliterature_completed",
-          );
-        });
-        literaturePromises.push(bioLiteraturePromise);
-      }
-
-      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
-      if (process.env.KNOWLEDGE_DOCS_PATH) {
-        const knowledgePromise = literatureAgent({
-          objective: task.objective,
-          type: "KNOWLEDGE",
-        }).then((result) => {
-          if (result.count && result.count > 0) {
-            task.output += `${result.output}\n\n`;
-          }
-          logger.info(
-            {
-              taskObjective: task.objective,
-              outputLength: result.output.length,
-              count: result.count,
-            },
-            "knowledge_completed",
-          );
-        });
-        literaturePromises.push(knowledgePromise);
-      }
-
-      await Promise.all(literaturePromises);
-
-      task.end = new Date().toISOString();
-      completedTasks.push(task);
-
-      logger.info(
-        {
-          taskObjective: task.objective,
-          taskType: task.type,
-          taskStart: task.start,
-          taskEnd: task.end,
-          outputLength: task.output?.length || 0,
-        },
-        "literature_task_completed",
-      );
+      set.status = 500;
+      return {
+        ok: false,
+        error: "Response was truncated. Please try a shorter question.",
+      };
     }
 
     logger.info(
       {
-        completedTasksCount: completedTasks.length,
-        totalOutputLength: completedTasks.reduce(
-          (sum, t) => sum + (t.output?.length || 0),
-          0,
-        ),
-      },
-      "all_literature_tasks_completed",
-    );
-
-    // Step 4: Check if hypothesis is needed
-    const allLiteratureOutput = completedTasks
-      .map((t) => t.output)
-      .join("\n\n");
-
-    logger.info(
-      {
-        question: message,
-        literatureOutputLength: allLiteratureOutput.length,
-        completedTasksCount: completedTasks.length,
-      },
-      "checking_if_hypothesis_required",
-    );
-
-    const needsHypothesis = await requiresHypothesis(
-      message,
-      allLiteratureOutput,
-      createdMessage.id, // Track token usage per message
-    );
-
-    logger.info(
-      {
-        needsHypothesis,
-        question: message,
-        completedTasksCount: completedTasks.length,
-      },
-      "hypothesis_requirement_determined",
-    );
-
-    let hypothesisText: string | undefined;
-
-    // Step 5: Generate hypothesis if needed
-    if (needsHypothesis && completedTasks.length > 0) {
-      logger.info(
-        {
-          currentObjective: planningResult.currentObjective,
-          completedTasksCount: completedTasks.length,
-          existingHypothesis: conversationState.values.currentHypothesis,
-        },
-        "starting_hypothesis_generation",
-      );
-
-      const { hypothesisAgent } = await import("../agents/hypothesis");
-
-      const hypothesisResult = await hypothesisAgent({
-        objective: planningResult.currentObjective,
-        message: createdMessage,
-        conversationState,
-        completedTasks,
-      });
-
-      hypothesisText = hypothesisResult.hypothesis;
-      conversationState.values.currentHypothesis = hypothesisText;
-
-      logger.info(
-        {
-          mode: hypothesisResult.mode,
-          hypothesisLength: hypothesisText.length,
-          hypothesisPreview: hypothesisText.substring(0, 200),
-        },
-        "hypothesis_generated",
-      );
-
-      if (conversationState.id && !skipStorage) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
-        logger.info(
-          {
-            conversationStateId: conversationState.id,
-            mode: hypothesisResult.mode,
-          },
-          "hypothesis_saved_to_conversation_state",
-        );
-      }
-
-      // Step 6: Run reflection agent
-      logger.info(
-        {
-          completedTasksCount: completedTasks.length,
-          hypothesisLength: hypothesisText.length,
-        },
-        "starting_reflection_agent",
-      );
-
-      const { reflectionAgent } = await import("../agents/reflection");
-
-      const reflectionResult = await reflectionAgent({
-        conversationState,
-        message: createdMessage,
-        completedMaxTasks: completedTasks,
-        hypothesis: hypothesisText,
-      });
-
-      logger.info(
-        {
-          currentObjective: reflectionResult.currentObjective,
-          keyInsightsCount: reflectionResult.keyInsights.length,
-          discoveriesCount: reflectionResult.discoveries.length,
-          methodology: reflectionResult.methodology,
-          keyInsights: reflectionResult.keyInsights,
-          discoveries: reflectionResult.discoveries,
-        },
-        "reflection_agent_completed",
-      );
-
-      // Update conversation state with reflection results
-      conversationState.values.currentObjective =
-        reflectionResult.currentObjective;
-      conversationState.values.keyInsights = reflectionResult.keyInsights;
-      conversationState.values.discoveries = reflectionResult.discoveries;
-      conversationState.values.methodology = reflectionResult.methodology;
-
-      if (conversationState.id && !skipStorage) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
-        logger.info(
-          {
-            conversationStateId: conversationState.id,
-            keyInsightsCount: reflectionResult.keyInsights.length,
-            discoveriesCount: reflectionResult.discoveries.length,
-          },
-          "reflection_results_saved_to_conversation_state",
-        );
-      }
-    } else {
-      logger.info(
-        {
-          needsHypothesis,
-          completedTasksCount: completedTasks.length,
-          reason: !needsHypothesis
-            ? "question_does_not_require_hypothesis"
-            : "no_completed_tasks",
-        },
-        "skipping_hypothesis_and_reflection",
-      );
-    }
-
-    // Step 7: Generate reply (chat-specific - concise, no next steps)
-    logger.info(
-      {
-        completedTasksCount: completedTasks.length,
-        hasHypothesis: !!hypothesisText,
-        keyInsightsCount: conversationState.values.keyInsights?.length || 0,
-        uploadedDatasetsCount: conversationState.values.uploadedDatasets?.length || 0,
-      },
-      "starting_chat_reply_generation",
-    );
-
-    const { generateChatReply } = await import("../agents/reply/utils");
-
-    const replyText = await generateChatReply(
-      message,
-      {
-        completedTasks,
-        hypothesis: hypothesisText,
-        nextPlan: [], // No next plan for regular chat
-        keyInsights: conversationState.values.keyInsights || [],
-        discoveries: conversationState.values.discoveries || [],
-        methodology: conversationState.values.methodology,
-        currentObjective: conversationState.values.currentObjective,
-        uploadedDatasets: conversationState.values.uploadedDatasets || [],
-      },
-      {
-        maxTokens: 1024,
         messageId: createdMessage.id,
-        usageType: "chat",
-      },
-    );
-
-    logger.info(
-      {
+        conversationId,
+        toolCallCount: agentResult.toolCallCount,
+        totalInputTokens: agentResult.totalInputTokens,
+        totalOutputTokens: agentResult.totalOutputTokens,
         replyLength: replyText.length,
-        replyPreview: replyText.substring(0, 200),
       },
-      "chat_reply_generated",
+      "agent_loop_completed",
     );
 
     const response: ChatV2Response = {
@@ -1067,8 +712,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
         responseTextLength: response.text?.length || 0,
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
-        needsHypothesis,
-        completedTasksCount: completedTasks.length,
+        toolCallCount: agentResult.toolCallCount,
       },
       "chat_completed_successfully",
     );

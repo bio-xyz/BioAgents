@@ -36,20 +36,24 @@ Configure which models to use for different agents:
 ```bash
 # Reply generation
 REPLY_LLM_PROVIDER=openai
-REPLY_LLM_MODEL=gpt-4
+REPLY_LLM_MODEL=gpt-5.4
 
 # Hypothesis generation
 HYP_LLM_PROVIDER=openai
-HYP_LLM_MODEL=gpt-4
+HYP_LLM_MODEL=gpt-5.4
 
 # Planning
 PLANNING_LLM_PROVIDER=openai
-PLANNING_LLM_MODEL=gpt-4
+PLANNING_LLM_MODEL=gpt-5.4
 
 # Structured output
 STRUCTURED_LLM_PROVIDER=openai
-STRUCTURED_LLM_MODEL=gpt-4
+STRUCTURED_LLM_MODEL=gpt-5.4
 ```
+
+Deep Research agent selection is provider/model env-driven. The separate `/api/chat`
+agent loop currently uses the Anthropic SDK directly via `CHAT_AGENT_MODEL`, so moving
+that path to OpenAI requires code changes in addition to env changes.
 
 ## Embedding Configuration
 
