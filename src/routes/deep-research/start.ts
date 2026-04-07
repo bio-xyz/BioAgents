@@ -613,16 +613,7 @@ export async function deepResearchStartHandler(ctx: any) {
           || message,
         level: activeConversationState.values.currentLevel,
       });
-      await ensureObjectiveTrace(
-        activeConversationState.values,
-        getObjectiveTraceObjective(
-          activeConversationState.values,
-          createdMessage.question || message,
-        ),
-        {
-          runRootMessageId: createdMessage.id,
-        },
-      );
+      // Keep queue mode fast: the worker generates the initial objective trace.
       await updateConversationState(
         activeConversationState.id!,
         activeConversationState.values,
