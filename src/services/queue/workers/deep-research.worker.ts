@@ -97,6 +97,9 @@ async function processDeepResearchJob(
       await ensureObjectiveTrace(
         conversationState.values,
         options.ensureTraceObjective,
+        {
+          runRootMessageId: rootMessageId,
+        },
       );
     } else {
       syncObjectiveTraceProgress(conversationState.values);

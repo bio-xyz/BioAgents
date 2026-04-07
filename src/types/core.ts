@@ -83,6 +83,7 @@ export interface DeepResearchObjectiveTrace {
   generatedAt: string;
   lastAdvancedAt: string;
   status: DeepResearchObjectiveTraceStatus;
+  runRootMessageId?: string;
 }
 
 // Conversation state values interface (extends StateValues with persistent data)

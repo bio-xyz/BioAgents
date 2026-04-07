@@ -523,12 +523,13 @@ export async function deepResearchStartHandler(ctx: any) {
 
     createdMessage = messageResult.message!;
 
-    await markRunStarted({
+    const startedRun = await markRunStarted({
       conversationStateId: conversationStateRecord.id,
       rootMessageId: createdMessage.id,
       stateId: stateRecord.id,
       mode: runMode,
     });
+    conversationStateRecord.values.deepResearchRun = startedRun;
     runMarkedStarted = true;
   } finally {
     await releaseStartMutex(startMutex);
@@ -618,6 +619,9 @@ export async function deepResearchStartHandler(ctx: any) {
           activeConversationState.values,
           createdMessage.question || message,
         ),
+        {
+          runRootMessageId: createdMessage.id,
+        },
       );
       await updateConversationState(
         activeConversationState.id!,
@@ -867,6 +871,9 @@ async function runDeepResearch(params: {
         await ensureObjectiveTrace(
           conversationState.values,
           options.ensureTraceObjective,
+          {
+            runRootMessageId: rootMessageId,
+          },
         );
       } else {
         syncObjectiveTraceProgress(conversationState.values);
@@ -1937,6 +1944,9 @@ These molecular changes align with established longevity pathways (Converging nu
       await ensureObjectiveTrace(
         activeConversationState.values,
         getObjectiveTraceObjective(activeConversationState.values),
+        {
+          runRootMessageId: rootMessageId,
+        },
       );
       markObjectiveTraceStale(activeConversationState.values);
       await updateConversationState(

@@ -43,6 +43,13 @@ function normalizeObjective(objective?: string): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function normalizeRunRootMessageId(
+  runRootMessageId?: string,
+): string | undefined {
+  const trimmed = runRootMessageId?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function normalizeStep(step: string): string {
   return step
     .replace(/^\s*[-*•]+\s*/, "")
@@ -231,7 +238,7 @@ async function requestObjectiveTraceSteps(
       },
     ],
     systemInstruction: OBJECTIVE_TRACE_SYSTEM_PROMPT,
-    maxTokens: 8192,
+    maxTokens: 1600,
     ...(supportsStructuredOutput
       ? {
           format: zodTextFormat(ObjectiveTraceSchema, "objective_trace"),
@@ -300,16 +307,31 @@ export function getObjectiveTraceObjective(
 export async function ensureObjectiveTrace(
   values: ConversationStateValues,
   objective?: string,
+  options?: { runRootMessageId?: string },
 ): Promise<DeepResearchObjectiveTrace | undefined> {
   const normalizedObjective = normalizeObjective(objective);
   if (!normalizedObjective) {
     return values.objectiveTrace;
   }
 
+  const currentRunRootMessageId = normalizeRunRootMessageId(
+    options?.runRootMessageId || values.deepResearchRun?.rootMessageId,
+  );
   const existingTrace = values.objectiveTrace;
+  const existingRunRootMessageId = normalizeRunRootMessageId(
+    existingTrace?.runRootMessageId,
+  );
+  const isSameRun =
+    !currentRunRootMessageId
+    || (
+      !!existingRunRootMessageId
+      && existingRunRootMessageId === currentRunRootMessageId
+    );
+
   if (
     existingTrace
     && normalizeObjective(existingTrace.objective) === normalizedObjective
+    && isSameRun
     && existingTrace.steps?.length
   ) {
     existingTrace.status = "active";
@@ -332,6 +354,7 @@ export async function ensureObjectiveTrace(
     generatedAt: timestamp,
     lastAdvancedAt: timestamp,
     status: "active",
+    runRootMessageId: currentRunRootMessageId,
   };
 
   return values.objectiveTrace;
