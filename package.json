@@ -1,18 +1,4 @@
 {
-  "name": "bioagents-openai-agentkit",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/archiver": "^7.0.0",
-    "@types/bun": "latest",
-    "prettier": "^3.6.2",
-    "prettier-plugin-organize-imports": "^4.3.0",
-    "prettier-plugin-packagejson": "^2.5.19"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.26",
     "@anthropic-ai/sdk": "^0.66.0",
@@ -65,14 +51,36 @@
     "xlsx": "^0.18.5",
     "zod": "3"
   },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "@types/archiver": "^7.0.0",
+    "@types/bun": "latest",
+    "husky": "^9.1.7"
+  },
+  "module": "index.ts",
+  "name": "bioagents-openai-agentkit",
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
-    "worker": "bun src/worker.ts",
-    "worker:dev": "bun --watch src/worker.ts",
-    "build:client": "bun run client/build.ts",
     "build": "bun run build:client",
+    "build:client": "bun run client/build.ts",
+    "dev": "bun --watch src/index.ts",
+    "format:check": "biome format .",
+    "format:write": "biome format --write .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
     "migrate": "supabase migration up",
-    "migrate:new": "supabase migration new"
-  }
+    "migrate:new": "supabase migration new",
+    "prepare": "husky",
+    "start": "bun src/index.ts",
+    "style:check": "biome check .",
+    "style:write": "biome check --write .",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "worker": "bun src/worker.ts",
+    "worker:dev": "bun --watch src/worker.ts"
+  },
+  "type": "module"
 }

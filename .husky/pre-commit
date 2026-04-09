@@ -1,0 +1,7 @@
+# Only run biome if there are supported files staged
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(js|jsx|ts|tsx|json|css)$' || true)
+
+if [ -n "$STAGED_FILES" ]; then
+  biome check --staged --error-on-warnings --write
+  git update-index --again
+fi
