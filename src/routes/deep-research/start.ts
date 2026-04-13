@@ -99,6 +99,152 @@ type DeepResearchQueuedResponse = {
   deduplicated?: true;
 };
 
+type DeepResearchStartFailureLogger = {
+  error: (payload: Record<string, unknown>, message: string) => void;
+  warn: (payload: Record<string, unknown>, message: string) => void;
+};
+
+type DeepResearchStartFailureDeps = {
+  clearDeepResearchActivity: (
+    values: ConversationState["values"],
+  ) => void;
+  ensureObjectiveTrace: (
+    values: ConversationState["values"],
+    objective?: string,
+    options?: { runRootMessageId?: string },
+  ) => Promise<unknown>;
+  getObjectiveTraceObjective: (
+    values: ConversationState["values"],
+    fallbackObjective?: string,
+  ) => string | undefined;
+  markObjectiveTraceStale: (
+    values: ConversationState["values"],
+  ) => unknown;
+  updateConversationState: (
+    id: string,
+    values: ConversationState["values"],
+  ) => Promise<unknown>;
+  notifyStateUpdated: (
+    jobId: string,
+    conversationId: string,
+    stateId: string,
+  ) => Promise<unknown>;
+  updateState: (
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<unknown>;
+  markRunFinished: (params: {
+    conversationStateId: string;
+    result: "failed";
+    error?: string;
+    rootMessageId?: string;
+    stateId?: string;
+  }) => Promise<unknown>;
+  logger: DeepResearchStartFailureLogger;
+};
+
+type DeepResearchStartFailureParams = {
+  activeConversationState: ConversationState | null;
+  conversationId: string;
+  conversationStateId: string;
+  err: unknown;
+  notificationJobId: string;
+  rootMessageId: string;
+  stateRecord: {
+    id: string;
+    values: State["values"];
+  };
+};
+
+const deepResearchStartFailureDeps: DeepResearchStartFailureDeps = {
+  clearDeepResearchActivity,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  updateConversationState,
+  notifyStateUpdated,
+  updateState,
+  markRunFinished,
+  logger,
+};
+
+async function handleDeepResearchStartFailure(
+  params: DeepResearchStartFailureParams,
+  deps: DeepResearchStartFailureDeps = deepResearchStartFailureDeps,
+): Promise<void> {
+  const {
+    activeConversationState,
+    conversationId,
+    conversationStateId,
+    err,
+    notificationJobId,
+    rootMessageId,
+    stateRecord,
+  } = params;
+
+  const errorMessage =
+    err instanceof Error ? err.message : "Unknown error";
+
+  if (activeConversationState?.id) {
+    try {
+      deps.clearDeepResearchActivity(activeConversationState.values);
+      await deps.ensureObjectiveTrace(
+        activeConversationState.values,
+        deps.getObjectiveTraceObjective(activeConversationState.values),
+        {
+          runRootMessageId: rootMessageId,
+        },
+      );
+      deps.markObjectiveTraceStale(activeConversationState.values);
+      await deps.updateConversationState(
+        activeConversationState.id,
+        activeConversationState.values,
+      );
+      await deps.notifyStateUpdated(
+        notificationJobId,
+        conversationId,
+        activeConversationState.id,
+      );
+    } catch (cleanupErr) {
+      deps.logger.error(
+        {
+          cleanupErr,
+          conversationStateId,
+          messageId: notificationJobId,
+          originalErr: err,
+          rootMessageId,
+        },
+        "deep_research_error_cleanup_failed",
+      );
+    }
+  }
+
+  await deps.updateState(stateRecord.id, {
+    ...stateRecord.values,
+    error: errorMessage,
+    status: "failed",
+  });
+
+  try {
+    await deps.markRunFinished({
+      conversationStateId,
+      result: "failed",
+      error: errorMessage,
+      rootMessageId,
+      stateId: stateRecord.id,
+    });
+  } catch (finishError) {
+    deps.logger.warn(
+      { finishError, conversationStateId, rootMessageId, stateId: stateRecord.id },
+      "deep_research_run_finish_mark_failed_on_failure",
+    );
+  }
+}
+
+export const __deepResearchStartTestables = {
+  handleDeepResearchStartFailure,
+};
+
 function buildDeepResearchPollUrl(
   request: Request,
   messageId: string,
@@ -1930,47 +2076,14 @@ These molecular changes align with established longevity pathways (Converging nu
       "deep_research_execution_failed",
     );
 
-    if (activeConversationState?.id) {
-      clearDeepResearchActivity(activeConversationState.values);
-      await ensureObjectiveTrace(
-        activeConversationState.values,
-        getObjectiveTraceObjective(activeConversationState.values),
-        {
-          runRootMessageId: rootMessageId,
-        },
-      );
-      markObjectiveTraceStale(activeConversationState.values);
-      await updateConversationState(
-        activeConversationState.id,
-        activeConversationState.values,
-      );
-      await notifyStateUpdated(
-        `in-process-${createdMessage?.id || stateRecord.id}`,
-        createdMessage?.conversation_id,
-        activeConversationState.id,
-      );
-    }
-
-    // Update state to mark as failed
-    await updateState(stateRecord.id, {
-      ...stateRecord.values,
-      error: err instanceof Error ? err.message : "Unknown error",
-      status: "failed",
+    await handleDeepResearchStartFailure({
+      activeConversationState,
+      conversationId: createdMessage.conversation_id,
+      conversationStateId,
+      err,
+      notificationJobId: `in-process-${createdMessage.id || stateRecord.id}`,
+      rootMessageId,
+      stateRecord,
     });
-
-    try {
-      await markRunFinished({
-        conversationStateId,
-        result: "failed",
-        error: err instanceof Error ? err.message : "Unknown error",
-        rootMessageId,
-        stateId: stateRecord.id,
-      });
-    } catch (error) {
-      logger.warn(
-        { error, conversationStateId, rootMessageId },
-        "deep_research_run_finish_mark_failed_on_failure",
-      );
-    }
   }
 }
