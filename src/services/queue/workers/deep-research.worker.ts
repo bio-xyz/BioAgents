@@ -11,26 +11,46 @@
  * - Better scaling (different workers can handle different iterations)
  */
 
-import { Worker, Job } from "bullmq";
+import { Job, Worker } from "bullmq";
+import type {
+  ConversationState,
+  OnPollUpdate,
+  PlanTask,
+  State,
+} from "../../../types/core";
+import {
+  clearDeepResearchActivity,
+  setDeepResearchActivity,
+} from "../../../utils/deep-research/activity";
+import {
+  calculateSessionStartLevel,
+  createContinuationMessage,
+  getSessionCompletedTasks,
+} from "../../../utils/deep-research/continuation-utils";
+import {
+  completeObjectiveTrace,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  syncObjectiveTraceProgress,
+} from "../../../utils/deep-research/objective-trace";
+import logger from "../../../utils/logger";
+import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 import { getBullMQConnection } from "../connection";
 import {
-  notifyJobStarted,
-  notifyJobProgress,
   notifyJobCompleted,
   notifyJobFailed,
+  notifyJobProgress,
+  notifyJobStarted,
   notifyMessageUpdated,
   notifyStateUpdated,
 } from "../notify";
 import { getDeepResearchQueue } from "../queues";
-import type { DeepResearchJobData, DeepResearchJobResult, JobProgress } from "../types";
-import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../../types/core";
-import {
-  createContinuationMessage,
-  calculateSessionStartLevel,
-  getSessionCompletedTasks,
-} from "../../../utils/deep-research/continuation-utils";
-import logger from "../../../utils/logger";
-import { markRunFinished, touchRun } from "../../deep-research/run-guard";
+import type {
+  DeepResearchJobData,
+  DeepResearchJobResult,
+  JobProgress,
+} from "../types";
 
 /**
  * Process a deep research job - executes a SINGLE iteration
@@ -57,7 +77,115 @@ async function processDeepResearchJob(
     rootJobId,
     isInitialIteration = true,
   } = job.data;
-  const rootMessageId = queuedRootMessageId || (isInitialIteration ? messageId : undefined);
+  const rootMessageId =
+    queuedRootMessageId || (isInitialIteration ? messageId : undefined);
+  let conversationState: ConversationState | null = null;
+  type ConversationStateWriteOptions = {
+    ensureTraceObjective?: string;
+    completeTrace?: boolean;
+    staleTrace?: boolean;
+  };
+  let updateConversationStateRef:
+    | ((
+        id: string,
+        values: any,
+        options?: { preserveUploadedDatasets?: boolean },
+      ) => Promise<any>)
+    | null = null;
+  let writeStateSerialized:
+    | ((options?: ConversationStateWriteOptions) => Promise<any>)
+    | null = null;
+
+  const prepareConversationStateForWrite = async (
+    options?: ConversationStateWriteOptions,
+  ) => {
+    if (!conversationState) {
+      return;
+    }
+
+    if (options?.ensureTraceObjective) {
+      await ensureObjectiveTrace(
+        conversationState.values,
+        options.ensureTraceObjective,
+        {
+          runRootMessageId: rootMessageId,
+        },
+      );
+    } else {
+      syncObjectiveTraceProgress(conversationState.values);
+    }
+
+    if (options?.completeTrace) {
+      completeObjectiveTrace(conversationState.values);
+    }
+
+    if (options?.staleTrace) {
+      markObjectiveTraceStale(conversationState.values);
+    }
+  };
+
+  const persistConversationState = async (
+    options?: ConversationStateWriteOptions,
+  ) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    await prepareConversationStateForWrite(options);
+    await updateConversationStateRef(
+      conversationState.id,
+      conversationState.values,
+    );
+  };
+
+  const persistConversationActivity = async (
+    params: Parameters<typeof setDeepResearchActivity>[1],
+    options?: {
+      serialized?: boolean;
+      notify?: boolean;
+      ensureTraceObjective?: string;
+    },
+  ) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    setDeepResearchActivity(conversationState.values, params);
+
+    if (options?.serialized && writeStateSerialized) {
+      await writeStateSerialized({
+        ensureTraceObjective: options.ensureTraceObjective,
+      });
+    } else {
+      await persistConversationState({
+        ensureTraceObjective: options?.ensureTraceObjective,
+      });
+    }
+
+    if (options?.notify !== false) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+    }
+  };
+
+  const clearConversationActivity = async (options?: {
+    notify?: boolean;
+    completeTrace?: boolean;
+    staleTrace?: boolean;
+  }) => {
+    if (!conversationState?.id || !updateConversationStateRef) {
+      return;
+    }
+
+    clearDeepResearchActivity(conversationState.values);
+    await persistConversationState({
+      completeTrace: options?.completeTrace,
+      staleTrace: options?.staleTrace,
+    });
+
+    if (options?.notify !== false) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+    }
+  };
 
   // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
@@ -85,7 +213,11 @@ async function processDeepResearchJob(
       iterationNumber,
       rootJobId: rootJobId || job.id,
       isInitialIteration,
-      messagePreview: message ? (message.length > 200 ? message.substring(0, 200) + "..." : message) : undefined,
+      messagePreview: message
+        ? message.length > 200
+          ? message.substring(0, 200) + "..."
+          : message
+        : undefined,
       messageLength: message?.length,
     },
     "deep_research_job_started",
@@ -117,6 +249,7 @@ async function processDeepResearchJob(
       updateMessage,
       updateState,
     } = await import("../../../db/operations");
+    updateConversationStateRef = updateConversationState;
 
     // Get message record
     const messageRecord = await getMessage(messageId);
@@ -131,7 +264,8 @@ async function processDeepResearchJob(
     }
 
     // Get conversation state
-    const conversationStateRecord = await getConversationState(conversationStateId);
+    const conversationStateRecord =
+      await getConversationState(conversationStateId);
     if (!conversationStateRecord) {
       throw new Error(`Conversation state not found: ${conversationStateId}`);
     }
@@ -145,16 +279,17 @@ async function processDeepResearchJob(
       },
     };
 
-    const conversationState: ConversationState = {
+    conversationState = {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
 
     // Reconcile researchMode: request takes priority, then existing state, then default
     type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
-    const researchMode: ResearchMode = requestedResearchMode
-      || conversationState.values.researchMode
-      || "semi-autonomous";
+    const researchMode: ResearchMode =
+      requestedResearchMode ||
+      conversationState.values.researchMode ||
+      "semi-autonomous";
 
     // Save researchMode to conversation state (allows it to change per request)
     conversationState.values.researchMode = researchMode;
@@ -178,10 +313,18 @@ async function processDeepResearchJob(
     let currentMessage = messageRecord;
 
     // Track starting level for this user interaction (to gather all tasks across continuations)
-    const sessionStartLevel = calculateSessionStartLevel(conversationState.values.currentLevel);
+    const sessionStartLevel = calculateSessionStartLevel(
+      conversationState.values.currentLevel,
+    );
 
     logger.info(
-      { jobId: job.id, researchMode, maxAutoIterations, iterationNumber, isInitialIteration },
+      {
+        jobId: job.id,
+        researchMode,
+        maxAutoIterations,
+        iterationNumber,
+        isInitialIteration,
+      },
       "starting_iteration",
     );
 
@@ -193,6 +336,27 @@ async function processDeepResearchJob(
     await job.updateProgress({ stage: "planning", percent: 5 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "planning", 5);
 
+    if (isInitialIteration) {
+      await persistConversationActivity(
+        {
+          phase: "planning",
+          objective:
+            conversationState.values.currentObjective ||
+            conversationState.values.evolvingObjective ||
+            conversationState.values.objective ||
+            messageRecord.question ||
+            message,
+          level: conversationState.values.currentLevel,
+        },
+        {
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            messageRecord.question || message,
+          ),
+        },
+      );
+    }
+
     // Get current level - if continuation, use existing; otherwise run planning agent
     let newLevel: number;
     let currentObjective: string;
@@ -200,9 +364,10 @@ async function processDeepResearchJob(
     if (!isInitialIteration) {
       // CONTINUATION: Tasks already promoted, just get current level
       const currentPlan = conversationState.values.plan || [];
-      newLevel = currentPlan.length > 0
-        ? Math.max(...currentPlan.map((t) => t.level || 0))
-        : 0;
+      newLevel =
+        currentPlan.length > 0
+          ? Math.max(...currentPlan.map((t) => t.level || 0))
+          : 0;
       currentObjective = conversationState.values.currentObjective || "";
 
       logger.info(
@@ -247,15 +412,22 @@ async function processDeepResearchJob(
       // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
       newLevel = maxLevel + 1;
       const newTasks = initialTasks.map((task) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+        const taskId =
+          task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
 
         // Resolve datasetFilenames to full dataset objects
         const resolvedDatasets = (task.datasetFilenames || [])
           .map((filename) => {
-            const dataset = uploadedDatasets.find((d) => d.filename === filename);
+            const dataset = uploadedDatasets.find(
+              (d) => d.filename === filename,
+            );
             if (!dataset) {
               logger.warn(
-                { jobId: job.id, filename, availableDatasets: uploadedDatasets.map((d) => d.filename) },
+                {
+                  jobId: job.id,
+                  filename,
+                  availableDatasets: uploadedDatasets.map((d) => d.filename),
+                },
                 "clarification_dataset_not_found",
               );
               return null;
@@ -307,12 +479,22 @@ async function processDeepResearchJob(
 
       // Update state in DB
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            currentObjective,
+          ),
+        });
         await notifyStateUpdated(job.id!, conversationId, conversationState.id);
       }
 
       logger.info(
-        { jobId: job.id, newLevel, taskCount: newTasks.length, currentObjective },
+        {
+          jobId: job.id,
+          newLevel,
+          taskCount: newTasks.length,
+          currentObjective,
+        },
         "clarification_tasks_promoted_to_plan",
       );
     } else {
@@ -352,7 +534,8 @@ async function processDeepResearchJob(
       // Add new tasks with appropriate level and assign IDs
       newLevel = maxLevel + 1;
       const newTasks = plan.map((task: PlanTask) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
+        const taskId =
+          task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
         return {
           ...task,
           id: taskId,
@@ -374,13 +557,21 @@ async function processDeepResearchJob(
       }
 
       // Initialize evolving objective (only if not already set)
-      if (!conversationState.values.evolvingObjective && messageRecord.question) {
+      if (
+        !conversationState.values.evolvingObjective &&
+        messageRecord.question
+      ) {
         conversationState.values.evolvingObjective = messageRecord.question;
       }
 
       // Update state in DB
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            currentObjective,
+          ),
+        });
         await notifyStateUpdated(job.id!, conversationId, conversationState.id);
       }
 
@@ -391,7 +582,10 @@ async function processDeepResearchJob(
     }
 
     // Update progress: Literature/Analysis
-    await job.updateProgress({ stage: "literature", percent: 20 } as JobProgress);
+    await job.updateProgress({
+      stage: "literature",
+      percent: 20,
+    } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "literature", 20);
 
     // Step 2: Execute tasks
@@ -409,19 +603,35 @@ async function processDeepResearchJob(
         newLevel,
         tasksToExecuteCount: tasksToExecute.length,
         taskIds: tasksToExecute.map((t) => t.id),
-        allPlanLevels: [...new Set((conversationState.values.plan || []).map((t) => t.level))],
+        allPlanLevels: [
+          ...new Set((conversationState.values.plan || []).map((t) => t.level)),
+        ],
       },
       "tasks_to_execute_for_iteration",
     );
+    const activeConversationState = conversationState;
 
     // Serialize DB writes to prevent concurrent updateConversationState calls
     // from overwriting each other's changes (matches in-process mode pattern)
     let stateWriteChain = Promise.resolve();
-    const writeStateSerialized = async () => {
-      const p = stateWriteChain.then(() =>
-        updateConversationState(conversationState.id!, conversationState.values),
-      );
-      stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+    writeStateSerialized = async (options?: ConversationStateWriteOptions) => {
+      const p = stateWriteChain.then(async () => {
+        await prepareConversationStateForWrite(options);
+        return updateConversationState(
+          activeConversationState.id!,
+          activeConversationState.values,
+        );
+      });
+      stateWriteChain = p.catch((err) => {
+        logger.error(
+          {
+            err,
+            conversationStateId: activeConversationState.id,
+            rootMessageId,
+          },
+          "state_write_chain_error_suppressed",
+        );
+      }); // prevent unhandled rejection from blocking chain
       return p;
     };
 
@@ -431,9 +641,13 @@ async function processDeepResearchJob(
       const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
         if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
           task.reasoning = reasoning;
-          if (conversationState.id) {
-            await writeStateSerialized();
-            await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
+            await notifyStateUpdated(
+              job.id!,
+              conversationId,
+              activeConversationState.id,
+            );
           }
         }
       };
@@ -442,8 +656,19 @@ async function processDeepResearchJob(
         task.start = new Date().toISOString();
         task.output = "";
 
-        if (conversationState.id) {
-          await writeStateSerialized();
+        if (activeConversationState.id) {
+          setDeepResearchActivity(activeConversationState.values, {
+            phase: "literature",
+            objective: task.objective,
+            level: task.level ?? newLevel,
+            taskType: task.type,
+          });
+          await writeStateSerialized!();
+          await notifyStateUpdated(
+            job.id!,
+            conversationId,
+            activeConversationState.id,
+          );
         }
 
         logger.info(
@@ -466,8 +691,8 @@ async function processDeepResearchJob(
             type: "OPENSCHOLAR",
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
-            if (conversationState.id) {
-              await writeStateSerialized();
+            if (activeConversationState.id) {
+              await writeStateSerialized!();
             }
           });
           literaturePromises.push(openScholarPromise);
@@ -484,8 +709,8 @@ async function processDeepResearchJob(
           if (result.jobId) {
             task.jobId = result.jobId;
           }
-          if (conversationState.id) {
-            await writeStateSerialized();
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
           }
         });
         literaturePromises.push(primaryLiteraturePromise);
@@ -497,8 +722,8 @@ async function processDeepResearchJob(
             type: "KNOWLEDGE",
           }).then(async (result) => {
             task.output += `${result.output}\n\n`;
-            if (conversationState.id) {
-              await writeStateSerialized();
+            if (activeConversationState.id) {
+              await writeStateSerialized!();
             }
           });
           literaturePromises.push(knowledgePromise);
@@ -507,24 +732,46 @@ async function processDeepResearchJob(
         await Promise.all(literaturePromises);
 
         task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await writeStateSerialized();
-          await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+        if (activeConversationState.id) {
+          await writeStateSerialized!();
+          await notifyStateUpdated(
+            job.id!,
+            conversationId,
+            activeConversationState.id,
+          );
         }
       } else if (task.type === "ANALYSIS") {
         // Update progress for analysis
-        await job.updateProgress({ stage: "analysis", percent: 50 } as JobProgress);
+        await job.updateProgress({
+          stage: "analysis",
+          percent: 50,
+        } as JobProgress);
         await notifyJobProgress(job.id!, conversationId, "analysis", 50);
 
         task.start = new Date().toISOString();
         task.output = "";
 
-        if (conversationState.id) {
-          await writeStateSerialized();
+        if (activeConversationState.id) {
+          setDeepResearchActivity(activeConversationState.values, {
+            phase: "analysis",
+            objective: task.objective,
+            level: task.level ?? newLevel,
+            taskType: task.type,
+          });
+          await writeStateSerialized!();
+          await notifyStateUpdated(
+            job.id!,
+            conversationId,
+            activeConversationState.id,
+          );
         }
 
         logger.info(
-          { jobId: job.id, taskObjective: task.objective, datasets: task.datasets },
+          {
+            jobId: job.id,
+            taskObjective: task.objective,
+            datasets: task.datasets,
+          },
           "deep_research_job_executing_analysis_task",
         );
 
@@ -539,7 +786,7 @@ async function processDeepResearchJob(
             datasets: task.datasets,
             type,
             userId: messageRecord.user_id,
-            conversationStateId: conversationState.id!,
+            conversationStateId: activeConversationState.id!,
             onPollUpdate,
           });
 
@@ -547,15 +794,16 @@ async function processDeepResearchJob(
           task.artifacts = analysisResult.artifacts || [];
           task.jobId = analysisResult.jobId;
 
-          if (conversationState.id) {
-            await writeStateSerialized();
+          if (activeConversationState.id) {
+            await writeStateSerialized!();
           }
         } catch (error) {
-          const errorMsg = error instanceof Error
-            ? error.message
-            : typeof error === 'object' && error !== null
-              ? JSON.stringify(error)
-              : String(error);
+          const errorMsg =
+            error instanceof Error
+              ? error.message
+              : typeof error === "object" && error !== null
+                ? JSON.stringify(error)
+                : String(error);
           task.output = `Analysis failed: ${errorMsg}`;
           logger.error(
             { error, jobId: job.id, taskObjective: task.objective },
@@ -564,9 +812,13 @@ async function processDeepResearchJob(
         }
 
         task.end = new Date().toISOString();
-        if (conversationState.id) {
-          await writeStateSerialized();
-          await notifyStateUpdated(job.id!, conversationId, conversationState.id);
+        if (activeConversationState.id) {
+          await writeStateSerialized!();
+          await notifyStateUpdated(
+            job.id!,
+            conversationId,
+            activeConversationState.id,
+          );
         }
       }
     });
@@ -580,8 +832,17 @@ async function processDeepResearchJob(
     );
 
     // Update progress: Hypothesis
-    await job.updateProgress({ stage: "hypothesis", percent: 70 } as JobProgress);
+    await job.updateProgress({
+      stage: "hypothesis",
+      percent: 70,
+    } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "hypothesis", 70);
+
+    await persistConversationActivity({
+      phase: "reflection",
+      objective: currentObjective || conversationState.values.currentObjective,
+      level: newLevel,
+    });
 
     // Step 3: Generate hypothesis
     logger.info({ jobId: job.id }, "deep_research_job_generating_hypothesis");
@@ -597,19 +858,26 @@ async function processDeepResearchJob(
 
     conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await persistConversationState();
     }
 
     // Update progress: Reflection
-    await job.updateProgress({ stage: "reflection", percent: 85 } as JobProgress);
+    await job.updateProgress({
+      stage: "reflection",
+      percent: 85,
+    } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reflection", 85);
 
     // Step 4: Run reflection and discovery agents in parallel
-    logger.info({ jobId: job.id }, "deep_research_job_reflection_and_discovery");
+    logger.info(
+      { jobId: job.id },
+      "deep_research_job_reflection_and_discovery",
+    );
 
     const { reflectionAgent } = await import("../../../agents/reflection");
     const { discoveryAgent } = await import("../../../agents/discovery");
-    const { getMessagesByConversation } = await import("../../../db/operations");
+    const { getMessagesByConversation } =
+      await import("../../../db/operations");
     const { getDiscoveryRunConfig } = await import("../../../utils/discovery");
 
     // Determine if we should run discovery and which tasks to consider
@@ -652,11 +920,14 @@ async function processDeepResearchJob(
     ]);
 
     // Update conversation state with reflection results
-    conversationState.values.conversationTitle = reflectionResult.conversationTitle;
+    conversationState.values.conversationTitle =
+      reflectionResult.conversationTitle;
     if (reflectionResult.evolvingObjective) {
-      conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
+      conversationState.values.evolvingObjective =
+        reflectionResult.evolvingObjective;
     }
-    conversationState.values.currentObjective = reflectionResult.currentObjective;
+    conversationState.values.currentObjective =
+      reflectionResult.currentObjective;
     conversationState.values.keyInsights = reflectionResult.keyInsights;
     conversationState.values.methodology = reflectionResult.methodology;
 
@@ -670,12 +941,23 @@ async function processDeepResearchJob(
     }
 
     if (conversationState.id) {
-      await updateConversationState(conversationState.id, conversationState.values);
+      await persistConversationState({
+        ensureTraceObjective: getObjectiveTraceObjective(
+          conversationState.values,
+          reflectionResult.currentObjective,
+        ),
+      });
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
     // Step 5: Plan next iteration
     logger.info({ jobId: job.id }, "deep_research_job_planning_next");
+
+    await persistConversationActivity({
+      phase: "next_steps",
+      objective: conversationState.values.currentObjective || currentObjective,
+      level: newLevel,
+    });
 
     const { planningAgent } = await import("../../../agents/planning");
     const nextPlanningResult = await planningAgent({
@@ -693,10 +975,16 @@ async function processDeepResearchJob(
     if (nextPlanningResult.plan.length > 0) {
       conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
       if (nextPlanningResult.currentObjective) {
-        conversationState.values.currentObjective = nextPlanningResult.currentObjective;
+        conversationState.values.currentObjective =
+          nextPlanningResult.currentObjective;
       }
       if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            nextPlanningResult.currentObjective || currentObjective,
+          ),
+        });
       }
       shouldContinue = true;
     }
@@ -708,10 +996,13 @@ async function processDeepResearchJob(
     let isFinal = true;
     let willContinue = false;
 
-    if (shouldContinue && conversationState.values.suggestedNextSteps?.length && iterationNumber < maxAutoIterations) {
-      const { continueResearchAgent } = await import(
-        "../../../agents/continueResearch"
-      );
+    if (
+      shouldContinue &&
+      conversationState.values.suggestedNextSteps?.length &&
+      iterationNumber < maxAutoIterations
+    ) {
+      const { continueResearchAgent } =
+        await import("../../../agents/continueResearch");
 
       const continueResult = await continueResearchAgent({
         conversationState,
@@ -740,7 +1031,11 @@ async function processDeepResearchJob(
         willContinue = true;
       } else {
         logger.info(
-          { jobId: job.id, triggerReason: continueResult.triggerReason, iterationNumber },
+          {
+            jobId: job.id,
+            triggerReason: continueResult.triggerReason,
+            iterationNumber,
+          },
           "stopping_for_user_feedback",
         );
       }
@@ -751,6 +1046,12 @@ async function processDeepResearchJob(
     // =========================================================================
     await job.updateProgress({ stage: "reply", percent: 95 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
+
+    await persistConversationActivity({
+      phase: "reply",
+      objective: conversationState.values.currentObjective || currentObjective,
+      level: newLevel,
+    });
 
     logger.info(
       { jobId: job.id, iterationNumber, messageId: currentMessage.id, isFinal },
@@ -840,22 +1141,20 @@ async function processDeepResearchJob(
       const nextLevel = currentMaxLevel + 1;
 
       // Promote suggested steps to plan with new level and IDs
-      const promotedTasks = (conversationState.values.suggestedNextSteps || []).map(
-        (task: PlanTask) => {
-          const taskId =
-            task.type === "ANALYSIS"
-              ? `ana-${nextLevel}`
-              : `lit-${nextLevel}`;
-          return {
-            ...task,
-            id: taskId,
-            level: nextLevel,
-            start: undefined,
-            end: undefined,
-            output: undefined,
-          };
-        },
-      );
+      const promotedTasks = (
+        conversationState.values.suggestedNextSteps || []
+      ).map((task: PlanTask) => {
+        const taskId =
+          task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
+        return {
+          ...task,
+          id: taskId,
+          level: nextLevel,
+          start: undefined,
+          end: undefined,
+          output: undefined,
+        };
+      });
 
       // Add to plan and clear suggestions
       conversationState.values.plan = [...currentPlan, ...promotedTasks];
@@ -863,9 +1162,22 @@ async function processDeepResearchJob(
       conversationState.values.currentLevel = nextLevel;
 
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
+        await persistConversationActivity(
+          {
+            phase: "planning",
+            objective:
+              promotedTasks[0]?.objective ||
+              conversationState.values.currentObjective ||
+              currentObjective,
+            level: nextLevel,
+          },
+          {
+            notify: true,
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              conversationState.values.currentObjective || currentObjective,
+            ),
+          },
         );
         logger.info(
           {
@@ -963,8 +1275,17 @@ async function processDeepResearchJob(
       "deep_research_job_completed",
     );
 
+    if (isFinal) {
+      await clearConversationActivity({ completeTrace: true });
+    }
+
     // Notify: Job completed
-    await notifyJobCompleted(job.id!, conversationId, currentMessage.id, stateId);
+    await notifyJobCompleted(
+      job.id!,
+      conversationId,
+      currentMessage.id,
+      stateId,
+    );
 
     // Complete credits when research is truly done (final iteration)
     if (isFinal) {
@@ -988,25 +1309,35 @@ async function processDeepResearchJob(
 
         // Look up Privy ID from database user ID (credits are keyed by Privy ID)
         const { data: userData } = await supabase
-          .from('users')
-          .select('user_id')
-          .eq('id', userId)
+          .from("users")
+          .select("user_id")
+          .eq("id", userId)
           .single();
 
         const privyId = userData?.user_id;
         if (!privyId) {
           logger.warn({ userId }, "credit_completion_skipped_no_privy_id");
         } else {
-          const { data, error } = await supabase.rpc('complete_deep_research_job', {
-            p_user_id: privyId,
-            p_job_id: job.data.rootJobId || job.id,
-            p_final_iterations: iterationNumber,
-          });
+          const { data, error } = await supabase.rpc(
+            "complete_deep_research_job",
+            {
+              p_user_id: privyId,
+              p_job_id: job.data.rootJobId || job.id,
+              p_final_iterations: iterationNumber,
+            },
+          );
 
           if (error) {
             logger.error({ error, privyId }, "credit_completion_failed");
           } else {
-            logger.info({ refunded: data?.refunded, iterations: iterationNumber, privyId }, "credits_completed");
+            logger.info(
+              {
+                refunded: data?.refunded,
+                iterations: iterationNumber,
+                privyId,
+              },
+              "credits_completed",
+            );
           }
         }
       } catch (err) {
@@ -1040,6 +1371,8 @@ async function processDeepResearchJob(
           status: "failed",
         });
 
+        await clearConversationActivity({ staleTrace: true });
+
         // Notify: Job failed
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
 
@@ -1069,24 +1402,30 @@ async function processDeepResearchJob(
 
         // Look up Privy ID from database user ID (credits are keyed by Privy ID)
         const { data: userData } = await supabase
-          .from('users')
-          .select('user_id')
-          .eq('id', userId)
+          .from("users")
+          .select("user_id")
+          .eq("id", userId)
           .single();
 
         const privyId = userData?.user_id;
         if (!privyId) {
           logger.warn({ userId }, "credit_refund_skipped_no_privy_id");
         } else {
-          const { data, error: refundError } = await supabase.rpc('refund_deep_research_credits', {
-            p_user_id: privyId,
-            p_job_id: job.data.rootJobId || job.id,
-          });
+          const { data, error: refundError } = await supabase.rpc(
+            "refund_deep_research_credits",
+            {
+              p_user_id: privyId,
+              p_job_id: job.data.rootJobId || job.id,
+            },
+          );
 
           if (refundError) {
             logger.error({ refundError, privyId }, "credit_refund_failed");
           } else {
-            logger.info({ refunded: data?.refunded, privyId }, "credits_refunded_on_failure");
+            logger.info(
+              { refunded: data?.refunded, privyId },
+              "credits_refunded_on_failure",
+            );
           }
         }
       } catch (updateErr) {
@@ -1103,7 +1442,9 @@ async function processDeepResearchJob(
  * Start the deep research worker
  */
 export function startDeepResearchWorker(): Worker {
-  const concurrency = parseInt(process.env.DEEP_RESEARCH_QUEUE_CONCURRENCY || "3");
+  const concurrency = parseInt(
+    process.env.DEEP_RESEARCH_QUEUE_CONCURRENCY || "3",
+  );
 
   const worker = new Worker<DeepResearchJobData, DeepResearchJobResult>(
     "deep-research",
@@ -1113,8 +1454,8 @@ export function startDeepResearchWorker(): Worker {
       concurrency,
       // Deep research with autonomous mode can take 2-8 hours
       // lockRenewTime must be significantly less than lockDuration (1/6 ratio)
-      lockDuration: 1800000,   // 30 minutes - covers most iterations including slow analysis
-      lockRenewTime: 300000,   // 5 minutes - renew frequently (6x before expiry)
+      lockDuration: 1800000, // 30 minutes - covers most iterations including slow analysis
+      lockRenewTime: 300000, // 5 minutes - renew frequently (6x before expiry)
       stalledInterval: 600000, // 10 minutes - detect stalled jobs reasonably fast
     },
   );

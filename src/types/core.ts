@@ -31,6 +31,8 @@ export interface StateValues {
   steps?: Record<string, { start: number; end?: number }>;
 }
 
+export type PlanTaskType = "LITERATURE" | "ANALYSIS";
+
 export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
@@ -41,7 +43,7 @@ export type PlanTask = {
     description: string;
     path?: string;
   }>;
-  type: "LITERATURE" | "ANALYSIS";
+  type: PlanTaskType;
   level?: number;
   start?: string;
   end?: string;
@@ -51,6 +53,38 @@ export type PlanTask = {
 };
 
 export type OnPollUpdate = (update: { reasoning?: string[] }) => void | Promise<void>;
+
+export type DeepResearchActivityPhase =
+  | "planning"
+  | "literature"
+  | "analysis"
+  | "reflection"
+  | "next_steps"
+  | "reply";
+
+export interface DeepResearchActivity {
+  phase: DeepResearchActivityPhase;
+  label: string;
+  objective?: string;
+  level?: number;
+  taskType?: PlanTaskType;
+  updatedAt: string;
+}
+
+export type DeepResearchObjectiveTraceStatus =
+  | "active"
+  | "completed"
+  | "stale";
+
+export interface DeepResearchObjectiveTrace {
+  objective: string;
+  steps: string[];
+  visibleCount: number;
+  generatedAt: string;
+  lastAdvancedAt: string;
+  status: DeepResearchObjectiveTraceStatus;
+  runRootMessageId?: string;
+}
 
 // Conversation state values interface (extends StateValues with persistent data)
 export interface ConversationStateValues extends StateValues {
@@ -80,6 +114,8 @@ export interface ConversationStateValues extends StateValues {
   discoveries?: Discovery[]; // Structured scientific discoveries (only in deep research mode)
   plan?: Array<PlanTask>; // Actual plan being executed or already executed
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
+  currentActivity?: DeepResearchActivity; // Compact top-level activity shown in the main deep research view
+  objectiveTrace?: DeepResearchObjectiveTrace; // Synthetic objective breakdown shown in the main loader
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;

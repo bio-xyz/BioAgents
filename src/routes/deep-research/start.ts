@@ -52,10 +52,21 @@ import type {
   State,
 } from "../../types/core";
 import {
+  clearDeepResearchActivity,
+  setDeepResearchActivity,
+} from "../../utils/deep-research/activity";
+import {
   calculateSessionStartLevel,
   createContinuationMessage,
   getSessionCompletedTasks,
 } from "../../utils/deep-research/continuation-utils";
+import {
+  completeObjectiveTrace,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  syncObjectiveTraceProgress,
+} from "../../utils/deep-research/objective-trace";
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
@@ -86,6 +97,152 @@ type DeepResearchQueuedResponse = {
   status: "queued";
   pollUrl: string;
   deduplicated?: true;
+};
+
+type DeepResearchStartFailureLogger = {
+  error: (payload: Record<string, unknown>, message: string) => void;
+  warn: (payload: Record<string, unknown>, message: string) => void;
+};
+
+type DeepResearchStartFailureDeps = {
+  clearDeepResearchActivity: (values: ConversationState["values"]) => void;
+  ensureObjectiveTrace: (
+    values: ConversationState["values"],
+    objective?: string,
+    options?: { runRootMessageId?: string },
+  ) => Promise<unknown>;
+  getObjectiveTraceObjective: (
+    values: ConversationState["values"],
+    fallbackObjective?: string,
+  ) => string | undefined;
+  markObjectiveTraceStale: (values: ConversationState["values"]) => unknown;
+  updateConversationState: (
+    id: string,
+    values: ConversationState["values"],
+  ) => Promise<unknown>;
+  notifyStateUpdated: (
+    jobId: string,
+    conversationId: string,
+    stateId: string,
+  ) => Promise<unknown>;
+  updateState: (
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<unknown>;
+  markRunFinished: (params: {
+    conversationStateId: string;
+    result: "failed";
+    error?: string;
+    rootMessageId?: string;
+    stateId?: string;
+  }) => Promise<unknown>;
+  logger: DeepResearchStartFailureLogger;
+};
+
+type DeepResearchStartFailureParams = {
+  activeConversationState: ConversationState | null;
+  conversationId: string;
+  conversationStateId: string;
+  err: unknown;
+  notificationJobId: string;
+  rootMessageId: string;
+  stateRecord: {
+    id: string;
+    values: State["values"];
+  };
+};
+
+const deepResearchStartFailureDeps: DeepResearchStartFailureDeps = {
+  clearDeepResearchActivity,
+  ensureObjectiveTrace,
+  getObjectiveTraceObjective,
+  markObjectiveTraceStale,
+  updateConversationState,
+  notifyStateUpdated,
+  updateState,
+  markRunFinished,
+  logger,
+};
+
+async function handleDeepResearchStartFailure(
+  params: DeepResearchStartFailureParams,
+  deps: DeepResearchStartFailureDeps = deepResearchStartFailureDeps,
+): Promise<void> {
+  const {
+    activeConversationState,
+    conversationId,
+    conversationStateId,
+    err,
+    notificationJobId,
+    rootMessageId,
+    stateRecord,
+  } = params;
+
+  const errorMessage = err instanceof Error ? err.message : "Unknown error";
+
+  if (activeConversationState?.id) {
+    try {
+      deps.clearDeepResearchActivity(activeConversationState.values);
+      await deps.ensureObjectiveTrace(
+        activeConversationState.values,
+        deps.getObjectiveTraceObjective(activeConversationState.values),
+        {
+          runRootMessageId: rootMessageId,
+        },
+      );
+      deps.markObjectiveTraceStale(activeConversationState.values);
+      await deps.updateConversationState(
+        activeConversationState.id,
+        activeConversationState.values,
+      );
+      await deps.notifyStateUpdated(
+        notificationJobId,
+        conversationId,
+        activeConversationState.id,
+      );
+    } catch (cleanupErr) {
+      deps.logger.error(
+        {
+          cleanupErr,
+          conversationStateId,
+          messageId: notificationJobId,
+          originalErr: err,
+          rootMessageId,
+        },
+        "deep_research_error_cleanup_failed",
+      );
+    }
+  }
+
+  await deps.updateState(stateRecord.id, {
+    ...stateRecord.values,
+    error: errorMessage,
+    status: "failed",
+  });
+
+  try {
+    await deps.markRunFinished({
+      conversationStateId,
+      result: "failed",
+      error: errorMessage,
+      rootMessageId,
+      stateId: stateRecord.id,
+    });
+  } catch (finishError) {
+    deps.logger.warn(
+      {
+        finishError,
+        conversationStateId,
+        rootMessageId,
+        stateId: stateRecord.id,
+      },
+      "deep_research_run_finish_mark_failed_on_failure",
+    );
+  }
+}
+
+export const __deepResearchStartTestables = {
+  handleDeepResearchStartFailure,
 };
 
 function buildDeepResearchPollUrl(
@@ -261,6 +418,7 @@ export async function deepResearchStartHandler(ctx: any) {
   let researchMode: ResearchMode = "semi-autonomous";
   let createdMessage: any | null = null;
   let runMarkedStarted = false;
+  let activeConversationState: ConversationState | null = null;
 
   // Log with state IDs now that we have them
   logger.info(
@@ -511,12 +669,13 @@ export async function deepResearchStartHandler(ctx: any) {
 
     createdMessage = messageResult.message!;
 
-    await markRunStarted({
+    const startedRun = await markRunStarted({
       conversationStateId: conversationStateRecord.id,
       rootMessageId: createdMessage.id,
       stateId: stateRecord.id,
       mode: runMode,
     });
+    conversationStateRecord.values.deepResearchRun = startedRun;
     runMarkedStarted = true;
   } finally {
     await releaseStartMutex(startMutex);
@@ -584,6 +743,31 @@ export async function deepResearchStartHandler(ctx: any) {
         {
           jobId: createdMessage.id, // Use message ID as job ID for easy lookup
         },
+      );
+
+      activeConversationState = {
+        id: conversationStateRecord.id,
+        values: conversationStateRecord.values,
+      };
+      setDeepResearchActivity(activeConversationState.values, {
+        phase: "planning",
+        objective:
+          activeConversationState.values.currentObjective ||
+          activeConversationState.values.evolvingObjective ||
+          activeConversationState.values.objective ||
+          createdMessage.question ||
+          message,
+        level: activeConversationState.values.currentLevel,
+      });
+      // Keep queue mode fast: the worker generates the initial objective trace.
+      await updateConversationState(
+        activeConversationState.id!,
+        activeConversationState.values,
+      );
+      await notifyStateUpdated(
+        job.id!,
+        conversationId,
+        activeConversationState.id!,
       );
 
       try {
@@ -752,6 +936,7 @@ async function runDeepResearch(params: {
     rootMessageId,
     conversationStateId,
   } = params;
+  let activeConversationState: ConversationState | null = null;
 
   try {
     // Initialize state
@@ -771,6 +956,7 @@ async function runDeepResearch(params: {
       id: conversationStateRecord.id,
       values: conversationStateRecord.values,
     };
+    activeConversationState = conversationState;
 
     // Step 1: Process files if any
     if (files.length > 0) {
@@ -813,6 +999,104 @@ async function runDeepResearch(params: {
 
     // Track the current message being updated (changes when auto-continuing)
     let currentMessage = createdMessage;
+    type ConversationStateWriteOptions = {
+      ensureTraceObjective?: string;
+      completeTrace?: boolean;
+      staleTrace?: boolean;
+    };
+
+    const prepareConversationStateForWrite = async (
+      options?: ConversationStateWriteOptions,
+    ) => {
+      if (options?.ensureTraceObjective) {
+        await ensureObjectiveTrace(
+          conversationState.values,
+          options.ensureTraceObjective,
+          {
+            runRootMessageId: rootMessageId,
+          },
+        );
+      } else {
+        syncObjectiveTraceProgress(conversationState.values);
+      }
+
+      if (options?.completeTrace) {
+        completeObjectiveTrace(conversationState.values);
+      }
+
+      if (options?.staleTrace) {
+        markObjectiveTraceStale(conversationState.values);
+      }
+    };
+
+    const persistConversationState = async (
+      options?: ConversationStateWriteOptions,
+    ) => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      await prepareConversationStateForWrite(options);
+      await updateConversationState(
+        conversationState.id,
+        conversationState.values,
+      );
+    };
+
+    const persistConversationActivity = async (
+      params: Parameters<typeof setDeepResearchActivity>[1],
+      options?: {
+        write?:
+          | ((options?: ConversationStateWriteOptions) => Promise<any>)
+          | null;
+        notify?: boolean;
+        ensureTraceObjective?: string;
+      },
+    ) => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      setDeepResearchActivity(conversationState.values, params);
+
+      if (options?.write) {
+        await options.write({
+          ensureTraceObjective: options.ensureTraceObjective,
+        });
+      } else {
+        await persistConversationState({
+          ensureTraceObjective: options?.ensureTraceObjective,
+        });
+      }
+
+      if (options?.notify !== false) {
+        await notifyStateUpdated(
+          `in-process-${currentMessage.id}`,
+          currentMessage.conversation_id,
+          conversationState.id,
+        );
+      }
+    };
+
+    const clearConversationActivity = async (options?: {
+      completeTrace?: boolean;
+      staleTrace?: boolean;
+    }) => {
+      if (!conversationState.id) {
+        return;
+      }
+
+      clearDeepResearchActivity(conversationState.values);
+      await persistConversationState({
+        completeTrace: options?.completeTrace,
+        staleTrace: options?.staleTrace,
+      });
+      await notifyStateUpdated(
+        `in-process-${currentMessage.id}`,
+        currentMessage.conversation_id,
+        conversationState.id,
+      );
+    };
 
     // Flag to skip planning when continuing (tasks already promoted)
     let skipPlanning = false;
@@ -844,6 +1128,27 @@ async function runDeepResearch(params: {
       iterationCount++;
       const iterationStartTime = Date.now();
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
+
+      if (!skipPlanning) {
+        await persistConversationActivity(
+          {
+            phase: "planning",
+            objective:
+              conversationState.values.currentObjective ||
+              conversationState.values.evolvingObjective ||
+              conversationState.values.objective ||
+              currentMessage.question ||
+              createdMessage.question,
+            level: conversationState.values.currentLevel,
+          },
+          {
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentMessage.question || createdMessage.question,
+            ),
+          },
+        );
+      }
 
       // Get current level - if skipPlanning, use existing; otherwise run planning agent
       let newLevel: number;
@@ -960,10 +1265,12 @@ async function runDeepResearch(params: {
 
         // Update state in DB
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentObjective,
+            ),
+          });
 
           logger.info(
             { newLevel, taskCount: newTasks.length, currentObjective },
@@ -1040,10 +1347,12 @@ async function runDeepResearch(params: {
 
         // Update state in DB
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentObjective,
+            ),
+          });
 
           logger.info(
             { newLevel, newTasks, newObjective: currentObjective },
@@ -1060,14 +1369,26 @@ async function runDeepResearch(params: {
       // Serialize DB writes to prevent concurrent updateConversationState calls
       // from overwriting each other's changes
       let stateWriteChain = Promise.resolve();
-      const writeStateSerialized = async () => {
-        const p = stateWriteChain.then(() =>
-          updateConversationState(
+      const writeStateSerialized = async (
+        options?: ConversationStateWriteOptions,
+      ) => {
+        const p = stateWriteChain.then(async () => {
+          await prepareConversationStateForWrite(options);
+          return updateConversationState(
             conversationState.id!,
             conversationState.values,
-          ),
-        );
-        stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+          );
+        });
+        stateWriteChain = p.catch((err) => {
+          logger.error(
+            {
+              err,
+              conversationStateId: conversationState.id,
+              rootMessageId,
+            },
+            "state_write_chain_error_suppressed",
+          );
+        }); // prevent unhandled rejection from blocking chain
         return p;
       };
 
@@ -1094,7 +1415,18 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
+            setDeepResearchActivity(conversationState.values, {
+              phase: "literature",
+              objective: task.objective,
+              level: task.level ?? newLevel,
+              taskType: task.type,
+            });
             await writeStateSerialized();
+            await notifyStateUpdated(
+              `in-process-${currentMessage.id}`,
+              currentMessage.conversation_id,
+              conversationState.id,
+            );
           }
 
           logger.info(
@@ -1189,7 +1521,18 @@ async function runDeepResearch(params: {
           task.output = "";
 
           if (conversationState.id) {
+            setDeepResearchActivity(conversationState.values, {
+              phase: "analysis",
+              objective: task.objective,
+              level: task.level ?? newLevel,
+              taskType: task.type,
+            });
             await writeStateSerialized();
+            await notifyStateUpdated(
+              `in-process-${currentMessage.id}`,
+              currentMessage.conversation_id,
+              conversationState.id,
+            );
           }
 
           logger.info(
@@ -1332,6 +1675,13 @@ These molecular changes align with established longevity pathways (Converging nu
       // Wait for all tasks to complete
       await Promise.all(taskPromises);
 
+      await persistConversationActivity({
+        phase: "reflection",
+        objective:
+          currentObjective || conversationState.values.currentObjective,
+        level: newLevel,
+      });
+
       // Step 3: Generate/update hypothesis based on completed tasks
       logger.info("generating_hypothesis_from_completed_tasks");
 
@@ -1345,10 +1695,7 @@ These molecular changes align with established longevity pathways (Converging nu
       // Update conversation state with new hypothesis
       conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
+        await persistConversationState();
         logger.info(
           {
             mode: hypothesisResult.mode,
@@ -1424,10 +1771,12 @@ These molecular changes align with established longevity pathways (Converging nu
       }
 
       if (conversationState.id) {
-        await updateConversationState(
-          conversationState.id,
-          conversationState.values,
-        );
+        await persistConversationState({
+          ensureTraceObjective: getObjectiveTraceObjective(
+            conversationState.values,
+            reflectionResult.currentObjective,
+          ),
+        });
         logger.info(
           {
             insights: reflectionResult.keyInsights,
@@ -1443,6 +1792,13 @@ These molecular changes align with established longevity pathways (Converging nu
 
       // Clear old suggestions before generating new ones (ensures fresh planning)
       conversationState.values.suggestedNextSteps = [];
+
+      await persistConversationActivity({
+        phase: "next_steps",
+        objective:
+          conversationState.values.currentObjective || currentObjective,
+        level: newLevel,
+      });
 
       const nextPlanningResult = await planningAgent({
         state,
@@ -1465,10 +1821,12 @@ These molecular changes align with established longevity pathways (Converging nu
         }
 
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
-          );
+          await persistConversationState({
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              nextPlanningResult.currentObjective || currentObjective,
+            ),
+          });
           logger.info(
             {
               nextPlanningSteps: nextPlanningResult.plan.map(
@@ -1544,6 +1902,13 @@ These molecular changes align with established longevity pathways (Converging nu
         { iterationCount, messageId: currentMessage.id, isFinal },
         "generating_reply_for_iteration",
       );
+
+      await persistConversationActivity({
+        phase: "reply",
+        objective:
+          conversationState.values.currentObjective || currentObjective,
+        level: newLevel,
+      });
 
       // Get completed tasks from this session, limited to last 3 levels max
       // This ensures reply covers work across continuations without overwhelming context
@@ -1650,9 +2015,21 @@ These molecular changes align with established longevity pathways (Converging nu
         conversationState.values.currentLevel = nextLevel;
 
         if (conversationState.id) {
-          await updateConversationState(
-            conversationState.id,
-            conversationState.values,
+          await persistConversationActivity(
+            {
+              phase: "planning",
+              objective:
+                promotedTasks[0]?.objective ||
+                conversationState.values.currentObjective ||
+                currentObjective,
+              level: nextLevel,
+            },
+            {
+              ensureTraceObjective: getObjectiveTraceObjective(
+                conversationState.values,
+                conversationState.values.currentObjective || currentObjective,
+              ),
+            },
           );
           logger.info(
             {
@@ -1702,6 +2079,8 @@ These molecular changes align with established longevity pathways (Converging nu
       "deep_research_completed",
     );
 
+    await clearConversationActivity({ completeTrace: true });
+
     try {
       await markRunFinished({
         conversationStateId,
@@ -1721,26 +2100,14 @@ These molecular changes align with established longevity pathways (Converging nu
       "deep_research_execution_failed",
     );
 
-    // Update state to mark as failed
-    await updateState(stateRecord.id, {
-      ...stateRecord.values,
-      error: err instanceof Error ? err.message : "Unknown error",
-      status: "failed",
+    await handleDeepResearchStartFailure({
+      activeConversationState,
+      conversationId: createdMessage.conversation_id,
+      conversationStateId,
+      err,
+      notificationJobId: `in-process-${createdMessage.id || stateRecord.id}`,
+      rootMessageId,
+      stateRecord,
     });
-
-    try {
-      await markRunFinished({
-        conversationStateId,
-        result: "failed",
-        error: err instanceof Error ? err.message : "Unknown error",
-        rootMessageId,
-        stateId: stateRecord.id,
-      });
-    } catch (error) {
-      logger.warn(
-        { error, conversationStateId, rootMessageId },
-        "deep_research_run_finish_mark_failed_on_failure",
-      );
-    }
   }
 }
