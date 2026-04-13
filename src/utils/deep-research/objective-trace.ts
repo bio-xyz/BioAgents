@@ -38,7 +38,9 @@ const ObjectiveTraceSchema = z.object({
   steps: z.array(z.string()),
 });
 
-function normalizeObjective(objective?: string): string | undefined {
+export function normalizeDeepResearchObjective(
+  objective?: string,
+): string | undefined {
   const trimmed = objective?.replace(/\s+/g, " ").trim();
   return trimmed ? trimmed : undefined;
 }
@@ -86,6 +88,10 @@ function sanitizeSteps(steps: string[]): string[] {
   return cleaned;
 }
 
+function clampVisibleCount(trace: DeepResearchObjectiveTrace): number {
+  return Math.min(trace.steps.length, Math.max(trace.visibleCount ?? 1, 1));
+}
+
 function validateTracePayload(payload: unknown): string[] | null {
   const parsed = ObjectiveTraceSchema.safeParse(payload);
   if (!parsed.success) {
@@ -94,8 +100,8 @@ function validateTracePayload(payload: unknown): string[] | null {
 
   const cleanedSteps = sanitizeSteps(parsed.data.steps);
   if (
-    cleanedSteps.length < MIN_TRACE_STEPS
-    || cleanedSteps.length > MAX_TRACE_STEPS
+    cleanedSteps.length < MIN_TRACE_STEPS ||
+    cleanedSteps.length > MAX_TRACE_STEPS
   ) {
     return null;
   }
@@ -143,23 +149,27 @@ function buildTracePrompt(objective: string, retry = false): string {
     "- Use action-oriented planning phrases.",
     "- Do not use numbering, bullets, markdown, or explanations.",
     "- Keep the steps distinct and sequential.",
-    "- Avoid generic filler like \"Thinking through the problem\".",
+    '- Avoid generic filler like "Thinking through the problem".',
     "- Keep the phrasing user-facing and high-level.",
     "",
     "Return JSON only in this exact shape:",
-    "{\"steps\":[\"...\"]}",
+    '{"steps":["..."]}',
     "",
     retry
       ? "The previous output was invalid. Return only valid JSON with 5 to 15 unique steps."
       : "",
     "Objective:",
     objective,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function getProviderCandidates(): Array<LLMProviderConfig["name"]> {
   const candidates: Array<LLMProviderConfig["name"] | undefined> = [
-    process.env.OBJECTIVE_TRACE_LLM_PROVIDER as LLMProviderConfig["name"] | undefined,
+    process.env.OBJECTIVE_TRACE_LLM_PROVIDER as
+      | LLMProviderConfig["name"]
+      | undefined,
     process.env.OPENAI_API_KEY ? "openai" : undefined,
     process.env.PLANNING_LLM_PROVIDER as LLMProviderConfig["name"] | undefined,
     "google",
@@ -187,23 +197,17 @@ function getProviderConfig(): {
   model: string;
   supportsStructuredOutput: boolean;
 } {
-  const explicitProvider =
-    process.env.OBJECTIVE_TRACE_LLM_PROVIDER as LLMProviderConfig["name"] | undefined;
   const providerName =
     getProviderCandidates().find(
       (candidate) => process.env[`${candidate.toUpperCase()}_API_KEY`],
-    )
-    || explicitProvider
-    || "openai";
+    ) || "openai";
 
   const apiKey = process.env[`${providerName.toUpperCase()}_API_KEY`];
   const model =
-    process.env.OBJECTIVE_TRACE_LLM_MODEL
-    || (
-      providerName === "openai"
-        ? DEFAULT_OPENAI_MODEL
-        : process.env.PLANNING_LLM_MODEL || DEFAULT_NON_OPENAI_MODEL
-    );
+    process.env.OBJECTIVE_TRACE_LLM_MODEL ||
+    (providerName === "openai"
+      ? DEFAULT_OPENAI_MODEL
+      : process.env.PLANNING_LLM_MODEL || DEFAULT_NON_OPENAI_MODEL);
 
   return {
     providerName,
@@ -254,7 +258,7 @@ async function requestObjectiveTraceSteps(
 }
 
 async function generateTraceSteps(objective: string): Promise<string[]> {
-  const normalizedObjective = normalizeObjective(objective);
+  const normalizedObjective = normalizeDeepResearchObjective(objective);
   if (!normalizedObjective) {
     return [...FALLBACK_TRACE_STEPS];
   }
@@ -296,11 +300,11 @@ export function getObjectiveTraceObjective(
   values: ConversationStateValues,
   fallbackObjective?: string,
 ): string | undefined {
-  return normalizeObjective(
-    values.currentObjective
-    || values.evolvingObjective
-    || values.objective
-    || fallbackObjective,
+  return normalizeDeepResearchObjective(
+    values.currentObjective ||
+      values.evolvingObjective ||
+      values.objective ||
+      fallbackObjective,
   );
 }
 
@@ -309,7 +313,7 @@ export async function ensureObjectiveTrace(
   objective?: string,
   options?: { runRootMessageId?: string },
 ): Promise<DeepResearchObjectiveTrace | undefined> {
-  const normalizedObjective = normalizeObjective(objective);
+  const normalizedObjective = normalizeDeepResearchObjective(objective);
   if (!normalizedObjective) {
     return values.objectiveTrace;
   }
@@ -322,25 +326,23 @@ export async function ensureObjectiveTrace(
     existingTrace?.runRootMessageId,
   );
   const isSameRun =
-    !currentRunRootMessageId
-    || (
-      !!existingRunRootMessageId
-      && existingRunRootMessageId === currentRunRootMessageId
-    );
+    !currentRunRootMessageId ||
+    (!!existingRunRootMessageId &&
+      existingRunRootMessageId === currentRunRootMessageId);
 
   if (
-    existingTrace
-    && normalizeObjective(existingTrace.objective) === normalizedObjective
-    && isSameRun
-    && existingTrace.steps?.length
+    existingTrace &&
+    normalizeDeepResearchObjective(existingTrace.objective) ===
+      normalizedObjective &&
+    isSameRun &&
+    existingTrace.steps?.length
   ) {
     existingTrace.status = "active";
-    existingTrace.visibleCount = Math.min(
-      existingTrace.steps.length,
-      Math.max(existingTrace.visibleCount || 1, 1),
-    );
+    existingTrace.visibleCount = clampVisibleCount(existingTrace);
     existingTrace.lastAdvancedAt =
-      existingTrace.lastAdvancedAt || existingTrace.generatedAt || new Date().toISOString();
+      existingTrace.lastAdvancedAt ||
+      existingTrace.generatedAt ||
+      new Date().toISOString();
     return existingTrace;
   }
 
@@ -369,10 +371,7 @@ export function syncObjectiveTraceProgress(
     return trace;
   }
 
-  const currentVisibleCount = Math.min(
-    trace.steps.length,
-    Math.max(trace.visibleCount || 1, 1),
-  );
+  const currentVisibleCount = clampVisibleCount(trace);
   trace.visibleCount = currentVisibleCount;
 
   const baseTimestamp = Date.parse(
@@ -426,10 +425,7 @@ export function markObjectiveTraceStale(
   }
 
   trace.status = "stale";
-  trace.visibleCount = Math.min(
-    trace.steps.length,
-    Math.max(trace.visibleCount || 1, 1),
-  );
+  trace.visibleCount = clampVisibleCount(trace);
   trace.lastAdvancedAt = new Date().toISOString();
   return trace;
 }

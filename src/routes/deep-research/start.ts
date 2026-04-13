@@ -52,14 +52,14 @@ import type {
   State,
 } from "../../types/core";
 import {
+  clearDeepResearchActivity,
+  setDeepResearchActivity,
+} from "../../utils/deep-research/activity";
+import {
   calculateSessionStartLevel,
   createContinuationMessage,
   getSessionCompletedTasks,
 } from "../../utils/deep-research/continuation-utils";
-import {
-  clearDeepResearchActivity,
-  setDeepResearchActivity,
-} from "../../utils/deep-research/activity";
 import {
   completeObjectiveTrace,
   ensureObjectiveTrace,
@@ -105,9 +105,7 @@ type DeepResearchStartFailureLogger = {
 };
 
 type DeepResearchStartFailureDeps = {
-  clearDeepResearchActivity: (
-    values: ConversationState["values"],
-  ) => void;
+  clearDeepResearchActivity: (values: ConversationState["values"]) => void;
   ensureObjectiveTrace: (
     values: ConversationState["values"],
     objective?: string,
@@ -117,9 +115,7 @@ type DeepResearchStartFailureDeps = {
     values: ConversationState["values"],
     fallbackObjective?: string,
   ) => string | undefined;
-  markObjectiveTraceStale: (
-    values: ConversationState["values"],
-  ) => unknown;
+  markObjectiveTraceStale: (values: ConversationState["values"]) => unknown;
   updateConversationState: (
     id: string,
     values: ConversationState["values"],
@@ -182,8 +178,7 @@ async function handleDeepResearchStartFailure(
     stateRecord,
   } = params;
 
-  const errorMessage =
-    err instanceof Error ? err.message : "Unknown error";
+  const errorMessage = err instanceof Error ? err.message : "Unknown error";
 
   if (activeConversationState?.id) {
     try {
@@ -235,7 +230,12 @@ async function handleDeepResearchStartFailure(
     });
   } catch (finishError) {
     deps.logger.warn(
-      { finishError, conversationStateId, rootMessageId, stateId: stateRecord.id },
+      {
+        finishError,
+        conversationStateId,
+        rootMessageId,
+        stateId: stateRecord.id,
+      },
       "deep_research_run_finish_mark_failed_on_failure",
     );
   }
@@ -752,11 +752,11 @@ export async function deepResearchStartHandler(ctx: any) {
       setDeepResearchActivity(activeConversationState.values, {
         phase: "planning",
         objective:
-          activeConversationState.values.currentObjective
-          || activeConversationState.values.evolvingObjective
-          || activeConversationState.values.objective
-          || createdMessage.question
-          || message,
+          activeConversationState.values.currentObjective ||
+          activeConversationState.values.evolvingObjective ||
+          activeConversationState.values.objective ||
+          createdMessage.question ||
+          message,
         level: activeConversationState.values.currentLevel,
       });
       // Keep queue mode fast: the worker generates the initial objective trace.
@@ -764,7 +764,11 @@ export async function deepResearchStartHandler(ctx: any) {
         activeConversationState.id!,
         activeConversationState.values,
       );
-      await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+      await notifyStateUpdated(
+        job.id!,
+        conversationId,
+        activeConversationState.id!,
+      );
 
       try {
         await updateRunJobId({
@@ -1042,7 +1046,9 @@ async function runDeepResearch(params: {
     const persistConversationActivity = async (
       params: Parameters<typeof setDeepResearchActivity>[1],
       options?: {
-        write?: ((options?: ConversationStateWriteOptions) => Promise<any>) | null;
+        write?:
+          | ((options?: ConversationStateWriteOptions) => Promise<any>)
+          | null;
         notify?: boolean;
         ensureTraceObjective?: string;
       },
@@ -1072,9 +1078,10 @@ async function runDeepResearch(params: {
       }
     };
 
-    const clearConversationActivity = async (
-      options?: { completeTrace?: boolean; staleTrace?: boolean },
-    ) => {
+    const clearConversationActivity = async (options?: {
+      completeTrace?: boolean;
+      staleTrace?: boolean;
+    }) => {
       if (!conversationState.id) {
         return;
       }
@@ -1123,21 +1130,24 @@ async function runDeepResearch(params: {
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
 
       if (!skipPlanning) {
-        await persistConversationActivity({
-          phase: "planning",
-          objective:
-            conversationState.values.currentObjective
-            || conversationState.values.evolvingObjective
-            || conversationState.values.objective
-            || currentMessage.question
-            || createdMessage.question,
-          level: conversationState.values.currentLevel,
-        }, {
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            currentMessage.question || createdMessage.question,
-          ),
-        });
+        await persistConversationActivity(
+          {
+            phase: "planning",
+            objective:
+              conversationState.values.currentObjective ||
+              conversationState.values.evolvingObjective ||
+              conversationState.values.objective ||
+              currentMessage.question ||
+              createdMessage.question,
+            level: conversationState.values.currentLevel,
+          },
+          {
+            ensureTraceObjective: getObjectiveTraceObjective(
+              conversationState.values,
+              currentMessage.question || createdMessage.question,
+            ),
+          },
+        );
       }
 
       // Get current level - if skipPlanning, use existing; otherwise run planning agent
@@ -1368,9 +1378,17 @@ async function runDeepResearch(params: {
             conversationState.id!,
             conversationState.values,
           );
-        },
-        );
-        stateWriteChain = p.catch(() => {}); // prevent unhandled rejection from blocking chain
+        });
+        stateWriteChain = p.catch((err) => {
+          logger.error(
+            {
+              err,
+              conversationStateId: conversationState.id,
+              rootMessageId,
+            },
+            "state_write_chain_error_suppressed",
+          );
+        }); // prevent unhandled rejection from blocking chain
         return p;
       };
 
@@ -1659,7 +1677,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       await persistConversationActivity({
         phase: "reflection",
-        objective: currentObjective || conversationState.values.currentObjective,
+        objective:
+          currentObjective || conversationState.values.currentObjective,
         level: newLevel,
       });
 
@@ -1776,7 +1795,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       await persistConversationActivity({
         phase: "next_steps",
-        objective: conversationState.values.currentObjective || currentObjective,
+        objective:
+          conversationState.values.currentObjective || currentObjective,
         level: newLevel,
       });
 
@@ -1885,7 +1905,8 @@ These molecular changes align with established longevity pathways (Converging nu
 
       await persistConversationActivity({
         phase: "reply",
-        objective: conversationState.values.currentObjective || currentObjective,
+        objective:
+          conversationState.values.currentObjective || currentObjective,
         level: newLevel,
       });
 
@@ -1994,19 +2015,22 @@ These molecular changes align with established longevity pathways (Converging nu
         conversationState.values.currentLevel = nextLevel;
 
         if (conversationState.id) {
-          await persistConversationActivity({
-            phase: "planning",
-            objective:
-              promotedTasks[0]?.objective
-              || conversationState.values.currentObjective
-              || currentObjective,
-            level: nextLevel,
-          }, {
-            ensureTraceObjective: getObjectiveTraceObjective(
-              conversationState.values,
-              conversationState.values.currentObjective || currentObjective,
-            ),
-          });
+          await persistConversationActivity(
+            {
+              phase: "planning",
+              objective:
+                promotedTasks[0]?.objective ||
+                conversationState.values.currentObjective ||
+                currentObjective,
+              level: nextLevel,
+            },
+            {
+              ensureTraceObjective: getObjectiveTraceObjective(
+                conversationState.values,
+                conversationState.values.currentObjective || currentObjective,
+              ),
+            },
+          );
           logger.info(
             {
               nextLevel,

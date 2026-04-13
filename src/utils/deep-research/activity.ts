@@ -4,6 +4,7 @@ import type {
   DeepResearchActivityPhase,
   PlanTaskType,
 } from "../../types/core";
+import { normalizeDeepResearchObjective } from "./objective-trace";
 
 type BuildDeepResearchActivityParams = {
   phase: DeepResearchActivityPhase;
@@ -21,12 +22,7 @@ const ACTIVITY_LABELS: Record<DeepResearchActivityPhase, string> = {
   reply: "Drafting response",
 };
 
-function normalizeObjective(objective?: string): string | undefined {
-  const trimmed = objective?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-export function buildDeepResearchActivity({
+function buildDeepResearchActivity({
   phase,
   objective,
   level,
@@ -35,7 +31,7 @@ export function buildDeepResearchActivity({
   return {
     phase,
     label: ACTIVITY_LABELS[phase],
-    objective: normalizeObjective(objective),
+    objective: normalizeDeepResearchObjective(objective),
     level,
     taskType,
     updatedAt: new Date().toISOString(),
