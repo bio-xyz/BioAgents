@@ -30,11 +30,6 @@ services:
       # Required: Redis URL (Upstash or your managed Redis)
       - REDIS_URL=${REDIS_URL}
       - USE_JOB_QUEUE=true
-      - CHAT_AGENT_QUEUE_ENABLED=${CHAT_AGENT_QUEUE_ENABLED:-false}
-      - CHAT_AGENT_MODEL=${CHAT_AGENT_MODEL:-claude-sonnet-4-6}
-      - CHAT_AGENT_MAX_TOOL_CALLS=${CHAT_AGENT_MAX_TOOL_CALLS:-10}
-      - CHAT_AGENT_MAX_TOKENS=${CHAT_AGENT_MAX_TOKENS:-4096}
-      - CHAT_TOOL_TIMEOUT_MS=${CHAT_TOOL_TIMEOUT_MS:-30000}
 
       # Required: Database
       - SUPABASE_URL=${SUPABASE_URL}
