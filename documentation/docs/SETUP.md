@@ -78,7 +78,6 @@ bun run migrate
 This will apply all schema migrations from `supabase/migrations/` including:
 - Core tables (users, conversations, messages, states)
 - Vector database setup (pgvector extension)
-- x402 payment tracking
 - All indexes, functions, and triggers
 
 **Note:** Migrations run automatically in Docker on startup.
@@ -321,13 +320,12 @@ The system prompt is automatically included in LLM calls for planning, hypothesi
 
 ## Authentication Setup
 
-BioAgents supports multiple authentication methods:
+BioAgents supports JWT authentication:
 
 | Mode | Use Case |
 |------|----------|
 | `AUTH_MODE=none` | Development (no auth required) |
 | `AUTH_MODE=jwt` | Production (JWT tokens required) |
-| `X402_ENABLED=true` | Pay-per-request with USDC |
 
 ### Quick Setup
 
@@ -342,13 +340,7 @@ AUTH_MODE=jwt
 BIOAGENTS_SECRET=your-secure-secret  # openssl rand -hex 32
 ```
 
-**Pay-per-request (x402):**
-```bash
-X402_ENABLED=true
-X402_PAYMENT_ADDRESS=0xYourWalletAddress
-```
-
-> **For detailed documentation:** See [AUTH.md](./AUTH.md) for JWT implementation examples, x402 payment protocol, and troubleshooting.
+> **For detailed documentation:** See [AUTH.md](./AUTH.md) for JWT implementation examples and troubleshooting.
 
 ---
 

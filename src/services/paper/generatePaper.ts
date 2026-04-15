@@ -117,7 +117,6 @@ export async function generatePaperFromConversation(
   // Generate authors string
   const isRealEmail =
     userEmail &&
-    !userEmail.endsWith("@x402.local") &&
     !userEmail.endsWith("@temp.local") &&
     userEmail.includes("@");
 

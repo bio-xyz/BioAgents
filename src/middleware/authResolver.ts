@@ -5,22 +5,17 @@
  * - none: No auth required (development only)
  * - jwt: JWT signed with BIOAGENTS_SECRET required (production)
  *
- * X402_ENABLED env var controls payment auth (independent of AUTH_MODE):
- * - true: x402 payment routes available
- * - false: x402 disabled
- *
  * Priority order when multiple auth methods present:
- * 1. x402 payment proof (cryptographic, highest trust)
- * 2. JWT token (verified signature)
- * 3. API key fallback (for backward compatibility)
- * 4. Anonymous (if mode=none or auth not required)
+ * 1. JWT token (verified signature)
+ * 2. API key fallback (for backward compatibility)
+ * 3. Anonymous (if mode=none or auth not required)
  */
 
 import { extractBearerToken, verifyJWT } from "../services/jwt";
 import type { AuthContext, AuthResolverOptions } from "../types/auth";
 import { getAuthConfig } from "../types/auth";
 import logger from "../utils/logger";
-import { generateUUID, walletAddressToUUID } from "../utils/uuid";
+import { generateUUID } from "../utils/uuid";
 
 /**
  * Constant-time string comparison to prevent timing attacks
@@ -126,7 +121,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     set,
     body,
   }: {
-    request: Request & { auth?: AuthContext; x402Settlement?: any };
+    request: Request & { auth?: AuthContext };
     set: any;
     body?: any;
   }) => {
@@ -138,42 +133,13 @@ export function authResolver(options: AuthResolverOptions = {}) {
         path,
         mode: config.mode,
         required,
-        hasX402Settlement: !!(request as any).x402Settlement,
       },
       "auth_resolver_start",
     );
 
     // =====================================================
-    // Priority 1: x402 Payment Proof (Cryptographic)
+    // Priority 1: JWT Token (Signed with BIOAGENTS_SECRET)
     // =====================================================
-    // x402 middleware runs before this and sets x402Settlement on request
-    // This is the most secure - wallet signature = identity
-    const x402Settlement = (request as any).x402Settlement;
-    if (x402Settlement?.payer) {
-      const userId = walletAddressToUUID(x402Settlement.payer);
-      auth = {
-        userId,
-        method: "x402",
-        verified: true,
-        externalId: x402Settlement.payer,
-      };
-
-      logger?.info(
-        {
-          userId,
-          wallet: x402Settlement.payer,
-          method: "x402",
-        },
-        "auth_resolved_x402",
-      );
-    }
-
-    // =====================================================
-    // Priority 2: JWT Token (Signed with BIOAGENTS_SECRET)
-    // =====================================================
-    // Check JWT when:
-    // - AUTH_MODE=jwt (primary JWT mode)
-    // - Or when a JWT-like token is provided (allows JWT+x402 hybrid)
     if (!auth) {
       const authHeader = request.headers.get("Authorization");
       const token = extractBearerToken(authHeader);
@@ -229,7 +195,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     }
 
     // =====================================================
-    // Priority 3: API Key (Legacy/Backward Compatibility)
+    // Priority 2: API Key (Legacy/Backward Compatibility)
     // =====================================================
     // Only used if JWT mode is not active or no JWT provided
     if (!auth && isValidApiKey(request)) {
@@ -252,7 +218,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     }
 
     // =====================================================
-    // Priority 4: None Mode (Development)
+    // Priority 3: None Mode (Development)
     // =====================================================
     if (!auth && config.mode === "none") {
       const userId = resolveProvidedUserId(request, body);
@@ -362,16 +328,6 @@ export async function resolveAuth(
   method?: string;
 }> {
   const config = getAuthConfig();
-
-  // Check x402 settlement (set by x402 middleware on request)
-  const x402Settlement = (request as any).x402Settlement;
-  if (x402Settlement?.payer) {
-    return {
-      authenticated: true,
-      userId: walletAddressToUUID(x402Settlement.payer),
-      method: "x402",
-    };
-  }
 
   // Check JWT
   const authHeader = request.headers.get("Authorization");

@@ -489,7 +489,6 @@ Presigned URLs expire after **1 hour**. After expiration:
 All file upload endpoints require authentication:
 - JWT token (`Authorization: Bearer <token>`)
 - API key (`X-API-Key: <key>`)
-- x402 payment (for payment-gated routes)
 
 ### File Ownership
 

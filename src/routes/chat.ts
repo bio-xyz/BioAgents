@@ -20,7 +20,7 @@ import { generateUUID } from "../utils/uuid";
  */
 type ChatV2Response = {
   text: string;
-  userId?: string; // Included for x402 users to know their identity
+  userId?: string;
 };
 
 /**
@@ -224,21 +224,12 @@ async function chatRetryHandler(ctx: any) {
 
 /**
  * Chat Handler - Core logic for POST /api/chat
- * Exported for reuse in x402 routes
  *
  * Supports dual mode:
  * - USE_JOB_QUEUE=false: Executes in-process (existing behavior)
  * - USE_JOB_QUEUE=true: Enqueues to BullMQ and returns immediately
- *
- * Options:
- * - skipStorage: If true, skips all DB operations (stateless mode for x402)
  */
-export interface ChatHandlerOptions {
-  skipStorage?: boolean;
-}
-
-export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
-  const { skipStorage = false } = options;
+export async function chatHandler(ctx: any) {
   try {
     const { body, set, request } = ctx;
     const startTime = Date.now();
@@ -268,11 +259,9 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
     }
 
     // Get userId from auth context (set by authResolver middleware)
-    // Auth context handles: x402 wallet > JWT token > API key > body.userId > anonymous
     const auth = (request as any).auth as AuthContext | undefined;
     let userId = auth?.userId || generateUUID();
-    const source = auth?.method === "x402" ? "x402" : "api";
-    const isX402User = auth?.method === "x402";
+    const source = "api";
 
     logger.info(
       {
@@ -284,25 +273,6 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       },
       "user_identified_via_auth",
     );
-
-    // For x402 users, ensure wallet user record exists and use the actual user ID
-    // Skip when skipStorage is true (stateless mode)
-    if (isX402User && auth?.externalId && !skipStorage) {
-      const { getOrCreateUserByWallet } = await import("../db/operations");
-      const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
-
-      // Use the actual database user ID (may differ from auth.userId)
-      userId = user.id;
-
-      logger.info(
-        {
-          userId: user.id,
-          wallet: auth.externalId,
-          isNewUser: isNew,
-        },
-        "x402_user_record_ensured",
-      );
-    }
 
     // Auto-generate conversationId if not provided
     let conversationId = parsedBody.conversationId;
@@ -335,111 +305,77 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       "chat_request_received",
     );
 
-    // Variables for DB records (or ephemeral equivalents)
-    let conversationStateRecord: { id: string; values: any };
-    let stateRecord: { id: string };
-    let createdMessage: { id: string; conversation_id: string; question: string; source: string };
-
-    if (skipStorage) {
-      // Stateless mode: create ephemeral records (no DB operations)
-      logger.info({ userId, conversationId }, "skip_storage_mode_using_ephemeral_records");
-
-      const ephemeralMessageId = generateUUID();
-      conversationStateRecord = {
-        id: generateUUID(),
-        values: {
-          objective: "",
-          keyInsights: [],
-          discoveries: [],
-          uploadedDatasets: [],
-        },
-      };
-      stateRecord = { id: generateUUID() };
-      createdMessage = {
-        id: ephemeralMessageId,
-        conversation_id: conversationId,
-        question: message,
-        source,
-      };
-    } else {
-      // Normal mode: full DB operations
-
-      // Ensure user and conversation exist
-      // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
-      const setupResult = await ensureUserAndConversation(
-        userId,
-        conversationId,
-        {
-          skipUserCreation: isX402User,
-        },
+    // Ensure user and conversation exist
+    const setupResult = await ensureUserAndConversation(
+      userId,
+      conversationId,
+    );
+    if (!setupResult.success) {
+      logger.error(
+        { error: setupResult.error, userId, conversationId },
+        "user_conversation_setup_failed",
       );
-      if (!setupResult.success) {
-        logger.error(
-          { error: setupResult.error, userId, conversationId },
-          "user_conversation_setup_failed",
-        );
-        set.status = 500;
-        return { ok: false, error: setupResult.error || "Setup failed" };
-      }
-
-      logger.info(
-        { userId, conversationId },
-        "user_conversation_setup_completed",
-      );
-
-      // Setup conversation data
-      const dataSetup = await setupConversationData(
-        conversationId,
-        userId,
-        source,
-        false, // isExternal
-        message,
-        files.length,
-      );
-      if (!dataSetup.success) {
-        logger.error(
-          { error: dataSetup.error, conversationId },
-          "conversation_data_setup_failed",
-        );
-        set.status = 500;
-        return { ok: false, error: dataSetup.error || "Data setup failed" };
-      }
-
-      conversationStateRecord = dataSetup.data!.conversationStateRecord;
-      stateRecord = dataSetup.data!.stateRecord;
-
-      logger.info(
-        {
-          conversationStateId: conversationStateRecord.id,
-          stateId: stateRecord.id,
-        },
-        "conversation_data_setup_completed",
-      );
-
-      // Create message record
-      const messageResult = await createMessageRecord({
-        conversationId,
-        userId,
-        message,
-        source,
-        stateId: stateRecord.id,
-        files,
-        isExternal: false,
-      });
-      if (!messageResult.success) {
-        logger.error(
-          { error: messageResult.error, conversationId },
-          "message_creation_failed",
-        );
-        set.status = 500;
-        return {
-          ok: false,
-          error: messageResult.error || "Message creation failed",
-        };
-      }
-
-      createdMessage = messageResult.message!;
+      set.status = 500;
+      return { ok: false, error: setupResult.error || "Setup failed" };
     }
+
+    logger.info(
+      { userId, conversationId },
+      "user_conversation_setup_completed",
+    );
+
+    // Setup conversation data
+    const dataSetup = await setupConversationData(
+      conversationId,
+      userId,
+      source,
+      false, // isExternal
+      message,
+      files.length,
+    );
+    if (!dataSetup.success) {
+      logger.error(
+        { error: dataSetup.error, conversationId },
+        "conversation_data_setup_failed",
+      );
+      set.status = 500;
+      return { ok: false, error: dataSetup.error || "Data setup failed" };
+    }
+
+    const conversationStateRecord = dataSetup.data!.conversationStateRecord;
+    const stateRecord = dataSetup.data!.stateRecord;
+
+    logger.info(
+      {
+        conversationStateId: conversationStateRecord.id,
+        stateId: stateRecord.id,
+      },
+      "conversation_data_setup_completed",
+    );
+
+    // Create message record
+    const messageResult = await createMessageRecord({
+      conversationId,
+      userId,
+      message,
+      source,
+      stateId: stateRecord.id,
+      files,
+      isExternal: false,
+    });
+    if (!messageResult.success) {
+      logger.error(
+        { error: messageResult.error, conversationId },
+        "message_creation_failed",
+      );
+      set.status = 500;
+      return {
+        ok: false,
+        error: messageResult.error || "Message creation failed",
+      };
+    }
+
+    const createdMessage = messageResult.message!;
 
     logger.info(
       {
@@ -509,14 +445,7 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
         "chat_job_enqueued",
       );
 
-      // Build pollUrl - use full URL for x402 users (external API consumers)
-      let pollUrl = `/api/chat/status/${job.id}`;
-      if (isX402User) {
-        const url = new URL(request.url);
-        const forwardedProto = request.headers.get("x-forwarded-proto");
-        const protocol = forwardedProto || url.protocol.replace(":", "");
-        pollUrl = `${protocol}://${url.host}/api/chat/status/${job.id}`;
-      }
+      const pollUrl = `/api/chat/status/${job.id}`;
 
       const response: ChatQueuedResponse = {
         jobId: job.id!,
@@ -601,10 +530,8 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
       conversationId,
       message,
       uploadedDatasets: conversationState.values.uploadedDatasets,
-      loadHistory: !skipStorage,
-      onToolResult: skipStorage
-        ? undefined
-        : async (info) => {
+      loadHistory: true,
+      onToolResult: async (info) => {
             if (!conversationState.id) return;
             try {
               const { updateConversationState } = await import(
@@ -666,44 +593,33 @@ export async function chatHandler(ctx: any, options: ChatHandlerOptions = {}) {
 
     const response: ChatV2Response = {
       text: replyText,
-      userId, // Include userId so x402 users know their identity
+      userId,
     };
 
     // Calculate response time
     const responseTime = Date.now() - startTime;
 
-    // Save to DB only if not in skipStorage mode
-    if (!skipStorage) {
-      // Save the response to the message's content field
-      const { updateMessage } = await import("../db/operations");
-      await updateMessage(createdMessage.id, {
-        content: replyText,
-      });
+    // Save the response to the message's content field
+    const { updateMessage } = await import("../db/operations");
+    await updateMessage(createdMessage.id, {
+      content: replyText,
+    });
 
-      logger.info(
-        { messageId: createdMessage.id, contentLength: replyText.length },
-        "message_content_saved",
-      );
+    logger.info(
+      { messageId: createdMessage.id, contentLength: replyText.length },
+      "message_content_saved",
+    );
 
-      await updateMessageResponseTime(createdMessage.id, responseTime);
+    await updateMessageResponseTime(createdMessage.id, responseTime);
 
-      logger.info(
-        {
-          messageId: createdMessage.id,
-          responseTime,
-          responseTimeSec: (responseTime / 1000).toFixed(2),
-        },
-        "response_time_recorded",
-      );
-    } else {
-      logger.info(
-        {
-          responseTime,
-          responseTimeSec: (responseTime / 1000).toFixed(2),
-        },
-        "skip_storage_mode_response_not_saved",
-      );
-    }
+    logger.info(
+      {
+        messageId: createdMessage.id,
+        responseTime,
+        responseTimeSec: (responseTime / 1000).toFixed(2),
+      },
+      "response_time_recorded",
+    );
 
     logger.info(
       {

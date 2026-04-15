@@ -1,6 +1,5 @@
 import type { AnalysisArtifact, PlanTask } from "../types/core";
 import logger from "../utils/logger";
-import { walletAddressToUUID } from "../utils/uuid";
 import { getServiceClient } from "./client";
 
 // Use service client to bypass RLS - auth is verified by middleware
@@ -10,7 +9,6 @@ export interface User {
   id?: string;
   username: string;
   email: string;
-  wallet_address?: string; // For x402 payment users identified by wallet
   used_invite_code?: string;
   points?: number;
   has_completed_invite_flow?: boolean;
@@ -83,178 +81,6 @@ export async function createUser(userData: User) {
     throw error;
   }
   return data;
-}
-
-/**
- * Get user by wallet address (for x402 users)
- */
-export async function getUserByWallet(walletAddress: string) {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("wallet_address", walletAddress.toLowerCase())
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    logger.error(
-      `[getUserByWallet] Error getting user by wallet: ${error.message}`,
-    );
-    throw error;
-  } // PGRST116 = not found
-  return data;
-}
-
-/**
- * Get or create user by wallet address (for x402 users)
- * Returns existing user or creates a new one with wallet as identity
- *
- * IMPORTANT: Uses deterministic UUID derived from wallet address.
- * This ensures client and server always use the same user ID for a given wallet.
- * The walletAddressToUUID function must match the client-side implementation.
- */
-export async function getOrCreateUserByWallet(walletAddress: string): Promise<{
-  user: any;
-  isNew: boolean;
-}> {
-  const normalizedWallet = walletAddress.toLowerCase();
-
-  // Generate deterministic UUID from wallet address
-  // This MUST match the client-side walletAddressToUUID implementation
-  const deterministicUserId = walletAddressToUUID(normalizedWallet);
-
-  // First try to find user by deterministic UUID (primary lookup)
-  const { data: existingUserById, error: idError } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", deterministicUserId)
-    .single();
-
-  if (existingUserById && !idError) {
-    return { user: existingUserById, isNew: false };
-  }
-
-  // Fallback: check by wallet address (for legacy users created before deterministic UUID)
-  const existingUserByWallet = await getUserByWallet(normalizedWallet);
-  if (existingUserByWallet) {
-    // Migrate legacy user to deterministic UUID if IDs don't match
-    if (existingUserByWallet.id !== deterministicUserId) {
-      const oldUserId = existingUserByWallet.id;
-      logger.info(
-        `[getOrCreateUserByWallet] Migrating legacy user from ${oldUserId} to ${deterministicUserId}`,
-      );
-
-      try {
-        // Step 1: Create new user with deterministic UUID (copy from old user)
-        // Don't include created_at - let DB generate it
-        const { data: newUserData, error: createError } = await supabase
-          .from("users")
-          .insert({
-            id: deterministicUserId,
-            username: existingUserByWallet.username,
-            email: existingUserByWallet.email,
-            wallet_address: existingUserByWallet.wallet_address,
-          })
-          .select()
-          .single();
-
-        if (createError && createError.code !== "23505") {
-          // 23505 = already exists (race condition), which is fine
-          logger.error(
-            `[getOrCreateUserByWallet] Failed to create new user: ${createError.message}`,
-          );
-          throw createError;
-        }
-
-        // Step 2: Update all conversations to use new user ID
-        const { error: convError } = await supabase
-          .from("conversations")
-          .update({ user_id: deterministicUserId })
-          .eq("user_id", oldUserId);
-
-        if (convError) {
-          logger.error(
-            `[getOrCreateUserByWallet] Failed to migrate conversations: ${convError.message}`,
-          );
-        }
-
-        // Step 3: Update all messages to use new user ID (if they have user_id column)
-        const { error: msgError } = await supabase
-          .from("messages")
-          .update({ user_id: deterministicUserId })
-          .eq("user_id", oldUserId);
-
-        if (msgError && msgError.code !== "42703") {
-          // 42703 = column doesn't exist, which is fine
-          logger.error(
-            `[getOrCreateUserByWallet] Failed to migrate messages: ${msgError.message}`,
-          );
-        }
-
-        // Step 4: Delete old user (clean up) - only after new user is confirmed
-        if (newUserData || createError?.code === "23505") {
-          await supabase.from("users").delete().eq("id", oldUserId);
-        }
-
-        logger.info(
-          `[getOrCreateUserByWallet] Migration complete for wallet ${normalizedWallet}`,
-        );
-
-        // Return the new user
-        const { data: migratedUser } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", deterministicUserId)
-          .single();
-
-        if (migratedUser) {
-          return { user: migratedUser, isNew: false };
-        }
-
-        // If we still can't find the user, something went wrong
-        logger.error(
-          `[getOrCreateUserByWallet] Migration may have failed - user not found after migration`,
-        );
-      } catch (migrationError) {
-        logger.error(
-          `[getOrCreateUserByWallet] Migration failed: ${migrationError instanceof Error ? migrationError.message : String(migrationError)}`,
-        );
-        // Fall back to returning legacy user - better than breaking
-        return { user: existingUserByWallet, isNew: false };
-      }
-    }
-    return { user: existingUserByWallet, isNew: false };
-  }
-
-  // Create new user with deterministic UUID and wallet identity
-  const shortWallet = normalizedWallet.slice(0, 10);
-  const { data: newUser, error: createError } = await supabase
-    .from("users")
-    .insert({
-      id: deterministicUserId, // Use deterministic UUID
-      username: `wallet_${shortWallet}`,
-      email: `${normalizedWallet}@x402.local`,
-      wallet_address: normalizedWallet,
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    // Handle race condition: user might have been created by another request
-    if (createError.code === "23505") {
-      // Unique violation - user already exists, fetch and return
-      const { data: raceUser } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", deterministicUserId)
-        .single();
-      if (raceUser) {
-        return { user: raceUser, isNew: false };
-      }
-    }
-    throw createError;
-  }
-
-  return { user: newUser, isNew: true };
 }
 
 // Conversation operations

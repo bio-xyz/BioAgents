@@ -55,7 +55,7 @@ export const deepResearchStatusRoute = new Elysia().guard(
 
 /**
  * Deep Research Status Handler - Core logic for GET /api/deep-research/status/:messageId
- * Exported for reuse in x402 routes
+ * Exported for reuse in other routes
  */
 export async function deepResearchStatusHandler(ctx: any) {
   const { params, set, request } = ctx;

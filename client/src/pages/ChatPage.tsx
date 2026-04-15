@@ -2,15 +2,12 @@ import { useCallback, useEffect, useState, useRef } from "preact/hooks";
 import { route } from "preact-router";
 
 import { ChatInput } from "../components/ChatInput";
-import { EmbeddedWalletAuth } from "../components/EmbeddedWalletAuth";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { Message } from "../components/Message";
-import { PaymentConfirmationModal } from "../components/PaymentConfirmationModal";
 import { ResearchStatePanel } from "../components/research";
 import { Sidebar } from "../components/Sidebar";
 import { ToastContainer } from "../components/Toast";
 import { TypingIndicator } from "../components/TypingIndicator";
-import { Modal } from "../components/ui/Modal";
 import { WelcomeScreen } from "../components/WelcomeScreen";
 import { ConversationProvider } from "../providers/ConversationProvider";
 
@@ -19,19 +16,17 @@ import {
   useAuth,
   useAutoScroll,
   useChatAPI,
-  useEmbeddedWallet,
   useFileUpload,
   usePresignedUpload,
   useSessions,
   useStates,
   useToast,
   useWebSocket,
-  useX402Payment,
 } from "../hooks";
 import { getMessagesByConversation } from "../lib/supabase";
 
 // Utils
-import { generateConversationId, walletAddressToUUID } from "../utils/helpers";
+import { generateConversationId } from "../utils/helpers";
 
 interface ChatPageProps {
   path?: string;
@@ -49,24 +44,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // Auth context - provides userId from JWT
   const { userId: authUserId } = useAuth();
 
-  // x402 payment state (only if enabled)
-  const x402 = useX402Payment();
-  const {
-    enabled: x402Enabled,
-    walletAddress,
-    error: x402Error,
-    usdcBalance,
-    hasInsufficientBalance,
-    config: x402ConfigData,
-  } = x402;
-
-  // Embedded wallet state (always called, but only active when x402 is enabled)
-  const {
-    isSignedIn: isEmbeddedWalletConnected,
-    evmAddress: embeddedWalletAddress,
-    walletClient: embeddedWalletClient,
-  } = useEmbeddedWallet(x402ConfigData?.network, x402Enabled);
-
   // Fallback user ID for when auth is not required
   // Uses localStorage to persist across sessions
   const getFallbackUserId = () => {
@@ -78,12 +55,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   };
 
   // Determine which user ID to use
-  // Priority: x402 payment > JWT auth userId > localStorage fallback
-  const actualUserId = x402Enabled
-    ? embeddedWalletAddress
-      ? walletAddressToUUID(embeddedWalletAddress)
-      : null
-    : authUserId || getFallbackUserId();
+  const actualUserId = authUserId || getFallbackUserId();
 
   // WebSocket connection state
   const [wsConnected, setWsConnected] = useState(false);
@@ -102,7 +74,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     deleteSession,
     switchSession,
     refetchMessages,
-  } = useSessions(actualUserId || undefined, x402Enabled, wsConnected);
+  } = useSessions(actualUserId || undefined, undefined, wsConnected);
 
   // Track if we've already created a fresh session for /chat route
   const [freshSessionCreated, setFreshSessionCreated] = useState(false);
@@ -264,17 +236,11 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   const {
     isLoading,
     error,
-    paymentTxHash,
     sendMessage,
     sendDeepResearchMessage,
     clearError,
     clearLoading,
-    pendingPayment,
-    pendingPaymentType,
-    confirmPayment,
-    confirmDeepResearchPayment,
-    cancelPayment,
-  } = useChatAPI(x402);
+  } = useChatAPI();
 
   // File upload
   const {
@@ -304,10 +270,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Wallet modal state
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
-
-  // Pending message data for payment confirmation
+  // Pending message data for tracking in-flight requests
   const [pendingMessageData, setPendingMessageData] = useState<{
     content: string;
     fileMetadata?: Array<{ name: string; size: number }>;
@@ -557,13 +520,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     };
   }, [loadingConversationId, currentSessionId, addMessage, tryMarkAsProcessed]);
 
-  // Integrate embedded wallet with x402 payments
-  useEffect(() => {
-    if (x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && embeddedWalletClient) {
-      x402.setEmbeddedWalletClient(embeddedWalletClient, embeddedWalletAddress);
-    }
-  }, [x402Enabled, isEmbeddedWalletConnected, embeddedWalletAddress, embeddedWalletClient]);
-
   // Fetch and attach states to messages
   useEffect(() => {
     if (!currentSessionId || !userId) return;
@@ -714,7 +670,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           message: trimmedInput,
           conversationId: currentSessionId,
           userId: userId,
-          walletClient: x402Enabled ? embeddedWalletClient : null,
         });
 
         if (response.status === "rejected") {
@@ -729,21 +684,16 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           setLoadingMessageId(null);
           setPendingMessageData(null);
         } else if (response.status === "processing") {
-          if (response.error === "PAYMENT_REQUIRED") {
-            console.log("[ChatPage] Deep research payment required - modal will show");
-          } else {
-            console.log("[ChatPage] Deep research started, messageId:", response.messageId);
-            setLoadingMessageId(response.messageId);
-            setIsDeepResearch(true);
-            setPendingMessageData(null);
-          }
+          console.log("[ChatPage] Deep research started, messageId:", response.messageId);
+          setLoadingMessageId(response.messageId);
+          setIsDeepResearch(true);
+          setPendingMessageData(null);
         }
       } else {
         const response = await sendMessage({
           message: trimmedInput,
           conversationId: currentSessionId,
           userId: userId,
-          walletClient: x402Enabled ? embeddedWalletClient : null,
         });
 
         if (response.text) {
@@ -768,8 +718,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
       }
     } catch (err: any) {
       console.error("Chat error:", err);
-      if (err?.isPaymentConfirmation) return;
-
       removeMessage(userMessage.id);
       setInputValue(trimmedInput);
       setPendingMessageData(null);
@@ -851,118 +799,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
             </svg>
           </button>
 
-          {x402Enabled && !isEmbeddedWalletConnected && (
-            <div style={{ margin: "0.75rem 0", padding: "0 2rem" }}>
-              <div style={{
-                padding: "0.75rem 1rem",
-                background: "#0a0a0a",
-                borderRadius: "12px",
-                border: "1px solid #262626",
-              }}>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 600, color: "#ffffff" }}>
-                      Connect Your Wallet
-                    </p>
-                    <p style={{ margin: 0, fontSize: "13px", color: "#a1a1a1" }}>
-                      Create a secure wallet to access paid features
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsWalletModalOpen(true)}
-                    style={{
-                      background: "#10b981",
-                      border: "none",
-                      color: "#000000",
-                      padding: "10px 20px",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontSize: "14px",
-                      fontWeight: 600,
-                      transition: "all 0.2s ease",
-                      boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                    Connect Wallet
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {x402Enabled && isEmbeddedWalletConnected && embeddedWalletAddress && (
-            <div style={{ margin: "0.75rem 0", padding: "0 2rem" }}>
-              <EmbeddedWalletAuth usdcBalance={usdcBalance} />
-            </div>
-          )}
-
-          {x402Enabled && x402Error && (
-            <div style={{ marginBottom: "1rem", color: "#b91c1c", fontSize: "0.85rem" }}>
-              {x402Error}
-            </div>
-          )}
-
-          {x402Enabled && walletAddress && hasInsufficientBalance && (
-            <div style={{
-              margin: "0.75rem 0",
-              padding: "0.75rem 1rem",
-              borderRadius: "8px",
-              background: "rgba(251, 146, 60, 0.15)",
-              border: "1px solid rgba(251, 146, 60, 0.35)",
-              color: "var(--text-primary)",
-            }} role="alert">
-              <strong style={{ display: "block", marginBottom: "0.25rem", color: "#ea580c" }}>
-                Warning: Insufficient USDC Balance
-              </strong>
-              <span style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.9rem" }}>
-                You need at least $0.10 USDC to make payments. Your current balance is ${usdcBalance || "0.00"} USDC.
-              </span>
-            </div>
-          )}
-
-          {paymentTxHash && (
-            <div style={{
-              margin: "0.75rem 0",
-              padding: "0.75rem 1rem",
-              borderRadius: "8px",
-              background: "rgba(34, 197, 94, 0.15)",
-              border: "1px solid rgba(34, 197, 94, 0.35)",
-              color: "var(--text-primary)",
-            }} role="alert">
-              <strong style={{ display: "block", marginBottom: "0.25rem", color: "#16a34a" }}>
-                Payment Successful
-              </strong>
-              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", wordBreak: "break-all" }}>
-                <div>
-                  <strong>Transaction:</strong>{" "}
-                  <a
-                    href={`https://sepolia.basescan.org/tx/${paymentTxHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: "#0052ff", textDecoration: "underline" }}
-                  >
-                    {paymentTxHash.slice(0, 10)}...{paymentTxHash.slice(-8)}
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
-
           {error && <ErrorMessage message={error} onClose={clearError} />}
 
           <div className="chat-container" ref={containerRef}>
@@ -1024,67 +860,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         </div>
       </div>
 
-      {/* Wallet Connection Modal */}
-      {x402Enabled && (
-        <Modal
-          isOpen={isWalletModalOpen}
-          onClose={() => setIsWalletModalOpen(false)}
-          maxWidth="550px"
-        >
-          <EmbeddedWalletAuth onWalletConnected={() => setIsWalletModalOpen(false)} />
-        </Modal>
-      )}
-
-      {/* Payment Confirmation Modal */}
-      {pendingPayment && (
-        <PaymentConfirmationModal
-          isOpen={!!pendingPayment}
-          amount={pendingPayment.amount}
-          currency={pendingPayment.currency}
-          network={pendingPayment.network}
-          onConfirm={async () => {
-            if (!pendingMessageData) return;
-
-            setLoadingConversationId(currentSessionId);
-
-            if (pendingPaymentType === "deep-research") {
-              setTimeout(() => scrollToBottom(), 50);
-              const response = await confirmDeepResearchPayment();
-
-              if (response && response.status === "processing") {
-                setLoadingMessageId(response.messageId);
-                setIsDeepResearch(true);
-                setPendingMessageData(null);
-              } else if (response?.status === "rejected") {
-                addMessage({
-                  id: Date.now(),
-                  role: "assistant" as const,
-                  content: response.error || "Deep research request was rejected.",
-                  timestamp: new Date(),
-                });
-                scrollToBottom();
-                setLoadingConversationId(null);
-                setLoadingMessageId(null);
-                setPendingMessageData(null);
-              }
-            } else {
-              setTimeout(() => scrollToBottom(), 50);
-              const response = await confirmPayment();
-
-              if (response && response.text) {
-                scrollToBottom();
-                setLoadingConversationId(null);
-                setLoadingMessageId(null);
-                setPendingMessageData(null);
-              }
-            }
-          }}
-          onCancel={() => {
-            cancelPayment();
-            setPendingMessageData(null);
-          }}
-        />
-      )}
     </ConversationProvider>
   );
 }
