@@ -124,11 +124,14 @@ export function useChatAPI(): UseChatAPIReturn {
   };
 
   /**
-   * Internal function to send a chat message
+   * Send a chat message to the API
    */
-  const sendMessageInternal = async (
+  const sendMessage = async (
     params: SendMessageParams,
   ): Promise<ChatResponse> => {
+    setIsLoading(true);
+    setError("");
+
     const { message, conversationId, userId, file, files } = params;
 
     try {
@@ -219,23 +222,14 @@ export function useChatAPI(): UseChatAPIReturn {
   };
 
   /**
-   * Public sendMessage function - entry point for sending messages
+   * Send a deep research request to the API
    */
-  const sendMessage = async (
+  const sendDeepResearchMessage = async (
     params: SendMessageParams,
-  ): Promise<ChatResponse> => {
+  ): Promise<DeepResearchResponse> => {
     setIsLoading(true);
     setError("");
 
-    return sendMessageInternal(params);
-  };
-
-  /**
-   * Internal function to send a deep research request
-   */
-  const sendDeepResearchInternal = async (
-    params: SendMessageParams,
-  ): Promise<DeepResearchResponse> => {
     const { message, conversationId, userId, file, files } = params;
 
     try {
@@ -333,18 +327,6 @@ export function useChatAPI(): UseChatAPIReturn {
       // Don't set isLoading false here for deep research - it runs in background
       // Only the error path above sets it to false
     }
-  };
-
-  /**
-   * Public sendDeepResearchMessage function - entry point
-   */
-  const sendDeepResearchMessage = async (
-    params: SendMessageParams,
-  ): Promise<DeepResearchResponse> => {
-    setIsLoading(true);
-    setError("");
-
-    return sendDeepResearchInternal(params);
   };
 
   /**

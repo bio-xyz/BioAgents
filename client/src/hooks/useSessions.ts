@@ -130,10 +130,9 @@ function getOrCreateDevUserId(): string {
  * Syncs with Supabase database and subscribes to real-time updates
  *
  * @param providedUserId - The user ID (from JWT auth or dev fallback)
- * @param _reserved - Unused, kept for call-site compatibility during cleanup
  * @param wsConnected - Whether WebSocket is connected (if true, Supabase Realtime is disabled as WS is primary)
  */
-export function useSessions(providedUserId?: string, _reserved?: unknown, wsConnected?: boolean): UseSessionsReturn {
+export function useSessions(providedUserId?: string, wsConnected?: boolean): UseSessionsReturn {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -173,7 +172,7 @@ export function useSessions(providedUserId?: string, _reserved?: unknown, wsConn
     let mounted = true;
 
     async function loadConversations() {
-      // Preserve the current session's messages (in case wallet connected after sending message)
+      // Preserve the current session's messages
       // Define this OUTSIDE try block so it's accessible in catch block
       const currentSessionBeforeLoad = sessions.find(
         (s) => s.id === currentSessionId,

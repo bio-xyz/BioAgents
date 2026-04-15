@@ -74,7 +74,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     deleteSession,
     switchSession,
     refetchMessages,
-  } = useSessions(actualUserId || undefined, undefined, wsConnected);
+  } = useSessions(actualUserId || undefined, wsConnected);
 
   // Track if we've already created a fresh session for /chat route
   const [freshSessionCreated, setFreshSessionCreated] = useState(false);
@@ -198,7 +198,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         setIsDeepResearch(false);
         setLoadingConversationId(null);
         setLoadingMessageId(null);
-        setPendingMessageData(null);
       }
     } catch (err) {
       console.error("[ChatPage] WebSocket handler error:", err);
@@ -269,12 +268,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
-  // Pending message data for tracking in-flight requests
-  const [pendingMessageData, setPendingMessageData] = useState<{
-    content: string;
-    fileMetadata?: Array<{ name: string; size: number }>;
-  } | null>(null);
 
   // Loading state tracking
   const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null);
@@ -461,7 +454,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         setIsDeepResearch(false);
         setLoadingConversationId(null);
         setLoadingMessageId(null);
-        setPendingMessageData(null);
       });
     }
 
@@ -503,7 +495,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           setIsDeepResearch(false);
           setLoadingConversationId(null);
           setLoadingMessageId(null);
-          setPendingMessageData(null);
         }
       } catch (err) {
         console.error("[ChatPage] Poll error:", err);
@@ -613,8 +604,6 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
       ? selectedFiles.map((f) => ({ name: f.name, size: f.size }))
       : undefined;
 
-    setPendingMessageData({ content: messageContent, fileMetadata });
-
     setInputValue("");
     clearFile();
 
@@ -682,12 +671,10 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           scrollToBottom();
           setLoadingConversationId(null);
           setLoadingMessageId(null);
-          setPendingMessageData(null);
         } else if (response.status === "processing") {
           console.log("[ChatPage] Deep research started, messageId:", response.messageId);
           setLoadingMessageId(response.messageId);
           setIsDeepResearch(true);
-          setPendingMessageData(null);
         }
       } else {
         const response = await sendMessage({
@@ -713,14 +700,12 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           // Clear loading state
           setLoadingConversationId(null);
           setLoadingMessageId(null);
-          setPendingMessageData(null);
         }
       }
     } catch (err: any) {
       console.error("Chat error:", err);
       removeMessage(userMessage.id);
       setInputValue(trimmedInput);
-      setPendingMessageData(null);
       setLoadingConversationId(null);
       setLoadingMessageId(null);
 
