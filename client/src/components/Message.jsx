@@ -52,7 +52,10 @@ export function Message({ message }) {
     return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
   };
 
-  const getFileIcon = () => "file";
+  const getFileIcon = (mimeType) => {
+    if (mimeType?.includes("image")) return "image";
+    return "file";
+  };
 
   const timestamp = formatTimestamp(message.timestamp);
 
