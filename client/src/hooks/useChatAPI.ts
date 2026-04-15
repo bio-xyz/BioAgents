@@ -297,26 +297,13 @@ export function useChatAPI(): UseChatAPIReturn {
       // For deep research, "queued" is equivalent to "processing" - results come via message polling
       if (data.status === "queued") {
         console.log("[useChatAPI] Deep research queued:", data);
-        return {
-          messageId: data.messageId,
-          conversationId: data.conversationId,
-          status: "processing",
-        };
-      }
-
-      // Success - research is processing
-      // DON'T set isLoading to false - keep loading state active while research runs in background
-      return {
-        messageId: data.messageId,
-        conversationId: data.conversationId,
-        status: "processing",
-      };
     } catch (err: any) {
       const errorMessage =
         err instanceof Error
           ? err.message
           : "Failed to start deep research. Please try again.";
       setError(errorMessage);
+      setIsLoading(false);
 
       if (!errorMessage.includes("Session expired")) {
         toast.error(`❌ Error: ${errorMessage}`, 6000);
@@ -324,8 +311,8 @@ export function useChatAPI(): UseChatAPIReturn {
 
       throw err;
     } finally {
-      // Don't set isLoading false here for deep research - it runs in background
-      // Only the error path above sets it to false
+      // Don't set isLoading false here on success — deep research runs in background.
+      // isLoading is cleared by clearLoading() when the background job completes.
     }
   };
 
