@@ -174,7 +174,6 @@ export async function setupConversationData(
         source,
       },
     });
-    console.log('[setup] Created state with id:', stateRecord.id, 'for conversation:', conversationId, 'user:', userId);
     if (logger) {
       logger.info({ stateId: stateRecord.id }, "state_created");
     }

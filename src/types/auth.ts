@@ -34,9 +34,6 @@ export interface AuthContext {
    */
   verified: boolean;
 
-  /** External identifier (wallet address, email, etc.) */
-  externalId?: string;
-
   /** Email from JWT claims (optional) */
   email?: string;
 

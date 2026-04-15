@@ -177,11 +177,6 @@ export type Tool = {
   }) => Promise<any>;
   enabled?: boolean; // Tools are enabled by default
   deepResearchEnabled?: boolean; // Tools are enabled for deep research by default
-  payment?: {
-    required: boolean;
-    priceUSD: string;
-    tier: "free" | "basic" | "premium";
-  };
 };
 
 export type LLMProvider = "google" | "openai" | "anthropic" | "openrouter";

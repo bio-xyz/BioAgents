@@ -269,7 +269,6 @@ export async function chatHandler(ctx: any) {
         authMethod: auth?.method || "unknown",
         verified: auth?.verified || false,
         source,
-        externalId: auth?.externalId,
       },
       "user_identified_via_auth",
     );
