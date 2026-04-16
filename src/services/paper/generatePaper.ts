@@ -22,6 +22,7 @@ import {
   getUser,
 } from "../../db/operations";
 import { LLM } from "../../llm/provider";
+import { parseLLMProviderName } from "../../llm/types";
 import { getStorageProvider } from "../../storage";
 import type {
   ConversationStateValues,
@@ -451,10 +452,14 @@ function mapDiscoveriesToTasks(
     }
 
     if (allJobIds.length === 0) {
-      const jobId = (discovery as any).jobId;
-      if (isValidJobId(jobId)) {
-        allJobIds = [jobId];
-      } else if (jobId) {
+      // Legacy fallback: some older discoveries may have a top-level jobId
+      const legacyJobId =
+        "jobId" in discovery && typeof (discovery as { jobId?: unknown }).jobId === "string"
+          ? (discovery as { jobId: string }).jobId
+          : undefined;
+      if (isValidJobId(legacyJobId)) {
+        allJobIds = [legacyJobId];
+      } else if (legacyJobId) {
         hasInvalidJobIds = true;
       }
     }
@@ -500,7 +505,9 @@ async function generatePaperMetadata(
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
-  const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
+  const LLM_PROVIDER = parseLLMProviderName(
+    process.env.PAPER_GEN_LLM_PROVIDER || "openai",
+  );
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
   const apiKey =
     process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
@@ -517,7 +524,7 @@ async function generatePaperMetadata(
   const llm = new LLM({
     name: LLM_PROVIDER,
     apiKey,
-  } as any);
+  });
 
   // Generate front matter (title, abstract, snapshot) — retry once on parse failure
   const frontMatterPrompt = generateFrontMatterPrompt(state);
@@ -680,7 +687,9 @@ async function generateDiscoverySection(
     "discovery_prompt_generated",
   );
 
-  const LLM_PROVIDER = (process.env.PAPER_GEN_LLM_PROVIDER || "openai") as any;
+  const LLM_PROVIDER = parseLLMProviderName(
+    process.env.PAPER_GEN_LLM_PROVIDER || "openai",
+  );
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
   const apiKey =
     process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
@@ -697,7 +706,7 @@ async function generateDiscoverySection(
   const llm = new LLM({
     name: LLM_PROVIDER,
     apiKey,
-  } as any);
+  });
 
   let attempt = 0;
   const maxAttempts = 2;

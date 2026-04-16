@@ -74,7 +74,7 @@ export class DocumentProcessor {
         },
       };
     } catch (error) {
-      logger.error(`Error processing ${filePath}:`, error as any);
+      logger.error({ err: error }, `Error processing ${filePath}`);
       return null;
     }
   }
@@ -101,7 +101,7 @@ export class DocumentProcessor {
         }
       }
     } catch (error) {
-      logger.error(`Error reading directory ${dirPath}:`, error as any);
+      logger.error({ err: error }, `Error reading directory ${dirPath}`);
     }
 
     return documents;

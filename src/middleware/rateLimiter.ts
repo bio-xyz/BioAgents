@@ -194,7 +194,7 @@ export function rateLimitMiddleware(action: "chat" | "deep-research") {
     }
 
     // Get user ID from auth context - auth is required, no anonymous fallback
-    const auth = (request as any).auth as AuthContext | undefined;
+    const auth = request.auth;
     
     if (!auth?.userId) {
       // Should not happen if authResolver runs before this middleware

@@ -3,6 +3,7 @@
  * Tools self-register via side-effect imports.
  */
 
+import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 import type { AgentTool, AgentToolResult } from "./types";
 import logger from "../utils/logger";
 
@@ -23,15 +24,14 @@ export function registerTool(tool: AgentTool): void {
 /**
  * Returns tools in Anthropic API format for the `tools` parameter.
  */
-export function getToolDefinitions(): Array<{
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}> {
+export function getToolDefinitions(): Tool[] {
   return Array.from(tools.values()).map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: t.inputSchema,
+    input_schema: {
+      type: "object",
+      ...t.inputSchema,
+    },
   }));
 }
 

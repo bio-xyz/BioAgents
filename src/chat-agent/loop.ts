@@ -56,8 +56,7 @@ export async function runAgentLoop(
       messages,
       max_tokens: config.maxTokens,
       temperature: config.temperature ?? DEFAULT_TEMPERATURE,
-      // Cast: registry returns loose JSON Schema objects; SDK expects strict Tool type
-      tools: !isAtCap && toolDefs.length > 0 ? toolDefs as any : undefined,
+      tools: !isAtCap && toolDefs.length > 0 ? toolDefs : undefined,
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
     };
 

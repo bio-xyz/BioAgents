@@ -29,8 +29,8 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
 
     if (error) {
       logger.error(
+        { err: error },
         "DB Error: Could not fetch existing document titles.",
-        error as any,
       );
       return;
     }
@@ -101,7 +101,7 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
         );
         addedCount++;
       } catch (e) {
-        logger.error(`  - Failed to chunk document "${doc.title}":`, e as any);
+        logger.error({ err: e }, `  - Failed to chunk document "${doc.title}"`);
       }
     }
 

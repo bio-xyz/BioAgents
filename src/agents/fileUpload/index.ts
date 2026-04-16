@@ -90,7 +90,7 @@ export async function fileUploadAgent(input: {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(`${file.name}: ${errorMsg}`);
-      logger.error(`Failed to parse file ${file.name}:`, error as any);
+      logger.error({ err: error }, `Failed to parse file ${file.name}`);
     }
   }
 
@@ -101,7 +101,7 @@ export async function fileUploadAgent(input: {
     rawFiles,
   ).catch((err) => {
     errors.push(`Storage upload error: ${(err as Error).message}`);
-    logger.error("Failed to upload files to storage:", err as any);
+    logger.error({ err }, "Failed to upload files to storage");
     return [];
   });
 
@@ -171,7 +171,7 @@ export async function fileUploadAgent(input: {
         "conversation_state_persisted",
       );
     } catch (err) {
-      logger.error("Failed to update conversation state in DB:", err as any);
+      logger.error({ err }, "Failed to update conversation state in DB");
     }
   }
 

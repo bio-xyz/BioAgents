@@ -283,7 +283,7 @@ Title: ${derivedTitle}
 Claim: ${discovery.claim}
 Summary: ${discovery.summary || "(No summary provided)"}
 Novelty: ${discovery.novelty || "(Not assessed)"}
-Primary Job ID: ${(discovery as any).jobId || "N/A"}
+Primary Job ID: ${discovery.evidenceArray?.find((ev) => ev.jobId)?.jobId || "N/A"}
 
 # Evidence Explanations
 ${evidenceExplanations}

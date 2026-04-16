@@ -1,7 +1,13 @@
 // No module-level imports that could cause TDZ in Bun workers
 // All imports are dynamic inside functions
 
+import type { VectorSearchWithDocuments } from "../../embeddings/vectorSearchWithDocs";
 import type { LiteratureResult } from "../../utils/literature";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __knowledgeVectorSearch: VectorSearchWithDocuments | undefined;
+}
 
 export async function initKnowledgeBase() {
   const logger = (await import("../../utils/logger")).default;
@@ -13,7 +19,7 @@ export async function initKnowledgeBase() {
     const vectorSearch = new VectorSearchWithDocuments();
     await vectorSearch.loadDocsOnStartup(docsPath);
     // Store in globalThis for reuse
-    (globalThis as any).__knowledgeVectorSearch = vectorSearch;
+    globalThis.__knowledgeVectorSearch = vectorSearch;
   } else {
     logger.warn("KNOWLEDGE_DOCS_PATH not set, skipping document loading");
   }
@@ -35,11 +41,11 @@ export async function searchKnowledge(
   logger.info({ objective }, "searching_knowledge_base");
 
   // Get or create vector search instance
-  let vectorSearch = (globalThis as any).__knowledgeVectorSearch;
+  let vectorSearch = globalThis.__knowledgeVectorSearch;
   if (!vectorSearch) {
     const { VectorSearchWithDocuments } = await import("../../embeddings/vectorSearchWithDocs");
     vectorSearch = new VectorSearchWithDocuments();
-    (globalThis as any).__knowledgeVectorSearch = vectorSearch;
+    globalThis.__knowledgeVectorSearch = vectorSearch;
   }
 
   const searchResults = await vectorSearch.search(objective);

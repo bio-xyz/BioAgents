@@ -71,7 +71,7 @@ export class S3StorageProvider extends StorageProvider {
       return path;
     } catch (error) {
       if (logger) {
-        logger.error(`Failed to upload file to S3: ${path}`, error as any);
+        logger.error({ err: error }, `Failed to upload file to S3: ${path}`);
       }
       throw new Error(`S3 upload failed: ${(error as Error).message}`);
     }
@@ -171,7 +171,7 @@ export class S3StorageProvider extends StorageProvider {
       }
     } catch (error) {
       if (logger) {
-        logger.error(`Failed to delete file from S3: ${path}`, error as any);
+        logger.error({ err: error }, `Failed to delete file from S3: ${path}`);
       }
       throw new Error(`S3 delete failed: ${(error as Error).message}`);
     }
@@ -227,8 +227,8 @@ export class S3StorageProvider extends StorageProvider {
     } catch (error) {
       if (logger) {
         logger.error(
+          { err: error },
           `Failed to generate presigned URL for S3: ${path}`,
-          error as any,
         );
       }
       throw new Error(
@@ -270,8 +270,8 @@ export class S3StorageProvider extends StorageProvider {
     } catch (error) {
       if (logger) {
         logger.error(
+          { err: error },
           `Failed to generate presigned upload URL for S3: ${path}`,
-          error as any,
         );
       }
       throw new Error(
