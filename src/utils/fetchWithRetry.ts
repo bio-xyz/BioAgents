@@ -14,7 +14,7 @@ function isRetryable(error: unknown): boolean {
   const msg = `${error.name} ${error.message}`.toLowerCase();
   const code = ((error as NodeJS.ErrnoException).code || "").toLowerCase();
   return /econnre|enotfound|etimedout|socket|network|fetch failed|abort|unable to connect|connectionrefused/i.test(
-    msg + " " + code,
+    msg + " " + code
   );
 }
 
@@ -24,10 +24,11 @@ function delay(ms: number): Promise<void> {
 
 // Default: 10 retries with ~5 min total window (11 attempts)
 // Delays: 4s, 8s, 16s, 32s, 40s×6 = 300s total
+/** Input is narrowed to string | URL; callers passing a Request must widen this signature and restore .clone() on retry. */
 export async function fetchWithRetry(
   input: string | URL,
   init?: RequestInit,
-  options?: FetchRetryOptions,
+  options?: FetchRetryOptions
 ): Promise<{ response: Response; attempts: number }> {
   const maxRetries = options?.maxRetries ?? 10;
   const initialDelayMs = options?.initialDelayMs ?? 4000;
@@ -46,7 +47,7 @@ export async function fetchWithRetry(
       const response = await fetch(input, init);
 
       if (!RETRYABLE_STATUS_CODES.has(response.status)) {
-        return { response, attempts: attempt + 1 };
+        return { attempts: attempt + 1, response };
       }
 
       lastError = new Error(`HTTP ${response.status}`);
@@ -60,7 +61,5 @@ export async function fetchWithRetry(
     }
   }
 
-  throw new Error(
-    `All ${maxRetries + 1} attempts failed: ${lastError?.message}`,
-  );
+  throw new Error(`All ${maxRetries + 1} attempts failed: ${lastError?.message}`);
 }
