@@ -59,7 +59,9 @@ function decodeJWTPayload(token: string): { sub?: string } | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const payload = JSON.parse(atob(parts[1]));
+    const encoded = parts[1];
+    if (!encoded) return null;
+    const payload = JSON.parse(atob(encoded));
     return payload;
   } catch {
     return null;

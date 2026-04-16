@@ -109,8 +109,11 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
   if (!hasArtifacts && !hasOutput && !hasErrors) return null;
 
   const getImageSrc = (artifact: Artifact): string => {
-    if (artifact.path && imageUrls[artifact.path]) {
-      return imageUrls[artifact.path];
+    if (artifact.path) {
+      const cachedUrl = imageUrls[artifact.path];
+      if (cachedUrl) {
+        return cachedUrl;
+      }
     }
     if (artifact.content) {
       return `data:${getMimeType(artifact.filename, artifact.mimeType)};base64,${artifact.content}`;

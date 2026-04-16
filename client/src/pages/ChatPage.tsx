@@ -312,19 +312,19 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     researchState &&
     messages.length > 0 &&
     (researchState.currentHypothesis ||
-      researchState.plan?.length > 0 ||
-      researchState.suggestedNextSteps?.length > 0);
+      (researchState.plan?.length ?? 0) > 0 ||
+      (researchState.suggestedNextSteps?.length ?? 0) > 0);
 
   // Check if there's any research state worth showing (for normal chat too)
   const hasAnyResearchState =
     researchState &&
     messages.length > 0 &&
-    (researchState.uploadedDatasets?.length > 0 ||
-      researchState.keyInsights?.length > 0 ||
-      researchState.discoveries?.length > 0 ||
+    ((researchState.uploadedDatasets?.length ?? 0) > 0 ||
+      (researchState.keyInsights?.length ?? 0) > 0 ||
+      (researchState.discoveries?.length ?? 0) > 0 ||
       researchState.currentHypothesis ||
-      researchState.plan?.length > 0 ||
-      researchState.suggestedNextSteps?.length > 0 ||
+      (researchState.plan?.length ?? 0) > 0 ||
+      (researchState.suggestedNextSteps?.length ?? 0) > 0 ||
       researchState.methodology ||
       researchState.currentObjective);
 
@@ -593,7 +593,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     clearError();
 
     const fileText = hasFiles
-      ? selectedFiles.length === 1
+      ? selectedFiles.length === 1 && selectedFiles[0]
         ? `[Attached: ${selectedFiles[0].name}]`
         : `[Attached ${selectedFiles.length} files]`
       : "";

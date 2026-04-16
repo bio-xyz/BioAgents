@@ -22,6 +22,7 @@ export interface Message {
   response_time?: number;
   source?: string;
   created_at?: string;
+  updated_at?: string;
   files?: any; // JSONB field for file metadata
 }
 

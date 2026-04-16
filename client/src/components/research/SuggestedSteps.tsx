@@ -1,3 +1,4 @@
+import type { JSX } from "preact";
 import { Icon } from "../icons";
 
 interface Dataset {
@@ -84,7 +85,7 @@ export function SuggestedSteps({ steps, onSelectStep, onCustomInput, disabled }:
               style={{
                 "--step-color": config.color,
                 "--step-bg": config.bgColor,
-              } as React.CSSProperties}
+              } as JSX.CSSProperties}
             >
               <div className="suggested-step-header">
                 <span className="suggested-step-type-badge">

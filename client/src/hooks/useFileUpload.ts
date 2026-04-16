@@ -64,7 +64,7 @@ export function useFileUpload(): UseFileUploadReturn {
 
     const newFiles = [...selectedFiles, file];
     setSelectedFiles(newFiles);
-    setSelectedFile(newFiles[0]);
+    setSelectedFile(newFiles[0] ?? null);
   };
 
   /**

@@ -21,6 +21,7 @@ if (existsSync(envPath)) {
     const match = line.match(/^([^=:#]+)=(.*)$/);
     if (match) {
       const [, key, value] = match;
+      if (key === undefined || value === undefined) continue;
       process.env[key.trim()] = value.trim();
     }
   }

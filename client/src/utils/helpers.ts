@@ -14,8 +14,8 @@ export function generateConversationId(): string {
     window.crypto.getRandomValues(array);
 
     // Set version (4) and variant bits
-    array[6] = (array[6] & 0x0f) | 0x40;
-    array[8] = (array[8] & 0x3f) | 0x80;
+    array[6] = ((array[6] ?? 0) & 0x0f) | 0x40;
+    array[8] = ((array[8] ?? 0) & 0x3f) | 0x80;
 
     // Convert to UUID format
     const hex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');

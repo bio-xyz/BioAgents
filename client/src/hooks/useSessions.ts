@@ -261,7 +261,10 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 })),
               );
               setSessions(sessionsWithMessages);
-              setCurrentSessionId(sessionsWithMessages[0].id);
+              const firstSession = sessionsWithMessages[0];
+              if (firstSession) {
+                setCurrentSessionId(firstSession.id);
+              }
             }
           }
         } else {
@@ -533,9 +536,10 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               // Find the user message with this question
               let userMsgIndex = -1;
               for (let i = messages.length - 1; i >= 0; i--) {
+                const candidate = messages[i];
                 if (
-                  messages[i].role === "user" &&
-                  messages[i].content === updatedMessage.question
+                  candidate?.role === "user" &&
+                  candidate.content === updatedMessage.question
                 ) {
                   userMsgIndex = i;
                   break;
@@ -550,13 +554,14 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               }
 
               const nextIndex = userMsgIndex + 1;
+              const nextMessage = messages[nextIndex];
 
               // Check if assistant message already exists after user message
               if (
                 nextIndex < messages.length &&
-                messages[nextIndex].role === "assistant"
+                nextMessage?.role === "assistant"
               ) {
-                const existingContent = messages[nextIndex].content.trim();
+                const existingContent = nextMessage.content.trim();
 
                 console.log(
                   "[Realtime] UPDATE: Found existing assistant message",
@@ -608,7 +613,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                     "[Realtime] Updating assistant message from UPDATE (content changed)",
                   );
                   messages[nextIndex] = {
-                    ...messages[nextIndex],
+                    ...nextMessage,
                     content: updatedMessage.content,
                   };
                 }

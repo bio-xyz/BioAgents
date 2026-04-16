@@ -25,7 +25,7 @@ export function parseCitationsFromText(text: string): {
   let index = 1;
 
   while ((match = citationRegex.exec(text)) !== null) {
-    const citedText = match[1];
+    const citedText = match[1] ?? '';
     const urlsString = match[2];
     const urls = urlsString ? urlsString.split(',').map(url => url.trim()).filter(url => url) : [];
 
@@ -93,11 +93,11 @@ export function extractDomainName(hostname: string): string {
     const twoPartTlds = ['co', 'com', 'gov', 'edu', 'ac', 'org', 'net'];
     const secondLastPart = parts[parts.length - 2];
 
-    if (parts.length >= 3 && twoPartTlds.includes(secondLastPart)) {
-      return parts[parts.length - 3];
+    if (parts.length >= 3 && secondLastPart !== undefined && twoPartTlds.includes(secondLastPart)) {
+      return parts[parts.length - 3] ?? withoutWww;
     }
 
-    return parts[parts.length - 2];
+    return secondLastPart ?? withoutWww;
   }
 
   return withoutWww;

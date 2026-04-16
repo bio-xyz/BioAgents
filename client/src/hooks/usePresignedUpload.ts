@@ -265,7 +265,9 @@ export function usePresignedUpload(): UsePresignedUploadReturn {
       };
 
       // First file sequential (creates conversation if needed)
-      const firstResult = await getPresignedUrl(files[0]);
+      const firstFile = files[0];
+      if (!firstFile) return [];
+      const firstResult = await getPresignedUrl(firstFile);
       const urlResults: { file: File; urlData: UploadUrlResponse }[] = [firstResult];
 
       // Remaining files in parallel (conversation now exists)
