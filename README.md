@@ -224,23 +224,13 @@ The character's system instruction is automatically included in LLM calls for pl
 - Button styles: `client/src/styles/buttons.css`
 - Mobile-first responsive design
 
-**Payment Integration:**
-
-The UI includes integrated support for x402 micropayments using Coinbase embedded wallets:
-
-- Embedded wallet authentication via `client/src/components/EmbeddedWalletAuth.tsx`
-- x402 payment hooks in `client/src/hooks/useX402Payment.ts`
-- Seamless USDC payment flow for paid API requests
-- Toast notifications for payment status
-
 ## Authentication
 
-BioAgents supports two independent auth systems:
+BioAgents supports JWT authentication for external frontends:
 
 | Setting | Options | Purpose |
 | ------- | ------- | ------- |
 | `AUTH_MODE` | `none` / `jwt` | JWT authentication for external frontends |
-| `X402_ENABLED` | `true` / `false` | x402 USDC micropayments |
 
 ### JWT Authentication (Production)
 
@@ -268,20 +258,7 @@ fetch('https://your-bioagents-api/api/chat', {
 });
 ```
 
-**📖 See [AUTH.md](documentation/docs/AUTH.md) for complete JWT integration guide**
-
-### x402 Payment Protocol (Optional)
-
-For pay-per-request access using USDC micropayments:
-
-```bash
-# .env
-X402_ENABLED=true
-X402_ENVIRONMENT=testnet  # or mainnet
-X402_PAYMENT_ADDRESS=0xYourWalletAddress
-```
-
-**📖 See [AUTH.md](documentation/docs/AUTH.md) for x402 configuration details**
+**See [AUTH.md](documentation/docs/AUTH.md) for complete JWT integration guide**
 
 ## Job Queue (Production)
 
@@ -314,8 +291,6 @@ bun run worker   # Worker process
 │   ├── routes/              # HTTP route handlers
 │   │   ├── chat.ts          # Agent-based chat endpoint
 │   │   ├── deep-research/   # Deep research endpoints
-│   │   ├── x402/            # x402 payment-gated routes
-│   │   ├── b402/            # b402 payment-gated routes
 │   │   └── admin/           # Bull Board dashboard
 │   ├── agents/              # Independent agent modules
 │   │   ├── fileUpload/      # File parsing & storage
@@ -338,9 +313,7 @@ bun run worker   # Worker process
 │   │   └── jwt.ts           # JWT verification service
 │   ├── middleware/          # Request/response middleware
 │   │   ├── authResolver.ts  # Multi-method authentication
-│   │   ├── rateLimiter.ts   # Rate limiting
-│   │   ├── x402/            # x402 payment protocol (Base/USDC)
-│   │   └── b402/            # b402 payment protocol (BNB/USDT)
+│   │   └── rateLimiter.ts   # Rate limiting
 │   ├── llm/                 # LLM providers & interfaces
 │   ├── embeddings/          # Vector database & document processing
 │   ├── db/                  # Database operations
@@ -351,7 +324,7 @@ bun run worker   # Worker process
 ├── client/                  # Frontend UI (Preact)
 │   ├── src/
 │   │   ├── components/     # UI components
-│   │   ├── hooks/          # Custom hooks (chat, payments, etc.)
+│   │   ├── hooks/          # Custom hooks (chat, etc.)
 │   │   └── styles/         # CSS files
 │   └── public/             # Static assets
 ├── documentation/           # Project documentation

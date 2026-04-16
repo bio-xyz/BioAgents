@@ -16,6 +16,7 @@ export interface LLMRequest {
   systemInstruction?: string;
   tools?: LLMTool[];
   thinkingBudget?: number;
+  effort?: string;
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';

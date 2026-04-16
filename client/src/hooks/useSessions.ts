@@ -129,21 +129,15 @@ function getOrCreateDevUserId(): string {
  * Handles session creation, deletion, switching, and message updates
  * Syncs with Supabase database and subscribes to real-time updates
  *
- * @param walletUserId - The actual user ID (deterministic UUID from wallet or dev user ID)
- * @param x402Enabled - Whether x402 payment mode is enabled (affects fallback behavior)
+ * @param providedUserId - The user ID (from JWT auth or dev fallback)
  * @param wsConnected - Whether WebSocket is connected (if true, Supabase Realtime is disabled as WS is primary)
  */
-export function useSessions(walletUserId?: string, x402Enabled?: boolean, wsConnected?: boolean): UseSessionsReturn {
+export function useSessions(providedUserId?: string, wsConnected?: boolean): UseSessionsReturn {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
-  // When x402 is enabled, ONLY use the provided wallet user ID (no fallback)
-  // When x402 is disabled, fall back to dev user ID for non-wallet users
-  // This prevents mixing up conversations between different auth methods
-  const userId = x402Enabled
-    ? walletUserId || ""  // x402: require wallet ID, empty string means not logged in
-    : (walletUserId || getOrCreateDevUserId());  // non-x402: fall back to dev user
+  const userId = providedUserId || getOrCreateDevUserId();
 
   // Provide a default session to prevent undefined errors during initial load
   const currentSession = sessions.find((s) => s.id === currentSessionId) ||
@@ -158,9 +152,9 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean, wsConn
    * Only loads when we have a valid userId
    */
   useEffect(() => {
-    // Skip loading if no userId (x402 mode but wallet not connected)
+    // Skip loading if no userId
     if (!userId) {
-      console.log("[useSessions] No userId, skipping conversation load (waiting for wallet)");
+      console.log("[useSessions] No userId, skipping conversation load");
       setIsLoading(false);
       // Create a temporary empty session for UI
       const tempSession = {
@@ -178,7 +172,7 @@ export function useSessions(walletUserId?: string, x402Enabled?: boolean, wsConn
     let mounted = true;
 
     async function loadConversations() {
-      // Preserve the current session's messages (in case wallet connected after sending message)
+      // Preserve the current session's messages
       // Define this OUTSIDE try block so it's accessible in catch block
       const currentSessionBeforeLoad = sessions.find(
         (s) => s.id === currentSessionId,

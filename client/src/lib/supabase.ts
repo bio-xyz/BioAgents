@@ -11,23 +11,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Types matching backend schema
-export interface User {
-  id?: string;
-  username: string;
-  email: string;
-  used_invite_code?: string;
-  points?: number;
-  has_completed_invite_flow?: boolean;
-  invite_codes_remaining?: number;
-}
-
-export interface Conversation {
-  id?: string;
-  user_id: string;
-  created_at?: string;
-}
-
 export interface Message {
   id?: string;
   conversation_id: string;
@@ -85,34 +68,6 @@ export async function getMessagesByConversation(
   }
   
   console.log("[supabase] Found messages:", data?.length || 0);
-  return data;
-}
-
-export async function createConversation(conversationData: Conversation) {
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert(conversationData)
-    .select()
-    .single();
-
-  if (error) {
-    // Ignore duplicate errors (code 23505)
-    if (error.code === "23505") {
-      return conversationData;
-    }
-    throw error;
-  }
-  return data;
-}
-
-export async function createMessage(messageData: Message) {
-  const { data, error } = await supabase
-    .from("messages")
-    .insert(messageData)
-    .select()
-    .single();
-
-  if (error) throw error;
   return data;
 }
 

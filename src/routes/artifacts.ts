@@ -8,7 +8,7 @@ import logger from "../utils/logger";
  * Artifacts Route - Handles artifact downloads with presigned URLs
  *
  * Security measures:
- * - Authentication required (JWT, API key, or x402)
+ * - Authentication required (JWT or API key)
  * - Ownership validation (user can only access their own artifacts)
  * - Path traversal protection (blocks ../ sequences)
  */

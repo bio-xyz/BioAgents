@@ -223,7 +223,7 @@ export function useStates(
           const newState = payload.new as State;
 
           // Only update if this state is for the current conversation
-          // Note: We don't filter by userId because x402 external agents use a system userId
+          // Note: We don't filter by userId because external agents may use a system userId
           if (newState.values?.conversationId === conversationId) {
             console.log("[useStates] Setting new state from INSERT");
             setCurrentState(newState);
@@ -243,7 +243,7 @@ export function useStates(
           const updatedState = payload.new as State;
 
           // Only update if this state is for the current conversation
-          // Note: We don't filter by userId because x402 external agents use a system userId
+          // Note: We don't filter by userId because external agents may use a system userId
           if (updatedState.values?.conversationId === conversationId) {
             console.log("[useStates] ✅ Setting updated state from UPDATE");
             setCurrentState(updatedState);

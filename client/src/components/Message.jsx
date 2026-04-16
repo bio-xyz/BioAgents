@@ -53,15 +53,7 @@ export function Message({ message }) {
   };
 
   const getFileIcon = (mimeType) => {
-    if (!mimeType) return "file";
-    if (mimeType.includes("pdf")) return "file";
-    if (mimeType.includes("image")) return "image";
-    if (
-      mimeType.includes("spreadsheet") ||
-      mimeType.includes("excel") ||
-      mimeType.includes("csv")
-    )
-      return "file";
+    if (mimeType?.includes("image")) return "image";
     return "file";
   };
 
@@ -171,19 +163,6 @@ export function Message({ message }) {
       );
     }
   };
-
-  // Debug: log message to see if thinkingState is present
-  if (!isUser && message.thinkingState) {
-    console.log(
-      "[Message] Rendering with thinkingState:",
-      message.thinkingState,
-    );
-  } else if (!isUser) {
-    console.log(
-      "[Message] No thinkingState for assistant message:",
-      message.id,
-    );
-  }
 
   return (
     <div className={`message ${isUser ? "user" : "assistant"}`}>

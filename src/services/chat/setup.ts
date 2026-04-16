@@ -23,33 +23,27 @@ export interface ConversationSetup {
  * Ensures user and conversation exist with ownership validation
  * @param userId - The user's UUID
  * @param conversationId - The conversation UUID
- * @param options.skipUserCreation - Skip user creation (for x402 users who already exist)
  */
 export async function ensureUserAndConversation(
   userId: string,
   conversationId: string,
-  options?: { skipUserCreation?: boolean },
 ): Promise<SetupResult> {
-  // Create user if not exists (skip for x402 users who are already created)
-  if (!options?.skipUserCreation) {
-    try {
-      const user = await createUser({
-        id: userId,
-        username: `user_${userId.slice(0, 8)}`,
-        email: `${userId}@temp.local`,
-      });
-      if (user) {
-        if (logger) logger.info({ userId }, "user_created");
-      } else {
-        // User already exists (createUser returns null for duplicates)
-        if (logger) logger.debug({ userId }, "user_already_exists");
-      }
-    } catch (err: any) {
-      if (logger) logger.error({ err, userId }, "create_user_failed");
-      return { success: false, error: "Failed to create user" };
+  // Create user if not exists
+  try {
+    const user = await createUser({
+      id: userId,
+      username: `user_${userId.slice(0, 8)}`,
+      email: `${userId}@temp.local`,
+    });
+    if (user) {
+      if (logger) logger.info({ userId }, "user_created");
+    } else {
+      // User already exists (createUser returns null for duplicates)
+      if (logger) logger.debug({ userId }, "user_already_exists");
     }
-  } else {
-    if (logger) logger.info({ userId }, "user_creation_skipped_x402");
+  } catch (err: any) {
+    if (logger) logger.error({ err, userId }, "create_user_failed");
+    return { success: false, error: "Failed to create user" };
   }
 
   // Check if conversation exists and validate ownership
@@ -180,7 +174,6 @@ export async function setupConversationData(
         source,
       },
     });
-    console.log('[setup] Created state with id:', stateRecord.id, 'for conversation:', conversationId, 'user:', userId);
     if (logger) {
       logger.info({ stateId: stateRecord.id }, "state_created");
     }

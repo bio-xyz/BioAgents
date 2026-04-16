@@ -1,11 +1,10 @@
 # Authentication Guide
 
-BioAgents supports two independent authentication systems:
+BioAgents supports JWT authentication for external frontends.
 
 | Setting | Options | Purpose |
 |---------|---------|---------|
 | `AUTH_MODE` | `none` / `jwt` | JWT authentication for external frontends |
-| `X402_ENABLED` | `true` / `false` | x402 USDC micropayments |
 
 ## Quick Start
 
@@ -20,14 +19,6 @@ AUTH_MODE=none
 ```bash
 AUTH_MODE=jwt
 BIOAGENTS_SECRET=your-secure-secret  # openssl rand -hex 32
-```
-
-### Pay-per-Request (x402)
-
-```bash
-X402_ENABLED=true
-X402_ENVIRONMENT=testnet
-X402_PAYMENT_ADDRESS=0xYourWalletAddress
 ```
 
 ---
@@ -147,159 +138,14 @@ token = jwt.encode(
 
 ---
 
-## x402 Payment Protocol
-
-For pay-per-request access using USDC micropayments on Base network.
-
-### Features
-
-- **Gasless Transfers**: EIP-3009 for fee-free USDC transfers
-- **Embedded Wallets**: Email-based wallet creation via CDP
-- **HTTP 402 Flow**: Standard "Payment Required" protocol
-- **Base Network**: Supports testnet (Base Sepolia) and mainnet (Base)
-- **Persistent Conversations**: Multi-turn conversations supported
-
-### Configuration
-
-```bash
-X402_ENABLED=true
-X402_PAYMENT_ADDRESS=0xYourWalletAddress
-X402_ENVIRONMENT=testnet  # or 'mainnet'
-X402_NETWORK=base-sepolia  # or 'base' for mainnet
-X402_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
-```
-
-### Coinbase CDP Credentials
-
-Get from [Coinbase Developer Portal](https://portal.cdp.coinbase.com):
-
-```bash
-CDP_API_KEY_ID=your_key_id
-CDP_API_KEY_SECRET=your_key_secret
-CDP_PROJECT_ID=your_project_id  # For embedded wallets
-```
-
-### How It Works
-
-```
-Client                          Server
-  |                               |
-  |-- POST /api/x402/chat ------->|
-  |                               |
-  |<-- 402 Payment Required ------|
-  |    (payment details)          |
-  |                               |
-  |-- Sign USDC authorization --->|
-  |    (gasless EIP-3009)         |
-  |                               |
-  |-- POST /api/x402/chat ------->|
-  |    + X-PAYMENT header         |
-  |                               |
-  |<-- 200 OK + response ---------|
-```
-
-### Code Example
-
-```javascript
-import { x402Fetch } from 'x402-fetch';
-
-const response = await x402Fetch('http://localhost:3000/api/x402/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    message: 'What is DNA?',
-    conversationId: 'test-conv-123'  // Optional: for multi-turn
-  }),
-  x402: {
-    privateKey: process.env.WALLET_PRIVATE_KEY,
-    network: 'base-sepolia'
-  }
-});
-```
-
-### Pricing
-
-Default: $0.01 per request. Configure in `src/x402/pricing.ts`:
-
-```typescript
-export const routePricing: RoutePricing[] = [
-  {
-    route: "/api/x402/chat",
-    priceUSD: "0.01",
-    description: "Chat API access",
-  },
-];
-```
-
----
-
-## Authentication Priority
-
-When multiple auth methods are available, the system uses this priority:
-
-1. **x402 payment proof** - Cryptographic wallet signature (highest trust)
-2. **JWT token** - Verified signature
-3. **Anonymous** - Only if `AUTH_MODE=none`
-
----
-
-## Combining JWT + x402
-
-You can enable both systems simultaneously:
-
-```bash
-AUTH_MODE=jwt
-X402_ENABLED=true
-```
-
-This allows:
-- JWT-authenticated users to access `/api/chat` and `/api/deep-research/*` (no payment)
-- Anyone to pay-per-request via `/api/x402/chat` and `/api/x402/deep-research/*`
-
-When x402 payment is present, it takes priority over JWT authentication.
-
----
-
 ## API Endpoints
 
-| Endpoint | Auth Required | Payment Required |
-|----------|--------------|------------------|
-| `/api/chat` | JWT (if `AUTH_MODE=jwt`) | No |
-| `/api/x402/chat` | No | Yes (x402) |
-| `/api/deep-research/start` | JWT (if `AUTH_MODE=jwt`) | No |
-| `/api/deep-research/status` | JWT (if `AUTH_MODE=jwt`) | No |
-| `/api/x402/deep-research/start` | No | Yes (x402) |
-| `/api/x402/deep-research/status` | No | Yes (x402) |
-| `/api/x402/config` | No | No |
-| `/api/health` | No | No |
-
----
-
-## Database Schema
-
-### Payment Tracking - `x402_payments`
-
-```sql
-CREATE TABLE x402_payments (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  conversation_id UUID REFERENCES conversations(id),
-  message_id UUID REFERENCES messages(id),
-  amount_usd NUMERIC NOT NULL,
-  amount_wei TEXT NOT NULL,
-  asset TEXT DEFAULT 'USDC',
-  network TEXT NOT NULL,
-  tools_used TEXT[],
-  tx_hash TEXT,
-  payment_status TEXT CHECK (payment_status IN ('pending', 'verified', 'settled', 'failed')),
-  payment_header JSONB,
-  payment_requirements JSONB,
-  error_message TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  verified_at TIMESTAMPTZ,
-  settled_at TIMESTAMPTZ
-);
-```
+| Endpoint | Auth Required |
+|----------|--------------|
+| `/api/chat` | JWT (if `AUTH_MODE=jwt`) |
+| `/api/deep-research/start` | JWT (if `AUTH_MODE=jwt`) |
+| `/api/deep-research/status` | JWT (if `AUTH_MODE=jwt`) |
+| `/api/health` | No |
 
 ---
 
@@ -309,8 +155,6 @@ CREATE TABLE x402_payments (
 |------|---------|
 | `src/middleware/authResolver.ts` | Unified auth middleware |
 | `src/services/jwt.ts` | JWT verification |
-| `src/middleware/x402.ts` | Payment enforcement |
-| `src/x402/service.ts` | Payment verification |
 | `src/types/auth.ts` | Auth types |
 
 ---
@@ -326,29 +170,3 @@ CREATE TABLE x402_payments (
 - Check JWT expiration (max 1 hour by default)
 - Ensure `sub` claim is a valid UUID
 - Verify `AUTH_MODE=jwt` is set on server
-
-### Payment Verification Failed
-
-**Issue**: `x402_payment_invalid` error
-
-**Solutions**:
-- Check USDC balance in wallet
-- Verify network configuration (testnet vs mainnet)
-- Ensure facilitator URL is correct
-
-### x402 Routes Not Available
-
-**Issue**: 404 on `/api/x402/*` routes
-
-**Solutions**:
-- Verify `X402_ENABLED=true` is set
-- Restart server after changing `.env`
-
----
-
-## Resources
-
-- [x402 Protocol](https://x402.org)
-- [Coinbase Developer Platform](https://portal.cdp.coinbase.com)
-- [Base Network](https://base.org)
-- [EIP-3009: Transfer With Authorization](https://eips.ethereum.org/EIPS/eip-3009)

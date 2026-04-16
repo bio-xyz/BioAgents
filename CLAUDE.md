@@ -4,7 +4,7 @@ AI-powered research assistant for bioscience literature and data analysis.
 
 ## Related Documentation
 
-- [AUTH.md](documentation/docs/AUTH.md) - Authentication (JWT, x402/b402 payments)
+- [AUTH.md](documentation/docs/AUTH.md) - Authentication (JWT)
 - [SETUP.md](documentation/docs/SETUP.md) - Environment setup and LLM configuration
 - [JOB_QUEUE.md](documentation/docs/JOB_QUEUE.md) - BullMQ queue system architecture
 - [FILE_UPLOAD.md](documentation/docs/FILE_UPLOAD.md) - S3 presigned URL file upload flow
@@ -169,8 +169,6 @@ src/
 │   ├── auth.ts          # /api/auth/* endpoints
 │   ├── artifacts.ts     # /api/artifacts/download
 │   ├── deep-research/   # /api/deep-research/*
-│   ├── x402/            # Payment-gated routes (Base/USDC)
-│   ├── b402/            # Payment-gated routes (BNB/USDT)
 │   └── admin/           # Bull Board dashboard
 ├── agents/               # AI agent implementations
 │   ├── literature/      # Literature search (OpenScholar, BioAgents, Edison)
@@ -188,11 +186,9 @@ src/
 │   │   └── notify.ts        # Redis pub/sub notifications
 │   ├── websocket/       # WebSocket handler for real-time updates
 │   └── jwt.ts           # JWT verification service
-├── middleware/           # Auth, rate limiting, payment validation
+├── middleware/           # Auth, rate limiting
 │   ├── authResolver.ts  # Multi-method authentication
-│   ├── rateLimiter.ts   # Rate limiting
-│   ├── x402/            # x402 payment protocol (Base/USDC)
-│   └── b402/            # b402 payment protocol (BNB/USDT)
+│   └── rateLimiter.ts   # Rate limiting
 ├── llm/                  # LLM provider adapters
 │   └── adapters/        # OpenAI, Anthropic, Google, OpenRouter
 ├── embeddings/           # Vector search and document processing
@@ -245,10 +241,6 @@ SUPABASE_ANON_KEY=
 # Job Queue (optional)
 USE_JOB_QUEUE=false        # Enable BullMQ
 REDIS_URL=redis://localhost:6379
-
-# Payment Protocols (optional)
-X402_ENABLED=false         # Base/USDC payments
-B402_ENABLED=false         # BNB/USDT payments
 ```
 
 ## API Endpoints
@@ -265,11 +257,6 @@ B402_ENABLED=false         # BNB/USDT payments
 - `POST /api/deep-research/conversations/:conversationId/paper` - Generate LaTeX paper from conversation
 - `GET /api/deep-research/paper/:paperId` - Get paper with fresh presigned URLs
 - `GET /api/deep-research/conversations/:conversationId/papers` - List all papers for a conversation
-
-### Payment-Gated (x402/b402)
-
-- `POST /api/x402/chat` - Payment-gated chat (Base/USDC)
-- `POST /api/b402/chat` - Payment-gated chat (BNB/USDT)
 
 ### Admin
 
@@ -337,8 +324,6 @@ bun test
 # Run specific test file
 bun test src/path/to/test.ts
 
-# Run tests with x402 enabled
-X402_ENABLED=true bun test
 ```
 
 ## Docker Deployment

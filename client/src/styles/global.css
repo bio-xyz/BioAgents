@@ -110,13 +110,6 @@ body {
   gap: 10px;
 }
 
-.sidebar-title {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  padding: 0 4px 4px;
-  font-weight: 500;
-}
-
 .sidebar-branding {
   display: flex;
   align-items: center;

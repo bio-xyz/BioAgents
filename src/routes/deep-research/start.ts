@@ -16,7 +16,6 @@ import {
 import {
   getConversationState,
   getMessagesByConversation,
-  getOrCreateUserByWallet,
   updateConversationState,
   updateMessage,
   updateState,
@@ -79,9 +78,9 @@ initKnowledgeBase();
 type DeepResearchStartResponse = {
   messageId: string | null;
   conversationId: string;
-  userId: string; // Important: Return userId so external platforms can check status
+  userId: string;
   status: "processing";
-  pollUrl?: string; // Full URL for x402 users to check status
+  pollUrl?: string;
   deduplicated?: true;
   error?: string;
 };
@@ -245,19 +244,8 @@ export const __deepResearchStartTestables = {
   handleDeepResearchStartFailure,
 };
 
-function buildDeepResearchPollUrl(
-  request: Request,
-  messageId: string,
-  isX402User: boolean,
-): string {
-  if (!isX402User) {
-    return `/api/deep-research/status/${messageId}`;
-  }
-
-  const url = new URL(request.url);
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const protocol = forwardedProto || url.protocol.replace(":", "");
-  return `${protocol}://${url.host}/api/deep-research/status/${messageId}`;
+function buildDeepResearchPollUrl(messageId: string): string {
+  return `/api/deep-research/status/${messageId}`;
 }
 
 /**
@@ -291,7 +279,6 @@ export const deepResearchStartRoute = new Elysia().guard(
 
 /**
  * Deep Research Start Handler - Core logic for POST /api/deep-research/start
- * Exported for reuse in x402 routes
  */
 export async function deepResearchStartHandler(ctx: any) {
   const { body, set, request } = ctx;
@@ -309,11 +296,9 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   // Get userId from auth context (set by authResolver middleware)
-  // Auth context handles: x402 payment > JWT token > API key > body.userId > anonymous
   const auth = (request as any).auth as AuthContext | undefined;
   let userId = auth?.userId || generateUUID();
-  const source = auth?.method === "x402" ? "x402" : "api";
-  const isX402User = auth?.method === "x402";
+  const source = "api";
 
   logger.info(
     {
@@ -321,27 +306,9 @@ export async function deepResearchStartHandler(ctx: any) {
       authMethod: auth?.method || "unknown",
       verified: auth?.verified || false,
       source,
-      externalId: auth?.externalId,
     },
     "deep_research_user_identified_via_auth",
   );
-
-  // For x402 users, ensure wallet user record exists and use the actual user ID
-  if (isX402User && auth?.externalId) {
-    const { user, isNew } = await getOrCreateUserByWallet(auth.externalId);
-
-    // Use the actual database user ID (may differ from auth.userId)
-    userId = user.id;
-
-    logger.info(
-      {
-        userId: user.id,
-        wallet: auth.externalId,
-        isNewUser: isNew,
-      },
-      "x402_user_record_ensured",
-    );
-  }
 
   // Auto-generate conversationId if not provided
   let conversationId = parsedBody.conversationId;
@@ -389,10 +356,7 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   // Ensure user and conversation exist
-  // Skip user creation for x402 users (already created by getOrCreateUserByWallet)
-  const setupResult = await ensureUserAndConversation(userId, conversationId, {
-    skipUserCreation: isX402User,
-  });
+  const setupResult = await ensureUserAndConversation(userId, conversationId);
   if (!setupResult.success) {
     set.status = 500;
     return { ok: false, error: setupResult.error || "Setup failed" };
@@ -455,12 +419,6 @@ export async function deepResearchStartHandler(ctx: any) {
       conversationStateRecord.values,
     );
     if (activeRun) {
-      const pollUrl = buildDeepResearchPollUrl(
-        request,
-        activeRun.messageId,
-        isX402User,
-      );
-
       logger.info(
         {
           conversationId,
@@ -471,6 +429,8 @@ export async function deepResearchStartHandler(ctx: any) {
         },
         "deep_research_start_deduplicated_active_run",
       );
+
+      const pollUrl = buildDeepResearchPollUrl(activeRun.messageId);
 
       if (activeRun.mode === "queue") {
         const dedupeResponse: DeepResearchQueuedResponse = {
@@ -798,11 +758,7 @@ export async function deepResearchStartHandler(ctx: any) {
         "deep_research_job_enqueued",
       );
 
-      const pollUrl = buildDeepResearchPollUrl(
-        request,
-        createdMessage.id,
-        isX402User,
-      );
+      const pollUrl = buildDeepResearchPollUrl(createdMessage.id);
 
       const response: DeepResearchQueuedResponse = {
         jobId: job.id!,
@@ -849,18 +805,11 @@ export async function deepResearchStartHandler(ctx: any) {
   );
 
   // Return immediately with message ID
-  // Include userId so external platforms (x402) can check status later
-  // Build pollUrl for x402 users (external API consumers)
-  const statusPollUrl = isX402User
-    ? buildDeepResearchPollUrl(request, createdMessage.id, isX402User)
-    : undefined;
-
   const response: DeepResearchStartResponse = {
     messageId: createdMessage.id,
     conversationId,
-    userId, // Important for x402 users who may not have provided one
+    userId,
     status: "processing",
-    ...(statusPollUrl && { pollUrl: statusPollUrl }),
   };
 
   // Run the actual deep research in the background

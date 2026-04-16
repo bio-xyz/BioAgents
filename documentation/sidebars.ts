@@ -22,7 +22,6 @@ const sidebars: SidebarsConfig = {
         'guides/file-upload',
         'guides/job-queue',
         'guides/websocket',
-        'guides/x402-payments',
       ],
     },
     {

@@ -1,20 +1,18 @@
 /**
  * Authentication Types for BioAgents Framework
  *
- * Supports three auth modes:
+ * Supports two auth modes:
  * - none: No authentication (development/self-hosted)
  * - jwt: JWT signed with BIOAGENTS_SECRET (production)
- * - x402: Cryptographic wallet payment proof (permissionless)
  */
 
 /**
  * Authentication methods supported by the framework
  */
-export type AuthMethod = "jwt" | "x402" | "api_key" | "anonymous";
+export type AuthMethod = "jwt" | "api_key" | "anonymous";
 
 /**
  * Auth modes that can be configured via AUTH_MODE env var
- * Note: x402 is controlled separately via X402_ENABLED flag
  */
 export type AuthMode = "none" | "jwt";
 
@@ -31,13 +29,10 @@ export interface AuthContext {
 
   /**
    * Whether the identity is cryptographically verified
-   * - true: JWT signature valid OR x402 payment verified
+   * - true: JWT signature valid
    * - false: Anonymous or unverified
    */
   verified: boolean;
-
-  /** External identifier (wallet address, email, etc.) */
-  externalId?: string;
 
   /** Email from JWT claims (optional) */
   email?: string;
@@ -122,9 +117,6 @@ export interface AuthConfig {
   /** Whether a secret is configured */
   hasSecret: boolean;
 
-  /** Whether x402 is enabled (can work alongside JWT) */
-  x402Enabled: boolean;
-
   /** Maximum JWT expiration allowed (in seconds) */
   maxJwtExpiration: number;
 }
@@ -135,13 +127,11 @@ export interface AuthConfig {
 export function getAuthConfig(): AuthConfig {
   const mode = (process.env.AUTH_MODE as AuthMode) || "none";
   const hasSecret = !!process.env.BIOAGENTS_SECRET;
-  const x402Enabled = process.env.X402_ENABLED === "true";
   const maxJwtExpiration = parseInt(process.env.MAX_JWT_EXPIRATION || "3600", 10); // 1h default
 
   return {
     mode,
     hasSecret,
-    x402Enabled,
     maxJwtExpiration,
   };
 }

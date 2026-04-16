@@ -21,7 +21,7 @@ export interface RunChatAgentParams {
     description?: string;
     content?: string;
   }>;
-  /** Set to false to skip DB history lookup (e.g. x402 skipStorage mode). Default: true */
+  /** Set to false to skip DB history lookup. Default: true */
   loadHistory?: boolean;
   /** Called after each tool execution. Callers customise for DB updates, notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;

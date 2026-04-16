@@ -53,13 +53,3 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:3000/api/chat
 ```
 
-## x402 Payment Authentication
-
-BioAgents supports x402 protocol for payment-based authentication:
-
-```bash
-# Enable x402
-X402_ENABLED=true
-```
-
-x402 enables pay-per-request access to the API using cryptocurrency payments.

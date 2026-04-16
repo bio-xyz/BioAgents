@@ -15,7 +15,6 @@ CREATE TABLE users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   email TEXT NOT NULL UNIQUE,
-  wallet_address TEXT UNIQUE, -- For x402 payment users identified by wallet
   used_invite_code TEXT,
   points INTEGER DEFAULT 0,
   has_completed_invite_flow BOOLEAN DEFAULT false,
@@ -23,9 +22,6 @@ CREATE TABLE users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Index for fast wallet lookups
-CREATE INDEX idx_users_wallet_address ON users(wallet_address);
 
 -- States table (stores message processing state)
 CREATE TABLE states (
@@ -137,87 +133,9 @@ $$ LANGUAGE plpgsql;
 -- Uncomment if you have pg_cron enabled:
 -- SELECT cron.schedule('cleanup-old-states', '0 2 * * *', 'SELECT cleanup_old_states(1)');
 
--- x402 Payment records table
-DROP TABLE IF EXISTS x402_payments CASCADE;
-
-CREATE TABLE x402_payments (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
-  message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
-  amount_usd NUMERIC NOT NULL,
-  amount_wei TEXT NOT NULL,
-  asset TEXT NOT NULL DEFAULT 'USDC',
-  network TEXT NOT NULL,
-  tools_used TEXT[],
-  tx_hash TEXT,
-  network_id TEXT,
-  payment_status TEXT NOT NULL CHECK (payment_status IN ('pending', 'verified', 'settled', 'failed')),
-  payment_header JSONB,
-  payment_requirements JSONB,
-  error_message TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  verified_at TIMESTAMP WITH TIME ZONE,
-  settled_at TIMESTAMP WITH TIME ZONE
-);
-
--- Indexes for x402_payments
-CREATE INDEX idx_x402_payments_user_id ON x402_payments(user_id);
-CREATE INDEX idx_x402_payments_conversation_id ON x402_payments(conversation_id);
-CREATE INDEX idx_x402_payments_message_id ON x402_payments(message_id);
-CREATE INDEX idx_x402_payments_tx_hash ON x402_payments(tx_hash);
-CREATE INDEX idx_x402_payments_status ON x402_payments(payment_status);
-CREATE INDEX idx_x402_payments_created_at ON x402_payments(created_at DESC);
-
--- GIN indexes for JSONB fields
-CREATE INDEX idx_x402_payments_payment_header ON x402_payments USING GIN (payment_header);
-CREATE INDEX idx_x402_payments_payment_requirements ON x402_payments USING GIN (payment_requirements);
-
--- View for user payment statistics
-CREATE OR REPLACE VIEW user_payment_stats AS
-SELECT
-  user_id,
-  COUNT(*) AS total_payments,
-  SUM(amount_usd) AS total_spent_usd,
-  AVG(amount_usd) AS avg_payment_usd,
-  COUNT(*) FILTER (WHERE payment_status = 'verified') AS verified_payments,
-  COUNT(*) FILTER (WHERE payment_status = 'settled') AS settled_payments,
-  COUNT(*) FILTER (WHERE payment_status = 'failed') AS failed_payments,
-  MAX(created_at) AS last_payment_at,
-  MIN(created_at) AS first_payment_at
-FROM x402_payments
-WHERE user_id IS NOT NULL
-GROUP BY user_id;
-
--- x402 External Requests table (for external API consumers)
-DROP TABLE IF EXISTS x402_external CASCADE;
-
-CREATE TABLE x402_external (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  request_path TEXT NOT NULL,
-  tx_hash TEXT,
-  amount_usd NUMERIC,
-  amount_wei TEXT,
-  asset TEXT DEFAULT 'USDC',
-  network TEXT,
-  network_id TEXT,
-  payment_status TEXT CHECK (payment_status IN ('pending', 'verified', 'settled', 'failed')),
-  payment_header JSONB,
-  payment_requirements JSONB,
-  request_metadata JSONB,
-  response_time INTEGER,
-  error_message TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-
 COMMENT ON TABLE users IS 'User accounts and profile information';
 COMMENT ON TABLE conversations IS 'Conversation threads between users and the agent';
 COMMENT ON TABLE conversation_states IS 'Persistent state for each conversation (summarized context, key takeaways, etc.)';
 COMMENT ON TABLE messages IS 'Individual messages within conversations';
 COMMENT ON TABLE states IS 'Processing state for each message (papers cited, knowledge used, etc.)';
-COMMENT ON TABLE x402_payments IS 'Payment records for x402 protocol transactions';
-COMMENT ON TABLE x402_external IS 'External API requests authenticated via x402 payment (no user/conversation records)';
-COMMENT ON VIEW user_payment_stats IS 'Aggregated payment statistics per user';
 COMMENT ON FUNCTION cleanup_old_states IS 'Removes orphaned states older than specified days to prevent database bloat';
