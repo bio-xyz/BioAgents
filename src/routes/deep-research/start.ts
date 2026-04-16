@@ -80,6 +80,7 @@ type DeepResearchStartResponse = {
   conversationId: string;
   userId: string;
   status: "processing";
+  pollUrl?: string;
   deduplicated?: true;
   error?: string;
 };
@@ -93,6 +94,7 @@ type DeepResearchQueuedResponse = {
   conversationId: string;
   userId: string;
   status: "queued";
+  pollUrl: string;
   deduplicated?: true;
 };
 
@@ -241,6 +243,10 @@ async function handleDeepResearchStartFailure(
 export const __deepResearchStartTestables = {
   handleDeepResearchStartFailure,
 };
+
+function buildDeepResearchPollUrl(messageId: string): string {
+  return `/api/deep-research/status/${messageId}`;
+}
 
 /**
  * Deep Research Start Route - Returns immediately with messageId
@@ -424,6 +430,8 @@ export async function deepResearchStartHandler(ctx: any) {
         "deep_research_start_deduplicated_active_run",
       );
 
+      const pollUrl = buildDeepResearchPollUrl(activeRun.messageId);
+
       if (activeRun.mode === "queue") {
         const dedupeResponse: DeepResearchQueuedResponse = {
           ...(activeRun.jobId ? { jobId: activeRun.jobId } : {}),
@@ -431,6 +439,7 @@ export async function deepResearchStartHandler(ctx: any) {
           conversationId,
           userId,
           status: "queued",
+          pollUrl,
           deduplicated: true,
         };
 
@@ -447,6 +456,7 @@ export async function deepResearchStartHandler(ctx: any) {
         conversationId,
         userId,
         status: "processing",
+        pollUrl,
         deduplicated: true,
       };
 
@@ -748,12 +758,15 @@ export async function deepResearchStartHandler(ctx: any) {
         "deep_research_job_enqueued",
       );
 
+      const pollUrl = buildDeepResearchPollUrl(createdMessage.id);
+
       const response: DeepResearchQueuedResponse = {
         jobId: job.id!,
         messageId: createdMessage.id,
         conversationId,
         userId,
         status: "queued",
+        pollUrl,
       };
 
       return new Response(JSON.stringify(response), {
