@@ -38,7 +38,7 @@ export async function parseCSV(
   filename: string
 ): Promise<ParsedFile> {
   const text = buffer.toString("utf-8");
-  const result = Papa.parse(text, {
+  const result = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
   });
@@ -52,8 +52,8 @@ export async function parseCSV(
   const headers = result.meta.fields || [];
   let formattedText = headers.join(", ") + "\n";
 
-  for (const row of result.data as Record<string, any>[]) {
-    const values = headers.map((h) => row[h] || "");
+  for (const row of result.data) {
+    const values = headers.map((h: string) => row[h] || "");
     formattedText += values.join(", ") + "\n";
   }
 

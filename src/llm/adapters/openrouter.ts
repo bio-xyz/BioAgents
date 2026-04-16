@@ -219,6 +219,7 @@ export class OpenRouterAdapter extends LLMAdapter {
     }
 
     const choice = response.choices[0];
+    if (!choice) return '';
     return choice.message?.content ?? choice.text ?? '';
   }
 
@@ -272,6 +273,7 @@ export class OpenRouterAdapter extends LLMAdapter {
     }
 
     const choice = response.choices[0];
+    if (!choice) return [];
     const annotations = choice.message?.annotations ?? [];
 
     const results: WebSearchResult[] = [];

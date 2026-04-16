@@ -1,4 +1,17 @@
+import { z } from "zod";
 import logger from "./logger";
+
+const EdisonTaskResponseSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  job_type: z.string(),
+});
+
+const EdisonStatusResponseSchema = z.object({
+  status: z.string(),
+  answer: z.string().optional(),
+  error: z.string().optional(),
+});
 
 /**
  * Start an async Edison task
@@ -40,7 +53,8 @@ export async function startEdisonTask(
     throw new Error(`Edison API error: ${response.status} - ${errorText}`);
   }
 
-  return await response.json();
+  const data: unknown = await response.json();
+  return EdisonTaskResponseSchema.parse(data);
 }
 
 /**
@@ -88,15 +102,16 @@ export async function awaitEdisonTask(
         return { error: `Failed to check status: ${response.status}` };
       }
 
-      const statusData = await response.json();
+      const raw: unknown = await response.json();
+      const statusData = EdisonStatusResponseSchema.parse(raw);
       const status = statusData.status;
 
       logger.debug({ taskId, status }, "edison_task_status_check");
 
       if (status === "success") {
-        return { answer: statusData.answer || "" };
+        return { answer: statusData.answer ?? "" };
       } else if (status === "failed") {
-        return { error: statusData.error || "Task failed" };
+        return { error: statusData.error ?? "Task failed" };
       } else if (status === "queued" || status === "in progress") {
         // Still processing, wait and poll again
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));

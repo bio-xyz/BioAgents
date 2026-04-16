@@ -25,10 +25,9 @@ export function endStep(state: State, stepName: string) {
   if (!state.values.steps) {
     state.values.steps = {};
   }
-  if (!state.values.steps[stepName]) {
-    state.values.steps[stepName] = {};
-  }
-  state.values.steps[stepName].end = Date.now();
+  const step = state.values.steps[stepName] ?? { start: Date.now() };
+  step.end = Date.now();
+  state.values.steps[stepName] = step;
 }
 
 export function cleanWebSearchResults(

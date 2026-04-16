@@ -8,6 +8,16 @@ import * as nodeHttp from "http";
 import * as nodeHttps from "https";
 import * as nodeZlib from "zlib";
 
+// Augment globalThis to support polyfill assignments
+declare global {
+  // eslint-disable-next-line no-var
+  var DOMMatrix: unknown;
+  // eslint-disable-next-line no-var
+  var ImageData: unknown;
+  // eslint-disable-next-line no-var
+  var Path2D: unknown;
+}
+
 // Ensure fs.promises is available (some bundlers strip it)
 const fsWithPromises = {
   ...nodeFs,
@@ -17,12 +27,11 @@ const fsWithPromises = {
 // Stub process.getBuiltinModule to prevent Bun runtime warning
 // This must be first, before any imports
 if (typeof process.getBuiltinModule !== "function") {
-  (process as any).getBuiltinModule = (name: string) => {
+  (process as { getBuiltinModule?: (name: string) => unknown }).getBuiltinModule = (name: string) => {
     switch (name) {
       case "module":
         return {
           createRequire: () => {
-            // Return a dummy require that returns empty objects
             return () => ({});
           },
         };
@@ -46,7 +55,7 @@ if (typeof process.getBuiltinModule !== "function") {
   };
 }
 
-let canvasModule: any = null;
+let canvasModule: Record<string, unknown> | null = null;
 try {
   canvasModule = await import("canvas");
 } catch {
@@ -55,19 +64,15 @@ try {
 
 // Apply polyfills if canvas loaded successfully
 if (canvasModule) {
-  // @ts-ignore
   if (canvasModule.DOMMatrix) globalThis.DOMMatrix = canvasModule.DOMMatrix;
-  // @ts-ignore
   if (canvasModule.ImageData) globalThis.ImageData = canvasModule.ImageData;
 }
 
 // Path2D stub - canvas package doesn't export it, but pdfjs-dist needs it
-// @ts-ignore
 if (!globalThis.Path2D) {
-  // @ts-ignore
   globalThis.Path2D = class Path2D {
     constructor(_path?: string | Path2D) {}
-    addPath(_path: Path2D, _transform?: DOMMatrix2DInit) {}
+    addPath(_path: Path2D, _transform?: Record<string, number>) {}
     closePath() {}
     moveTo(_x: number, _y: number) {}
     lineTo(_x: number, _y: number) {}

@@ -32,7 +32,7 @@ export async function startRedisSubscription() {
     subscriber.on("pmessage", (pattern, channel, message) => {
       try {
         // channel = "conversation:abc123"
-        const conversationId = channel.split(":")[1];
+        const conversationId = channel.split(":")[1] ?? "";
         const notification = JSON.parse(message);
 
         // Broadcast to all WebSocket clients in this conversation

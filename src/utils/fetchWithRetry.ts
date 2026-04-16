@@ -25,7 +25,7 @@ function delay(ms: number): Promise<void> {
 // Default: 10 retries with ~5 min total window (11 attempts)
 // Delays: 4s, 8s, 16s, 32s, 40s×6 = 300s total
 export async function fetchWithRetry(
-  input: string | URL | Request,
+  input: string | URL,
   init?: RequestInit,
   options?: FetchRetryOptions,
 ): Promise<{ response: Response; attempts: number }> {
@@ -43,10 +43,7 @@ export async function fetchWithRetry(
     }
 
     try {
-      const response = await fetch(
-        input instanceof Request && attempt > 0 ? input.clone() : input,
-        init,
-      );
+      const response = await fetch(input, init);
 
       if (!RETRYABLE_STATUS_CODES.has(response.status)) {
         return { response, attempts: attempt + 1 };

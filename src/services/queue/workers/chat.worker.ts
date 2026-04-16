@@ -106,52 +106,57 @@ async function processChatJob(
         );
 
         const fileProcessQueue = getFileProcessQueue();
-        const maxWaitMs = 120000; // 2 minute max wait
-        const pollIntervalMs = 500;
-        const startWait = Date.now();
 
-        // Wait for all pending files to complete
-        for (const fileId of pendingFileIds) {
-          while (Date.now() - startWait < maxWaitMs) {
-            // Check if file-process job completed
-            const fileJob = await fileProcessQueue.getJob(fileId);
-            const fileJobState = fileJob ? await fileJob.getState() : null;
+        if (fileProcessQueue) {
+          const maxWaitMs = 120000; // 2 minute max wait
+          const pollIntervalMs = 500;
+          const startWait = Date.now();
 
-            // Also check file status directly (job may have completed and cleaned up)
-            const fileStatus = await getFileStatus(fileId);
+          // Wait for all pending files to complete
+          for (const fileId of pendingFileIds) {
+            while (Date.now() - startWait < maxWaitMs) {
+              // Check if file-process job completed
+              const fileJob = await fileProcessQueue.getJob(fileId);
+              const fileJobState = fileJob ? await fileJob.getState() : null;
 
-            if (
-              fileJobState === "completed" ||
-              fileStatus?.status === "ready" ||
-              !fileJob // Job doesn't exist (already completed/cleaned)
-            ) {
-              logger.info(
-                {
-                  jobId: job.id,
-                  fileId,
-                  fileJobState,
-                  fileStatus: fileStatus?.status,
-                },
-                "chat_job_file_ready",
+              // Also check file status directly (job may have completed and cleaned up)
+              const fileStatus = await getFileStatus(fileId);
+
+              if (
+                fileJobState === "completed" ||
+                fileStatus?.status === "ready" ||
+                !fileJob // Job doesn't exist (already completed/cleaned)
+              ) {
+                logger.info(
+                  {
+                    jobId: job.id,
+                    fileId,
+                    fileJobState,
+                    fileStatus: fileStatus?.status,
+                  },
+                  "chat_job_file_ready",
+                );
+                break;
+              }
+
+              if (fileJobState === "failed" || fileStatus?.status === "error") {
+                logger.warn(
+                  {
+                    jobId: job.id,
+                    fileId,
+                    fileJobState,
+                    fileStatus: fileStatus?.status,
+                  },
+                  "chat_job_file_failed_continuing",
+                );
+                break;
+              }
+
+              // Wait and poll again
+              await new Promise((resolve) =>
+                setTimeout(resolve, pollIntervalMs),
               );
-              break;
             }
-
-            if (fileJobState === "failed" || fileStatus?.status === "error") {
-              logger.warn(
-                {
-                  jobId: job.id,
-                  fileId,
-                  fileJobState,
-                  fileStatus: fileStatus?.status,
-                },
-                "chat_job_file_failed_continuing",
-              );
-              break;
-            }
-
-            // Wait and poll again
-            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
           }
         }
 

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { getMimeTypeFromFilename, getStorageProvider } from "../../storage";
 import logger from "../../utils/logger";
 import {
@@ -120,7 +121,6 @@ async function uploadFilesToEdison(
 
       // Create FormData for file upload
       const formData = new FormData();
-      // @ts-ignore
       const blob = new Blob([fileBuffer], {
         type: getMimeTypeFromFilename(dataset.filename),
       });
@@ -152,7 +152,10 @@ async function uploadFilesToEdison(
         );
       }
 
-      const uploadResult = await response.json();
+      const uploadRaw: unknown = await response.json();
+      const uploadResult = z
+        .object({ entry_id: z.string() })
+        .parse(uploadRaw);
       entryIds.push(uploadResult.entry_id);
 
       logger.info(
