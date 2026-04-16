@@ -299,8 +299,8 @@ export class AnthropicAdapter extends LLMAdapter {
         ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
         : "medium");
       const effort: Effort = validEfforts.includes(rawEffort as Effort) ? rawEffort as Effort : "medium";
-      (anthropicRequest as any).thinking = { type: "adaptive" };
-      (anthropicRequest as any).output_config = { effort };
+      anthropicRequest.thinking = { type: "adaptive" };
+      anthropicRequest.output_config = { effort };
     } else if (request.thinkingBudget !== undefined) {
       // Sonnet 4.6 and older models: Use budget_tokens (still supported)
       anthropicRequest.thinking = {

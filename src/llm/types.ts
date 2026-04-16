@@ -1,3 +1,5 @@
+import type { ResponseFormatTextConfig } from "openai/resources/responses/responses";
+
 const LLM_PROVIDER_NAMES = ["openai", "google", "anthropic", "openrouter"] as const;
 export type LLMProviderName = (typeof LLM_PROVIDER_NAMES)[number];
 
@@ -30,7 +32,7 @@ export interface LLMRequest {
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';
-  format?: unknown; // Optional format for structured output (e.g., zodTextFormat)
+  format?: ResponseFormatTextConfig; // Optional format for structured output (e.g., zodTextFormat)
   fileUris?: Array<{ fileUri: string; mimeType: string }>; // For Gemini File API
   stream?: boolean; // Enable streaming responses
   onStreamChunk?: (chunk: string, fullText: string) => Promise<void>; // Callback for each chunk

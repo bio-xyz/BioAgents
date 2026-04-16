@@ -167,11 +167,9 @@ export class OpenAIAdapter extends LLMAdapter {
       let finalResponse: OpenAIResponse | null = null;
 
       for await (const event of stream) {
-        const eventType = (event as any).type;
-
         // Listen for text delta events (streaming text chunks)
-        if (eventType === "response.output_text.delta") {
-          const delta = (event as any).delta || "";
+        if (event.type === "response.output_text.delta") {
+          const delta = event.delta || "";
           if (delta) {
             fullText += delta;
             await onStreamChunk(delta, fullText);
@@ -179,8 +177,8 @@ export class OpenAIAdapter extends LLMAdapter {
         }
 
         // Capture final response for web search results
-        if (eventType === "response.completed" || eventType === "response.incomplete") {
-          finalResponse = (event as any).response;
+        if (event.type === "response.completed" || event.type === "response.incomplete") {
+          finalResponse = event.response;
         }
       }
 
@@ -241,7 +239,7 @@ export class OpenAIAdapter extends LLMAdapter {
     // Map thinkingBudget to Chat Completions reasoning_effort for GPT-5 family models.
     const reasoningEffort = this.mapThinkingBudgetToReasoningEffort(request.thinkingBudget);
     if (reasoningEffort) {
-      (openaiRequest as any).reasoning_effort = reasoningEffort;
+      openaiRequest.reasoning_effort = reasoningEffort;
     }
 
     const mappedTools = this.mapToolsForChat(request.tools);
@@ -326,10 +324,8 @@ export class OpenAIAdapter extends LLMAdapter {
           .filter((tool): tool is OpenAITool => tool !== null)
       : [];
 
-    // @ts-ignore
     if (!mappedTools.some((tool) => tool.type === "web_search")) {
-      // @ts-ignore
-      mappedTools.push({ type: "web_search" } as OpenAITool);
+      mappedTools.push({ type: "web_search" });
     }
 
     return mappedTools;
@@ -347,17 +343,14 @@ export class OpenAIAdapter extends LLMAdapter {
   private mapToolToOpenAIResponses(tool: LLMTool): OpenAITool | null {
     switch (tool.type) {
       case "webSearch":
-        // @ts-ignore
-        return { type: "web_search" } as OpenAITool;
+        return { type: "web_search" };
       default:
         return null;
     }
   }
 
   private getWebSearchInclude(): ResponsesCreateParams["include"] {
-    return [
-      "web_search_call.action.sources",
-    ] as unknown as ResponsesCreateParams["include"];
+    return ["web_search_call.action.sources"];
   }
 
   private transformWebSearchResponse(response: OpenAIResponse): {
@@ -511,36 +504,25 @@ export class OpenAIAdapter extends LLMAdapter {
 
     (response.output ?? []).forEach((item) => {
       if (item.type !== "web_search_call") return;
+      if (item.action.type !== "search") return;
 
-      const action = (
-        item as unknown as { action?: { sources?: unknown }; sources?: unknown }
-      ).action;
-      const rawSources = (action?.sources ??
-        (item as unknown as { sources?: unknown }).sources) as unknown;
+      const sources = item.action.sources ?? [];
 
-      if (!Array.isArray(rawSources)) return;
+      sources.forEach((source) => {
+        if (!source.url) return;
 
-      rawSources.forEach((rawSource) => {
-        if (typeof rawSource !== "object" || rawSource === null) return;
-
-        const source = rawSource as {
-          title?: unknown;
-          url?: unknown;
-          original_url?: unknown;
-        };
-
-        if (typeof source.url !== "string" || !source.url) return;
+        // title and original_url are returned by the API but not in the SDK
+        // type. Access them via a narrow extras view to avoid casts.
+        const extras = source as { title?: unknown; original_url?: unknown };
+        const title =
+          typeof extras.title === "string" ? extras.title : undefined;
+        const originalUrl =
+          typeof extras.original_url === "string" && extras.original_url
+            ? extras.original_url
+            : source.url;
 
         const normalizedUrl = this.normalizeUrl(source.url);
-        const originalUrl =
-          typeof source.original_url === "string" && source.original_url
-            ? source.original_url
-            : source.url;
-        const entry = {
-          title: typeof source.title === "string" ? source.title : undefined,
-          url: source.url,
-          originalUrl,
-        };
+        const entry = { title, url: source.url, originalUrl };
 
         map.set(source.url, entry);
         map.set(normalizedUrl, entry);
@@ -584,7 +566,7 @@ export class OpenAIAdapter extends LLMAdapter {
           format: request.format,
         },
         max_output_tokens: request.maxTokens ?? undefined,
-      } as any);
+      });
 
       return {
         content: JSON.stringify(response.output_parsed),

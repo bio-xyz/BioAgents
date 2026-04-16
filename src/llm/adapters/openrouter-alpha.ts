@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { LLMAdapter } from '../adapter';
 import type { LLMProvider, LLMRequest, LLMResponse, LLMTool, WebSearchResult } from '../types';
 
@@ -17,56 +18,81 @@ interface OpenRouterPlugin {
   [key: string]: unknown;
 }
 
-interface OpenRouterResponse {
-  output_text?: string;
-  aggregated_output_text?: string;
-  response?: { output_text?: string };
-  output?: Array<{
-    content?: Array<{
-      text?: string;
-      type?: string;
-      annotations?: Array<{
-        type?: string;
-        url?: string;
-        title?: string;
-        start_index?: number;
-        end_index?: number;
-      }>;
-    }>;
-  }>;
-  data?: Array<{ content?: Array<{ text?: string }> }>;
-  choices?: Array<{ message?: { content?: string } }>;
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-  };
-  metrics?: {
-    tokens?: {
-      input?: number;
-      output?: number;
-      total?: number;
-    };
-  };
-  plugins?: Array<{
-    id?: string;
-    results?: Array<{
-      title?: string;
-      url?: string;
-      original_url?: string;
-    }>;
-  }>;
-  traces?: Array<{
-    plugins?: Array<{
-      id?: string;
-      results?: Array<{
-        title?: string;
-        url?: string;
-        original_url?: string;
-      }>;
-    }>;
-  }>;
-}
+const OpenRouterSearchResultSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().optional(),
+  original_url: z.string().optional(),
+});
+
+const OpenRouterPluginResultsSchema = z.object({
+  id: z.string().optional(),
+  results: z.array(OpenRouterSearchResultSchema).optional(),
+});
+
+const OpenRouterResponseSchema = z.object({
+  output_text: z.string().optional(),
+  aggregated_output_text: z.string().optional(),
+  response: z.object({ output_text: z.string().optional() }).optional(),
+  output: z
+    .array(
+      z.object({
+        content: z
+          .array(
+            z.object({
+              text: z.string().optional(),
+              type: z.string().optional(),
+              annotations: z
+                .array(
+                  z.object({
+                    type: z.string().optional(),
+                    url: z.string().optional(),
+                    title: z.string().optional(),
+                    start_index: z.number().optional(),
+                    end_index: z.number().optional(),
+                  }),
+                )
+                .optional(),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .optional(),
+  data: z
+    .array(
+      z.object({
+        content: z.array(z.object({ text: z.string().optional() })).optional(),
+      }),
+    )
+    .optional(),
+  choices: z
+    .array(z.object({ message: z.object({ content: z.string().optional() }).optional() }))
+    .optional(),
+  usage: z
+    .object({
+      input_tokens: z.number().optional(),
+      output_tokens: z.number().optional(),
+      total_tokens: z.number().optional(),
+    })
+    .optional(),
+  metrics: z
+    .object({
+      tokens: z
+        .object({
+          input: z.number().optional(),
+          output: z.number().optional(),
+          total: z.number().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  plugins: z.array(OpenRouterPluginResultsSchema).optional(),
+  traces: z
+    .array(z.object({ plugins: z.array(OpenRouterPluginResultsSchema).optional() }))
+    .optional(),
+});
+
+type OpenRouterResponse = z.infer<typeof OpenRouterResponseSchema>;
 
 export class OpenRouterAdapter extends LLMAdapter {
   private readonly baseUrl: string;
@@ -209,8 +235,8 @@ export class OpenRouterAdapter extends LLMAdapter {
       );
     }
 
-    const data = (await res.json()) as OpenRouterResponse;
-    return data;
+    const raw: unknown = await res.json();
+    return OpenRouterResponseSchema.parse(raw);
   }
   private extractText(response: OpenRouterResponse): string {
     if (!response) {
@@ -272,17 +298,14 @@ export class OpenRouterAdapter extends LLMAdapter {
   }
 
   private extractUsage(response: OpenRouterResponse): LLMResponse['usage'] {
-    const usage = response.usage ?? response.metrics?.tokens;
-    if (!usage) {
-      return undefined;
-    }
-
-    // @ts-ignore
-    const promptTokens = usage.input_tokens ?? usage.input ?? 0;
-    // @ts-ignore
-    const completionTokens = usage.output_tokens ?? usage.output ?? 0;
-    // @ts-ignore
-    const totalTokens = usage.total_tokens ?? usage.total ?? promptTokens + completionTokens;
+    const promptTokens =
+      response.usage?.input_tokens ?? response.metrics?.tokens?.input ?? 0;
+    const completionTokens =
+      response.usage?.output_tokens ?? response.metrics?.tokens?.output ?? 0;
+    const totalTokens =
+      response.usage?.total_tokens ??
+      response.metrics?.tokens?.total ??
+      promptTokens + completionTokens;
 
     if (promptTokens || completionTokens || totalTokens) {
       return {
