@@ -8,7 +8,7 @@ import {
   markRunStarted,
   releaseStartMutex,
 } from "../../services/deep-research/run-guard";
-import type { AuthContext } from "../../types/auth";
+import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
 
 type DeepResearchStatusResponse = {
@@ -57,12 +57,14 @@ export const deepResearchStatusRoute = new Elysia().guard(
  * Deep Research Status Handler - Core logic for GET /api/deep-research/status/:messageId
  * Exported for reuse in other routes
  */
-export async function deepResearchStatusHandler(ctx: any) {
+export async function deepResearchStatusHandler(
+  ctx: ElysiaRouteContext<{ messageId: string }>,
+) {
   const { params, set, request } = ctx;
   const messageId = params.messageId;
 
   // SECURITY: Get userId ONLY from authenticated context - never from query params
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
 
   if (!auth?.userId) {
     set.status = 401;
@@ -225,12 +227,14 @@ export async function deepResearchStatusHandler(ctx: any) {
  *
  * Security: Validates that the authenticated user owns the job being retried
  */
-async function deepResearchRetryHandler(ctx: any) {
+async function deepResearchRetryHandler(
+  ctx: ElysiaRouteContext<{ jobId: string }>,
+) {
   const { params, set, request } = ctx;
   const { jobId } = params;
 
   // SECURITY: Get authenticated user
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
 
   if (!auth?.userId) {
     set.status = 401;

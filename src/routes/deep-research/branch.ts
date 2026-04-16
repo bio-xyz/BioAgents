@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { getServiceClient } from "../../db/client";
 import { authResolver } from "../../middleware/authResolver";
-import type { AuthContext } from "../../types/auth";
+import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
@@ -78,10 +78,21 @@ export const deepResearchBranchRoute = new Elysia().guard(
   (app) => app.post("/api/deep-research/branch", deepResearchBranchHandler),
 );
 
-async function deepResearchBranchHandler(ctx: any) {
+function parseBranchBody(body: unknown): BranchBody {
+  if (typeof body !== "object" || body === null) return {};
+  const record = body as Record<string, unknown>;
+  const pickString = (v: unknown) => (typeof v === "string" ? v : undefined);
+  return {
+    conversationId: pickString(record.conversationId),
+    title: pickString(record.title),
+    objective: pickString(record.objective),
+  };
+}
+
+async function deepResearchBranchHandler(ctx: ElysiaRouteContext) {
   const { body, set, request } = ctx;
-  const parsedBody = body as BranchBody;
-  const auth = (request as any).auth as AuthContext | undefined;
+  const parsedBody = parseBranchBody(body);
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {

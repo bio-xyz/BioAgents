@@ -24,7 +24,6 @@ import {
 } from "../db/clarification";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
-import type { AuthContext } from "../types/auth";
 import type {
   ClarificationAnswer,
   ClarificationPlan,
@@ -121,7 +120,7 @@ export const clarificationRoute = new Elysia().guard(
           const datasets = parsedBody.datasets;
 
           // Get userId from auth context - require authentication
-          const auth = (request as any).auth as AuthContext | undefined;
+          const auth = request.auth;
           if (!auth?.userId) {
             set.status = 401;
             return { ok: false, error: "Authentication required" };
@@ -203,7 +202,7 @@ export const clarificationRoute = new Elysia().guard(
           }
 
           // Get userId from auth context
-          const auth = (request as any).auth as AuthContext | undefined;
+          const auth = request.auth;
           if (!auth?.userId) {
             set.status = 401;
             return { ok: false, error: "Authentication required" };
@@ -322,7 +321,7 @@ export const clarificationRoute = new Elysia().guard(
           }
 
           // Get userId from auth context - require authentication
-          const auth = (request as any).auth as AuthContext | undefined;
+          const auth = request.auth;
           if (!auth?.userId) {
             set.status = 401;
             return { ok: false, error: "Authentication required" };
@@ -450,7 +449,7 @@ export const clarificationRoute = new Elysia().guard(
           const { sessionId } = params;
 
           // Get userId from auth context - require authentication
-          const auth = (request as any).auth as AuthContext | undefined;
+          const auth = request.auth;
           if (!auth?.userId) {
             set.status = 401;
             return { ok: false, error: "Authentication required" };

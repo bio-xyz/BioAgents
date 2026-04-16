@@ -43,13 +43,34 @@ import {
   notifyStateUpdated,
 } from "../../services/queue/notify";
 import { getDeepResearchQueue } from "../../services/queue/queues";
-import type { AuthContext } from "../../types/auth";
 import type {
   ConversationState,
   OnPollUpdate,
   PlanTask,
   State,
 } from "../../types/core";
+import type { ElysiaRouteContext } from "../../types/elysia";
+
+/**
+ * Narrowing helpers to safely access fields on an unknown request body
+ * without spreading `any` through the handler.
+ */
+function isBodyRecord(body: unknown): body is Record<string, unknown> {
+  return typeof body === "object" && body !== null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function extractFiles(value: unknown): File[] {
+  if (!value) return [];
+  if (value instanceof File) return [value];
+  if (Array.isArray(value)) {
+    return value.filter((f): f is File => f instanceof File);
+  }
+  return [];
+}
 import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
@@ -280,13 +301,13 @@ export const deepResearchStartRoute = new Elysia().guard(
 /**
  * Deep Research Start Handler - Core logic for POST /api/deep-research/start
  */
-export async function deepResearchStartHandler(ctx: any) {
+export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
   const { body, set, request } = ctx;
 
-  const parsedBody = body as any;
+  const parsedBody = isBodyRecord(body) ? body : {};
 
   // Extract message (REQUIRED)
-  const message = parsedBody.message;
+  const message = asString(parsedBody.message);
   if (!message) {
     set.status = 400;
     return {
@@ -296,7 +317,7 @@ export async function deepResearchStartHandler(ctx: any) {
   }
 
   // Get userId from auth context (set by authResolver middleware)
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   let userId = auth?.userId || generateUUID();
   const source = "api";
 
@@ -311,7 +332,7 @@ export async function deepResearchStartHandler(ctx: any) {
   );
 
   // Auto-generate conversationId if not provided
-  let conversationId = parsedBody.conversationId;
+  let conversationId = asString(parsedBody.conversationId);
   if (!conversationId) {
     conversationId = generateUUID();
     if (logger) {
@@ -322,22 +343,19 @@ export async function deepResearchStartHandler(ctx: any) {
   // Extract researchMode from request (will be reconciled with conversation state later)
   // Modes: 'semi-autonomous' (default), 'fully-autonomous', 'steering'
   type ResearchMode = "semi-autonomous" | "fully-autonomous" | "steering";
+  const rawResearchMode = asString(parsedBody.researchMode);
   const requestedResearchMode: ResearchMode | undefined =
-    parsedBody.researchMode;
+    rawResearchMode === "semi-autonomous" ||
+    rawResearchMode === "fully-autonomous" ||
+    rawResearchMode === "steering"
+      ? rawResearchMode
+      : undefined;
 
   // Extract clarificationSessionId from request (optional)
-  const clarificationSessionId: string | undefined =
-    parsedBody.clarificationSessionId;
+  const clarificationSessionId = asString(parsedBody.clarificationSessionId);
 
   // Extract files from parsed body
-  let files: File[] = [];
-  if (parsedBody.files) {
-    if (Array.isArray(parsedBody.files)) {
-      files = parsedBody.files.filter((f: any) => f instanceof File);
-    } else if (parsedBody.files instanceof File) {
-      files = [parsedBody.files];
-    }
-  }
+  const files: File[] = extractFiles(parsedBody.files);
 
   // Log request details
   if (logger) {

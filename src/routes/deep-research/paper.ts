@@ -25,7 +25,7 @@ import { authResolver } from "../../middleware/authResolver";
 import { isJobQueueEnabled } from "../../services/queue/connection";
 import { generatePaperFromConversation } from "../../services/paper/generatePaper";
 import { getStorageProvider } from "../../storage";
-import type { AuthContext } from "../../types/auth";
+import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
 
 // Use service client to bypass RLS - auth is verified by middleware
@@ -68,12 +68,14 @@ export const deepResearchPaperRoute = new Elysia().guard(
 /**
  * Paper generation handler
  */
-async function paperGenerationHandler(ctx: any) {
+async function paperGenerationHandler(
+  ctx: ElysiaRouteContext<{ conversationId: string }>,
+) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
   // Get authenticated user from auth context
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
@@ -174,12 +176,14 @@ async function paperGenerationHandler(ctx: any) {
 /**
  * Get paper handler - generates fresh presigned URLs for an existing paper
  */
-async function getPaperHandler(ctx: any) {
+async function getPaperHandler(
+  ctx: ElysiaRouteContext<{ paperId: string }>,
+) {
   const { params, set, request } = ctx;
   const paperId = params.paperId;
 
   // Get authenticated user from auth context
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
@@ -280,12 +284,14 @@ async function getPaperHandler(ctx: any) {
 /**
  * List papers handler - returns all papers for a conversation
  */
-async function listPapersHandler(ctx: any) {
+async function listPapersHandler(
+  ctx: ElysiaRouteContext<{ conversationId: string }>,
+) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
   // Get authenticated user from auth context
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
@@ -413,12 +419,14 @@ async function checkGlobalConcurrentPaperLimit(): Promise<{ exceeded: boolean; c
 /**
  * Async paper generation handler - queues job and returns immediately
  */
-async function asyncPaperGenerationHandler(ctx: any) {
+async function asyncPaperGenerationHandler(
+  ctx: ElysiaRouteContext<{ conversationId: string }>,
+) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
   // Get authenticated user from auth context
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
@@ -572,12 +580,25 @@ async function asyncPaperGenerationHandler(ctx: any) {
 /**
  * Paper status handler - returns job progress
  */
-async function paperStatusHandler(ctx: any) {
+type PaperStatusResponse = {
+  paperId: string;
+  conversationId: string;
+  status: string;
+  createdAt: string;
+  progress?: unknown;
+  pdfUrl?: string;
+  rawLatexUrl?: string;
+  error?: string;
+};
+
+async function paperStatusHandler(
+  ctx: ElysiaRouteContext<{ paperId: string }>,
+) {
   const { params, set, request } = ctx;
   const paperId = params.paperId;
 
   // Get authenticated user from auth context
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
@@ -624,7 +645,7 @@ async function paperStatusHandler(ctx: any) {
     }
 
     // Build response based on status
-    const response: any = {
+    const response: PaperStatusResponse = {
       paperId: paper.id,
       conversationId: paper.conversation_id,
       status: paper.status,

@@ -285,7 +285,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
     }
 
     // Attach auth context to request
-    (request as any).auth = auth;
+    request.auth = auth;
 
     logger?.info(
       {

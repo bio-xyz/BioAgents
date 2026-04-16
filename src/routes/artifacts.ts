@@ -1,7 +1,6 @@
 import { Elysia } from "elysia";
 import { getConversationBasePath, getStorageProvider } from "../storage";
 import { authResolver } from "../middleware/authResolver";
-import type { AuthContext } from "../types/auth";
 import logger from "../utils/logger";
 
 /**
@@ -20,7 +19,11 @@ export const artifactsRoute = new Elysia().guard(
   },
   (app) =>
     app.get("/api/artifacts/download", async ({ query, request, set }) => {
-      const auth = (request as any).auth as AuthContext;
+      const auth = request.auth;
+      if (!auth) {
+        set.status = 401;
+        return { error: "Authentication required" };
+      }
       const authenticatedUserId = auth.userId;
 
       const { userId, conversationStateId, path } = query;

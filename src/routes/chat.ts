@@ -2,7 +2,6 @@ import { Elysia } from "elysia";
 
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
-import type { AuthContext } from "../types/auth";
 import {
   ensureUserAndConversation,
   setupConversationData,
@@ -12,8 +11,31 @@ import {
   updateMessageResponseTime,
 } from "../services/chat/tools";
 import type { ConversationState, State } from "../types/core";
+import type { ElysiaRouteContext } from "../types/elysia";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
+
+/**
+ * Type guard that narrows an unknown body to a keyed record. Used so handlers
+ * can read individual fields off multipart/form-data bodies without needing
+ * blanket `any` types.
+ */
+function isBodyRecord(body: unknown): body is Record<string, unknown> {
+  return typeof body === "object" && body !== null;
+}
+
+function extractFiles(value: unknown): File[] {
+  if (!value) return [];
+  if (value instanceof File) return [value];
+  if (Array.isArray(value)) {
+    return value.filter((f): f is File => f instanceof File);
+  }
+  return [];
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
 
 /**
  * Response type for synchronous chat (in-process mode)
@@ -72,7 +94,9 @@ export const chatRoute = new Elysia()
 /**
  * Chat Status Handler - Check job status (queue mode only)
  */
-async function chatStatusHandler(ctx: any) {
+async function chatStatusHandler(
+  ctx: ElysiaRouteContext<{ jobId: string }>,
+) {
   const { params, set } = ctx;
   const { jobId } = params;
 
@@ -125,12 +149,14 @@ async function chatStatusHandler(ctx: any) {
  * Chat Retry Handler - Manually retry a failed job
  * POST /api/chat/retry/:jobId
  */
-async function chatRetryHandler(ctx: any) {
+async function chatRetryHandler(
+  ctx: ElysiaRouteContext<{ jobId: string }>,
+) {
   const { params, set, request } = ctx;
   const { jobId } = params;
 
   // SECURITY: Get authenticated user
-  const auth = (request as any).auth as AuthContext | undefined;
+  const auth = request.auth;
 
   if (!auth?.userId) {
     set.status = 401;
@@ -229,23 +255,23 @@ async function chatRetryHandler(ctx: any) {
  * - USE_JOB_QUEUE=false: Executes in-process (existing behavior)
  * - USE_JOB_QUEUE=true: Enqueues to BullMQ and returns immediately
  */
-export async function chatHandler(ctx: any) {
+export async function chatHandler(ctx: ElysiaRouteContext) {
   try {
     const { body, set, request } = ctx;
     const startTime = Date.now();
 
-    const parsedBody = body as any;
+    const parsedBody = isBodyRecord(body) ? body : {};
 
     logger.info(
       {
         contentType: request.headers.get("content-type"),
-        bodyKeys: body ? Object.keys(body).slice(0, 10) : [],
+        bodyKeys: Object.keys(parsedBody).slice(0, 10),
       },
       "chat_route_entry",
     );
 
     // Extract message (REQUIRED)
-    const message = parsedBody.message;
+    const message = asString(parsedBody.message);
     if (!message) {
       logger.warn(
         { bodyKeys: Object.keys(parsedBody) },
@@ -259,7 +285,7 @@ export async function chatHandler(ctx: any) {
     }
 
     // Get userId from auth context (set by authResolver middleware)
-    const auth = (request as any).auth as AuthContext | undefined;
+    const auth = request.auth;
     let userId = auth?.userId || generateUUID();
     const source = "api";
 
@@ -274,21 +300,14 @@ export async function chatHandler(ctx: any) {
     );
 
     // Auto-generate conversationId if not provided
-    let conversationId = parsedBody.conversationId;
+    let conversationId = asString(parsedBody.conversationId);
     if (!conversationId) {
       conversationId = generateUUID();
       logger.info({ conversationId, userId }, "auto_generated_conversation_id");
     }
 
     // Extract files from parsed body
-    let files: File[] = [];
-    if (parsedBody.files) {
-      if (Array.isArray(parsedBody.files)) {
-        files = parsedBody.files.filter((f: any) => f instanceof File);
-      } else if (parsedBody.files instanceof File) {
-        files = [parsedBody.files];
-      }
-    }
+    const files: File[] = extractFiles(parsedBody.files);
 
     // Log request details
     logger.info(
@@ -640,12 +659,13 @@ export async function chatHandler(ctx: any) {
         "Content-Encoding": "identity",
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
     logger.error(
       {
-        error: error.message,
-        stack: error.stack,
-        name: error.name,
+        error: err.message,
+        stack: err.stack,
+        name: err.name,
       },
       "chat_unhandled_error",
     );
@@ -654,7 +674,7 @@ export async function chatHandler(ctx: any) {
     set.status = 500;
     return {
       ok: false,
-      error: error.message || "Internal server error",
+      error: err.message || "Internal server error",
     };
   }
 }
