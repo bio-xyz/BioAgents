@@ -18,22 +18,16 @@ declare global {
  * extracted to named functions the inference is lost. This interface captures
  * the parts every handler actually uses (params, body, set, request.auth).
  *
- * NOTE: `body` is typed as `unknown` so this interface remains structurally
- * compatible with Elysia's inline handler context (where body is also
- * `unknown` until validated). Handlers narrow `body` locally — typically by
- * casting to the TBody shape once required fields are checked. TBody is
- * retained as a documentation hint for the expected payload shape.
- *
- * Similarly, `query` values are typed as `string | undefined` (Elysia's
- * runtime shape) and `set.status` accepts number or string (Elysia's
- * `StatusMap` keys) to match the inline context's structural contract.
+ * `body` is `unknown` so this interface stays structurally compatible with
+ * Elysia's inline context; handlers narrow locally via `isBodyRecord` and
+ * friends. `query` values are `string | undefined` (Elysia's runtime shape)
+ * and `set.status` accepts number or string (Elysia's `StatusMap` keys).
  */
 export interface ElysiaRouteContext<
   TParams extends Record<string, string> = Record<string, string>,
-  TBody = unknown,
 > {
   params: TParams;
-  body: TBody;
+  body: unknown;
   query: Record<string, string | undefined>;
   set: {
     status?: number | string;

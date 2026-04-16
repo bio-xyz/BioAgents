@@ -1,20 +1,17 @@
 // Polyfills for pdfjs-dist DOM APIs (needed for pdf-parse@2.x in server environments)
 
-import * as nodeUrl from "url";
 import * as nodeFs from "fs";
 import nodeFsPromises from "fs/promises";
-import * as nodePath from "path";
 import * as nodeHttp from "http";
 import * as nodeHttps from "https";
+import * as nodePath from "path";
+import * as nodeUrl from "url";
 import * as nodeZlib from "zlib";
 
 // Augment globalThis to support polyfill assignments
 declare global {
-  // eslint-disable-next-line no-var
   var DOMMatrix: unknown;
-  // eslint-disable-next-line no-var
   var ImageData: unknown;
-  // eslint-disable-next-line no-var
   var Path2D: unknown;
 }
 
@@ -27,7 +24,9 @@ const fsWithPromises = {
 // Stub process.getBuiltinModule to prevent Bun runtime warning
 // This must be first, before any imports
 if (typeof process.getBuiltinModule !== "function") {
-  (process as { getBuiltinModule?: (name: string) => unknown }).getBuiltinModule = (name: string) => {
+  (process as { getBuiltinModule?: (name: string) => unknown }).getBuiltinModule = (
+    name: string
+  ) => {
     switch (name) {
       case "module":
         return {
@@ -76,11 +75,34 @@ if (!globalThis.Path2D) {
     closePath() {}
     moveTo(_x: number, _y: number) {}
     lineTo(_x: number, _y: number) {}
-    bezierCurveTo(_cp1x: number, _cp1y: number, _cp2x: number, _cp2y: number, _x: number, _y: number) {}
+    bezierCurveTo(
+      _cp1x: number,
+      _cp1y: number,
+      _cp2x: number,
+      _cp2y: number,
+      _x: number,
+      _y: number
+    ) {}
     quadraticCurveTo(_cpx: number, _cpy: number, _x: number, _y: number) {}
-    arc(_x: number, _y: number, _radius: number, _startAngle: number, _endAngle: number, _counterclockwise?: boolean) {}
+    arc(
+      _x: number,
+      _y: number,
+      _radius: number,
+      _startAngle: number,
+      _endAngle: number,
+      _counterclockwise?: boolean
+    ) {}
     arcTo(_x1: number, _y1: number, _x2: number, _y2: number, _radius: number) {}
-    ellipse(_x: number, _y: number, _radiusX: number, _radiusY: number, _rotation: number, _startAngle: number, _endAngle: number, _counterclockwise?: boolean) {}
+    ellipse(
+      _x: number,
+      _y: number,
+      _radiusX: number,
+      _radiusY: number,
+      _rotation: number,
+      _startAngle: number,
+      _endAngle: number,
+      _counterclockwise?: boolean
+    ) {}
     rect(_x: number, _y: number, _w: number, _h: number) {}
     roundRect(_x: number, _y: number, _w: number, _h: number, _radii?: number | number[]) {}
   };

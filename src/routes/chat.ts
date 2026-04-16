@@ -2,40 +2,13 @@ import { Elysia } from "elysia";
 
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
-import {
-  ensureUserAndConversation,
-  setupConversationData,
-} from "../services/chat/setup";
-import {
-  createMessageRecord,
-  updateMessageResponseTime,
-} from "../services/chat/tools";
+import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
+import { createMessageRecord, updateMessageResponseTime } from "../services/chat/tools";
 import type { ConversationState, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
+import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
 import { generateUUID } from "../utils/uuid";
-
-/**
- * Type guard that narrows an unknown body to a keyed record. Used so handlers
- * can read individual fields off multipart/form-data bodies without needing
- * blanket `any` types.
- */
-function isBodyRecord(body: unknown): body is Record<string, unknown> {
-  return typeof body === "object" && body !== null;
-}
-
-function extractFiles(value: unknown): File[] {
-  if (!value) return [];
-  if (value instanceof File) return [value];
-  if (Array.isArray(value)) {
-    return value.filter((f): f is File => f instanceof File);
-  }
-  return [];
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
 
 /**
  * Response type for synchronous chat (in-process mode)
@@ -82,21 +55,19 @@ export const chatRoute = new Elysia()
       app
         .get("/api/chat", async () => {
           return {
-            message: "This endpoint requires POST method.",
             apiDocumentation: "https://your-docs-url.com/api",
+            message: "This endpoint requires POST method.",
           };
         })
         .post("/api/chat", chatHandler)
         // Manual retry endpoint for failed jobs
-        .post("/api/chat/retry/:jobId", chatRetryHandler),
+        .post("/api/chat/retry/:jobId", chatRetryHandler)
   );
 
 /**
  * Chat Status Handler - Check job status (queue mode only)
  */
-async function chatStatusHandler(
-  ctx: ElysiaRouteContext<{ jobId: string }>,
-) {
+async function chatStatusHandler(ctx: ElysiaRouteContext<{ jobId: string }>) {
   const { params, set } = ctx;
   const { jobId } = params;
 
@@ -125,23 +96,23 @@ async function chatStatusHandler(
 
   if (state === "completed") {
     return {
-      status: "completed",
       result: job.returnvalue,
+      status: "completed",
     };
   }
 
   if (state === "failed") {
     return {
-      status: "failed",
-      error: job.failedReason,
       attemptsMade: job.attemptsMade,
+      error: job.failedReason,
+      status: "failed",
     };
   }
 
   return {
-    status: state,
-    progress,
     attemptsMade: job.attemptsMade,
+    progress,
+    status: state,
   };
 }
 
@@ -149,9 +120,7 @@ async function chatStatusHandler(
  * Chat Retry Handler - Manually retry a failed job
  * POST /api/chat/retry/:jobId
  */
-async function chatRetryHandler(
-  ctx: ElysiaRouteContext<{ jobId: string }>,
-) {
+async function chatRetryHandler(ctx: ElysiaRouteContext<{ jobId: string }>) {
   const { params, set, request } = ctx;
   const { jobId } = params;
 
@@ -161,9 +130,9 @@ async function chatRetryHandler(
   if (!auth?.userId) {
     set.status = 401;
     return {
-      ok: false,
       error: "Authentication required",
       message: "Please provide a valid JWT or API key",
+      ok: false,
     };
   }
 
@@ -187,21 +156,21 @@ async function chatRetryHandler(
   if (!job) {
     set.status = 404;
     return {
-      ok: false,
       error: "Job not found",
+      ok: false,
     };
   }
 
   // SECURITY: Verify the authenticated user owns this job
   if (job.data.userId !== userId) {
     logger.warn(
-      { jobId, requestedBy: userId, ownedBy: job.data.userId },
+      { jobId, ownedBy: job.data.userId, requestedBy: userId },
       "chat_retry_ownership_mismatch"
     );
     set.status = 403;
     return {
-      ok: false,
       error: "Access denied: job belongs to another user",
+      ok: false,
     };
   }
 
@@ -211,9 +180,9 @@ async function chatRetryHandler(
   if (state !== "failed") {
     set.status = 400;
     return {
-      ok: false,
       error: `Cannot retry job in state '${state}'`,
       message: "Only failed jobs can be manually retried",
+      ok: false,
     };
   }
 
@@ -224,26 +193,26 @@ async function chatRetryHandler(
     logger.info(
       {
         jobId,
-        userId,
         previousAttempts: job.attemptsMade,
+        userId,
       },
       "job_manually_retried"
     );
 
     return {
-      ok: true,
       jobId,
-      status: "retrying",
       message: "Job has been queued for retry",
+      ok: true,
       previousAttempts: job.attemptsMade,
+      status: "retrying",
     };
   } catch (error) {
     logger.error({ error, jobId }, "manual_retry_failed");
     set.status = 500;
     return {
-      ok: false,
       error: "Failed to retry job",
       message: error instanceof Error ? error.message : "Unknown error",
+      ok: false,
     };
   }
 }
@@ -264,39 +233,36 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     logger.info(
       {
-        contentType: request.headers.get("content-type"),
         bodyKeys: Object.keys(parsedBody).slice(0, 10),
+        contentType: request.headers.get("content-type"),
       },
-      "chat_route_entry",
+      "chat_route_entry"
     );
 
     // Extract message (REQUIRED)
     const message = asString(parsedBody.message);
     if (!message) {
-      logger.warn(
-        { bodyKeys: Object.keys(parsedBody) },
-        "missing_message_field",
-      );
+      logger.warn({ bodyKeys: Object.keys(parsedBody) }, "missing_message_field");
       set.status = 400;
       return {
-        ok: false,
         error: "Missing required field: message",
+        ok: false,
       };
     }
 
     // Get userId from auth context (set by authResolver middleware)
     const auth = request.auth;
-    let userId = auth?.userId || generateUUID();
+    const userId = auth?.userId || generateUUID();
     const source = "api";
 
     logger.info(
       {
-        userId,
         authMethod: auth?.method || "unknown",
-        verified: auth?.verified || false,
         source,
+        userId,
+        verified: auth?.verified || false,
       },
-      "user_identified_via_auth",
+      "user_identified_via_auth"
     );
 
     // Auto-generate conversationId if not provided
@@ -312,35 +278,29 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Log request details
     logger.info(
       {
-        userId,
         conversationId,
-        source,
+        fileCount: files.length,
         message,
         messageLength: message.length,
-        fileCount: files.length,
         routeType: "chat-v2",
+        source,
+        userId,
       },
-      "chat_request_received",
+      "chat_request_received"
     );
 
     // Ensure user and conversation exist
-    const setupResult = await ensureUserAndConversation(
-      userId,
-      conversationId,
-    );
+    const setupResult = await ensureUserAndConversation(userId, conversationId);
     if (!setupResult.success) {
       logger.error(
-        { error: setupResult.error, userId, conversationId },
-        "user_conversation_setup_failed",
+        { conversationId, error: setupResult.error, userId },
+        "user_conversation_setup_failed"
       );
       set.status = 500;
-      return { ok: false, error: setupResult.error || "Setup failed" };
+      return { error: setupResult.error || "Setup failed", ok: false };
     }
 
-    logger.info(
-      { userId, conversationId },
-      "user_conversation_setup_completed",
-    );
+    logger.info({ conversationId, userId }, "user_conversation_setup_completed");
 
     // Setup conversation data
     const dataSetup = await setupConversationData(
@@ -349,15 +309,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       source,
       false, // isExternal
       message,
-      files.length,
+      files.length
     );
     if (!dataSetup.success) {
-      logger.error(
-        { error: dataSetup.error, conversationId },
-        "conversation_data_setup_failed",
-      );
+      logger.error({ conversationId, error: dataSetup.error }, "conversation_data_setup_failed");
       set.status = 500;
-      return { ok: false, error: dataSetup.error || "Data setup failed" };
+      return { error: dataSetup.error || "Data setup failed", ok: false };
     }
 
     const conversationStateRecord = dataSetup.data!.conversationStateRecord;
@@ -368,28 +325,25 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         conversationStateId: conversationStateRecord.id,
         stateId: stateRecord.id,
       },
-      "conversation_data_setup_completed",
+      "conversation_data_setup_completed"
     );
 
     // Create message record
     const messageResult = await createMessageRecord({
       conversationId,
-      userId,
+      files,
+      isExternal: false,
       message,
       source,
       stateId: stateRecord.id,
-      files,
-      isExternal: false,
+      userId,
     });
     if (!messageResult.success) {
-      logger.error(
-        { error: messageResult.error, conversationId },
-        "message_creation_failed",
-      );
+      logger.error({ conversationId, error: messageResult.error }, "message_creation_failed");
       set.status = 500;
       return {
-        ok: false,
         error: messageResult.error || "Message creation failed",
+        ok: false,
       };
     }
 
@@ -397,11 +351,11 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     logger.info(
       {
-        messageId: createdMessage.id,
         conversationId: createdMessage.conversation_id,
+        messageId: createdMessage.id,
         question: createdMessage.question,
       },
-      "message_record_created",
+      "message_record_created"
     );
 
     // =========================================================================
@@ -412,10 +366,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     if (isJobQueueEnabled()) {
       // QUEUE MODE: Enqueue job and return immediately
       // Worker runs agent loop (CHAT_AGENT_QUEUE_ENABLED=true) or legacy pipeline (default).
-      logger.info(
-        { messageId: createdMessage.id, conversationId },
-        "chat_using_queue_mode",
-      );
+      logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_queue_mode");
 
       // Process files synchronously before enqueuing (files can't be serialized)
       if (files.length > 0) {
@@ -442,62 +393,59 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       const job = await chatQueue.add(
         `chat-${createdMessage.id}`,
         {
-          userId,
-          conversationId,
-          messageId: createdMessage.id,
-          message,
           authMethod: auth?.method || "anonymous",
+          conversationId,
+          message,
+          messageId: createdMessage.id,
           requestedAt: new Date().toISOString(),
+          userId,
         },
         {
           jobId: createdMessage.id, // Use message ID as job ID for easy lookup
-        },
+        }
       );
 
       logger.info(
         {
+          conversationId,
           jobId: job.id,
           messageId: createdMessage.id,
-          conversationId,
         },
-        "chat_job_enqueued",
+        "chat_job_enqueued"
       );
 
       const pollUrl = `/api/chat/status/${job.id}`;
 
       const response: ChatQueuedResponse = {
+        conversationId,
         jobId: job.id!,
         messageId: createdMessage.id,
-        conversationId,
-        userId,
-        status: "queued",
         pollUrl,
+        status: "queued",
+        userId,
       };
 
       return new Response(JSON.stringify(response), {
-        status: 202, // Accepted
         headers: {
           "Content-Type": "application/json; charset=utf-8",
         },
+        status: 202, // Accepted
       });
     }
 
     // =========================================================================
     // IN-PROCESS MODE: Execute directly (existing behavior)
     // =========================================================================
-    logger.info(
-      { messageId: createdMessage.id, conversationId },
-      "chat_using_in_process_mode",
-    );
+    logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_in_process_mode");
 
     // Initialize state
     const state: State = {
       id: stateRecord.id,
       values: {
-        messageId: createdMessage.id,
         conversationId,
-        userId,
+        messageId: createdMessage.id,
         source: createdMessage.source,
+        userId,
       },
     };
 
@@ -509,12 +457,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     logger.info(
       {
-        stateId: state.id,
         conversationStateId: conversationState.id,
         existingHypothesis: !!conversationState.values.currentHypothesis,
         keyInsightsCount: conversationState.values.keyInsights?.length || 0,
+        stateId: state.id,
       },
-      "state_initialized",
+      "state_initialized"
     );
 
     // Step 1: Process files if any
@@ -531,11 +479,11 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
       logger.info(
         {
-          uploadedDatasets: fileResult.uploadedDatasets,
           errors: fileResult.errors,
           fileCount: files.length,
+          uploadedDatasets: fileResult.uploadedDatasets,
         },
-        "file_upload_agent_completed",
+        "file_upload_agent_completed"
       );
     }
 
@@ -546,67 +494,59 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     const agentResult = await runChatAgent({
       conversationId,
-      message,
-      uploadedDatasets: conversationState.values.uploadedDatasets,
       loadHistory: true,
+      message,
       onToolResult: async (info) => {
-            if (!conversationState.id) return;
-            try {
-              const { updateConversationState } = await import(
-                "../db/operations"
-              );
-              await updateConversationState(conversationState.id, {
-                ...conversationState.values,
-                agentProgress: {
-                  stage: `tool:${info.toolName}`,
-                  toolCallCount: info.toolCallCount,
-                  lastToolCallId: info.toolCallId,
-                  isError: info.result.isError ?? false,
-                },
-              });
+        if (!conversationState.id) return;
+        try {
+          const { updateConversationState } = await import("../db/operations");
+          await updateConversationState(conversationState.id, {
+            ...conversationState.values,
+            agentProgress: {
+              isError: info.result.isError ?? false,
+              lastToolCallId: info.toolCallId,
+              stage: `tool:${info.toolName}`,
+              toolCallCount: info.toolCallCount,
+            },
+          });
 
-              logger.info(
-                {
-                  conversationStateId: conversationState.id,
-                  toolName: info.toolName,
-                  toolCallCount: info.toolCallCount,
-                },
-                "conversation_state_updated_after_tool_call",
-              );
-            } catch (err) {
-              logger.warn(
-                { error: err, toolName: info.toolName },
-                "conversation_state_update_failed",
-              );
-            }
-          },
+          logger.info(
+            {
+              conversationStateId: conversationState.id,
+              toolCallCount: info.toolCallCount,
+              toolName: info.toolName,
+            },
+            "conversation_state_updated_after_tool_call"
+          );
+        } catch (err) {
+          logger.warn({ error: err, toolName: info.toolName }, "conversation_state_update_failed");
+        }
+      },
+      uploadedDatasets: conversationState.values.uploadedDatasets,
     });
 
     const replyText = agentResult.replyText;
 
     // Handle empty response from max_tokens truncation
     if (!replyText || agentResult.hitMaxTokens) {
-      logger.error(
-        { messageId: createdMessage.id },
-        "agent_loop_empty_max_tokens",
-      );
+      logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
       set.status = 500;
       return {
-        ok: false,
         error: "Response was truncated. Please try a shorter question.",
+        ok: false,
       };
     }
 
     logger.info(
       {
-        messageId: createdMessage.id,
         conversationId,
+        messageId: createdMessage.id,
+        replyLength: replyText.length,
         toolCallCount: agentResult.toolCallCount,
         totalInputTokens: agentResult.totalInputTokens,
         totalOutputTokens: agentResult.totalOutputTokens,
-        replyLength: replyText.length,
       },
-      "agent_loop_completed",
+      "agent_loop_completed"
     );
 
     const response: ChatV2Response = {
@@ -624,8 +564,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     });
 
     logger.info(
-      { messageId: createdMessage.id, contentLength: replyText.length },
-      "message_content_saved",
+      { contentLength: replyText.length, messageId: createdMessage.id },
+      "message_content_saved"
     );
 
     await updateMessageResponseTime(createdMessage.id, responseTime);
@@ -636,45 +576,45 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
       },
-      "response_time_recorded",
+      "response_time_recorded"
     );
 
     logger.info(
       {
-        messageId: createdMessage.id,
         conversationId,
+        messageId: createdMessage.id,
         responseTextLength: response.text?.length || 0,
         responseTime,
         responseTimeSec: (responseTime / 1000).toFixed(2),
         toolCallCount: agentResult.toolCallCount,
       },
-      "chat_completed_successfully",
+      "chat_completed_successfully"
     );
 
     // Return response
     return new Response(JSON.stringify(response), {
-      status: 200,
       headers: {
-        "Content-Type": "application/json; charset=utf-8",
         "Content-Encoding": "identity",
+        "Content-Type": "application/json; charset=utf-8",
       },
+      status: 200,
     });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error(
       {
         error: err.message,
-        stack: err.stack,
         name: err.name,
+        stack: err.stack,
       },
-      "chat_unhandled_error",
+      "chat_unhandled_error"
     );
 
     const { set } = ctx;
     set.status = 500;
     return {
-      ok: false,
       error: err.message || "Internal server error",
+      ok: false,
     };
   }
 }
