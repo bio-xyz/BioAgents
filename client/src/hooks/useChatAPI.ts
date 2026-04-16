@@ -204,7 +204,7 @@ export function useChatAPI(): UseChatAPIReturn {
         text: data.text,
         files: data.files,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMessage =
         err instanceof Error
           ? err.message
@@ -297,7 +297,14 @@ export function useChatAPI(): UseChatAPIReturn {
       // For deep research, "queued" is equivalent to "processing" - results come via message polling
       if (data.status === "queued") {
         console.log("[useChatAPI] Deep research queued:", data);
-    } catch (err: any) {
+      }
+
+      return {
+        messageId: data.messageId ?? null,
+        conversationId: data.conversationId ?? conversationId,
+        status: "processing",
+      };
+    } catch (err: unknown) {
       const errorMessage =
         err instanceof Error
           ? err.message
