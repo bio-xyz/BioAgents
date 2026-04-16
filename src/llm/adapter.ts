@@ -19,10 +19,10 @@ export abstract class LLMAdapter {
     webSearchResults?: WebSearchResult[];
   }>;
 
-  protected abstract transformRequest(request: LLMRequest): any;
-  protected abstract transformResponse(response: any): LLMResponse;
+  protected abstract transformRequest(request: LLMRequest): unknown;
+  protected abstract transformResponse(response: unknown): LLMResponse;
 
-  protected logDuration(method: string, durationMs: number): void {
+  logDuration(method: string, durationMs: number): void {
     console.log(`[${this.provider.name}] ${method} took ${durationMs}ms`);
   }
 }

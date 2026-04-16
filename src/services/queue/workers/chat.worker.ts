@@ -583,6 +583,7 @@ async function checkRequiresHypothesis(
   messageId?: string, // For token usage tracking
 ): Promise<boolean> {
   const { LLM } = await import("../../../llm/provider");
+  const { parseLLMProviderName } = await import("../../../llm/types");
 
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
   const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
@@ -593,8 +594,7 @@ async function checkRequiresHypothesis(
   }
 
   const llmProvider = new LLM({
-    // @ts-ignore
-    name: PLANNING_LLM_PROVIDER,
+    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
     apiKey,
   });
 

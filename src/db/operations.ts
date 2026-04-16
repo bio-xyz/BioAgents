@@ -1,4 +1,8 @@
-import type { AnalysisArtifact, PlanTask } from "../types/core";
+import type {
+  ConversationStateValues,
+  PlanTask,
+  StateValues,
+} from "../types/core";
 import logger from "../utils/logger";
 import { getServiceClient } from "./client";
 
@@ -21,16 +25,16 @@ export interface Conversation {
   conversation_state_id?: string;
 }
 
-export interface State {
+export interface DbState {
   id?: string;
-  values: any;
+  values: StateValues;
   created_at?: string;
   updated_at?: string;
 }
 
-export interface ConversationState {
+export interface DbConversationState {
   id?: string;
-  values: any;
+  values: ConversationStateValues;
   created_at?: string;
   updated_at?: string;
 }
@@ -41,11 +45,11 @@ export interface Message {
   user_id: string;
   question?: string;
   content: string;
-  summary?: string; // Optional summary for agent messages
+  summary?: string;
   state_id?: string;
   response_time?: number;
   source?: string;
-  files?: any; // JSONB field for file metadata
+  files?: Array<{ name: string; size: number; type: string }>;
 }
 
 // User operations
@@ -170,7 +174,7 @@ export async function getMessagesByConversation(
 }
 
 // State operations
-export async function createState(stateData: { values: any }) {
+export async function createState(stateData: { values: StateValues }) {
   const { data, error } = await supabase
     .from("states")
     .insert(stateData)
@@ -189,7 +193,7 @@ export async function createState(stateData: { values: any }) {
  * Automatically strips file buffers and parsedText to prevent Supabase timeout
  * These large fields are kept in memory for processing but not persisted
  */
-export async function updateState(id: string, values: any) {
+export async function updateState(id: string, values: Partial<StateValues>) {
   const cleanedValues = cleanValues(values);
 
   const { data, error } = await supabase
@@ -221,7 +225,9 @@ export async function getState(id: string) {
 }
 
 // ConversationState operations
-export async function createConversationState(stateData: { values: any }) {
+export async function createConversationState(stateData: {
+  values: Partial<ConversationStateValues>;
+}) {
   const { data, error } = await supabase
     .from("conversation_states")
     .insert(stateData)
@@ -239,7 +245,7 @@ export async function createConversationState(stateData: { values: any }) {
 
 export async function updateConversationState(
   id: string,
-  values: any,
+  values: Partial<ConversationStateValues>,
   options?: { preserveUploadedDatasets?: boolean },
 ) {
   const { preserveUploadedDatasets = true } = options || {};
@@ -346,54 +352,39 @@ export async function updateConversation(
 }
 
 // Helper to clean large fields from state values before persisting
-function cleanValues(values: any): any {
+function cleanValues(
+  values: Partial<ConversationStateValues>,
+): Partial<ConversationStateValues> {
   const cleanedValues = { ...values };
 
-  // Strip buffers and parsedText from rawFiles if present
-  if (cleanedValues.rawFiles?.length) {
-    cleanedValues.rawFiles = cleanedValues.rawFiles.map((f: any) => ({
-      ...f,
-      buffer: undefined,
-      parsedText: undefined,
-    }));
-  }
-
   // Strip binary buffers from datasets if present, but PRESERVE content (text)
-  // Content is the parsed text we want to pass to the LLM
   if (cleanedValues.uploadedDatasets?.length) {
     cleanedValues.uploadedDatasets = cleanedValues.uploadedDatasets.map(
-      (d: any) => ({
-        ...d,
-        buffer: undefined, // Strip binary buffer, but keep content (text)
-      }),
+      ({ ...d }) => {
+        delete (d as Record<string, unknown>).buffer;
+        return d;
+      },
     );
   }
 
-  // Strip buffers from plan datasets if present
+  // Strip content/buffers from plan datasets and artifacts if present
   if (cleanedValues.plan?.length) {
     cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
+      let cleaned = task;
       if (task.datasets?.length) {
-        const cleanedDatasets = task.datasets.map((d: any) => ({
-          ...d,
-          content: undefined,
-        }));
-        return { ...task, datasets: cleanedDatasets };
+        const cleanedDatasets = task.datasets.map(({ ...d }) => {
+          delete (d as Record<string, unknown>).content;
+          return d;
+        });
+        cleaned = { ...cleaned, datasets: cleanedDatasets };
       }
-      return task;
-    });
-  }
-
-  // Strip content from plan artifacts if present
-  if (cleanedValues.plan?.length) {
-    cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
       if (task.artifacts?.length) {
-        const cleanedArtifacts = task.artifacts.map((a: AnalysisArtifact) => ({
-          ...a,
-          content: undefined,
-        }));
-        return { ...task, artifacts: cleanedArtifacts };
+        const cleanedArtifacts = task.artifacts.map(
+          ({ content: _, ...rest }) => rest,
+        );
+        cleaned = { ...cleaned, artifacts: cleanedArtifacts };
       }
-      return task;
+      return cleaned;
     });
   }
 

@@ -1,5 +1,6 @@
 import character from "../../character";
 import { LLM } from "../../llm/provider";
+import { parseLLMProviderName } from "../../llm/types";
 import { getUploadPath } from "../../storage";
 import type {
   ConversationState,
@@ -139,8 +140,7 @@ async function generateInitialPlan(
   }
 
   const llmProvider = new LLM({
-    // @ts-ignore
-    name: PLANNING_LLM_PROVIDER,
+    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
     apiKey: planningApiKey,
   });
 
@@ -215,8 +215,7 @@ async function generatePlan(
   }
 
   const llmProvider = new LLM({
-    // @ts-ignore
-    name: PLANNING_LLM_PROVIDER,
+    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
     apiKey: planningApiKey,
   });
 

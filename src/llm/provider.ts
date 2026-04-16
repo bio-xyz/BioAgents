@@ -5,7 +5,7 @@ import { AnthropicAdapter } from "./adapters/anthropic";
 import { GoogleAdapter } from "./adapters/google";
 import { OpenAIAdapter } from "./adapters/openai";
 import { OpenRouterAdapter } from "./adapters/openrouter";
-import { withRetry } from "./retry";
+import { FallbackError, withRetry } from "./retry";
 import type {
   LLMProvider,
   LLMRequest,
@@ -28,20 +28,18 @@ export class LLM {
     const startTime = Date.now();
 
     try {
-      // Try with retries on primary provider
       const result = await withRetry(
         () => this.adapter.createChatCompletion(request),
         this.providerName
       );
 
       const duration = Date.now() - startTime;
-      (this.adapter as any).logDuration("createChatCompletion", duration);
+      this.adapter.logDuration("createChatCompletion", duration);
       this.trackTokenUsage(result, request, duration);
       this.checkFinishReason(result, request);
       return result;
-    } catch (error: any) {
-      // Check if we need to try fallback provider
-      if (error.requiresFallback) {
+    } catch (error: unknown) {
+      if (error instanceof FallbackError) {
         return this.attemptFallbackCompletion(request, startTime, error);
       }
       throw error;
@@ -51,10 +49,9 @@ export class LLM {
   private async attemptFallbackCompletion(
     request: LLMRequest,
     startTime: number,
-    error: any
+    error: FallbackError
   ): Promise<LLMResponse> {
-    const fallbackProvider = error.fallbackProvider as string;
-    const fallbackModel = error.fallbackModel as string;
+    const { fallbackProvider, fallbackModel } = error;
     const fallbackApiKey = this.getFallbackApiKey(fallbackProvider);
 
     if (!fallbackApiKey) {
@@ -76,12 +73,11 @@ export class LLM {
     );
 
     const fallbackLLMProvider: LLMProvider = {
-      name: fallbackProvider as LLMProvider["name"],
+      name: fallbackProvider,
       apiKey: fallbackApiKey,
     };
     const fallbackAdapter = this.createAdapter(fallbackLLMProvider);
 
-    // Modify request to use fallback model
     const fallbackRequest: LLMRequest = {
       ...request,
       model: fallbackModel,
@@ -90,7 +86,7 @@ export class LLM {
     try {
       const result = await fallbackAdapter.createChatCompletion(fallbackRequest);
       const duration = Date.now() - startTime;
-      (fallbackAdapter as any).logDuration(
+      fallbackAdapter.logDuration(
         "createChatCompletion (fallback)",
         duration
       );
@@ -114,7 +110,6 @@ export class LLM {
         },
         "llm_fallback_failed"
       );
-      // Throw the original error since fallback also failed
       throw error.originalError;
     }
   }
@@ -125,21 +120,19 @@ export class LLM {
     const startTime = Date.now();
 
     try {
-      // Try with retries on primary provider
       const result = await withRetry(
         () => this.adapter.createChatCompletionWebSearch(request),
         this.providerName
       );
 
       const duration = Date.now() - startTime;
-      (this.adapter as any).logDuration(
+      this.adapter.logDuration(
         "createChatCompletionWebSearch",
         duration
       );
       return result;
-    } catch (error: any) {
-      // Check if we need to try fallback provider
-      if (error.requiresFallback) {
+    } catch (error: unknown) {
+      if (error instanceof FallbackError) {
         return this.attemptFallbackWebSearch(request, startTime, error);
       }
       throw error;
@@ -149,10 +142,9 @@ export class LLM {
   private async attemptFallbackWebSearch(
     request: LLMRequest,
     startTime: number,
-    error: any
+    error: FallbackError
   ): Promise<WebSearchResponse> {
-    const fallbackProvider = error.fallbackProvider as string;
-    const fallbackModel = error.fallbackModel as string;
+    const { fallbackProvider, fallbackModel } = error;
     const fallbackApiKey = this.getFallbackApiKey(fallbackProvider);
 
     if (!fallbackApiKey) {
@@ -173,7 +165,7 @@ export class LLM {
     );
 
     const fallbackLLMProvider: LLMProvider = {
-      name: fallbackProvider as LLMProvider["name"],
+      name: fallbackProvider,
       apiKey: fallbackApiKey,
     };
     const fallbackAdapter = this.createAdapter(fallbackLLMProvider);
@@ -187,7 +179,7 @@ export class LLM {
       const result =
         await fallbackAdapter.createChatCompletionWebSearch(fallbackRequest);
       const duration = Date.now() - startTime;
-      (fallbackAdapter as any).logDuration(
+      fallbackAdapter.logDuration(
         "createChatCompletionWebSearch (fallback)",
         duration
       );
@@ -230,7 +222,6 @@ export class LLM {
 
     const isNormal = LLM.NORMAL_FINISH_REASONS.has(result.finishReason);
     if (!isNormal) {
-      // Get the last user message as the prompt preview
       const lastUserMessage = [...request.messages].reverse().find(m => m.role === "user");
       const promptPreview = lastUserMessage?.content?.slice(0, 500);
 

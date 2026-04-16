@@ -1,4 +1,18 @@
+import type { LLMProviderName } from "./types";
 import logger from "../utils/logger";
+
+export class FallbackError extends Error {
+  constructor(
+    message: string,
+    public readonly originalError: Error,
+    public readonly fallbackProvider: LLMProviderName,
+    public readonly fallbackModel: string,
+    public readonly requiresFallback = true,
+  ) {
+    super(message);
+    this.name = "FallbackError";
+  }
+}
 
 /**
  * Retry configuration for LLM calls
@@ -20,7 +34,7 @@ export const RETRY_CONFIG = {
  */
 export const FALLBACK_CONFIG: Record<
   string,
-  { provider: string; model: string }
+  { provider: LLMProviderName; model: string }
 > = {
   anthropic: { provider: "google", model: "gemini-2.5-pro" },
   google: { provider: "anthropic", model: "claude-sonnet-4-5-20250514" },
@@ -33,7 +47,7 @@ export const FALLBACK_CONFIG: Record<
  */
 export function getFallbackConfig(
   provider: string
-): { provider: string; model: string } | null {
+): { provider: LLMProviderName; model: string } | null {
   return FALLBACK_CONFIG[provider] || null;
 }
 
@@ -174,15 +188,12 @@ export async function withRetry<T>(
         options.onFallback(provider, fallbackConfig.provider);
       }
 
-      // Return a special error that indicates fallback should be attempted
-      const fallbackError = new Error(
-        `PRIMARY_PROVIDER_FAILED:${fallbackConfig.provider}`
+      throw new FallbackError(
+        `PRIMARY_PROVIDER_FAILED:${fallbackConfig.provider}`,
+        lastError,
+        fallbackConfig.provider,
+        fallbackConfig.model,
       );
-      (fallbackError as any).originalError = lastError;
-      (fallbackError as any).fallbackProvider = fallbackConfig.provider;
-      (fallbackError as any).fallbackModel = fallbackConfig.model;
-      (fallbackError as any).requiresFallback = true;
-      throw fallbackError;
     }
   }
 

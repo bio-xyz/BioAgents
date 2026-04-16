@@ -29,6 +29,10 @@ export interface StateValues {
 
   // Step tracking
   steps?: Record<string, { start: number; end?: number }>;
+
+  // Error state
+  error?: string;
+  status?: string;
 }
 
 export type PlanTaskType = "LITERATURE" | "ANALYSIS";

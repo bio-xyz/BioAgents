@@ -22,7 +22,7 @@ export async function createMessageRecord(
   try {
     const fileMetadata =
       files.length > 0
-        ? files.map((f: any) => ({
+        ? files.map((f) => ({
             name: f.name,
             size: f.size,
             type: f.type,

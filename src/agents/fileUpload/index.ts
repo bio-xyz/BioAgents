@@ -198,6 +198,7 @@ async function generateFileDescription(
   parsedText: string,
 ): Promise<string> {
   const { LLM } = await import("../../llm/provider");
+  const { parseLLMProviderName } = await import("../../llm/types");
 
   // Create a short preview of the content
   const contentPreview = parsedText.slice(0, 1000);
@@ -232,8 +233,7 @@ Description:`;
 
   try {
     const llmProvider = new LLM({
-      // @ts-ignore
-      name: DESCRIPTION_LLM_PROVIDER,
+      name: parseLLMProviderName(DESCRIPTION_LLM_PROVIDER),
       apiKey,
     });
 

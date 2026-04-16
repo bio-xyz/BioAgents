@@ -1,5 +1,15 @@
+const LLM_PROVIDER_NAMES = ["openai", "google", "anthropic", "openrouter"] as const;
+export type LLMProviderName = (typeof LLM_PROVIDER_NAMES)[number];
+
+export function parseLLMProviderName(name: string): LLMProviderName {
+  if ((LLM_PROVIDER_NAMES as readonly string[]).includes(name)) {
+    return name as LLMProviderName;
+  }
+  throw new Error(`Invalid LLM provider: ${name}`);
+}
+
 export interface LLMProvider {
-  name: 'openai' | 'google' | 'anthropic' | 'openrouter';
+  name: LLMProviderName;
   apiKey: string;
   baseUrl?: string;
   reasoningEffort?: 'low' | 'medium' | 'high';
@@ -20,7 +30,7 @@ export interface LLMRequest {
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';
-  format?: any; // Optional format for structured output (e.g., zodTextFormat)
+  format?: unknown; // Optional format for structured output (e.g., zodTextFormat)
   fileUris?: Array<{ fileUri: string; mimeType: string }>; // For Gemini File API
   stream?: boolean; // Enable streaming responses
   onStreamChunk?: (chunk: string, fullText: string) => Promise<void>; // Callback for each chunk
