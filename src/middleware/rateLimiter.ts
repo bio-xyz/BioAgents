@@ -186,7 +186,7 @@ export function rateLimitMiddleware(action: "chat" | "deep-research") {
     set,
   }: {
     request: Request & { auth?: AuthContext };
-    set: any;
+    set: { status?: number | string; headers: Record<string, string | number> };
   }) => {
     // Skip if job queue not enabled
     if (!isJobQueueEnabled()) {

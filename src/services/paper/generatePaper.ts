@@ -713,14 +713,25 @@ async function generateDiscoverySection(
 
   while (attempt < maxAttempts) {
     try {
-      // Build message content with images for vision-capable models
+      // Build message content with images for vision-capable models.
+      // For Anthropic with figures, the content is an array of text/image blocks
+      // (supported by the Anthropic SDK at runtime but not modeled in the shared
+      // ChatMessage type). `any` is used to bridge the shared LLM interface to
+      // the provider-specific content-block format without cascading type
+      // changes across every adapter.
       let messageContent: any;
 
       if (LLM_PROVIDER === "anthropic" && figures.length > 0) {
         const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
         const MAX_IMAGES_PER_REQUEST = 100;
 
-        const contentBlocks: any[] = [];
+        const contentBlocks: Array<
+          | { type: "text"; text: string }
+          | {
+              type: "image";
+              source: { type: "base64"; media_type: string; data: string };
+            }
+        > = [];
         const figureSizes: Array<{ filename: string; sizeKB: number }> = [];
         const skippedFigures: Array<{ filename: string; reason: string }> = [];
         let totalImageSizeBytes = 0;

@@ -176,9 +176,9 @@ export type Tool = {
   execute: (input: {
     state: State;
     conversationState?: ConversationState;
-    message: any;
-    [key: string]: any;
-  }) => Promise<any>;
+    message: Message;
+    [key: string]: unknown;
+  }) => Promise<unknown>;
   enabled?: boolean; // Tools are enabled by default
   deepResearchEnabled?: boolean; // Tools are enabled for deep research by default
 };
@@ -197,7 +197,7 @@ export type UploadedFile = {
   filename: string;
   mimeType?: string;
   path?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 };
 
 export type AnalysisArtifact = {

@@ -113,8 +113,9 @@ async function downloadFromStorage(key: string): Promise<Buffer> {
 
   try {
     return await storage.download(key);
-  } catch (error: any) {
-    logger.error({ key, error: error?.message }, "storage_download_failed");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ key, error: message }, "storage_download_failed");
     throw error;
   }
 }

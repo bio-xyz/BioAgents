@@ -1,10 +1,23 @@
 import type { WebSearchResult } from "../llm/types";
-import type { State } from "../types/core";
+import type {
+  ConversationState,
+  ConversationStateValues,
+  State,
+  StateValues,
+} from "../types/core";
 import logger from "./logger";
 
 export function addVariablesToState(
   state: State,
-  variables: Record<string, any>,
+  variables: Partial<StateValues>,
+): void;
+export function addVariablesToState(
+  state: ConversationState,
+  variables: Partial<ConversationStateValues>,
+): void;
+export function addVariablesToState(
+  state: State | ConversationState,
+  variables: Partial<StateValues> | Partial<ConversationStateValues>,
 ) {
   state.values = {
     ...state.values,
@@ -72,7 +85,9 @@ export function cleanWebSearchResults(
  * @param messages - Array of messages from the database
  * @returns Formatted conversation history string
  */
-export function formatConversationHistory(messages: any[]): string {
+export function formatConversationHistory(
+  messages: Array<{ question?: string; content?: string }>,
+): string {
   if (!messages || messages.length === 0) {
     return "";
   }
@@ -91,7 +106,7 @@ export function formatConversationHistory(messages: any[]): string {
     .join("\n");
 }
 
-export function parseKeyValueXml(text: string): Record<string, any> | null {
+export function parseKeyValueXml(text: string): Record<string, unknown> | null {
   if (!text) return null;
 
   // First, try to find a specific <response> block (the one we actually want)
@@ -114,7 +129,7 @@ export function parseKeyValueXml(text: string): Record<string, any> | null {
     logger.debug(`Found XML block with tag: ${fallbackMatch[1]}`);
   }
 
-  const result: Record<string, any> = {};
+  const result: Record<string, unknown> = {};
 
   // Regex to find <key>value</key> patterns
   const tagPattern = /<([\w-]+)>([\s\S]*?)<\/([\w-]+)>/g;

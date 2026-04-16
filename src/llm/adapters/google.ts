@@ -417,14 +417,14 @@ export class GoogleAdapter extends LLMAdapter {
     // Handle code execution parts
     const candidate = response.candidates?.[0];
     if (candidate?.content?.parts) {
-      const hasCodeExecution = candidate.content.parts.some((part: any) =>
+      const hasCodeExecution = candidate.content.parts.some((part) =>
         part.executableCode || part.codeExecutionResult
       );
       if (hasCodeExecution) {
         const textParts: string[] = [];
         let codeExecutionOutput: string | undefined = undefined;
 
-        candidate.content.parts.forEach((part: any) => {
+        candidate.content.parts.forEach((part) => {
           if (part.codeExecutionResult?.output) {
             codeExecutionOutput = part.codeExecutionResult.output;
           }

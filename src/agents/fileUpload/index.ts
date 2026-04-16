@@ -47,7 +47,7 @@ export async function fileUploadAgent(input: {
     filename: string;
     mimeType: string;
     parsedText: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     size: number;
   }> = [];
   const errors: string[] = [];
@@ -272,7 +272,7 @@ async function uploadFilesToStorage(
     buffer: Buffer;
     filename: string;
     mimeType: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
   }>,
 ): Promise<Array<UploadedFile>> {
   if (files.length === 0 || !conversationId || !userId) {

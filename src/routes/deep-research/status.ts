@@ -22,8 +22,8 @@ type DeepResearchStatusResponse = {
       mimeType: string;
       size?: number;
     }>;
-    papers?: any[];
-    webSearchResults?: any[];
+    papers?: unknown[];
+    webSearchResults?: unknown[];
   };
   error?: string;
   progress?: {
@@ -140,7 +140,8 @@ export async function deepResearchStatusHandler(
 
     // Determine status based on state values
     const stateValues = state.values || {};
-    const steps = stateValues.steps || {};
+    const steps: Record<string, { start?: number; end?: number }> =
+      stateValues.steps || {};
 
     // Check if there's an error
     if (stateValues.status === "failed" || stateValues.error) {
@@ -155,17 +156,21 @@ export async function deepResearchStatusHandler(
 
     // Check if completed (finalResponse exists and no active steps)
     const hasActiveSteps = Object.values(steps).some(
-      (step: any) => step.start && !step.end
+      (step) => step.start && !step.end
     );
 
     if (stateValues.finalResponse && !hasActiveSteps) {
       // Completed
-      const rawFiles = stateValues.rawFiles;
+      const rawFiles: Array<{
+        filename?: string;
+        mimeType?: string;
+        metadata?: { size?: number };
+      }> = stateValues.rawFiles ?? [];
       const fileMetadata =
-        rawFiles?.length > 0
-          ? rawFiles.map((f: any) => ({
-              filename: f.filename,
-              mimeType: f.mimeType,
+        rawFiles.length > 0
+          ? rawFiles.map((f) => ({
+              filename: f.filename ?? "",
+              mimeType: f.mimeType ?? "",
               size: f.metadata?.size,
             }))
           : undefined;
@@ -194,10 +199,10 @@ export async function deepResearchStatusHandler(
 
     // Still processing
     const completedSteps = Object.keys(steps).filter(
-      (stepName) => steps[stepName].end
+      (stepName) => steps[stepName]?.end
     );
     const currentStep = Object.keys(steps).find(
-      (stepName) => steps[stepName].start && !steps[stepName].end
+      (stepName) => steps[stepName]?.start && !steps[stepName]?.end
     );
 
     const response: DeepResearchStatusResponse = {

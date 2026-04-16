@@ -9,6 +9,32 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import logger from "../../utils/logger";
 import { StorageProvider } from "../types";
 
+interface S3ErrorLike {
+  name?: string;
+  message?: string;
+  $metadata?: { httpStatusCode?: number };
+}
+
+function isS3ErrorLike(error: unknown): error is S3ErrorLike {
+  return typeof error === "object" && error !== null;
+}
+
+function s3ErrorFields(error: unknown): {
+  name?: string;
+  message?: string;
+  httpStatusCode?: number;
+} {
+  if (!isS3ErrorLike(error)) return {};
+  const name = typeof error.name === "string" ? error.name : undefined;
+  const message = typeof error.message === "string" ? error.message : undefined;
+  const metadata = error.$metadata;
+  const httpStatusCode =
+    metadata && typeof metadata === "object" && typeof metadata.httpStatusCode === "number"
+      ? metadata.httpStatusCode
+      : undefined;
+  return { name, message, httpStatusCode };
+}
+
 export class S3StorageProvider extends StorageProvider {
   private client: S3Client;
   private bucket: string;
@@ -92,20 +118,21 @@ export class S3StorageProvider extends StorageProvider {
 
       const byteArray = await response.Body.transformToByteArray();
       return Buffer.from(byteArray);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const fields = s3ErrorFields(error);
       if (logger) {
         logger.error(
           {
             path,
             bucket: this.bucket,
-            errorName: error?.name,
-            errorCode: error?.$metadata?.httpStatusCode,
-            errorMessage: error?.message,
+            errorName: fields.name,
+            errorCode: fields.httpStatusCode,
+            errorMessage: fields.message,
           },
           "s3_download_failed",
         );
       }
-      throw new Error(`S3 download failed: ${error?.name || "UnknownError"} - ${path}`);
+      throw new Error(`S3 download failed: ${fields.name || "UnknownError"} - ${path}`);
     }
   }
 
@@ -139,21 +166,22 @@ export class S3StorageProvider extends StorageProvider {
       }
 
       return Buffer.from(byteArray);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const fields = s3ErrorFields(error);
       if (logger) {
         logger.error(
           {
             path,
             bucket: this.bucket,
             range: `${start}-${end}`,
-            errorName: error?.name,
-            errorCode: error?.$metadata?.httpStatusCode,
-            errorMessage: error?.message,
+            errorName: fields.name,
+            errorCode: fields.httpStatusCode,
+            errorMessage: fields.message,
           },
           "s3_range_download_failed",
         );
       }
-      throw new Error(`S3 range download failed: ${error?.name || "UnknownError"} - ${path}`);
+      throw new Error(`S3 range download failed: ${fields.name || "UnknownError"} - ${path}`);
     }
   }
 
@@ -186,18 +214,17 @@ export class S3StorageProvider extends StorageProvider {
 
       await this.client.send(command);
       return true;
-    } catch (error: any) {
-      if (
-        error.name === "NotFound" ||
-        error.$metadata?.httpStatusCode === 404
-      ) {
+    } catch (error: unknown) {
+      const fields = s3ErrorFields(error);
+      if (fields.name === "NotFound" || fields.httpStatusCode === 404) {
         return false;
       }
 
       if (logger) {
-        logger.error(`Failed to check file existence in S3: ${path}`, error);
+        logger.error({ err: error }, `Failed to check file existence in S3: ${path}`);
       }
-      throw new Error(`S3 exists check failed: ${error.message}`);
+      const errMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`S3 exists check failed: ${errMessage}`);
     }
   }
 

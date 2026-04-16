@@ -127,7 +127,7 @@ export async function verifyJWT(token: string): Promise<JWTVerificationResult> {
       valid: true,
       payload: bioAgentsPayload,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Handle specific jose errors
     if (err instanceof jose.errors.JWTExpired) {
       logger?.warn("jwt_expired");
@@ -154,10 +154,11 @@ export async function verifyJWT(token: string): Promise<JWTVerificationResult> {
     }
 
     // Generic error
-    logger?.warn({ error: err.message }, "jwt_verification_failed");
+    const message = err instanceof Error ? err.message : String(err);
+    logger?.warn({ error: message }, "jwt_verification_failed");
     return {
       valid: false,
-      error: err.message || "JWT verification failed",
+      error: message || "JWT verification failed",
     };
   }
 }

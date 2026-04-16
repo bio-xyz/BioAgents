@@ -17,7 +17,7 @@ export interface Document {
   id: string;
   title: string;
   content: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   similarity?: number;
   relevanceScore?: number;
 }
@@ -78,7 +78,15 @@ export class VectorSearchWithReranker {
 
     if (error) throw error;
 
-    const results = data.map((doc: any) => ({
+    type VectorSearchRow = {
+      id: string;
+      title: string;
+      content: string;
+      metadata?: Record<string, unknown>;
+      similarity?: number;
+    };
+    const rows: VectorSearchRow[] = data ?? [];
+    const results: Document[] = rows.map((doc) => ({
       id: doc.id,
       title: doc.title,
       content: doc.content,
@@ -182,7 +190,7 @@ export class VectorSearchWithReranker {
     documents: Array<{
       title: string;
       content: string;
-      metadata?: any;
+      metadata?: Record<string, unknown>;
     }>,
   ): Promise<Document[]> {
     logger.info(`📚 Adding ${documents.length} documents in batch`);
@@ -200,12 +208,16 @@ export class VectorSearchWithReranker {
             ...doc,
             embedding,
           };
-        } catch (embeddingError: any) {
+        } catch (embeddingError: unknown) {
+          const message =
+            embeddingError instanceof Error
+              ? embeddingError.message
+              : String(embeddingError);
           logger.error(
-            `Failed to generate embedding for ${doc.title}: ${embeddingError.message}`,
+            `Failed to generate embedding for ${doc.title}: ${message}`,
           );
           throw new Error(
-            `Embedding generation failed for ${doc.title}: ${embeddingError.message}`,
+            `Embedding generation failed for ${doc.title}: ${message}`,
           );
         }
       }),

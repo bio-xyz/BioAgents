@@ -9,6 +9,7 @@ import {
   createConversation,
   createConversationState,
   createUser,
+  type DbConversationState,
 } from "../../db/operations";
 import {
   getFileUploadPath,
@@ -138,9 +139,13 @@ export async function requestUploadUrl(
         if (user) {
           logger.info({ userId }, "user_created_for_upload");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // User might already exist - that's fine
-        if (err.code !== "23505") {
+        const errCode =
+          err && typeof err === "object" && "code" in err
+            ? err.code
+            : undefined;
+        if (errCode !== "23505") {
           logger.error({ err, userId }, "create_user_failed_for_upload");
           throw err;
         }
@@ -457,7 +462,7 @@ async function addFileDirectly(
   conversationStateId: string,
   file: { id: string; filename: string; description: string; path: string; content?: string },
 ): Promise<void> {
-  const state = await getConversationState(conversationStateId);
+  const state: DbConversationState | null = await getConversationState(conversationStateId);
   if (!state) {
     throw new Error(`Conversation state not found: ${conversationStateId}`);
   }
@@ -465,7 +470,7 @@ async function addFileDirectly(
   const existingDatasets = state.values.uploadedDatasets || [];
 
   // Check if file already exists by ID
-  if (existingDatasets.some((f: any) => f.id === file.id)) {
+  if (existingDatasets.some((f) => f.id === file.id)) {
     logger.info(
       { conversationStateId, fileId: file.id, filename: file.filename },
       "file_already_in_conversation_state_skipping",
@@ -476,7 +481,7 @@ async function addFileDirectly(
   // Build new array: new file first, then existing (excluding same filename)
   const uploadedDatasets = [
     { ...file, uploadedAt: new Date().toISOString() },
-    ...existingDatasets.filter((f: any) => f.filename !== file.filename),
+    ...existingDatasets.filter((f) => f.filename !== file.filename),
   ];
 
   await updateConversationState(
@@ -539,10 +544,12 @@ export async function deleteFile(fileId: string, userId: string): Promise<void> 
 
   // Remove from conversation state
   try {
-    const state = await getConversationState(status.conversationStateId);
+    const state: DbConversationState | null = await getConversationState(
+      status.conversationStateId,
+    );
     if (state && state.values.uploadedDatasets) {
       const uploadedDatasets = state.values.uploadedDatasets.filter(
-        (f: any) => f.id !== fileId,
+        (f) => f.id !== fileId,
       );
       await updateConversationState(
         status.conversationStateId,

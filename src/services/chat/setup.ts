@@ -6,6 +6,8 @@ import {
   getConversation,
   getConversationState,
   updateConversation,
+  type DbConversationState,
+  type DbState,
 } from "../../db/operations";
 import logger from "../../utils/logger";
 
@@ -15,8 +17,8 @@ export interface SetupResult {
 }
 
 export interface ConversationSetup {
-  conversationStateRecord: any;
-  stateRecord: any;
+  conversationStateRecord: DbConversationState & { id: string };
+  stateRecord: DbState & { id: string };
 }
 
 /**
@@ -41,7 +43,7 @@ export async function ensureUserAndConversation(
       // User already exists (createUser returns null for duplicates)
       if (logger) logger.debug({ userId }, "user_already_exists");
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (logger) logger.error({ err, userId }, "create_user_failed");
     return { success: false, error: "Failed to create user" };
   }
@@ -70,7 +72,7 @@ export async function ensureUserAndConversation(
       }
       return { success: true };
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Conversation doesn't exist - that's fine, we'll create it
     if (logger) {
       logger.info({ conversationId }, "conversation_not_found_will_create");
@@ -84,9 +86,12 @@ export async function ensureUserAndConversation(
       user_id: userId,
     });
     if (logger) logger.info({ conversationId, userId }, "conversation_created");
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Handle race condition: conversation was created between check and create
-    if (err.code === "23505") {
+    const errRecord: Record<string, unknown> =
+      err && typeof err === "object" ? { ...err } : {};
+    const errCode = errRecord.code;
+    if (errCode === "23505") {
       // Re-check ownership for the race condition case
       try {
         const racedConversation = await getConversation(conversationId);
@@ -122,8 +127,8 @@ export async function setupConversationData(
   fileCount: number,
   agentId?: string,
 ): Promise<{ success: boolean; data?: ConversationSetup; error?: string }> {
-  let conversationStateRecord: any;
-  let stateRecord: any;
+  let conversationStateRecord: DbConversationState & { id: string };
+  let stateRecord: DbState & { id: string };
 
   // Get or create conversation state
   try {

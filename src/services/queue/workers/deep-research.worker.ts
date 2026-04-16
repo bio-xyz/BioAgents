@@ -14,6 +14,7 @@
 import { Job, Worker } from "bullmq";
 import type {
   ConversationState,
+  ConversationStateValues,
   OnPollUpdate,
   PlanTask,
   State,
@@ -88,12 +89,12 @@ async function processDeepResearchJob(
   let updateConversationStateRef:
     | ((
         id: string,
-        values: any,
+        values: Partial<ConversationStateValues>,
         options?: { preserveUploadedDatasets?: boolean },
-      ) => Promise<any>)
+      ) => Promise<unknown>)
     | null = null;
   let writeStateSerialized:
-    | ((options?: ConversationStateWriteOptions) => Promise<any>)
+    | ((options?: ConversationStateWriteOptions) => Promise<unknown>)
     | null = null;
 
   const prepareConversationStateForWrite = async (

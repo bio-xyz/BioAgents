@@ -163,21 +163,24 @@ async function extractPDFText(buffer: Buffer, filename: string): Promise<string>
 
     // Return first 50KB of text for full content storage
     return text.slice(0, 50000);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Capture all error details
+    const errRecord: Record<string, unknown> =
+      error && typeof error === "object" ? { ...error } : {};
+    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
     const errorDetails = {
-      message: error?.message,
-      name: error?.name,
-      code: error?.code,
+      message: errMessage,
+      name: typeof errRecord.name === "string" ? errRecord.name : undefined,
+      code: errRecord.code,
       toString: String(error),
-      keys: error ? Object.keys(error) : [],
+      keys: error ? Object.keys(errRecord) : [],
     };
     logger.error({
       filename,
       errorDetails,
-      stack: error?.stack
+      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
     }, "pdf_extraction_failed");
-    return `[PDF file: ${filename} - extraction error: ${error?.message || String(error) || 'unknown'}]`;
+    return `[PDF file: ${filename} - extraction error: ${errMessage || String(error) || 'unknown'}]`;
   }
 }
 
@@ -211,13 +214,16 @@ async function extractImageContent(buffer: Buffer, filename: string, contentType
 
     // Return extracted text (limit to 50KB)
     return text.slice(0, 50000);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errRecord: Record<string, unknown> =
+      error && typeof error === "object" ? { ...error } : {};
+    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
     logger.error({
       filename,
-      error: error?.message,
-      stack: error?.stack
+      error: errMessage,
+      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
     }, "image_ocr_failed");
-    return `[Image file: ${filename} - OCR error: ${error?.message || 'unknown'}]`;
+    return `[Image file: ${filename} - OCR error: ${errMessage || 'unknown'}]`;
   }
 }
 
@@ -269,12 +275,15 @@ async function extractExcelContent(buffer: Buffer, filename: string): Promise<st
 
     // Return up to 50KB of content
     return text.slice(0, 50000);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errRecord: Record<string, unknown> =
+      error && typeof error === "object" ? { ...error } : {};
+    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
     logger.error({
       filename,
-      error: error?.message,
-      stack: error?.stack
+      error: errMessage,
+      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
     }, "excel_extraction_failed");
-    return `[Excel file: ${filename} - extraction error: ${error?.message || 'unknown'}]`;
+    return `[Excel file: ${filename} - extraction error: ${errMessage || 'unknown'}]`;
   }
 }

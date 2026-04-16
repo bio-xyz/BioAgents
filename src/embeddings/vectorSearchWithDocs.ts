@@ -78,7 +78,7 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     const allChunks: Array<{
       title: string;
       content: string;
-      metadata: any;
+      metadata: Record<string, unknown>;
     }> = [];
 
     // First, collect all chunks from all documents
@@ -118,11 +118,12 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
       );
       try {
         await this.addDocuments(batch);
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
         logger.error(
-          `  - Failed to add batch starting at index ${i}: ${e.message}`,
+          `  - Failed to add batch starting at index ${i}: ${message}`,
         );
-        logger.error(`  - Error details:`, e);
+        logger.error({ err: e }, `  - Error details`);
         // Log which documents were in this batch
         logger.error(
           `  - Documents in failed batch: ${batch.map((d) => d.title).join(", ")}`,

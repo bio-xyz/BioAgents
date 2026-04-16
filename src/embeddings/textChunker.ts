@@ -3,7 +3,7 @@ import { CONFIG } from "./config";
 export interface Chunk {
   title: string;
   content: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
   chunkIndex: number;
   totalChunks: number;
 }
@@ -17,7 +17,7 @@ export class TextChunker {
   chunkDocument(doc: {
     title: string;
     content: string;
-    metadata: any;
+    metadata: Record<string, unknown>;
   }): Chunk[] {
     const text = doc.content;
 

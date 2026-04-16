@@ -209,15 +209,25 @@ export class OpenRouterAdapter extends LLMAdapter {
     if (!res.ok) {
       // Read body once
       const raw = await res.text().catch(() => '');
-      let parsed: any = null;
+      let parsed: unknown = null;
       try {
         parsed = raw ? JSON.parse(raw) : null;
       } catch {}
 
       // Prefer structured error info when present
+      const isRecord = (v: unknown): v is Record<string, unknown> =>
+        typeof v === 'object' && v !== null;
+      const parsedObj = isRecord(parsed) ? parsed : null;
+      const errorObj = parsedObj && isRecord(parsedObj.error) ? parsedObj.error : null;
       const errCode =
-        parsed?.error?.code ?? parsed?.error?.type ?? parsed?.code ?? `HTTP_${res.status}`;
-      const errMsg = parsed?.error?.message ?? parsed?.message ?? (raw || res.statusText);
+        (typeof errorObj?.code === 'string' ? errorObj.code : undefined) ??
+        (typeof errorObj?.type === 'string' ? errorObj.type : undefined) ??
+        (typeof parsedObj?.code === 'string' ? parsedObj.code : undefined) ??
+        `HTTP_${res.status}`;
+      const errMsg =
+        (typeof errorObj?.message === 'string' ? errorObj.message : undefined) ??
+        (typeof parsedObj?.message === 'string' ? parsedObj.message : undefined) ??
+        (raw || res.statusText);
 
       const errorDetails = {
         url,

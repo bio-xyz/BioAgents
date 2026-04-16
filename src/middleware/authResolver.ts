@@ -42,7 +42,7 @@ function constantTimeCompare(a: string, b: string): boolean {
  * This is only used when the caller is already trusted (valid API key or
  * AUTH_MODE=none), so accepting the provided userId is safe.
  */
-function resolveProvidedUserId(request: Request, body?: any): string {
+function resolveProvidedUserId(request: Request, body?: unknown): string {
   // 1. Check X-User-Id header (useful for GET requests that have no body)
   const headerUserId = request.headers.get("X-User-Id");
   if (
@@ -54,7 +54,9 @@ function resolveProvidedUserId(request: Request, body?: any): string {
   }
 
   // 2. Check body.userId
-  const bodyUserId = body?.userId;
+  const bodyRecord: Record<string, unknown> =
+    body && typeof body === "object" ? { ...body } : {};
+  const bodyUserId = bodyRecord.userId;
   if (bodyUserId && typeof bodyUserId === "string" && bodyUserId.length > 0) {
     return bodyUserId;
   }
@@ -122,8 +124,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
     body,
   }: {
     request: Request & { auth?: AuthContext };
-    set: any;
-    body?: any;
+    set: { status?: number | string; headers: Record<string, string | number> };
+    body?: unknown;
   }) => {
     let auth: AuthContext | null = null;
     const path = new URL(request.url).pathname;
@@ -321,7 +323,7 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  */
 export async function resolveAuth(
   request: Request,
-  body?: any,
+  body?: unknown,
 ): Promise<{
   authenticated: boolean;
   userId?: string;

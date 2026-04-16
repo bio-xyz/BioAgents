@@ -147,10 +147,10 @@ export function isActiveRun(
 }
 
 export function getActiveRunForDedupFromValues(
-  values: any,
+  values: Partial<ConversationStateValues> | null | undefined,
   nowMs: number = Date.now(),
 ): ActiveRunDedupInfo | null {
-  const run = values?.deepResearchRun as ConversationStateValues["deepResearchRun"];
+  const run = values?.deepResearchRun;
   if (!isActiveRun(run, nowMs)) return null;
   if (!run.rootMessageId || !run.stateId || !run.mode) return null;
 

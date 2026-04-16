@@ -16,7 +16,11 @@ export interface MessageCreationParams {
  */
 export async function createMessageRecord(
   params: MessageCreationParams,
-): Promise<{ success: boolean; message?: any; error?: string }> {
+): Promise<{
+  success: boolean;
+  message?: Awaited<ReturnType<typeof createMessage>>;
+  error?: string;
+}> {
   const { conversationId, userId, message, source, stateId, files } = params;
 
   try {

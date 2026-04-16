@@ -372,7 +372,7 @@ async function processChatJob(
       {
         jobId: job.id,
         uploadedDatasetsCount: uploadedDatasets.length,
-        datasetsInfo: uploadedDatasets.map((d: any) => ({
+        datasetsInfo: uploadedDatasets.map((d) => ({
           filename: d.filename,
           hasContent: !!d.content,
           contentLength: d.content?.length || 0,

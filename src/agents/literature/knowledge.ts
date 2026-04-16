@@ -61,7 +61,7 @@ export async function searchKnowledge(
       ? `Found 0 relevant knowledge chunks (no results)`
       : `Found ${searchResults.length} relevant knowledge chunks:\n\n${searchResults
           .map(
-            (doc: any, idx: number) =>
+            (doc, idx) =>
               `${idx + 1}. ${doc.title}\n   ${doc.content.substring(0, 300)}...`,
           )
           .join("\n\n")}`;

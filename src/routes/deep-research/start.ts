@@ -16,10 +16,15 @@ import {
 import {
   getConversationState,
   getMessagesByConversation,
+  type DbConversationState,
+  type DbState,
+  createMessage,
   updateConversationState,
   updateMessage,
   updateState,
 } from "../../db/operations";
+
+type CreatedMessage = Awaited<ReturnType<typeof createMessage>>;
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import {
@@ -398,7 +403,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
   const queueEnabled = isJobQueueEnabled();
   const runMode: "queue" | "in-process" = queueEnabled ? "queue" : "in-process";
   let researchMode: ResearchMode = "semi-autonomous";
-  let createdMessage: any | null = null;
+  let createdMessage: CreatedMessage | null = null;
   let runMarkedStarted = false;
   let activeConversationState: ConversationState | null = null;
 
@@ -886,9 +891,9 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
  * - 'steering': Single iteration only, always asks user for feedback
  */
 async function runDeepResearch(params: {
-  stateRecord: any;
-  conversationStateRecord: any;
-  createdMessage: any;
+  stateRecord: DbState & { id: string };
+  conversationStateRecord: DbConversationState & { id: string };
+  createdMessage: CreatedMessage;
   files: File[];
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering";
   rootMessageId: string;
