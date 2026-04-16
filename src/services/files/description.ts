@@ -15,7 +15,7 @@ import logger from "../../utils/logger";
 export async function generateFileDescription(
   filename: string,
   contentType: string,
-  contentPreview: string,
+  contentPreview: string
 ): Promise<string> {
   const { LLM } = await import("../../llm/provider");
   const { parseLLMProviderName } = await import("../../llm/types");
@@ -27,7 +27,7 @@ export async function generateFileDescription(
   const ext = filename.split(".").pop()?.toLowerCase();
   let rowCountInfo = "";
   if (["csv", "tsv"].includes(ext || "") || contentType === "text/csv") {
-    const lines = contentPreview.split("\n").filter(line => line.trim().length > 0);
+    const lines = contentPreview.split("\n").filter((line) => line.trim().length > 0);
     const rowCount = lines.length - 1; // Subtract header row
     rowCountInfo = `\nTotal rows (excluding header): ${rowCount}`;
   }
@@ -50,10 +50,8 @@ Examples:
 
 Description:`;
 
-  const DESCRIPTION_LLM_PROVIDER =
-    process.env.PLANNING_LLM_PROVIDER || "google";
-  const apiKey =
-    process.env[`${DESCRIPTION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const DESCRIPTION_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
+  const apiKey = process.env[`${DESCRIPTION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!apiKey) {
     // Fallback to basic description
@@ -62,30 +60,27 @@ Description:`;
 
   try {
     const llmProvider = new LLM({
-      name: parseLLMProviderName(DESCRIPTION_LLM_PROVIDER),
       apiKey,
+      name: parseLLMProviderName(DESCRIPTION_LLM_PROVIDER),
     });
 
     const response = await llmProvider.createChatCompletion({
-      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
+      maxTokens: 100,
       messages: [
         {
-          role: "user" as const,
           content: prompt,
+          role: "user" as const,
         },
       ],
-      maxTokens: 100,
+      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
     });
 
     const description = response.content.trim();
-    logger.info({ filename, description }, "file_description_generated");
+    logger.info({ description, filename }, "file_description_generated");
 
     return description;
   } catch (error) {
-    logger.warn(
-      { filename, error },
-      "failed_to_generate_file_description_using_fallback",
-    );
+    logger.warn({ error, filename }, "failed_to_generate_file_description_using_fallback");
     // Fallback to basic description
     return `${filename} (${contentType || "unknown type"})`;
   }
@@ -98,16 +93,13 @@ Description:`;
 export async function parseFilePreview(
   buffer: Buffer,
   filename: string,
-  contentType: string,
+  contentType: string
 ): Promise<string> {
   const ext = filename.split(".").pop()?.toLowerCase();
 
   try {
     // For text-based files, just decode as UTF-8
-    if (
-      contentType.startsWith("text/") ||
-      ["csv", "json", "md", "txt"].includes(ext || "")
-    ) {
+    if (contentType.startsWith("text/") || ["csv", "json", "md", "txt"].includes(ext || "")) {
       return buffer.toString("utf-8");
     }
 
@@ -129,7 +121,7 @@ export async function parseFilePreview(
     // Default: try to decode as text
     return buffer.toString("utf-8");
   } catch (error) {
-    logger.warn({ filename, error }, "failed_to_parse_file_preview");
+    logger.warn({ error, filename }, "failed_to_parse_file_preview");
     return `[Binary file: ${filename}]`;
   }
 }
@@ -138,7 +130,7 @@ export async function parseFilePreview(
  * Extract text content from a PDF buffer using pdf-parse
  */
 async function extractPDFText(buffer: Buffer, filename: string): Promise<string> {
-  logger.info({ filename, bufferSize: buffer.length }, "pdf_extraction_starting");
+  logger.info({ bufferSize: buffer.length, filename }, "pdf_extraction_starting");
 
   try {
     const { PDFParse } = await import("pdf-parse");
@@ -148,11 +140,14 @@ async function extractPDFText(buffer: Buffer, filename: string): Promise<string>
     const result = await parser.getText();
 
     const text = result.text || "";
-    logger.info({
-      filename,
-      textLength: text.length,
-      textPreview: text.slice(0, 200)
-    }, "pdf_text_extracted");
+    logger.info(
+      {
+        filename,
+        textLength: text.length,
+        textPreview: text.slice(0, 200),
+      },
+      "pdf_text_extracted"
+    );
 
     await parser.destroy();
 
@@ -164,31 +159,21 @@ async function extractPDFText(buffer: Buffer, filename: string): Promise<string>
     // Return first 50KB of text for full content storage
     return text.slice(0, 50000);
   } catch (error: unknown) {
-    // Capture all error details
-    const errRecord: Record<string, unknown> =
-      error && typeof error === "object" ? { ...error } : {};
-    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
-    const errorDetails = {
-      message: errMessage,
-      name: typeof errRecord.name === "string" ? errRecord.name : undefined,
-      code: errRecord.code,
-      toString: String(error),
-      keys: error ? Object.keys(errRecord) : [],
-    };
-    logger.error({
-      filename,
-      errorDetails,
-      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
-    }, "pdf_extraction_failed");
-    return `[PDF file: ${filename} - extraction error: ${errMessage || String(error) || 'unknown'}]`;
+    const errMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ err: error, filename }, "pdf_extraction_failed");
+    return `[PDF file: ${filename} - extraction error: ${errMessage || "unknown"}]`;
   }
 }
 
 /**
  * Extract text content from an image using OCR (tesseract.js)
  */
-async function extractImageContent(buffer: Buffer, filename: string, contentType: string): Promise<string> {
-  logger.info({ filename, bufferSize: buffer.length, contentType }, "image_ocr_starting");
+async function extractImageContent(
+  buffer: Buffer,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  logger.info({ bufferSize: buffer.length, contentType, filename }, "image_ocr_starting");
 
   try {
     const Tesseract = await import("tesseract.js");
@@ -200,12 +185,15 @@ async function extractImageContent(buffer: Buffer, filename: string, contentType
 
     const text = data.text?.trim() || "";
 
-    logger.info({
-      filename,
-      textLength: text.length,
-      textPreview: text.slice(0, 200),
-      confidence: data.confidence,
-    }, "image_ocr_completed");
+    logger.info(
+      {
+        confidence: data.confidence,
+        filename,
+        textLength: text.length,
+        textPreview: text.slice(0, 200),
+      },
+      "image_ocr_completed"
+    );
 
     if (text.length === 0) {
       logger.warn({ filename }, "image_ocr_no_text_found");
@@ -215,15 +203,9 @@ async function extractImageContent(buffer: Buffer, filename: string, contentType
     // Return extracted text (limit to 50KB)
     return text.slice(0, 50000);
   } catch (error: unknown) {
-    const errRecord: Record<string, unknown> =
-      error && typeof error === "object" ? { ...error } : {};
-    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
-    logger.error({
-      filename,
-      error: errMessage,
-      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
-    }, "image_ocr_failed");
-    return `[Image file: ${filename} - OCR error: ${errMessage || 'unknown'}]`;
+    const errMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ err: error, filename }, "image_ocr_failed");
+    return `[Image file: ${filename} - OCR error: ${errMessage || "unknown"}]`;
   }
 }
 
@@ -231,7 +213,7 @@ async function extractImageContent(buffer: Buffer, filename: string, contentType
  * Extract content from Excel files (xlsx, xls) using xlsx library
  */
 async function extractExcelContent(buffer: Buffer, filename: string): Promise<string> {
-  logger.info({ filename, bufferSize: buffer.length }, "excel_extraction_starting");
+  logger.info({ bufferSize: buffer.length, filename }, "excel_extraction_starting");
 
   try {
     const XLSX = await import("xlsx");
@@ -252,7 +234,7 @@ async function extractExcelContent(buffer: Buffer, filename: string): Promise<st
 
       if (csv.trim()) {
         // Count rows
-        const rows = csv.split("\n").filter(row => row.trim().length > 0);
+        const rows = csv.split("\n").filter((row) => row.trim().length > 0);
         const rowCount = rows.length - 1; // Subtract header
 
         results.push(`--- Sheet: ${sheetName} (${rowCount} rows) ---\n${csv}`);
@@ -261,12 +243,15 @@ async function extractExcelContent(buffer: Buffer, filename: string): Promise<st
 
     const text = results.join("\n\n");
 
-    logger.info({
-      filename,
-      sheetCount: sheetNames.length,
-      textLength: text.length,
-      textPreview: text.slice(0, 200),
-    }, "excel_content_extracted");
+    logger.info(
+      {
+        filename,
+        sheetCount: sheetNames.length,
+        textLength: text.length,
+        textPreview: text.slice(0, 200),
+      },
+      "excel_content_extracted"
+    );
 
     if (text.length === 0) {
       logger.warn({ filename }, "excel_extracted_empty_content");
@@ -276,14 +261,8 @@ async function extractExcelContent(buffer: Buffer, filename: string): Promise<st
     // Return up to 50KB of content
     return text.slice(0, 50000);
   } catch (error: unknown) {
-    const errRecord: Record<string, unknown> =
-      error && typeof error === "object" ? { ...error } : {};
-    const errMessage = typeof errRecord.message === "string" ? errRecord.message : undefined;
-    logger.error({
-      filename,
-      error: errMessage,
-      stack: typeof errRecord.stack === "string" ? errRecord.stack : undefined,
-    }, "excel_extraction_failed");
-    return `[Excel file: ${filename} - extraction error: ${errMessage || 'unknown'}]`;
+    const errMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ err: error, filename }, "excel_extraction_failed");
+    return `[Excel file: ${filename} - extraction error: ${errMessage || "unknown"}]`;
   }
 }

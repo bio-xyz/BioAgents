@@ -12,8 +12,8 @@
  */
 
 import { Elysia } from "elysia";
-import { verifyJWT } from "../jwt";
 import logger from "../../utils/logger";
+import { verifyJWT } from "../jwt";
 
 interface WsClient {
   send(data: string): void;
@@ -41,10 +41,10 @@ const authTimeouts = new WeakMap<WsClient, ReturnType<typeof setTimeout>>();
 // Authentication timeout in milliseconds (10 seconds)
 const AUTH_TIMEOUT_MS = 10000;
 
-function getState(ws: WsClient): WsConnectionState {
+export function getState(ws: WsClient): WsConnectionState {
   let state = wsState.get(ws);
   if (!state) {
-    state = { userId: null, subscriptions: new Set() };
+    state = { subscriptions: new Set(), userId: null };
     wsState.set(ws, state);
   }
   return state;
@@ -67,9 +67,8 @@ interface PingMessage {
 
 type IncomingMessage = AuthMessage | SubscribeMessage | PingMessage;
 
-function parseIncomingMessage(raw: unknown): IncomingMessage | null {
-  const data: unknown =
-    typeof raw === "string" ? safeJsonParse(raw) : raw;
+export function parseIncomingMessage(raw: unknown): IncomingMessage | null {
+  const data: unknown = typeof raw === "string" ? safeJsonParse(raw) : raw;
   if (!data || typeof data !== "object") return null;
   const obj = data as Record<string, unknown>;
   if (typeof obj.action !== "string") return null;
@@ -83,8 +82,7 @@ function parseIncomingMessage(raw: unknown): IncomingMessage | null {
   if (obj.action === "subscribe" || obj.action === "unsubscribe") {
     return {
       action: obj.action,
-      conversationId:
-        typeof obj.conversationId === "string" ? obj.conversationId : undefined,
+      conversationId: typeof obj.conversationId === "string" ? obj.conversationId : undefined,
     };
   }
   if (obj.action === "ping") {
@@ -110,27 +108,26 @@ function safeJsonParse(raw: string): unknown {
  * - Ping/pong heartbeat
  */
 export const websocketHandler = new Elysia().ws("/api/ws", {
-  // Handle connection open
-  async open(ws) {
+  // Handle connection close
+  close(ws) {
     const client: WsClient = ws;
-    getState(client); // initialize state
+    const state = wsState.get(client);
 
-    // Set authentication timeout - close if not authenticated within timeout
-    const timeout = setTimeout(() => {
-      if (!getState(client).userId) {
-        logger.warn("ws_auth_timeout");
-        client.send(JSON.stringify({ type: "error", message: "Authentication timeout" }));
-        client.close(4001, "Authentication timeout");
+    // Clean up all subscriptions
+    if (state) {
+      for (const conversationId of state.subscriptions) {
+        conversationClients.get(conversationId)?.delete(client);
       }
-      authTimeouts.delete(client);
-    }, AUTH_TIMEOUT_MS);
+    }
 
-    authTimeouts.set(client, timeout);
+    // Clean up user access cache
+    if (state?.userId) {
+      userConversationAccess.delete(state.userId);
+    }
 
-    // Send ready message to indicate client should send auth
-    client.send(JSON.stringify({ type: "ready", message: "Send auth message with JWT token" }));
+    wsState.delete(client);
 
-    logger.info("ws_client_connected_awaiting_auth");
+    logger.info({ userId: state?.userId }, "ws_client_disconnected");
   },
 
   // Handle incoming messages
@@ -171,11 +168,13 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
             logger.info({ userId: result.payload.sub }, "ws_client_authenticated");
             return;
           } else {
-            client.send(JSON.stringify({ type: "error", message: result.error || "Invalid token" }));
+            client.send(
+              JSON.stringify({ message: result.error || "Invalid token", type: "error" })
+            );
             return;
           }
         } else {
-          client.send(JSON.stringify({ type: "error", message: "Missing credentials" }));
+          client.send(JSON.stringify({ message: "Missing credentials", type: "error" }));
           return;
         }
       }
@@ -185,7 +184,9 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
 
       // Reject if not authenticated
       if (!userId) {
-        client.send(JSON.stringify({ type: "error", message: "Not authenticated. Send auth message first." }));
+        client.send(
+          JSON.stringify({ message: "Not authenticated. Send auth message first.", type: "error" })
+        );
         return;
       }
 
@@ -204,7 +205,7 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
             allowedConversations = new Set(
               userConversations
                 .map((c) => c.id)
-                .filter((id): id is string => typeof id === "string"),
+                .filter((id): id is string => typeof id === "string")
             );
             userConversationAccess.set(userId, allowedConversations);
           } catch (err) {
@@ -217,9 +218,9 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
           if (!allowedConversations.has(conversationId)) {
             client.send(
               JSON.stringify({
-                type: "error",
                 message: "Access denied to conversation",
-              }),
+                type: "error",
+              })
             );
             return;
           }
@@ -236,12 +237,12 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
 
         client.send(
           JSON.stringify({
-            type: "subscribed",
             conversationId,
-          }),
+            type: "subscribed",
+          })
         );
 
-        logger.info({ userId, conversationId }, "ws_client_subscribed");
+        logger.info({ conversationId, userId }, "ws_client_subscribed");
         return;
       }
 
@@ -254,12 +255,12 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
 
         client.send(
           JSON.stringify({
-            type: "unsubscribed",
             conversationId,
-          }),
+            type: "unsubscribed",
+          })
         );
 
-        logger.info({ userId, conversationId }, "ws_client_unsubscribed");
+        logger.info({ conversationId, userId }, "ws_client_unsubscribed");
         return;
       }
 
@@ -271,27 +272,27 @@ export const websocketHandler = new Elysia().ws("/api/ws", {
       logger.warn({ error: e }, "ws_invalid_message");
     }
   },
-
-  // Handle connection close
-  close(ws) {
+  // Handle connection open
+  async open(ws) {
     const client: WsClient = ws;
-    const state = wsState.get(client);
+    getState(client); // initialize state
 
-    // Clean up all subscriptions
-    if (state) {
-      for (const conversationId of state.subscriptions) {
-        conversationClients.get(conversationId)?.delete(client);
+    // Set authentication timeout - close if not authenticated within timeout
+    const timeout = setTimeout(() => {
+      if (!getState(client).userId) {
+        logger.warn("ws_auth_timeout");
+        client.send(JSON.stringify({ message: "Authentication timeout", type: "error" }));
+        client.close(4001, "Authentication timeout");
       }
-    }
+      authTimeouts.delete(client);
+    }, AUTH_TIMEOUT_MS);
 
-    // Clean up user access cache
-    if (state?.userId) {
-      userConversationAccess.delete(state.userId);
-    }
+    authTimeouts.set(client, timeout);
 
-    wsState.delete(client);
+    // Send ready message to indicate client should send auth
+    client.send(JSON.stringify({ message: "Send auth message with JWT token", type: "ready" }));
 
-    logger.info({ userId: state?.userId }, "ws_client_disconnected");
+    logger.info("ws_client_connected_awaiting_auth");
   },
 });
 
@@ -317,10 +318,7 @@ export function broadcastToConversation(conversationId: string, message: object)
   }
 
   if (successCount > 0 || errorCount > 0) {
-    logger.info(
-      { conversationId, successCount, errorCount },
-      "ws_broadcast_completed",
-    );
+    logger.info({ conversationId, errorCount, successCount }, "ws_broadcast_completed");
   }
 }
 
@@ -349,8 +347,9 @@ export function getTotalClientCount(): number {
 export function cleanupDeadConnections() {
   for (const [conversationId, clients] of conversationClients) {
     for (const client of clients) {
-      // Check if client is still connected (readyState 1 = OPEN)
-      if (client.readyState !== undefined && client.readyState !== 1) {
+      // readyState 1 = OPEN. Anything else (including undefined for implementations
+      // that don't expose it) is treated as dead so we don't leak connections.
+      if (client.readyState !== 1) {
         clients.delete(client);
       }
     }
