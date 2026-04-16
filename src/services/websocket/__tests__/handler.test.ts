@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getState, parseIncomingMessage } from "../handler";
+import { cleanupDeadConnectionsIn, getState, parseIncomingMessage } from "../handler";
 
 type TestWs = {
   send: (data: string) => void;
@@ -117,5 +117,60 @@ describe("getState WeakMap isolation", () => {
     getState(ws2).userId = "user-2";
     expect(getState(ws1).userId).toBe("user-1");
     expect(getState(ws2).userId).toBe("user-2");
+  });
+});
+
+describe("cleanupDeadConnectionsIn", () => {
+  function makeClient(readyState?: number): TestWs {
+    return { close: () => undefined, readyState, send: () => undefined };
+  }
+
+  test("keeps OPEN (readyState=1) connections", () => {
+    const open1 = makeClient(1);
+    const open2 = makeClient(1);
+    const map = new Map<string, Set<TestWs>>([["conv-1", new Set([open1, open2])]]);
+    cleanupDeadConnectionsIn(map as never);
+    expect(map.get("conv-1")?.size).toBe(2);
+    expect(map.get("conv-1")?.has(open1)).toBe(true);
+  });
+
+  test.each([
+    ["CONNECTING", 0],
+    ["CLOSING", 2],
+    ["CLOSED", 3],
+  ])("removes %s (readyState=%s) connections", (_label, state) => {
+    const dead = makeClient(state);
+    const alive = makeClient(1);
+    const map = new Map<string, Set<TestWs>>([["conv-1", new Set([dead, alive])]]);
+    cleanupDeadConnectionsIn(map as never);
+    expect(map.get("conv-1")?.has(dead)).toBe(false);
+    expect(map.get("conv-1")?.has(alive)).toBe(true);
+  });
+
+  test("removes connections with undefined readyState (regression fix)", () => {
+    // Some WS implementations don't expose readyState at all; the previous
+    // inverted condition leaked these.
+    const noState = makeClient(undefined);
+    const map = new Map<string, Set<TestWs>>([["conv-1", new Set([noState])]]);
+    cleanupDeadConnectionsIn(map as never);
+    // The conversation key is dropped because its set is empty.
+    expect(map.has("conv-1")).toBe(false);
+  });
+
+  test("drops conversation key once its connection set is empty", () => {
+    const dead = makeClient(3);
+    const map = new Map<string, Set<TestWs>>([
+      ["empty-after-cleanup", new Set([dead])],
+      ["has-live", new Set([makeClient(1)])],
+    ]);
+    cleanupDeadConnectionsIn(map as never);
+    expect(map.has("empty-after-cleanup")).toBe(false);
+    expect(map.has("has-live")).toBe(true);
+  });
+
+  test("handles an empty map without throwing", () => {
+    const map = new Map<string, Set<TestWs>>();
+    expect(() => cleanupDeadConnectionsIn(map as never)).not.toThrow();
+    expect(map.size).toBe(0);
   });
 });

@@ -341,11 +341,11 @@ export function getTotalClientCount(): number {
 }
 
 /**
- * Clean up dead connections periodically
- * Call this from a setInterval in the main server
+ * Pure form of cleanupDeadConnections — mutates the map passed in. Exposed so
+ * tests can seed a fresh map without touching module-level state.
  */
-export function cleanupDeadConnections() {
-  for (const [conversationId, clients] of conversationClients) {
+export function cleanupDeadConnectionsIn(clientsMap: Map<string, Set<WsClient>>): void {
+  for (const [conversationId, clients] of clientsMap) {
     for (const client of clients) {
       // readyState 1 = OPEN. Anything else (including undefined for implementations
       // that don't expose it) is treated as dead so we don't leak connections.
@@ -354,7 +354,15 @@ export function cleanupDeadConnections() {
       }
     }
     if (clients.size === 0) {
-      conversationClients.delete(conversationId);
+      clientsMap.delete(conversationId);
     }
   }
+}
+
+/**
+ * Clean up dead connections periodically
+ * Call this from a setInterval in the main server
+ */
+export function cleanupDeadConnections() {
+  cleanupDeadConnectionsIn(conversationClients);
 }

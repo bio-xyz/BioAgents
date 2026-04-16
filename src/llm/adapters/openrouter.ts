@@ -1,6 +1,10 @@
-import logger from "../../utils/logger";
 import { LLMAdapter } from "../adapter";
 import type { LLMProvider, LLMRequest, LLMResponse, WebSearchResult } from "../types";
+import {
+  extractTextFromOpenRouterResponse,
+  extractWebSearchResultsFromOpenRouterResponse,
+  type OpenRouterResponse,
+} from "./openrouter-extractors";
 import { enrichMessagesWithUrlContent, hasUrlInMessages } from "./utils";
 
 interface OpenRouterRequestPayload {
@@ -12,36 +16,6 @@ interface OpenRouterRequestPayload {
     effort?: "low" | "medium" | "high";
     max_tokens?: number;
     exclude?: boolean;
-  };
-}
-
-interface OpenRouterAnnotation {
-  type: string;
-  url_citation?: {
-    url: string;
-    title?: string;
-    content?: string;
-    start_index?: number;
-    end_index?: number;
-  };
-}
-
-interface OpenRouterMessage {
-  role: string;
-  content: string;
-  annotations?: OpenRouterAnnotation[];
-}
-
-interface OpenRouterResponse {
-  choices?: Array<{
-    message?: OpenRouterMessage;
-    text?: string;
-    finish_reason?: string;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
   };
 }
 
@@ -225,14 +199,7 @@ export class OpenRouterAdapter extends LLMAdapter {
   }
 
   private extractText(response: OpenRouterResponse): string {
-    if (!response?.choices || response.choices.length === 0) {
-      logger.warn({ hasUsage: !!response?.usage }, "openrouter_empty_choices");
-      return "";
-    }
-
-    const choice = response.choices[0];
-    if (!choice) return "";
-    return choice.message?.content ?? choice.text ?? "";
+    return extractTextFromOpenRouterResponse(response);
   }
 
   private extractUsage(response: OpenRouterResponse): LLMResponse["usage"] {
@@ -280,39 +247,6 @@ export class OpenRouterAdapter extends LLMAdapter {
   }
 
   private extractWebSearchResults(response: OpenRouterResponse): WebSearchResult[] {
-    if (!response?.choices || response.choices.length === 0) {
-      // extractText already warns on the same condition; suppress a duplicate log here.
-      return [];
-    }
-
-    const choice = response.choices[0];
-    if (!choice) return [];
-    const annotations = choice.message?.annotations ?? [];
-
-    const results: WebSearchResult[] = [];
-    const seen = new Set<string>();
-
-    annotations.forEach((annotation) => {
-      if (annotation.type !== "url_citation" || !annotation.url_citation) {
-        return;
-      }
-
-      const citation = annotation.url_citation;
-      const url = citation.url;
-
-      if (!url || seen.has(url)) {
-        return;
-      }
-
-      seen.add(url);
-      results.push({
-        index: results.length,
-        originalUrl: url,
-        title: citation.title ?? "",
-        url,
-      });
-    });
-
-    return results;
+    return extractWebSearchResultsFromOpenRouterResponse(response);
   }
 }

@@ -93,7 +93,29 @@ const OpenRouterResponseSchema = z.object({
     .optional(),
 });
 
-type OpenRouterResponse = z.infer<typeof OpenRouterResponseSchema>;
+export type OpenRouterResponse = z.infer<typeof OpenRouterResponseSchema>;
+
+/**
+ * Validate an OpenRouter response with the known schema. A hard .parse() would
+ * throw a ZodError on schema drift; that error isn't caught by retry.ts's
+ * FallbackError check, so the fallback chain would be bypassed. Instead, we
+ * log the mismatch and pass the raw response through — downstream extractors
+ * already use optional chaining.
+ */
+export function parseOpenRouterResponse(
+  raw: unknown,
+  context?: { url?: string }
+): OpenRouterResponse {
+  const parsed = OpenRouterResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn(
+      { issues: parsed.error.issues, url: context?.url },
+      "openrouter_response_schema_mismatch"
+    );
+    return raw as OpenRouterResponse;
+  }
+  return parsed.data;
+}
 
 export class OpenRouterAdapter extends LLMAdapter {
   private readonly baseUrl: string;
@@ -247,16 +269,7 @@ export class OpenRouterAdapter extends LLMAdapter {
     }
 
     const raw: unknown = await res.json();
-    // Use safeParse: a hard .parse() would throw ZodError, which retry.ts's
-    // FallbackError check doesn't catch — minor provider schema drift would
-    // silently disable the fallback chain. Log and pass the raw response through;
-    // downstream extractors already use optional chaining.
-    const parsed = OpenRouterResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      logger.warn({ issues: parsed.error.issues, url }, "openrouter_response_schema_mismatch");
-      return raw as OpenRouterResponse;
-    }
-    return parsed.data;
+    return parseOpenRouterResponse(raw, { url });
   }
   private extractText(response: OpenRouterResponse): string {
     if (!response) {

@@ -95,63 +95,14 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
           "chat_job_waiting_for_file_processing"
         );
 
-        const fileProcessQueue = getFileProcessQueue();
-
-        if (!fileProcessQueue) {
-          logger.warn(
-            { conversationStateId, jobId: job.id, pendingFileIds },
-            "chat_worker_file_queue_unavailable_skipping_wait"
-          );
-        } else {
-          const maxWaitMs = 120000; // 2 minute max wait
-          const pollIntervalMs = 500;
-          const startWait = Date.now();
-
-          // Wait for all pending files to complete
-          for (const fileId of pendingFileIds) {
-            while (Date.now() - startWait < maxWaitMs) {
-              // Check if file-process job completed
-              const fileJob = await fileProcessQueue.getJob(fileId);
-              const fileJobState = fileJob ? await fileJob.getState() : null;
-
-              // Also check file status directly (job may have completed and cleaned up)
-              const fileStatus = await getFileStatus(fileId);
-
-              if (
-                fileJobState === "completed" ||
-                fileStatus?.status === "ready" ||
-                !fileJob // Job doesn't exist (already completed/cleaned)
-              ) {
-                logger.info(
-                  {
-                    fileId,
-                    fileJobState,
-                    fileStatus: fileStatus?.status,
-                    jobId: job.id,
-                  },
-                  "chat_job_file_ready"
-                );
-                break;
-              }
-
-              if (fileJobState === "failed" || fileStatus?.status === "error") {
-                logger.warn(
-                  {
-                    fileId,
-                    fileJobState,
-                    fileStatus: fileStatus?.status,
-                    jobId: job.id,
-                  },
-                  "chat_job_file_failed_continuing"
-                );
-                break;
-              }
-
-              // Wait and poll again
-              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-            }
-          }
-        }
+        const { waitForPendingFiles } = await import("./fileWait");
+        await waitForPendingFiles({
+          conversationStateId,
+          fileProcessQueue: getFileProcessQueue(),
+          getFileStatus,
+          jobId: job.id,
+          pendingFileIds,
+        });
 
         // Refresh conversation state to get updated uploadedDatasets
         const freshConversationState = await getConversationState(conversationStateId);
