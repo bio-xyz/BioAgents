@@ -23,7 +23,8 @@ import {
   useToast,
   useWebSocket,
 } from "../hooks";
-import { getMessagesByConversation } from "../lib/supabase";
+import { getMessagesByConversation, type Message as DBMessage } from "../lib/supabase";
+import type { Message as UIMessage } from "../hooks/useSessions";
 
 // Utils
 import { generateConversationId } from "../utils/helpers";
@@ -154,7 +155,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     // Check if content already in UI (using ref for fresh data)
     if (content) {
       const existsInUI = messagesRef.current.some(
-        (m: any) => m.dbMessageId === messageId || m.content === content
+        (m: UIMessage) => m.dbMessageId === messageId || m.content === content
       );
       if (existsInUI) {
         console.log(`[ChatPage] Message already in UI: ${messageId}`);
@@ -180,7 +181,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
     try {
       const dbMessages = await getMessagesByConversation(conversationId);
-      const updatedMsg = dbMessages.find((m: any) => m.id === messageId);
+      const updatedMsg = dbMessages?.find((m: DBMessage) => m.id === messageId);
 
       if (updatedMsg?.content) {
         // Atomic check-and-mark to prevent duplicates
@@ -396,7 +397,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     if (messageId !== loadingMessageId) return;
 
     if (finalResponse && steps) {
-      const allStepsComplete = Object.values(steps).every((step: any) => step.end);
+      const allStepsComplete = Object.values(steps).every((step) => step.end);
 
       if (allStepsComplete) {
         console.log("[ChatPage] Deep research complete, finalizing message");
@@ -476,7 +477,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
       try {
         const dbMessages = await getMessagesByConversation(currentSessionId);
-        const targetMsg = dbMessages.find((m: any) => m.id === messageId);
+        const targetMsg = dbMessages?.find((m: DBMessage) => m.id === messageId);
 
         if (targetMsg?.content && mounted) {
           // Atomic check-and-mark to prevent duplicates
@@ -702,15 +703,16 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           setLoadingMessageId(null);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Chat error:", err);
       removeMessage(userMessage.id);
       setInputValue(trimmedInput);
       setLoadingConversationId(null);
       setLoadingMessageId(null);
 
-      if (err.message?.includes("upload") || err.message?.includes("Upload")) {
-        toast.error(`File upload failed: ${err.message}`, 6000);
+      const errorMessage = err instanceof Error ? err.message : "";
+      if (errorMessage.includes("upload") || errorMessage.includes("Upload")) {
+        toast.error(`File upload failed: ${errorMessage}`, 6000);
       }
     }
   };

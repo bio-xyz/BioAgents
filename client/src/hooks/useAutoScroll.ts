@@ -10,7 +10,7 @@ export interface UseAutoScrollReturn {
  * Custom hook for auto-scrolling chat container
  * Automatically scrolls to bottom when new messages arrive
  */
-export function useAutoScroll(dependencies: any[] = []): UseAutoScrollReturn {
+export function useAutoScroll(dependencies: readonly unknown[] = []): UseAutoScrollReturn {
   const containerRef = useRef<HTMLDivElement>(null);
 
   /**

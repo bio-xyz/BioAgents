@@ -11,6 +11,15 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+export interface MessageFileMetadata {
+  name?: string;
+  size?: number;
+  type?: string;
+  filename?: string;
+  mimeType?: string;
+  [key: string]: unknown;
+}
+
 export interface Message {
   id?: string;
   conversation_id: string;
@@ -18,12 +27,12 @@ export interface Message {
   question?: string;
   content: string;
   summary?: string; // Optional summary for agent messages
-  state?: any;
+  state?: Record<string, unknown>;
   response_time?: number;
   source?: string;
   created_at?: string;
   updated_at?: string;
-  files?: any; // JSONB field for file metadata
+  files?: MessageFileMetadata[]; // JSONB field for file metadata
 }
 
 // Client-side database operations

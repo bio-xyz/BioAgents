@@ -78,7 +78,7 @@ export function useChatAPI(): UseChatAPIReturn {
     messageId: string,
     maxAttempts = 180, // 3 minutes for regular chat
     intervalMs = 1000,
-  ): Promise<{ text: string; messageId: string; files?: any[] }> => {
+  ): Promise<{ text: string; messageId: string; files?: ChatResponse["files"] }> => {
     const authToken = getAuthToken();
     const headers: Record<string, string> = {};
     if (authToken) {

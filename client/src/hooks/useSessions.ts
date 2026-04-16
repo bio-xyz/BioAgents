@@ -72,8 +72,8 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
         role: "user",
         content: dbMsg.question,
         timestamp: msgTimestamp,
-        files: dbMsg.files
-          ? dbMsg.files.map((f: any) => ({
+        files: Array.isArray(dbMsg.files)
+          ? dbMsg.files.map((f) => ({
               name: f.name,
               filename: f.name,
               size: f.size,

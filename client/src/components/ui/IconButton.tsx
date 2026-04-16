@@ -1,9 +1,10 @@
+import type { JSX } from 'preact';
 import { Icon } from '../icons';
 
 export interface IconButtonProps {
   icon: string;
   size?: number;
-  onClick?: (e?: any) => void;
+  onClick?: (e: JSX.TargetedMouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   className?: string;
   title?: string;
