@@ -615,7 +615,11 @@ async function processWithAgentLoop(
       },
     });
   } catch (err) {
-    // Cancel pending buffer to prevent stale deltas leaking into retry attempts
+    // Emit stream_end so frontend exits streaming state before retry
+    if (streamStarted) {
+      await streamBuffer.flush().catch(() => {});
+      await notifyStreamEnd(job.id!, conversationId, messageId, false, turnIndex, "error").catch(() => {});
+    }
     await streamBuffer.cancel();
     throw err;
   }

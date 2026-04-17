@@ -316,7 +316,7 @@ export async function notifyStreamEnd(
   messageId: string,
   isFinal: boolean,
   turnIndex: number,
-  reason?: "paused" | "truncated" | "complete",
+  reason?: "paused" | "truncated" | "error" | "complete",
 ): Promise<void> {
   await notify({
     type: "message:stream_end",

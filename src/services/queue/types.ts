@@ -195,5 +195,5 @@ export interface Notification {
   delta?: string;
   isFinal?: boolean;
   turnIndex?: number;
-  reason?: "paused" | "truncated" | "complete";
+  reason?: "paused" | "truncated" | "error" | "complete";
 }
