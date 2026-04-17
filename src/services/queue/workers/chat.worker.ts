@@ -460,6 +460,7 @@ async function processChatJob(
 class StreamBuffer {
   private buffer = "";
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private activeFlush: Promise<void> | null = null;
   private readonly flushFn: (text: string) => Promise<void>;
   private readonly intervalMs: number;
 
@@ -482,18 +483,28 @@ class StreamBuffer {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    // Wait for any in-flight flush to complete before starting a new one
+    if (this.activeFlush) {
+      await this.activeFlush;
+    }
     if (this.buffer.length > 0) {
       const text = this.buffer;
       this.buffer = "";
-      await this.flushFn(text);
+      this.activeFlush = this.flushFn(text);
+      await this.activeFlush;
+      this.activeFlush = null;
     }
   }
 
-  /** Cancel any pending flush and discard buffered text. Use on error to prevent stale delta leaks. */
-  cancel(): void {
+  /** Cancel pending timer and wait for any in-flight flush to complete before discarding. */
+  async cancel(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.activeFlush) {
+      await this.activeFlush;
+      this.activeFlush = null;
     }
     this.buffer = "";
   }
@@ -605,7 +616,7 @@ async function processWithAgentLoop(
     });
   } catch (err) {
     // Cancel pending buffer to prevent stale deltas leaking into retry attempts
-    streamBuffer.cancel();
+    await streamBuffer.cancel();
     throw err;
   }
 
@@ -616,7 +627,7 @@ async function processWithAgentLoop(
       await streamBuffer.flush();
       await notifyStreamEnd(job.id!, conversationId, messageId, false, turnIndex, "truncated");
     } else {
-      streamBuffer.cancel();
+      await streamBuffer.cancel();
     }
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError(
@@ -625,7 +636,7 @@ async function processWithAgentLoop(
   }
 
   if (!result.replyText) {
-    streamBuffer.cancel();
+    await streamBuffer.cancel();
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError(
       "Agent loop produced empty reply",
