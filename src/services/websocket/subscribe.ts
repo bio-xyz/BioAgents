@@ -38,7 +38,9 @@ export async function startRedisSubscription() {
         // Broadcast to all WebSocket clients in this conversation
         broadcastToConversation(conversationId, notification);
 
-        logger.info(
+        // Use debug for high-frequency delta events to avoid log explosion
+        const logFn = notification.type === "message:delta" ? logger.debug : logger.info;
+        logFn.call(logger,
           {
             type: notification.type,
             jobId: notification.jobId,

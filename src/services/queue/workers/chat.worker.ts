@@ -17,6 +17,9 @@ import {
   notifyJobStarted,
   notifyMessageUpdated,
   notifyStateUpdated,
+  notifyStreamStart,
+  notifyStreamDelta,
+  notifyStreamEnd,
 } from "../notify";
 import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
 
@@ -450,8 +453,56 @@ async function processChatJob(
 }
 
 /**
+ * Micro-batching buffer for streaming token deltas.
+ * Accumulates text chunks and flushes every intervalMs via setTimeout.
+ * Reduces Redis pub/sub volume by ~10x while maintaining sub-100ms perceived latency.
+ */
+class StreamBuffer {
+  private buffer = "";
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly flushFn: (text: string) => Promise<void>;
+  private readonly intervalMs: number;
+
+  constructor(flushFn: (text: string) => Promise<void>, intervalMs = 50) {
+    this.flushFn = flushFn;
+    this.intervalMs = intervalMs;
+  }
+
+  push(chunk: string): void {
+    this.buffer += chunk;
+    if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.flush().catch(() => {}); // notify() catches internally; guard against edge cases
+      }, this.intervalMs);
+    }
+  }
+
+  async flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.buffer.length > 0) {
+      const text = this.buffer;
+      this.buffer = "";
+      await this.flushFn(text);
+    }
+  }
+
+  /** Cancel any pending flush and discard buffered text. Use on error to prevent stale delta leaks. */
+  cancel(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.buffer = "";
+  }
+}
+
+/**
  * Process a chat job using the new agent loop (behind CHAT_AGENT_QUEUE_ENABLED flag).
  * Same outer contract as the legacy path: saves reply, updates response time, sends notifications.
+ * Streams tokens to frontend via Redis pub/sub -> WebSocket in real-time.
  */
 async function processWithAgentLoop(
   job: Job<ChatJobData, ChatJobResult>,
@@ -478,60 +529,106 @@ async function processWithAgentLoop(
   const { updateMessageResponseTime } = await import("../../chat/tools");
 
   let literatureEmitted = false;
+  let turnIndex = 0;
+  let streamStarted = false;
 
-  const result = await runChatAgent({
-    conversationId,
-    message,
-    uploadedDatasets: conversationState.values.uploadedDatasets,
-    loadHistory: true, // Queue path always stores messages
-    onToolResult: async (info) => {
-      // 1. Update conversation state in DB + notify frontend
-      if (conversationState.id) {
-        try {
-          const { updateConversationState } = await import(
-            "../../../db/operations"
-          );
-          await updateConversationState(conversationState.id, {
-            ...conversationState.values,
-            agentProgress: {
-              stage: `tool:${info.toolName}`,
-              toolCallCount: info.toolCallCount,
-              lastToolCallId: info.toolCallId,
-              isError: info.result.isError ?? false,
-            },
-          });
-          await notifyStateUpdated(
-            job.id!,
-            conversationId,
-            conversationState.id,
-          );
-        } catch (err) {
-          logger.warn(
-            { error: err },
-            "worker_conversation_state_update_failed",
-          );
-        }
-      }
-
-      // 2. Emit backward-compatible progress stages
-      if (info.toolName === "literature_search" && !literatureEmitted) {
-        literatureEmitted = true;
-        await job.updateProgress({
-          stage: "literature",
-          percent: 40,
-        } as JobProgress);
-        await notifyJobProgress(job.id!, conversationId, "literature", 40);
-      }
-    },
+  const streamBuffer = new StreamBuffer(async (batchedText) => {
+    await notifyStreamDelta(job.id!, conversationId, messageId, batchedText, turnIndex);
   });
 
-  // Handle truncation — use UnrecoverableError to skip BullMQ retries
-  // (same prompt will hit same token limit, retrying wastes 3 attempts)
+  let result;
+  try {
+    result = await runChatAgent({
+      conversationId,
+      message,
+      uploadedDatasets: conversationState.values.uploadedDatasets,
+      loadHistory: true, // Queue path always stores messages
+      onTextDelta: (delta) => {
+        if (!streamStarted) {
+          streamStarted = true;
+          turnIndex++;
+          // Fire-and-forget: ordering vs first delta is best-effort.
+          // Frontend handles delta-before-start gracefully (see frontend contract).
+          // notify() catches internally so no unhandled rejection risk.
+          void notifyStreamStart(job.id!, conversationId, messageId, turnIndex);
+        }
+        streamBuffer.push(delta);
+      },
+      onStreamPause: async () => {
+        // Called by loop.ts BEFORE tool execution starts (after finalMessage returns)
+        if (streamStarted) {
+          await streamBuffer.flush();
+          await notifyStreamEnd(job.id!, conversationId, messageId, false, turnIndex, "paused");
+          streamStarted = false;
+        }
+      },
+      onToolResult: async (info) => {
+        // 1. Update conversation state in DB + notify frontend
+        if (conversationState.id) {
+          try {
+            const { updateConversationState } = await import(
+              "../../../db/operations"
+            );
+            await updateConversationState(conversationState.id, {
+              ...conversationState.values,
+              agentProgress: {
+                stage: `tool:${info.toolName}`,
+                toolCallCount: info.toolCallCount,
+                lastToolCallId: info.toolCallId,
+                isError: info.result.isError ?? false,
+              },
+            });
+            await notifyStateUpdated(
+              job.id!,
+              conversationId,
+              conversationState.id,
+            );
+          } catch (err) {
+            logger.warn(
+              { error: err },
+              "worker_conversation_state_update_failed",
+            );
+          }
+        }
+
+        // 2. Emit backward-compatible progress stages
+        if (info.toolName === "literature_search" && !literatureEmitted) {
+          literatureEmitted = true;
+          await job.updateProgress({
+            stage: "literature",
+            percent: 40,
+          } as JobProgress);
+          await notifyJobProgress(job.id!, conversationId, "literature", 40);
+        }
+      },
+    });
+  } catch (err) {
+    // Cancel pending buffer to prevent stale deltas leaking into retry attempts
+    streamBuffer.cancel();
+    throw err;
+  }
+
+  // Check truncation BEFORE emitting final stream_end.
+  // Truncated responses should not be marked as final — the job will fail.
   if (!result.replyText || result.hitMaxTokens) {
+    if (streamStarted) {
+      // Flush remaining buffered text so partial answer is delivered, then signal error
+      await streamBuffer.flush();
+      await notifyStreamEnd(job.id!, conversationId, messageId, false, turnIndex, "truncated");
+    } else {
+      streamBuffer.cancel();
+    }
+    // Don't emit job:failed here — the outer catch in processChatJob
+    // already handles it for UnrecoverableError (line 441-448)
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError(
       "Agent loop response truncated (max_tokens)",
     );
+  }
+
+  // Flush remaining streamed text (deltas already delivered to frontend)
+  if (streamStarted) {
+    await streamBuffer.flush();
   }
 
   // Critical: persist the reply first. If this fails, retrying is correct
@@ -543,6 +640,10 @@ async function processWithAgentLoop(
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.
   try {
+    // Signal stream complete AFTER durable write succeeds
+    if (streamStarted) {
+      await notifyStreamEnd(job.id!, conversationId, messageId, true, turnIndex, "complete");
+    }
     await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 90);
     await notifyMessageUpdated(job.id!, conversationId, messageId);

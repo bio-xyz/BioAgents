@@ -44,6 +44,10 @@ export interface AgentLoopConfig {
   apiKey: string;
   /** Called after each tool execution. Use for DB state updates, progress notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called on each text chunk during streaming. Synchronous to avoid backpressure on the Anthropic stream. */
+  onTextDelta?: (delta: string) => void;
+  /** Called after LLM response with tool_use blocks, BEFORE tools execute. Use to flush stream buffer and notify frontend. */
+  onStreamPause?: () => Promise<void>;
 }
 
 /**

@@ -166,6 +166,9 @@ export type NotificationType =
   | "job:completed"
   | "job:failed"
   | "message:updated"
+  | "message:stream_start"
+  | "message:delta"
+  | "message:stream_end"
   | "state:updated"
   | "file:ready"
   | "file:error"
@@ -189,4 +192,8 @@ export interface Notification {
   progress?: { stage: string; percent: number };
   description?: string;
   error?: string;
+  delta?: string;
+  isFinal?: boolean;
+  turnIndex?: number;
+  reason?: "paused" | "truncated" | "complete";
 }

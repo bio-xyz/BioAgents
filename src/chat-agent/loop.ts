@@ -61,7 +61,19 @@ export async function runAgentLoop(
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
     };
 
-    const response = await client.messages.create(requestParams);
+    let response: Anthropic.Message;
+
+    if (config.onTextDelta) {
+      // Streaming path: tokens delivered via callback as they arrive
+      const stream = client.messages.stream(requestParams);
+      stream.on("text", (text) => {
+        config.onTextDelta!(text);
+      });
+      response = await stream.finalMessage();
+    } else {
+      // Non-streaming path: unchanged behavior for callers without callback
+      response = await client.messages.create(requestParams);
+    }
 
     // Track token usage
     if (response.usage) {
@@ -92,6 +104,15 @@ export async function runAgentLoop(
         .map((block) => block.text)
         .join("\n\n");
       break;
+    }
+
+    // Notify caller that streaming is pausing for tool execution
+    if (config.onStreamPause) {
+      try {
+        await config.onStreamPause();
+      } catch (err) {
+        logger.warn({ error: err }, "on_stream_pause_callback_failed");
+      }
     }
 
     // stop_reason === "tool_use" — execute tools

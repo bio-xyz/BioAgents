@@ -21,25 +21,36 @@ import logger from "../../utils/logger";
  * Note: This function catches errors internally to avoid crashing workers
  * if Redis is temporarily unavailable. Notifications are best-effort.
  */
-export async function notify(notification: Notification): Promise<void> {
+export async function notify(
+  notification: Notification,
+  options?: { quiet?: boolean },
+): Promise<void> {
   try {
     const publisher = getPublisher();
     const channel = `conversation:${notification.conversationId}`;
 
     await publisher.publish(channel, JSON.stringify(notification));
 
-    logger.info(
-      {
-        type: notification.type,
-        jobId: notification.jobId,
-        conversationId: notification.conversationId,
-        channel,
-      },
-      "notification_published",
-    );
+    if (options?.quiet) {
+      logger.debug(
+        { type: notification.type, conversationId: notification.conversationId },
+        "notification_published",
+      );
+    } else {
+      logger.info(
+        {
+          type: notification.type,
+          jobId: notification.jobId,
+          conversationId: notification.conversationId,
+          channel,
+        },
+        "notification_published",
+      );
+    }
   } catch (error) {
     // Log but don't throw - notification failure shouldn't fail the job
-    logger.error(
+    const logFn = options?.quiet ? logger.warn : logger.error;
+    logFn.call(logger,
       {
         err: error,
         notification,
@@ -258,6 +269,61 @@ export async function notifyPaperFailed(
     conversationId,
     paperId,
     error,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Streaming notification helpers
+// ---------------------------------------------------------------------------
+
+export async function notifyStreamStart(
+  jobId: string,
+  conversationId: string,
+  messageId: string,
+  turnIndex: number,
+): Promise<void> {
+  await notify({
+    type: "message:stream_start",
+    jobId,
+    conversationId,
+    messageId,
+    turnIndex,
+  });
+}
+
+export async function notifyStreamDelta(
+  jobId: string,
+  conversationId: string,
+  messageId: string,
+  delta: string,
+  turnIndex: number,
+): Promise<void> {
+  await notify({
+    type: "message:delta",
+    jobId,
+    conversationId,
+    messageId,
+    delta,
+    turnIndex,
+  }, { quiet: true });
+}
+
+export async function notifyStreamEnd(
+  jobId: string,
+  conversationId: string,
+  messageId: string,
+  isFinal: boolean,
+  turnIndex: number,
+  reason?: "paused" | "truncated" | "complete",
+): Promise<void> {
+  await notify({
+    type: "message:stream_end",
+    jobId,
+    conversationId,
+    messageId,
+    isFinal,
+    turnIndex,
+    reason,
   });
 }
 

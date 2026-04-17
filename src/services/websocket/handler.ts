@@ -240,7 +240,10 @@ export function broadcastToConversation(conversationId: string, message: object)
   }
 
   if (successCount > 0 || errorCount > 0) {
-    logger.info(
+    // Use debug for high-frequency delta events to avoid log explosion
+    const msgType = (message as any)?.type;
+    const logFn = msgType === "message:delta" ? logger.debug : logger.info;
+    logFn.call(logger,
       { conversationId, successCount, errorCount },
       "ws_broadcast_completed",
     );
