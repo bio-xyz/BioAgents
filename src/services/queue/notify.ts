@@ -50,10 +50,12 @@ export async function notify(
   } catch (error) {
     // Log but don't throw - notification failure shouldn't fail the job
     const logFn = options?.quiet ? logger.warn : logger.error;
+    // Strip delta from error logs to avoid leaking assistant content
+    const { delta: _delta, ...safeNotification } = notification;
     logFn.call(logger,
       {
         err: error,
-        notification,
+        notification: safeNotification,
       },
       "notification_publish_failed",
     );

@@ -547,9 +547,10 @@ async function processWithAgentLoop(
         if (!streamStarted) {
           streamStarted = true;
           turnIndex++;
-          // Fire-and-forget: ordering vs first delta is best-effort.
+          // Fire-and-forget: stream_start vs first delta ordering is best-effort.
           // Frontend handles delta-before-start gracefully (see frontend contract).
-          // notify() catches internally so no unhandled rejection risk.
+          // Pushing synchronously avoids race where deferred first delta lands
+          // out of order or under wrong turnIndex.
           void notifyStreamStart(job.id!, conversationId, messageId, turnIndex);
         }
         streamBuffer.push(delta);
@@ -610,19 +611,24 @@ async function processWithAgentLoop(
 
   // Check truncation BEFORE emitting final stream_end.
   // Truncated responses should not be marked as final — the job will fail.
-  if (!result.replyText || result.hitMaxTokens) {
+  if (result.hitMaxTokens) {
     if (streamStarted) {
-      // Flush remaining buffered text so partial answer is delivered, then signal error
       await streamBuffer.flush();
       await notifyStreamEnd(job.id!, conversationId, messageId, false, turnIndex, "truncated");
     } else {
       streamBuffer.cancel();
     }
-    // Don't emit job:failed here — the outer catch in processChatJob
-    // already handles it for UnrecoverableError (line 441-448)
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError(
       "Agent loop response truncated (max_tokens)",
+    );
+  }
+
+  if (!result.replyText) {
+    streamBuffer.cancel();
+    const { UnrecoverableError } = await import("bullmq");
+    throw new UnrecoverableError(
+      "Agent loop produced empty reply",
     );
   }
 
@@ -637,23 +643,27 @@ async function processWithAgentLoop(
   await updateMessage(messageId, { content: result.replyText });
   await updateMessageResponseTime(messageId, responseTime);
 
-  // Best-effort: progress updates and notifications. Reply is already saved,
-  // so failures here should not trigger a retry or mark the job as failed.
-  try {
-    // Signal stream complete AFTER durable write succeeds
-    if (streamStarted) {
-      await notifyStreamEnd(job.id!, conversationId, messageId, true, turnIndex, "complete");
-    }
-    await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress);
-    await notifyJobProgress(job.id!, conversationId, "reply", 90);
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
-    await notifyJobCompleted(job.id!, conversationId, messageId);
-  } catch (notifyErr) {
-    logger.warn(
-      { error: notifyErr, messageId, jobId: job.id },
-      "chat_job_post_reply_notify_failed",
+  // Best-effort notifications. Reply is already saved, so failures here
+  // should not trigger a retry. Each notification is independent so one
+  // failing (e.g. transient Redis hiccup) doesn't block the others.
+  if (streamStarted) {
+    await notifyStreamEnd(job.id!, conversationId, messageId, true, turnIndex, "complete").catch((e) =>
+      logger.warn({ error: e, messageId }, "stream_end_notify_failed"),
     );
   }
+  await job.updateProgress({ stage: "reply", percent: 90 } as JobProgress).catch((e) =>
+    logger.warn({ error: e, messageId }, "job_progress_update_failed"),
+  );
+  await notifyJobProgress(job.id!, conversationId, "reply", 90).catch((e) =>
+    logger.warn({ error: e, messageId }, "job_progress_notify_failed"),
+  );
+  // Critical for frontend: these tell the client the response is ready
+  await notifyMessageUpdated(job.id!, conversationId, messageId).catch((e) =>
+    logger.warn({ error: e, messageId }, "message_updated_notify_failed"),
+  );
+  await notifyJobCompleted(job.id!, conversationId, messageId).catch((e) =>
+    logger.warn({ error: e, messageId }, "job_completed_notify_failed"),
+  );
 
   logger.info(
     {
