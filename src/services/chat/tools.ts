@@ -14,9 +14,7 @@ export interface MessageCreationParams {
 /**
  * Create message record
  */
-export async function createMessageRecord(
-  params: MessageCreationParams,
-): Promise<{
+export async function createMessageRecord(params: MessageCreationParams): Promise<{
   success: boolean;
   message?: Awaited<ReturnType<typeof createMessage>>;
   error?: string;
@@ -34,23 +32,23 @@ export async function createMessageRecord(
         : undefined;
 
     const createdMessage = await createMessage({
-      conversation_id: conversationId,
-      user_id: userId,
-      question: message,
       content: "",
+      conversation_id: conversationId,
+      files: fileMetadata,
+      question: message,
       source,
       state_id: stateId,
-      files: fileMetadata,
+      user_id: userId,
     });
 
     if (logger) {
       logger.info({ messageId: createdMessage.id }, "message_created");
     }
 
-    return { success: true, message: createdMessage };
+    return { message: createdMessage, success: true };
   } catch (err) {
     if (logger) logger.error({ err }, "create_message_failed");
-    return { success: false, error: "Failed to create message" };
+    return { error: "Failed to create message", success: false };
   }
 }
 
@@ -59,7 +57,7 @@ export async function createMessageRecord(
  */
 export async function updateMessageResponseTime(
   messageId: string,
-  responseTime: number,
+  responseTime: number
 ): Promise<void> {
   try {
     await updateMessage(messageId, {

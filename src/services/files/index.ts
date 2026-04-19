@@ -4,17 +4,17 @@
  */
 
 import {
-  getConversationState,
-  updateConversationState,
   createConversation,
   createConversationState,
   createUser,
   type DbConversationState,
+  getConversationState,
+  updateConversationState,
 } from "../../db/operations";
 import {
   getFileUploadPath,
-  getStorageProvider,
   getMimeTypeFromFilename,
+  getStorageProvider,
   getUploadPath,
 } from "../../storage";
 import logger from "../../utils/logger";
@@ -23,10 +23,10 @@ import { isJobQueueEnabled } from "../queue/connection";
 import { generateFileDescription, parseFilePreview } from "./description";
 import {
   createFileStatus,
-  getFileStatus,
-  updateFileStatus,
   deleteFileStatus,
   type FileStatusRecord,
+  getFileStatus,
+  updateFileStatus,
 } from "./status";
 
 // Preview size for description generation (4KB)
@@ -73,7 +73,7 @@ const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
  * Request a presigned URL for direct S3 upload
  */
 export async function requestUploadUrl(
-  params: RequestUploadUrlParams,
+  params: RequestUploadUrlParams
 ): Promise<RequestUploadUrlResult> {
   const { filename, contentType, size, userId } = params;
   let conversationId: string = params.conversationId || "";
@@ -102,15 +102,12 @@ export async function requestUploadUrl(
     conversationStateId = newState.id!;
 
     const newConversation = await createConversation({
-      user_id: userId,
       conversation_state_id: conversationStateId,
+      user_id: userId,
     });
     conversationId = newConversation.id!;
 
-    logger.info(
-      { conversationId, conversationStateId },
-      "created_new_conversation_for_upload",
-    );
+    logger.info({ conversationId, conversationStateId }, "created_new_conversation_for_upload");
   } else {
     // Try to get existing conversation
     const { getConversation, updateConversation } = await import("../../db/operations");
@@ -124,27 +121,21 @@ export async function requestUploadUrl(
 
     if (!conversation) {
       // Create the conversation with the provided ID
-      logger.info(
-        { conversationId, userId },
-        "conversation_not_found_creating_for_upload",
-      );
+      logger.info({ conversationId, userId }, "conversation_not_found_creating_for_upload");
 
       // First ensure user exists (required for foreign key constraint)
       try {
         const user = await createUser({
+          email: `${userId}@temp.local`,
           id: userId,
           username: `user_${userId.slice(0, 8)}`,
-          email: `${userId}@temp.local`,
         });
         if (user) {
           logger.info({ userId }, "user_created_for_upload");
         }
       } catch (err: unknown) {
         // User might already exist - that's fine
-        const errCode =
-          err && typeof err === "object" && "code" in err
-            ? err.code
-            : undefined;
+        const errCode = err && typeof err === "object" && "code" in err ? err.code : undefined;
         if (errCode !== "23505") {
           logger.error({ err, userId }, "create_user_failed_for_upload");
           throw err;
@@ -156,15 +147,12 @@ export async function requestUploadUrl(
       conversationStateId = newState.id!;
 
       await createConversation({
+        conversation_state_id: conversationStateId,
         id: conversationId,
         user_id: userId,
-        conversation_state_id: conversationStateId,
       });
 
-      logger.info(
-        { conversationId, conversationStateId },
-        "created_conversation_for_upload",
-      );
+      logger.info({ conversationId, conversationStateId }, "created_conversation_for_upload");
     } else {
       // Verify ownership
       if (conversation.user_id !== userId) {
@@ -196,35 +184,32 @@ export async function requestUploadUrl(
     s3Key,
     contentType || getMimeTypeFromFilename(filename),
     UPLOAD_URL_EXPIRATION,
-    size, // Enforce exact file size - prevents uploading larger files
+    size // Enforce exact file size - prevents uploading larger files
   );
 
   const expiresAt = new Date(Date.now() + UPLOAD_URL_EXPIRATION * 1000).toISOString();
 
   // Create status record
   await createFileStatus({
-    fileId,
-    userId,
+    contentType: contentType || getMimeTypeFromFilename(filename),
     conversationId,
     conversationStateId,
-    s3Key,
+    fileId,
     filename,
-    contentType: contentType || getMimeTypeFromFilename(filename),
+    s3Key,
     size,
+    userId,
   });
 
-  logger.info(
-    { fileId, filename, s3Key, conversationId },
-    "upload_url_generated",
-  );
+  logger.info({ conversationId, fileId, filename, s3Key }, "upload_url_generated");
 
   return {
-    fileId,
-    uploadUrl,
-    s3Key,
-    expiresAt,
     conversationId,
     conversationStateId,
+    expiresAt,
+    fileId,
+    s3Key,
+    uploadUrl,
   };
 }
 
@@ -233,9 +218,7 @@ export async function requestUploadUrl(
  * In-process mode: Processes synchronously
  * Queue mode: Enqueues job and returns immediately
  */
-export async function confirmUpload(
-  params: ConfirmUploadParams,
-): Promise<ConfirmUploadResult> {
+export async function confirmUpload(params: ConfirmUploadParams): Promise<ConfirmUploadResult> {
   const { fileId, userId } = params;
 
   logger.info({ fileId, userId }, "confirm_upload_started");
@@ -247,15 +230,21 @@ export async function confirmUpload(
     throw new Error(`File not found: ${fileId}`);
   }
 
-  logger.info({ fileId, statusUserId: status.userId, requestUserId: userId }, "confirm_status_found");
+  logger.info(
+    { fileId, requestUserId: userId, statusUserId: status.userId },
+    "confirm_status_found"
+  );
 
   if (status.userId !== userId) {
-    logger.error({ fileId, statusUserId: status.userId, requestUserId: userId }, "confirm_user_mismatch");
+    logger.error(
+      { fileId, requestUserId: userId, statusUserId: status.userId },
+      "confirm_user_mismatch"
+    );
     throw new Error("Unauthorized: file belongs to different user");
   }
 
   if (status.status !== "pending") {
-    logger.error({ fileId, currentStatus: status.status }, "confirm_invalid_status");
+    logger.error({ currentStatus: status.status, fileId }, "confirm_invalid_status");
     throw new Error(`Invalid file status: ${status.status}. Expected: pending`);
   }
 
@@ -285,27 +274,27 @@ export async function confirmUpload(
     const { enqueueFileProcess } = await import("./queue");
     const jobId = await enqueueFileProcess(status);
 
-    await updateFileStatus(fileId, { status: "processing", jobId });
+    await updateFileStatus(fileId, { jobId, status: "processing" });
 
     logger.info({ fileId, jobId }, "file_process_job_enqueued");
 
     return {
       fileId,
-      status: "processing",
       filename: status.filename,
-      size: status.size,
       jobId,
+      size: status.size,
+      status: "processing",
     };
   } else {
     // In-process mode: Process synchronously
     const result = await processFile(status);
 
     return {
+      description: result.description,
       fileId,
-      status: "ready",
       filename: status.filename,
       size: status.size,
-      description: result.description,
+      status: "ready",
     };
   }
 }
@@ -314,9 +303,7 @@ export async function confirmUpload(
  * Process a file: generate description and update conversation state
  * Used by both in-process mode and queue worker
  */
-export async function processFile(
-  status: FileStatusRecord,
-): Promise<{ description: string }> {
+export async function processFile(status: FileStatusRecord): Promise<{ description: string }> {
   const { fileId, s3Key, filename, contentType, conversationStateId, size } = status;
 
   logger.info({ fileId, filename, size }, "processing_file");
@@ -330,7 +317,8 @@ export async function processFile(
   const isPDF = ext === "pdf" || contentType === "application/pdf";
   const isImage = contentType.startsWith("image/");
   const isExcel = ["xlsx", "xls"].includes(ext || "");
-  const isText = contentType.startsWith("text/") ||
+  const isText =
+    contentType.startsWith("text/") ||
     ["csv", "json", "md", "txt", "tsv", "xml", "yaml", "yml"].includes(ext || "");
 
   // Download full file for types that need complete content
@@ -347,13 +335,16 @@ export async function processFile(
       // Limit based on file type to prevent memory issues
       const maxFileSize = isPDF || isImage || isExcel ? 50 * 1024 * 1024 : 10 * 1024 * 1024; // 50MB for PDF/image/Excel, 10MB for text
       if (size > maxFileSize) {
-        logger.warn({ fileId, filename, size, maxFileSize }, "file_too_large_for_full_download");
+        logger.warn({ fileId, filename, maxFileSize, size }, "file_too_large_for_full_download");
         previewBuffer = await storageProvider.downloadRange(s3Key, 0, maxFileSize - 1);
       } else {
         previewBuffer = await storageProvider.download(s3Key);
       }
       const fileType = isPDF ? "pdf" : isImage ? "image" : "text";
-      logger.info({ fileId, filename, downloadedBytes: previewBuffer.length, type: fileType }, "full_file_downloaded");
+      logger.info(
+        { downloadedBytes: previewBuffer.length, fileId, filename, type: fileType },
+        "full_file_downloaded"
+      );
     } else {
       // For unknown/binary files, just download preview
       previewBuffer = await storageProvider.downloadRange(s3Key, 0, PREVIEW_SIZE - 1);
@@ -362,7 +353,7 @@ export async function processFile(
 
     preview = await parseFilePreview(previewBuffer, filename, contentType);
   } catch (error) {
-    logger.warn({ fileId, error }, "failed_to_download_file");
+    logger.warn({ error, fileId }, "failed_to_download_file");
     preview = `[File: ${filename}]`;
   }
 
@@ -370,25 +361,28 @@ export async function processFile(
   const description = await generateFileDescription(filename, contentType, preview);
 
   // Log file being stored (content NOT saved to Supabase - files accessed via S3 path)
-  logger.info({
-    fileId,
-    filename,
-    previewLength: preview.length,
-  }, "file_processed_for_storage");
+  logger.info(
+    {
+      fileId,
+      filename,
+      previewLength: preview.length,
+    },
+    "file_processed_for_storage"
+  );
 
   // Update conversation state (no content - deep research accesses files via S3)
   // Use relative path (uploads/filename) instead of full S3 key
   await addFileToConversationState(conversationStateId, {
-    id: fileId,
-    filename,
     description,
+    filename,
+    id: fileId,
     path: getUploadPath(filename),
   });
 
   // Update status to ready
-  await updateFileStatus(fileId, { status: "ready", description });
+  await updateFileStatus(fileId, { description, status: "ready" });
 
-  logger.info({ fileId, filename, description }, "file_processed");
+  logger.info({ description, fileId, filename }, "file_processed");
 
   return { description };
 }
@@ -399,7 +393,7 @@ export async function processFile(
  */
 async function addFileToConversationState(
   conversationStateId: string,
-  file: { id: string; filename: string; description: string; path: string; content?: string },
+  file: { id: string; filename: string; description: string; path: string; content?: string }
 ): Promise<void> {
   const { isJobQueueEnabled } = await import("../queue/connection");
 
@@ -417,7 +411,7 @@ async function addFileToConversationState(
  */
 async function addFileWithLock(
   conversationStateId: string,
-  file: { id: string; filename: string; description: string; path: string; content?: string },
+  file: { id: string; filename: string; description: string; path: string; content?: string }
 ): Promise<void> {
   const { getBullMQConnection } = await import("../queue/connection");
   const redis = getBullMQConnection();
@@ -443,15 +437,12 @@ async function addFileWithLock(
     }
 
     // Lock not acquired, wait and retry
-    logger.debug(
-      { conversationStateId, fileId: file.id, attempt },
-      "file_add_waiting_for_lock",
-    );
-    await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
+    logger.debug({ attempt, conversationStateId, fileId: file.id }, "file_add_waiting_for_lock");
+    await new Promise((resolve) => setTimeout(resolve, retryDelay * (attempt + 1)));
   }
 
   throw new Error(
-    `Failed to acquire lock for conversation state ${conversationStateId} after ${maxRetries} attempts`,
+    `Failed to acquire lock for conversation state ${conversationStateId} after ${maxRetries} attempts`
   );
 }
 
@@ -460,7 +451,7 @@ async function addFileWithLock(
  */
 async function addFileDirectly(
   conversationStateId: string,
-  file: { id: string; filename: string; description: string; path: string; content?: string },
+  file: { id: string; filename: string; description: string; path: string; content?: string }
 ): Promise<void> {
   const state: DbConversationState | null = await getConversationState(conversationStateId);
   if (!state) {
@@ -473,7 +464,7 @@ async function addFileDirectly(
   if (existingDatasets.some((f) => f.id === file.id)) {
     logger.info(
       { conversationStateId, fileId: file.id, filename: file.filename },
-      "file_already_in_conversation_state_skipping",
+      "file_already_in_conversation_state_skipping"
     );
     return;
   }
@@ -487,12 +478,12 @@ async function addFileDirectly(
   await updateConversationState(
     conversationStateId,
     { ...state.values, uploadedDatasets },
-    { preserveUploadedDatasets: false }, // Allow file operations to update uploadedDatasets
+    { preserveUploadedDatasets: false } // Allow file operations to update uploadedDatasets
   );
 
   logger.info(
     { conversationStateId, fileId: file.id, filename: file.filename },
-    "file_added_to_conversation_state",
+    "file_added_to_conversation_state"
   );
 }
 
@@ -501,7 +492,7 @@ async function addFileDirectly(
  */
 export async function getFileStatusForUser(
   fileId: string,
-  userId: string,
+  userId: string
 ): Promise<FileStatusRecord | null> {
   const status = await getFileStatus(fileId);
 
@@ -538,27 +529,25 @@ export async function deleteFile(fileId: string, userId: string): Promise<void> 
       await storageProvider.delete(status.s3Key);
       logger.info({ fileId, s3Key: status.s3Key }, "file_deleted_from_s3");
     } catch (error) {
-      logger.warn({ fileId, error }, "failed_to_delete_file_from_s3");
+      logger.warn({ error, fileId }, "failed_to_delete_file_from_s3");
     }
   }
 
   // Remove from conversation state
   try {
     const state: DbConversationState | null = await getConversationState(
-      status.conversationStateId,
+      status.conversationStateId
     );
     if (state && state.values.uploadedDatasets) {
-      const uploadedDatasets = state.values.uploadedDatasets.filter(
-        (f) => f.id !== fileId,
-      );
+      const uploadedDatasets = state.values.uploadedDatasets.filter((f) => f.id !== fileId);
       await updateConversationState(
         status.conversationStateId,
         { ...state.values, uploadedDatasets },
-        { preserveUploadedDatasets: false }, // Allow file deletion to update uploadedDatasets
+        { preserveUploadedDatasets: false } // Allow file deletion to update uploadedDatasets
       );
     }
   } catch (error) {
-    logger.warn({ fileId, error }, "failed_to_remove_file_from_state");
+    logger.warn({ error, fileId }, "failed_to_remove_file_from_state");
   }
 
   // Delete status record

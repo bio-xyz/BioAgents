@@ -2,17 +2,15 @@
  * LLM prompts for paper generation (Markdown output pipeline)
  */
 
-import { truncateText } from "./utils/textUtils";
-import type { Discovery, PlanTask, ConversationStateValues } from "../../types/core";
-import type { FigureInfo } from "./types";
+import type { ConversationStateValues, Discovery, PlanTask } from "../../types/core";
 import type { CitationKeyInfo } from "./bib/extractKeys";
+import type { FigureInfo } from "./types";
+import { truncateText } from "./utils/textUtils";
 
 /**
  * Generate prompt for creating paper front matter (title, abstract, research snapshot)
  */
-export function generateFrontMatterPrompt(
-  state: ConversationStateValues,
-): string {
+export function generateFrontMatterPrompt(state: ConversationStateValues): string {
   const objective = state.objective || "Not specified";
   const currentObjective = state.currentObjective || objective;
   const currentHypothesis = state.currentHypothesis || "Not specified";
@@ -94,7 +92,7 @@ Generate the front matter now:`;
 export function generateBackgroundPrompt(
   state: ConversationStateValues,
   evidenceTasks: PlanTask[],
-  availableKeys: CitationKeyInfo[],
+  availableKeys: CitationKeyInfo[]
 ): string {
   const objective = state.objective || "Not specified";
   const currentObjective = state.currentObjective || objective;
@@ -124,8 +122,8 @@ ${truncatedOutput}
     .map((d, i) => `${i + 1}. ${d.title || `Discovery ${i + 1}`}: ${d.claim}`)
     .join("\n");
 
-  const literatureTaskCount = evidenceTasks.filter(t => t.type === "LITERATURE").length;
-  const analysisTaskCount = evidenceTasks.filter(t => t.type === "ANALYSIS").length;
+  const literatureTaskCount = evidenceTasks.filter((t) => t.type === "LITERATURE").length;
+  const analysisTaskCount = evidenceTasks.filter((t) => t.type === "ANALYSIS").length;
 
   const agentName = process.env.AGENT_NAME;
   const agentDescription = agentName
@@ -133,14 +131,15 @@ ${truncatedOutput}
     : "conducted by an AI research agent";
 
   // Format available citation keys for the prompt
-  const keyList = availableKeys.length > 0
-    ? availableKeys
-        .map((k) => {
-          const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
-          return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
-        })
-        .join("\n")
-    : "(No citation keys available)";
+  const keyList =
+    availableKeys.length > 0
+      ? availableKeys
+          .map((k) => {
+            const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
+            return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
+          })
+          .join("\n")
+      : "(No citation keys available)";
 
   return `You are writing the Background/Introduction section for a scientific research paper ${agentDescription}.
 
@@ -229,7 +228,7 @@ export function generateDiscoverySectionPrompt(
   discoveryIndex: number,
   allowedTasks: PlanTask[],
   figures: FigureInfo[],
-  availableKeys: CitationKeyInfo[],
+  availableKeys: CitationKeyInfo[]
 ): string {
   const derivedTitle = discovery.title || `Discovery ${discoveryIndex}`;
 
@@ -251,30 +250,30 @@ ${truncatedOutput}
     .join("\n\n");
 
   // Prepare figure list
-  const figureList = figures.length > 0
-    ? figures
-        .map(
-          (fig) =>
-            `- ${fig.filename}: ${fig.captionSeed} (from task ${fig.sourceJobId})`,
-        )
-        .join("\n")
-    : "(No figures available)";
+  const figureList =
+    figures.length > 0
+      ? figures
+          .map((fig) => `- ${fig.filename}: ${fig.captionSeed} (from task ${fig.sourceJobId})`)
+          .join("\n")
+      : "(No figures available)";
 
   // Prepare evidence explanations (only use jobId, not taskId)
-  const evidenceExplanations = discovery.evidenceArray
-    ?.filter((ev) => ev.jobId) // Only include evidence with jobId
-    ?.map((ev) => `- Job ID ${ev.jobId}: ${ev.explanation || "(no explanation)"}`)
-    .join("\n") || "(No evidence explanations provided)";
+  const evidenceExplanations =
+    discovery.evidenceArray
+      ?.filter((ev) => ev.jobId) // Only include evidence with jobId
+      ?.map((ev) => `- Job ID ${ev.jobId}: ${ev.explanation || "(no explanation)"}`)
+      .join("\n") || "(No evidence explanations provided)";
 
   // Format available citation keys for the prompt
-  const keyList = availableKeys.length > 0
-    ? availableKeys
-        .map((k) => {
-          const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
-          return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
-        })
-        .join("\n")
-    : "(No citation keys available)";
+  const keyList =
+    availableKeys.length > 0
+      ? availableKeys
+          .map((k) => {
+            const source = k.doi ? `DOI: ${k.doi}` : `URL: ${k.url}`;
+            return `- [@${k.key}]: ${k.author ? `${k.author}. ` : ""}${k.title || "(no title)"} (${source})`;
+          })
+          .join("\n")
+      : "(No citation keys available)";
 
   return `You are writing a section for a scientific research paper. Generate a Markdown section for Discovery ${discoveryIndex}.
 
@@ -329,12 +328,13 @@ ${figures.length > 0 ? "[CRITICAL: You have been shown the actual figure images 
 
 ## Tasks Used
 [List the tasks that contributed to this discovery. IMPORTANT: Use ONLY the Job IDs provided below, NOT any abbreviated task IDs like "ana-3":]
-${discovery.evidenceArray && discovery.evidenceArray.length > 0
-  ? discovery.evidenceArray
-      .filter((ev) => ev.jobId) // Only include evidence with jobId
-      .map((ev) => `- Job ID: ${ev.jobId}: ${ev.explanation || ""}`)
-      .join("\n")
-  : "(No tasks with job IDs found)"
+${
+  discovery.evidenceArray && discovery.evidenceArray.length > 0
+    ? discovery.evidenceArray
+        .filter((ev) => ev.jobId) // Only include evidence with jobId
+        .map((ev) => `- Job ID: ${ev.jobId}: ${ev.explanation || ""}`)
+        .join("\n")
+    : "(No tasks with job IDs found)"
 }
 
 # Output Format

@@ -44,10 +44,7 @@ export interface UseSessionsReturn {
   isLoading: boolean;
   addMessage: (message: Message) => void;
   removeMessage: (messageId: number) => void;
-  updateSessionMessages: (
-    sessionId: string,
-    updater: (messages: Message[]) => Message[],
-  ) => void;
+  updateSessionMessages: (sessionId: string, updater: (messages: Message[]) => Message[]) => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
   createNewSession: () => Session;
   deleteSession: (sessionId: string) => void;
@@ -68,27 +65,27 @@ function convertDBMessagesToUIMessages(dbMessages: DBMessage[]): Message[] {
     // Add user message (question) with files if present
     if (dbMsg.question) {
       uiMessages.push({
-        id: Date.now() + idCounter++,
-        role: "user",
         content: dbMsg.question,
-        timestamp: msgTimestamp,
         files: Array.isArray(dbMsg.files)
           ? dbMsg.files.map((f) => ({
-              name: f.name,
               filename: f.name,
-              size: f.size,
               mimeType: f.type,
+              name: f.name,
+              size: f.size,
             }))
           : undefined,
+        id: Date.now() + idCounter++,
+        role: "user",
+        timestamp: msgTimestamp,
       });
     }
 
     // Add assistant message (content/answer) if not empty
     if (dbMsg.content && dbMsg.content.trim() !== "") {
       uiMessages.push({
+        content: dbMsg.content,
         id: Date.now() + idCounter++,
         role: "assistant",
-        content: dbMsg.content,
         timestamp: dbMsg.updated_at ? new Date(dbMsg.updated_at) : msgTimestamp,
       });
     }
@@ -108,10 +105,7 @@ function getOrCreateDevUserId(): string {
 
   // Migration: If stored ID is old format (dev_user_*), clear it and generate new UUID
   if (stored && stored.startsWith("dev_user_")) {
-    console.log(
-      "[useSessions] Migrating old dev user ID to UUID format:",
-      stored,
-    );
+    console.log("[useSessions] Migrating old dev user ID to UUID format:", stored);
     localStorage.removeItem(STORAGE_KEY);
     // Fall through to create new UUID
   } else if (stored) {
@@ -143,8 +137,8 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
   const currentSession = sessions.find((s) => s.id === currentSessionId) ||
     sessions[0] || {
       id: "",
-      title: "Loading...",
       messages: [],
+      title: "Loading...",
     };
 
   /**
@@ -159,8 +153,8 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
       // Create a temporary empty session for UI
       const tempSession = {
         id: generateConversationId(),
-        title: "New conversation",
         messages: [],
+        title: "New conversation",
       };
       setSessions([tempSession]);
       setCurrentSessionId(tempSession.id);
@@ -174,12 +168,9 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
     async function loadConversations() {
       // Preserve the current session's messages
       // Define this OUTSIDE try block so it's accessible in catch block
-      const currentSessionBeforeLoad = sessions.find(
-        (s) => s.id === currentSessionId,
-      );
+      const currentSessionBeforeLoad = sessions.find((s) => s.id === currentSessionId);
       const hasMessagesInCurrentSession =
-        currentSessionBeforeLoad &&
-        currentSessionBeforeLoad.messages.length > 0;
+        currentSessionBeforeLoad && currentSessionBeforeLoad.messages.length > 0;
 
       try {
         setIsLoading(true);
@@ -190,7 +181,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
           "[useSessions] Fetched conversations for userId:",
           userId,
           "count:",
-          conversations?.length || 0,
+          conversations?.length || 0
         );
 
         if (!mounted) return;
@@ -214,51 +205,43 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
 
                 return {
                   id: conv.id!,
-                  title,
                   messages: uiMessages,
+                  title,
                 };
               } catch (err) {
-                console.error(
-                  `Error loading messages for conversation ${conv.id}:`,
-                  err,
-                );
+                console.error(`Error loading messages for conversation ${conv.id}:`, err);
                 return {
                   id: conv.id!,
-                  title: "New conversation",
                   messages: [],
+                  title: "New conversation",
                 };
               }
-            }),
+            })
           );
 
           if (mounted) {
             // If we had messages in a temporary session, preserve them by keeping that session
             if (hasMessagesInCurrentSession) {
-              console.log(
-                "[useSessions] Preserving temporary session with messages",
-              );
-              console.log(
-                "[useSessions] Loaded sessions count:",
-                sessionsWithMessages.length,
-              );
+              console.log("[useSessions] Preserving temporary session with messages");
+              console.log("[useSessions] Loaded sessions count:", sessionsWithMessages.length);
               console.log(
                 "[useSessions] Total sessions (with temp):",
-                sessionsWithMessages.length + 1,
+                sessionsWithMessages.length + 1
               );
               setSessions([currentSessionBeforeLoad!, ...sessionsWithMessages]);
               // Keep the current session ID (don't switch to loaded session)
             } else {
               console.log(
                 "[useSessions] Loading sessions without temp:",
-                sessionsWithMessages.length,
+                sessionsWithMessages.length
               );
               console.log(
                 "[useSessions] Sessions:",
                 sessionsWithMessages.map((s) => ({
                   id: s.id,
-                  title: s.title,
                   messageCount: s.messages.length,
-                })),
+                  title: s.title,
+                }))
               );
               setSessions(sessionsWithMessages);
               const firstSession = sessionsWithMessages[0];
@@ -273,7 +256,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
             // If we had messages in a temporary session, preserve it
             if (hasMessagesInCurrentSession) {
               console.log(
-                "[useSessions] No conversations found, preserving temporary session with messages",
+                "[useSessions] No conversations found, preserving temporary session with messages"
               );
               setSessions([currentSessionBeforeLoad!]);
               // Keep the current session ID
@@ -281,8 +264,8 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               // Create a new session
               const newSession = {
                 id: generateConversationId(),
-                title: "New conversation",
                 messages: [],
+                title: "New conversation",
               };
               setSessions([newSession]);
               setCurrentSessionId(newSession.id);
@@ -295,16 +278,14 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
         if (mounted) {
           // If we had messages in a temporary session, preserve it
           if (hasMessagesInCurrentSession) {
-            console.log(
-              "[useSessions] Error loading, preserving temporary session with messages",
-            );
+            console.log("[useSessions] Error loading, preserving temporary session with messages");
             setSessions([currentSessionBeforeLoad!]);
             // Keep the current session ID
           } else {
             const newSession = {
               id: generateConversationId(),
-              title: "New conversation",
               messages: [],
+              title: "New conversation",
             };
             setSessions([newSession]);
             setCurrentSessionId(newSession.id);
@@ -353,14 +334,16 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
             if (session.id !== currentSessionId) return session;
 
             // Count assistant messages
-            const currentAssistantMsgs = session.messages.filter(m => m.role === "assistant");
-            const newAssistantMsgs = uiMessages.filter(m => m.role === "assistant");
+            const currentAssistantMsgs = session.messages.filter((m) => m.role === "assistant");
+            const newAssistantMsgs = uiMessages.filter((m) => m.role === "assistant");
 
             // Build set of existing content for duplicate detection
-            const existingContents = new Set(currentAssistantMsgs.map(m => m.content.trim()));
+            const existingContents = new Set(currentAssistantMsgs.map((m) => m.content.trim()));
 
             // Only add messages that don't already exist
-            const trulyNewMsgs = newAssistantMsgs.filter(m => !existingContents.has(m.content.trim()));
+            const trulyNewMsgs = newAssistantMsgs.filter(
+              (m) => !existingContents.has(m.content.trim())
+            );
 
             if (trulyNewMsgs.length > 0) {
               console.log("[Polling] Found truly new messages:", trulyNewMsgs.length);
@@ -408,9 +391,9 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
         "postgres_changes",
         {
           event: "INSERT",
+          filter: `conversation_id=eq.${currentSessionId}`,
           schema: "public",
           table: "messages",
-          filter: `conversation_id=eq.${currentSessionId}`,
         },
         (payload) => {
           console.log("[Realtime] Message INSERT:", payload);
@@ -437,7 +420,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 if (uiMsg.role === "user") {
                   console.log(
                     "[Realtime] Skipping user message from INSERT (UI handles these):",
-                    trimmedContent.slice(0, 50),
+                    trimmedContent.slice(0, 50)
                   );
                   continue;
                 }
@@ -452,16 +435,10 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
 
                   // Check for partial matches (typing animation in progress)
                   // If trimmedContent is the full response and existingText is partial (animating)
-                  if (
-                    existingText.length > 0 &&
-                    trimmedContent.startsWith(existingText)
-                  )
+                  if (existingText.length > 0 && trimmedContent.startsWith(existingText))
                     return true;
                   // If existingText is the full response and trimmedContent is partial
-                  if (
-                    trimmedContent.length > 0 &&
-                    existingText.startsWith(trimmedContent)
-                  )
+                  if (trimmedContent.length > 0 && existingText.startsWith(trimmedContent))
                     return true;
                   // If existing is empty (animation just started)
                   if (existingText === "") return true;
@@ -472,13 +449,13 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 if (!isDuplicate) {
                   console.log(
                     "[Realtime] Adding new assistant message from INSERT:",
-                    trimmedContent.slice(0, 50),
+                    trimmedContent.slice(0, 50)
                   );
                   newMessagesToAdd.push(uiMsg);
                 } else {
                   console.log(
                     "[Realtime] Skipping duplicate assistant message from INSERT:",
-                    trimmedContent.slice(0, 50),
+                    trimmedContent.slice(0, 50)
                   );
                 }
               }
@@ -489,17 +466,17 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 ...session,
                 messages: [...session.messages, ...newMessagesToAdd],
               };
-            }),
+            })
           );
-        },
+        }
       )
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
+          filter: `conversation_id=eq.${currentSessionId}`,
           schema: "public",
           table: "messages",
-          filter: `conversation_id=eq.${currentSessionId}`,
         },
         (payload) => {
           console.log("[Realtime] Message UPDATE:", payload);
@@ -520,15 +497,13 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               // FIRST: Check if this exact content already exists ANYWHERE
               // This handles the case where App.tsx already added the message
               const contentAlreadyExists = messages.some(
-                (m) =>
-                  m.role === "assistant" &&
-                  m.content.trim() === updatedContent,
+                (m) => m.role === "assistant" && m.content.trim() === updatedContent
               );
 
               if (contentAlreadyExists) {
                 console.log(
                   "[Realtime] UPDATE: Content already exists globally, skipping:",
-                  updatedContent.slice(0, 50),
+                  updatedContent.slice(0, 50)
                 );
                 return session;
               }
@@ -537,19 +512,14 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               let userMsgIndex = -1;
               for (let i = messages.length - 1; i >= 0; i--) {
                 const candidate = messages[i];
-                if (
-                  candidate?.role === "user" &&
-                  candidate.content === updatedMessage.question
-                ) {
+                if (candidate?.role === "user" && candidate.content === updatedMessage.question) {
                   userMsgIndex = i;
                   break;
                 }
               }
 
               if (userMsgIndex === -1) {
-                console.log(
-                  "[Realtime] UPDATE: Could not find matching user message",
-                );
+                console.log("[Realtime] UPDATE: Could not find matching user message");
                 return session; // Can't find the user message, skip
               }
 
@@ -557,31 +527,14 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               const nextMessage = messages[nextIndex];
 
               // Check if assistant message already exists after user message
-              if (
-                nextIndex < messages.length &&
-                nextMessage?.role === "assistant"
-              ) {
+              if (nextIndex < messages.length && nextMessage?.role === "assistant") {
                 const existingContent = nextMessage.content.trim();
 
-                console.log(
-                  "[Realtime] UPDATE: Found existing assistant message",
-                );
-                console.log(
-                  "[Realtime] UPDATE: Existing content length:",
-                  existingContent.length,
-                );
-                console.log(
-                  "[Realtime] UPDATE: Updated content length:",
-                  updatedContent.length,
-                );
-                console.log(
-                  "[Realtime] UPDATE: Existing preview:",
-                  existingContent.slice(0, 100),
-                );
-                console.log(
-                  "[Realtime] UPDATE: Updated preview:",
-                  updatedContent.slice(0, 100),
-                );
+                console.log("[Realtime] UPDATE: Found existing assistant message");
+                console.log("[Realtime] UPDATE: Existing content length:", existingContent.length);
+                console.log("[Realtime] UPDATE: Updated content length:", updatedContent.length);
+                console.log("[Realtime] UPDATE: Existing preview:", existingContent.slice(0, 100));
+                console.log("[Realtime] UPDATE: Updated preview:", updatedContent.slice(0, 100));
 
                 // IMPORTANT: During typing animation, existingContent may be a partial substring
                 // of updatedContent. We should NOT update if:
@@ -589,28 +542,23 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 // 2. Updated content starts with existing content (animation in progress)
                 // 3. Existing content is empty (animation just started)
                 const isAnimating =
-                  existingContent === "" ||
-                  updatedContent.startsWith(existingContent);
+                  existingContent === "" || updatedContent.startsWith(existingContent);
                 const isIdentical = existingContent === updatedContent;
 
                 console.log(
                   "[Realtime] UPDATE: isAnimating?",
                   isAnimating,
                   "isIdentical?",
-                  isIdentical,
+                  isIdentical
                 );
 
                 if (isIdentical) {
-                  console.log(
-                    "[Realtime] Skipping UPDATE - content already matches",
-                  );
+                  console.log("[Realtime] Skipping UPDATE - content already matches");
                 } else if (isAnimating) {
-                  console.log(
-                    "[Realtime] Skipping UPDATE - typing animation in progress",
-                  );
+                  console.log("[Realtime] Skipping UPDATE - typing animation in progress");
                 } else {
                   console.log(
-                    "[Realtime] Updating assistant message from UPDATE (content changed)",
+                    "[Realtime] Updating assistant message from UPDATE (content changed)"
                   );
                   messages[nextIndex] = {
                     ...nextMessage,
@@ -621,29 +569,27 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 // No assistant message exists yet at nextIndex
                 // Check if this content already exists ANYWHERE in messages (race condition protection)
                 const contentAlreadyExists = messages.some(
-                  (m) =>
-                    m.role === "assistant" &&
-                    m.content.trim() === updatedContent,
+                  (m) => m.role === "assistant" && m.content.trim() === updatedContent
                 );
 
                 if (contentAlreadyExists) {
                   console.log(
                     "[Realtime] UPDATE: Content already exists, skipping:",
-                    updatedContent.slice(0, 50),
+                    updatedContent.slice(0, 50)
                   );
                 } else {
                   // Add the assistant message - this is the ONLY place messages get added
                   // Both normal chat and deep research flow through here
                   console.log(
                     "[Realtime] UPDATE: Adding assistant message:",
-                    updatedContent.slice(0, 50),
+                    updatedContent.slice(0, 50)
                   );
 
                   messages.splice(nextIndex, 0, {
-                    id: Date.now(),
-                    dbMessageId: updatedMessage.id, // Store DB ID for state matching
-                    role: "assistant" as const,
                     content: updatedContent,
+                    dbMessageId: updatedMessage.id, // Store DB ID for state matching
+                    id: Date.now(),
+                    role: "assistant" as const,
                   });
                 }
               }
@@ -652,9 +598,9 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
                 ...session,
                 messages,
               };
-            }),
+            })
           );
-        },
+        }
       )
       .subscribe();
 
@@ -668,14 +614,12 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
    */
   const updateSessionMessages = (
     sessionId: string,
-    updater: (messages: Message[]) => Message[],
+    updater: (messages: Message[]) => Message[]
   ) => {
     setSessions((prev) =>
       prev.map((session) =>
-        session.id === sessionId
-          ? { ...session, messages: updater(session.messages) }
-          : session,
-      ),
+        session.id === sessionId ? { ...session, messages: updater(session.messages) } : session
+      )
     );
   };
 
@@ -687,18 +631,18 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
       "[useSessions.addMessage] Adding message to session:",
       currentSessionId,
       "message:",
-      message,
+      message
     );
     console.log(
       "[useSessions.addMessage] Current sessions:",
-      sessions.map((s) => ({ id: s.id, messageCount: s.messages.length })),
+      sessions.map((s) => ({ id: s.id, messageCount: s.messages.length }))
     );
     updateSessionMessages(currentSessionId, (prev) => {
       console.log(
         "[useSessions.addMessage] Previous messages:",
         prev.length,
         "new count:",
-        prev.length + 1,
+        prev.length + 1
       );
       return [...prev, message];
     });
@@ -708,9 +652,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
    * Remove a message from the current session
    */
   const removeMessage = (messageId: number) => {
-    updateSessionMessages(currentSessionId, (prev) =>
-      prev.filter((msg) => msg.id !== messageId),
-    );
+    updateSessionMessages(currentSessionId, (prev) => prev.filter((msg) => msg.id !== messageId));
   };
 
   /**
@@ -724,8 +666,8 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
               ...session,
               title: title.slice(0, 30) + (title.length > 30 ? "..." : ""),
             }
-          : session,
-      ),
+          : session
+      )
     );
   };
 
@@ -735,8 +677,8 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
   const createNewSession = (): Session => {
     const newSession: Session = {
       id: generateConversationId(),
-      title: "New conversation",
       messages: [],
+      title: "New conversation",
     };
     setSessions((prev) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
@@ -785,8 +727,10 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
           if (session.id !== currentSessionId) return session;
 
           // Only update if there are new messages we don't have
-          const currentAssistantCount = session.messages.filter(m => m.role === "assistant").length;
-          const newAssistantCount = uiMessages.filter(m => m.role === "assistant").length;
+          const currentAssistantCount = session.messages.filter(
+            (m) => m.role === "assistant"
+          ).length;
+          const newAssistantCount = uiMessages.filter((m) => m.role === "assistant").length;
 
           if (newAssistantCount > currentAssistantCount) {
             console.log("[useSessions] refetchMessages: Found new messages, updating session");
@@ -794,10 +738,10 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
           }
 
           // Also check if any assistant message has content that we're missing
-          const hasNewContent = uiMessages.some(newMsg => {
+          const hasNewContent = uiMessages.some((newMsg) => {
             if (newMsg.role !== "assistant" || !newMsg.content) return false;
             const existingMsg = session.messages.find(
-              m => m.role === "assistant" && m.content === newMsg.content
+              (m) => m.role === "assistant" && m.content === newMsg.content
             );
             return !existingMsg;
           });
@@ -816,18 +760,18 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
   };
 
   return {
-    sessions,
+    addMessage,
+    createNewSession,
     currentSession,
     currentSessionId,
-    userId,
+    deleteSession,
     isLoading,
-    addMessage,
+    refetchMessages,
     removeMessage,
+    sessions,
+    switchSession,
     updateSessionMessages,
     updateSessionTitle,
-    createNewSession,
-    deleteSession,
-    switchSession,
-    refetchMessages,
+    userId,
   };
 }

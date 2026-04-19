@@ -5,14 +5,14 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type {
-  MessageParam,
   ContentBlockParam,
-  ToolUseBlock,
+  MessageParam,
   TextBlock,
+  ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
-import type { AgentLoopConfig, AgentLoopResult } from "./types";
-import { getToolDefinitions, executeTool } from "./registry";
 import logger from "../utils/logger";
+import { executeTool, getToolDefinitions } from "./registry";
+import type { AgentLoopConfig, AgentLoopResult } from "./types";
 
 const DEFAULT_TEMPERATURE = 0.3;
 
@@ -25,16 +25,13 @@ const DEFAULT_TEMPERATURE = 0.3;
 export async function runAgentLoop(
   userMessage: string,
   config: AgentLoopConfig,
-  history?: MessageParam[],
+  history?: MessageParam[]
 ): Promise<AgentLoopResult> {
   const client = new Anthropic({ apiKey: config.apiKey, timeout: 120_000 });
   const toolDefs = getToolDefinitions();
 
   // Prepend conversation history (if any) before the current user message
-  const messages: MessageParam[] = [
-    ...(history || []),
-    { role: "user", content: userMessage },
-  ];
+  const messages: MessageParam[] = [...(history || []), { content: userMessage, role: "user" }];
 
   let toolCallCount = 0;
   let totalInputTokens = 0;
@@ -45,19 +42,19 @@ export async function runAgentLoop(
     const isAtCap = toolCallCount >= config.maxToolCalls;
 
     logger.info(
-      { turn: toolCallCount, messageCount: messages.length, isAtCap },
-      "agent_loop_turn_start",
+      { isAtCap, messageCount: messages.length, turn: toolCallCount },
+      "agent_loop_turn_start"
     );
 
     // Build request — omit tools if at cap to force text response
     const requestParams: Anthropic.MessageCreateParams = {
+      max_tokens: config.maxTokens,
+      messages,
       model: config.model,
       system: config.systemPrompt,
-      messages,
-      max_tokens: config.maxTokens,
       temperature: config.temperature ?? DEFAULT_TEMPERATURE,
-      tools: !isAtCap && toolDefs.length > 0 ? toolDefs : undefined,
       tool_choice: !isAtCap && toolDefs.length > 0 ? { type: "auto" as const } : undefined,
+      tools: !isAtCap && toolDefs.length > 0 ? toolDefs : undefined,
     };
 
     const response = await client.messages.create(requestParams);
@@ -70,7 +67,7 @@ export async function runAgentLoop(
 
     // Extract tool_use blocks
     const toolUseBlocks = response.content.filter(
-      (block): block is ToolUseBlock => block.type === "tool_use",
+      (block): block is ToolUseBlock => block.type === "tool_use"
     );
 
     // Check max_tokens first — it also has no tool blocks, but needs logging
@@ -80,8 +77,11 @@ export async function runAgentLoop(
         .map((block) => block.text)
         .join("\n\n");
 
-      logger.warn({ toolCallCount, hasText: finalText.length > 0 }, "agent_loop_max_tokens_reached");
-      return { finalText, toolCallCount, totalInputTokens, totalOutputTokens, hitMaxTokens: true };
+      logger.warn(
+        { hasText: finalText.length > 0, toolCallCount },
+        "agent_loop_max_tokens_reached"
+      );
+      return { finalText, hitMaxTokens: true, toolCallCount, totalInputTokens, totalOutputTokens };
     }
 
     // If no tool calls — we're done
@@ -96,8 +96,8 @@ export async function runAgentLoop(
     // stop_reason === "tool_use" — execute tools
     // Append the full assistant response to message history
     messages.push({
-      role: "assistant",
       content: response.content as ContentBlockParam[],
+      role: "assistant",
     });
 
     // Execute each tool and collect results
@@ -107,54 +107,45 @@ export async function runAgentLoop(
       toolCallCount++;
 
       logger.info(
-        { toolName: toolBlock.name, toolCallId: toolBlock.id, toolCallCount },
-        "agent_tool_call_executing",
+        { toolCallCount, toolCallId: toolBlock.id, toolName: toolBlock.name },
+        "agent_tool_call_executing"
       );
 
-      const result = await executeTool(
-        toolBlock.name,
-        toolBlock.input as Record<string, unknown>,
-      );
+      const result = await executeTool(toolBlock.name, toolBlock.input as Record<string, unknown>);
 
       // Notify caller (e.g. for DB state updates)
       if (config.onToolResult) {
         try {
           await config.onToolResult({
-            toolName: toolBlock.name,
-            toolCallId: toolBlock.id,
             input: toolBlock.input,
             result,
             toolCallCount,
+            toolCallId: toolBlock.id,
+            toolName: toolBlock.name,
           });
         } catch (err) {
-          logger.warn(
-            { error: err, toolName: toolBlock.name },
-            "on_tool_result_callback_failed",
-          );
+          logger.warn({ error: err, toolName: toolBlock.name }, "on_tool_result_callback_failed");
           // Don't break the loop — DB update failure shouldn't stop the agent
         }
       }
 
       // Cast: SDK types don't export ToolResultBlockParam directly
       toolResults.push({
-        type: "tool_result",
-        tool_use_id: toolBlock.id,
         content: result.content,
         is_error: result.isError ?? false,
+        tool_use_id: toolBlock.id,
+        type: "tool_result",
       } as unknown as ContentBlockParam);
     }
 
     // Append tool results as user message (Anthropic convention)
     messages.push({
-      role: "user",
       content: toolResults,
+      role: "user",
     });
 
     if (toolCallCount >= config.maxToolCalls) {
-      logger.warn(
-        { toolCallCount, max: config.maxToolCalls },
-        "agent_tool_call_cap_reached",
-      );
+      logger.warn({ max: config.maxToolCalls, toolCallCount }, "agent_tool_call_cap_reached");
       // Loop continues — next iteration will omit tools, forcing text response
     }
   }

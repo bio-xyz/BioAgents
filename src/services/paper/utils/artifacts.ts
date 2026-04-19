@@ -1,24 +1,24 @@
 import * as fs from "fs";
 import * as path from "path";
-import logger from "../../../utils/logger";
 import { getStorageProvider } from "../../../storage";
-import { sanitizeFilename } from "./textUtils";
 import type { AnalysisArtifact, PlanTask } from "../../../types/core";
+import logger from "../../../utils/logger";
 import type { FigureInfo } from "../types";
+import { sanitizeFilename } from "./textUtils";
 
 export async function downloadDiscoveryFigures(
   allowedTasks: PlanTask[],
   discoveryIndex: number,
   figuresDir: string,
   userId: string,
-  conversationStateId: string,
+  conversationStateId: string
 ): Promise<FigureInfo[]> {
   const figures: FigureInfo[] = [];
   const analysisTasks = allowedTasks.filter(
-    (task) => task.type === "ANALYSIS" && task.artifacts && task.artifacts.length > 0,
+    (task) => task.type === "ANALYSIS" && task.artifacts && task.artifacts.length > 0
   );
 
-  logger.info({ discoveryIndex, analysisTasks: analysisTasks.length }, "downloading_figures");
+  logger.info({ analysisTasks: analysisTasks.length, discoveryIndex }, "downloading_figures");
 
   for (const task of analysisTasks) {
     if (!task.artifacts) continue;
@@ -36,7 +36,7 @@ export async function downloadDiscoveryFigures(
           discoveryIndex,
           figuresDir,
           userId,
-          conversationStateId,
+          conversationStateId
         );
         if (figureInfo) figures.push(figureInfo);
       } catch (error) {
@@ -45,7 +45,7 @@ export async function downloadDiscoveryFigures(
             artifactId: artifact.id,
             errorMessage: error instanceof Error ? error.message : String(error),
           },
-          "artifact_download_failed",
+          "artifact_download_failed"
         );
       }
     }
@@ -61,7 +61,7 @@ async function downloadArtifact(
   discoveryIndex: number,
   figuresDir: string,
   userId: string,
-  conversationStateId: string,
+  conversationStateId: string
 ): Promise<FigureInfo | null> {
   let artifactPath = artifact.path;
   if (!artifactPath) return null;
@@ -75,19 +75,20 @@ async function downloadArtifact(
   const stableFilename = `d${discoveryIndex}_${sanitizedName}`;
   const localPath = path.join(figuresDir, stableFilename);
 
-  const buffer = artifactPath.startsWith("http://") || artifactPath.startsWith("https://")
-    ? await downloadFromURL(artifactPath)
-    : await downloadFromStorage(artifactPath);
+  const buffer =
+    artifactPath.startsWith("http://") || artifactPath.startsWith("https://")
+      ? await downloadFromURL(artifactPath)
+      : await downloadFromStorage(artifactPath);
 
   fs.writeFileSync(localPath, buffer);
 
   const captionSeed = artifact.description || `Figure from task ${task.jobId || task.id}`;
 
   return {
-    filename: stableFilename,
     captionSeed,
-    sourceJobId: task.jobId || task.id || "unknown",
+    filename: stableFilename,
     originalPath: artifactPath,
+    sourceJobId: task.jobId || task.id || "unknown",
   };
 }
 
@@ -115,7 +116,7 @@ async function downloadFromStorage(key: string): Promise<Buffer> {
     return await storage.download(key);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error({ key, error: message }, "storage_download_failed");
+    logger.error({ error: message, key }, "storage_download_failed");
     throw error;
   }
 }

@@ -28,9 +28,7 @@ export async function initKnowledgeBase() {
 /**
  * Search knowledge base for relevant literature
  */
-export async function searchKnowledge(
-  objective: string,
-): Promise<LiteratureResult> {
+export async function searchKnowledge(objective: string): Promise<LiteratureResult> {
   const logger = (await import("../../utils/logger")).default;
   const docsPath = process.env.KNOWLEDGE_DOCS_PATH;
 
@@ -50,24 +48,18 @@ export async function searchKnowledge(
 
   const searchResults = await vectorSearch.search(objective);
 
-  logger.info(
-    { resultCount: searchResults.length },
-    "knowledge_search_completed",
-  );
+  logger.info({ resultCount: searchResults.length }, "knowledge_search_completed");
 
   // Format output
   const output =
     searchResults.length === 0
       ? `Found 0 relevant knowledge chunks (no results)`
       : `Found ${searchResults.length} relevant knowledge chunks:\n\n${searchResults
-          .map(
-            (doc, idx) =>
-              `${idx + 1}. ${doc.title}\n   ${doc.content.substring(0, 300)}...`,
-          )
+          .map((doc, idx) => `${idx + 1}. ${doc.title}\n   ${doc.content.substring(0, 300)}...`)
           .join("\n\n")}`;
 
   return {
-    output,
     count: searchResults.length,
+    output,
   };
 }

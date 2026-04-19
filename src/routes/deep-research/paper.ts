@@ -22,8 +22,8 @@ import { Elysia } from "elysia";
 import { getServiceClient } from "../../db/client";
 import { getConversation } from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
-import { isJobQueueEnabled } from "../../services/queue/connection";
 import { generatePaperFromConversation } from "../../services/paper/generatePaper";
+import { isJobQueueEnabled } from "../../services/queue/connection";
 import { getStorageProvider } from "../../storage";
 import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
@@ -45,32 +45,24 @@ export const deepResearchPaperRoute = new Elysia().guard(
   (app) =>
     app
       // Sync paper generation (blocking)
-      .post(
-        "/api/deep-research/conversations/:conversationId/paper",
-        paperGenerationHandler,
-      )
+      .post("/api/deep-research/conversations/:conversationId/paper", paperGenerationHandler)
       // Async paper generation (queue-based)
       .post(
         "/api/deep-research/conversations/:conversationId/paper/async",
-        asyncPaperGenerationHandler,
+        asyncPaperGenerationHandler
       )
       // Paper job status
       .get("/api/deep-research/paper/:paperId/status", paperStatusHandler)
       // Get paper with fresh presigned URLs
       .get("/api/deep-research/paper/:paperId", getPaperHandler)
       // List all papers for a conversation
-      .get(
-        "/api/deep-research/conversations/:conversationId/papers",
-        listPapersHandler,
-      ),
+      .get("/api/deep-research/conversations/:conversationId/papers", listPapersHandler)
 );
 
 /**
  * Paper generation handler
  */
-async function paperGenerationHandler(
-  ctx: ElysiaRouteContext<{ conversationId: string }>,
-) {
+async function paperGenerationHandler(ctx: ElysiaRouteContext<{ conversationId: string }>) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
@@ -96,11 +88,11 @@ async function paperGenerationHandler(
 
   logger.info(
     {
+      authMethod: auth?.method,
       conversationId,
       userId,
-      authMethod: auth?.method,
     },
-    "paper_generation_request",
+    "paper_generation_request"
   );
 
   try {
@@ -109,30 +101,30 @@ async function paperGenerationHandler(
 
     logger.info(
       {
-        paperId: result.paperId,
         conversationId: result.conversationId,
+        paperId: result.paperId,
       },
-      "paper_generated_successfully",
+      "paper_generated_successfully"
     );
 
     return {
-      success: true,
-      paperId: result.paperId,
       conversationId: result.conversationId,
       conversationStateId: result.conversationStateId,
+      paperId: result.paperId,
       pdfPath: result.pdfPath,
       pdfUrl: result.pdfUrl,
       rawLatexUrl: result.rawLatexUrl,
+      success: true,
     };
   } catch (error) {
     logger.error(
       {
+        conversationId,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        conversationId,
         userId,
       },
-      "paper_generation_failed",
+      "paper_generation_failed"
     );
 
     // Determine appropriate status code and error message
@@ -150,8 +142,7 @@ async function paperGenerationHandler(
       set.status = 403;
       return {
         error: "Access denied",
-        message:
-          "You do not have permission to generate a paper for this conversation",
+        message: "You do not have permission to generate a paper for this conversation",
       };
     }
 
@@ -159,8 +150,8 @@ async function paperGenerationHandler(
       set.status = 500;
       return {
         error: "LaTeX compilation failed",
-        message: errorMessage,
         hint: "The paper content could not be compiled to PDF. Check the LaTeX syntax and citations.",
+        message: errorMessage,
       };
     }
 
@@ -176,9 +167,7 @@ async function paperGenerationHandler(
 /**
  * Get paper handler - generates fresh presigned URLs for an existing paper
  */
-async function getPaperHandler(
-  ctx: ElysiaRouteContext<{ paperId: string }>,
-) {
+async function getPaperHandler(ctx: ElysiaRouteContext<{ paperId: string }>) {
   const { params, set, request } = ctx;
   const paperId = params.paperId;
 
@@ -255,13 +244,13 @@ async function getPaperHandler(
     logger.info({ paperId, userId }, "paper_urls_generated");
 
     return {
-      success: true,
-      paperId: paper.id,
       conversationId: paper.conversation_id,
+      createdAt: paper.created_at,
+      paperId: paper.id,
       pdfPath: paper.pdf_path,
       pdfUrl,
       rawLatexUrl,
-      createdAt: paper.created_at,
+      success: true,
     };
   } catch (error) {
     logger.error(
@@ -270,7 +259,7 @@ async function getPaperHandler(
         paperId,
         userId,
       },
-      "paper_get_failed",
+      "paper_get_failed"
     );
 
     set.status = 500;
@@ -284,9 +273,7 @@ async function getPaperHandler(
 /**
  * List papers handler - returns all papers for a conversation
  */
-async function listPapersHandler(
-  ctx: ElysiaRouteContext<{ conversationId: string }>,
-) {
+async function listPapersHandler(ctx: ElysiaRouteContext<{ conversationId: string }>) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
@@ -343,30 +330,27 @@ async function listPapersHandler(
       throw new Error(`Failed to fetch papers: ${papersError.message}`);
     }
 
-    logger.info(
-      { conversationId, userId, count: papers?.length || 0 },
-      "papers_listed",
-    );
+    logger.info({ conversationId, count: papers?.length || 0, userId }, "papers_listed");
 
     return {
-      success: true,
       conversationId,
       papers:
         papers?.map((p) => ({
+          createdAt: p.created_at,
           paperId: p.id,
           pdfPath: p.pdf_path,
-          createdAt: p.created_at,
           status: p.status,
         })) || [],
+      success: true,
     };
   } catch (error) {
     logger.error(
       {
-        error: error instanceof Error ? error.message : String(error),
         conversationId,
+        error: error instanceof Error ? error.message : String(error),
         userId,
       },
-      "list_papers_failed",
+      "list_papers_failed"
     );
 
     set.status = 500;
@@ -409,19 +393,17 @@ async function checkGlobalConcurrentPaperLimit(): Promise<{ exceeded: boolean; c
 
   if (error) {
     logger.error({ error }, "failed_to_check_global_concurrent_paper_jobs");
-    return { exceeded: false, current: 0 }; // Allow on error (fail open)
+    return { current: 0, exceeded: false }; // Allow on error (fail open)
   }
 
   const current = count ?? 0;
-  return { exceeded: current >= maxConcurrent, current };
+  return { current, exceeded: current >= maxConcurrent };
 }
 
 /**
  * Async paper generation handler - queues job and returns immediately
  */
-async function asyncPaperGenerationHandler(
-  ctx: ElysiaRouteContext<{ conversationId: string }>,
-) {
+async function asyncPaperGenerationHandler(ctx: ElysiaRouteContext<{ conversationId: string }>) {
   const { params, set, request } = ctx;
   const conversationId = params.conversationId;
 
@@ -457,11 +439,11 @@ async function asyncPaperGenerationHandler(
 
   logger.info(
     {
+      authMethod: auth?.method,
       conversationId,
       userId,
-      authMethod: auth?.method,
     },
-    "async_paper_generation_request",
+    "async_paper_generation_request"
   );
 
   try {
@@ -489,7 +471,8 @@ async function asyncPaperGenerationHandler(
       set.status = 429;
       return {
         error: "Concurrent paper limit exceeded",
-        message: "You already have a paper generation job in progress. Please wait for it to complete.",
+        message:
+          "You already have a paper generation job in progress. Please wait for it to complete.",
       };
     }
 
@@ -509,11 +492,11 @@ async function asyncPaperGenerationHandler(
     const pdfPath = `user/${userId}/conversation/${conversationId}/papers/${paperId}/paper.pdf`;
 
     const { error: insertError } = await supabase.from("paper").insert({
-      id: paperId,
-      user_id: userId,
       conversation_id: conversationId,
+      id: paperId,
       pdf_path: pdfPath,
       status: "pending",
+      user_id: userId,
     });
 
     if (insertError) {
@@ -532,41 +515,38 @@ async function asyncPaperGenerationHandler(
     const job = await queue.add(
       `paper-${paperId}`,
       {
-        paperId,
-        userId,
-        conversationId,
         authMethod: auth?.method || "anonymous",
+        conversationId,
+        paperId,
         requestedAt: new Date().toISOString(),
+        userId,
       },
       {
         jobId: paperId, // Use paperId as job ID for easy lookup
-      },
+      }
     );
 
-    logger.info(
-      { jobId: job.id, paperId, conversationId },
-      "paper_generation_job_enqueued",
-    );
+    logger.info({ conversationId, jobId: job.id, paperId }, "paper_generation_job_enqueued");
 
     // Return 202 Accepted
     set.status = 202;
     return {
-      success: true,
-      paperId,
-      jobId: job.id,
       conversationId,
+      jobId: job.id,
+      paperId,
       status: "queued",
       statusUrl: `/api/deep-research/paper/${paperId}/status`,
+      success: true,
     };
   } catch (error) {
     logger.error(
       {
+        conversationId,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        conversationId,
         userId,
       },
-      "async_paper_generation_failed",
+      "async_paper_generation_failed"
     );
 
     set.status = 500;
@@ -591,9 +571,7 @@ type PaperStatusResponse = {
   error?: string;
 };
 
-async function paperStatusHandler(
-  ctx: ElysiaRouteContext<{ paperId: string }>,
-) {
+async function paperStatusHandler(ctx: ElysiaRouteContext<{ paperId: string }>) {
   const { params, set, request } = ctx;
   const paperId = params.paperId;
 
@@ -646,10 +624,10 @@ async function paperStatusHandler(
 
     // Build response based on status
     const response: PaperStatusResponse = {
-      paperId: paper.id,
       conversationId: paper.conversation_id,
-      status: paper.status,
       createdAt: paper.created_at,
+      paperId: paper.id,
+      status: paper.status,
     };
 
     if (paper.progress) {
@@ -676,7 +654,7 @@ async function paperStatusHandler(
       response.error = paper.error;
     }
 
-    logger.info({ paperId, userId, status: paper.status }, "paper_status_returned");
+    logger.info({ paperId, status: paper.status, userId }, "paper_status_returned");
 
     return response;
   } catch (error) {
@@ -686,7 +664,7 @@ async function paperStatusHandler(
         paperId,
         userId,
       },
-      "paper_status_check_failed",
+      "paper_status_check_failed"
     );
 
     set.status = 500;

@@ -6,10 +6,7 @@
  */
 
 import * as jose from "jose";
-import type {
-  BioAgentsJWTPayload,
-  JWTVerificationResult,
-} from "../types/auth";
+import type { BioAgentsJWTPayload, JWTVerificationResult } from "../types/auth";
 import logger from "../utils/logger";
 
 // Cache the secret key encoder to avoid re-encoding on every request
@@ -62,8 +59,8 @@ export async function verifyJWT(token: string): Promise<JWTVerificationResult> {
   if (!secretKey) {
     logger?.warn("jwt_verification_no_secret_configured");
     return {
-      valid: false,
       error: "BIOAGENTS_SECRET not configured",
+      valid: false,
     };
   }
 
@@ -77,79 +74,73 @@ export async function verifyJWT(token: string): Promise<JWTVerificationResult> {
     if (!payload.sub) {
       logger?.warn("jwt_missing_sub_claim");
       return {
-        valid: false,
         error: "JWT missing required 'sub' claim (user ID)",
+        valid: false,
       };
     }
 
     // Check expiration is not too far in the future (optional security measure)
-    const maxExpiration = parseInt(
-      process.env.MAX_JWT_EXPIRATION || "86400",
-      10
-    ); // 24h default
+    const maxExpiration = parseInt(process.env.MAX_JWT_EXPIRATION || "86400", 10); // 24h default
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp && payload.exp - now > maxExpiration) {
-      logger?.warn(
-        { exp: payload.exp, maxAllowed: now + maxExpiration },
-        "jwt_expiration_too_far"
-      );
+      logger?.warn({ exp: payload.exp, maxAllowed: now + maxExpiration }, "jwt_expiration_too_far");
       return {
-        valid: false,
         error: `JWT expiration too far in future (max ${maxExpiration}s)`,
+        valid: false,
       };
     }
 
     // Cast to our payload type
     const bioAgentsPayload: BioAgentsJWTPayload = {
-      sub: payload.sub as string,
+      aud: payload.aud as string | string[] | undefined,
+      email: payload.email as string | undefined,
       exp: payload.exp as number,
       iat: payload.iat as number,
-      email: payload.email as string | undefined,
-      name: payload.name as string | undefined,
-      plan: payload.plan as string | undefined,
-      orgId: payload.orgId as string | undefined,
-      jti: payload.jti as string | undefined,
       iss: payload.iss as string | undefined,
-      aud: payload.aud as string | string[] | undefined,
+      jti: payload.jti as string | undefined,
+      name: payload.name as string | undefined,
+      orgId: payload.orgId as string | undefined,
+      plan: payload.plan as string | undefined,
+      sub: payload.sub as string,
     };
 
     logger?.info(
       {
-        sub: bioAgentsPayload.sub,
         exp: bioAgentsPayload.exp,
         hasEmail: !!bioAgentsPayload.email,
         hasOrgId: !!bioAgentsPayload.orgId,
+        sub: bioAgentsPayload.sub,
       },
       "jwt_verification_success"
     );
 
     return {
-      valid: true,
       payload: bioAgentsPayload,
+      valid: true,
     };
   } catch (err: unknown) {
     // Handle specific jose errors
     if (err instanceof jose.errors.JWTExpired) {
       logger?.warn("jwt_expired");
       return {
-        valid: false,
         error: "JWT has expired",
+        valid: false,
       };
     }
 
     if (err instanceof jose.errors.JWSSignatureVerificationFailed) {
       logger?.warn("jwt_invalid_signature");
       return {
-        valid: false,
         error: "Invalid JWT signature",
+        valid: false,
       };
     }
 
     if (err instanceof jose.errors.JWTClaimValidationFailed) {
       logger?.warn({ claim: err.claim }, "jwt_claim_validation_failed");
       return {
-        valid: false,
         error: `JWT claim validation failed: ${err.claim}`,
+        valid: false,
       };
     }
 
@@ -157,8 +148,8 @@ export async function verifyJWT(token: string): Promise<JWTVerificationResult> {
     const message = err instanceof Error ? err.message : String(err);
     logger?.warn({ error: message }, "jwt_verification_failed");
     return {
-      valid: false,
       error: message || "JWT verification failed",
+      valid: false,
     };
   }
 }

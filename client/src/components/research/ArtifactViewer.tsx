@@ -24,15 +24,7 @@ interface Props {
   defaultExpanded?: boolean;
 }
 
-const IMAGE_EXTENSIONS = [
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".bmp",
-  ".webp",
-  ".svg",
-];
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"];
 
 const isImageFile = (filename: string): boolean =>
   IMAGE_EXTENSIONS.some((ext) => filename.toLowerCase().endsWith(ext));
@@ -46,10 +38,10 @@ const getMimeType = (filename: string, providedMimeType?: string): string => {
 async function fetchPresignedUrl(
   userId: string,
   conversationStateId: string,
-  path: string,
+  path: string
 ): Promise<string | null> {
   try {
-    const params = new URLSearchParams({ userId, conversationStateId, path });
+    const params = new URLSearchParams({ conversationStateId, path, userId });
     const response = await fetch(`/api/artifacts/download?${params}`);
     if (!response.ok) return null;
     const { url } = await response.json();
@@ -62,9 +54,7 @@ async function fetchPresignedUrl(
 export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
   const { userId, conversationStateId } = useConversation();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(
-    null,
-  );
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
@@ -78,7 +68,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
     if (!userId || !conversationStateId) return;
 
     const imagesToLoad = allArtifacts.filter(
-      (a) => isImageFile(a.filename) && a.path && !imageUrls[a.path],
+      (a) => isImageFile(a.filename) && a.path && !imageUrls[a.path]
     );
     if (imagesToLoad.length === 0) return;
 
@@ -86,18 +76,12 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
       const entries = await Promise.all(
         imagesToLoad.map(async (artifact) => {
           if (!artifact.path) return null;
-          const url = await fetchPresignedUrl(
-            userId,
-            conversationStateId,
-            artifact.path,
-          );
+          const url = await fetchPresignedUrl(userId, conversationStateId, artifact.path);
           return url ? ([artifact.path, url] as const) : null;
-        }),
+        })
       );
 
-      const newUrls = Object.fromEntries(
-        entries.filter(Boolean) as [string, string][],
-      );
+      const newUrls = Object.fromEntries(entries.filter(Boolean) as [string, string][]);
       if (Object.keys(newUrls).length > 0) {
         setImageUrls((prev) => ({ ...prev, ...newUrls }));
       }
@@ -127,11 +111,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
 
     try {
       if (artifact.path && userId && conversationStateId) {
-        const url = await fetchPresignedUrl(
-          userId,
-          conversationStateId,
-          artifact.path,
-        );
+        const url = await fetchPresignedUrl(userId, conversationStateId, artifact.path);
         if (url) {
           window.open(url, "_blank");
           return;
@@ -139,9 +119,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
       }
 
       if (artifact.content) {
-        const bytes = Uint8Array.from(atob(artifact.content), (c) =>
-          c.charCodeAt(0),
-        );
+        const bytes = Uint8Array.from(atob(artifact.content), (c) => c.charCodeAt(0));
         const blob = new Blob([bytes]);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -160,17 +138,11 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
     }
   };
 
-  const totalExecutionTime = results.reduce(
-    (acc, r) => acc + (r.executionTime || 0),
-    0,
-  );
+  const totalExecutionTime = results.reduce((acc, r) => acc + (r.executionTime || 0), 0);
 
   return (
     <div className="artifact-viewer">
-      <button
-        className="artifact-viewer-header"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
+      <button className="artifact-viewer-header" onClick={() => setIsExpanded(!isExpanded)}>
         <div className="artifact-viewer-header-left">
           <span className="artifact-viewer-icon">💻</span>
           <span className="artifact-viewer-title">Code Execution Results</span>
@@ -210,9 +182,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
                   <div className="artifact-output-header">
                     <Icon name="terminal" size={14} />
                     <span>Console Output</span>
-                    {result.success && (
-                      <span className="artifact-status-success">✓ Success</span>
-                    )}
+                    {result.success && <span className="artifact-status-success">✓ Success</span>}
                   </div>
                   <pre className="artifact-output-content">{result.output}</pre>
                 </div>
@@ -252,8 +222,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
                             src={getImageSrc(artifact)}
                             alt={artifact.description || artifact.filename}
                             onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
+                              (e.target as HTMLImageElement).style.display = "none";
                             }}
                           />
                         </div>
@@ -263,13 +232,9 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
                         </div>
                       )}
                       <div className="artifact-file-info">
-                        <span className="artifact-file-name">
-                          {artifact.filename}
-                        </span>
+                        <span className="artifact-file-name">{artifact.filename}</span>
                         {artifact.description && (
-                          <span className="artifact-file-desc">
-                            {artifact.description}
-                          </span>
+                          <span className="artifact-file-desc">{artifact.description}</span>
                         )}
                       </div>
                       <button
@@ -293,18 +258,9 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
 
       {/* Lightbox for image preview */}
       {selectedArtifact && isImageFile(selectedArtifact.filename) && (
-        <div
-          className="artifact-lightbox"
-          onClick={() => setSelectedArtifact(null)}
-        >
-          <div
-            className="artifact-lightbox-content"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="artifact-lightbox-close"
-              onClick={() => setSelectedArtifact(null)}
-            >
+        <div className="artifact-lightbox" onClick={() => setSelectedArtifact(null)}>
+          <div className="artifact-lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <button className="artifact-lightbox-close" onClick={() => setSelectedArtifact(null)}>
               <Icon name="close" size={20} />
             </button>
             <img
@@ -312,13 +268,9 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
               alt={selectedArtifact.description || selectedArtifact.filename}
             />
             <div className="artifact-lightbox-info">
-              <span className="artifact-lightbox-filename">
-                {selectedArtifact.filename}
-              </span>
+              <span className="artifact-lightbox-filename">{selectedArtifact.filename}</span>
               {selectedArtifact.description && (
-                <span className="artifact-lightbox-desc">
-                  {selectedArtifact.description}
-                </span>
+                <span className="artifact-lightbox-desc">{selectedArtifact.description}</span>
               )}
               <button
                 className="artifact-lightbox-download"

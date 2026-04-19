@@ -9,8 +9,8 @@
  * - Deep Research: 3 requests per 5 minutes per user
  */
 
-import type { AuthContext } from "../types/auth";
 import { isJobQueueEnabled } from "../services/queue/connection";
+import type { AuthContext } from "../types/auth";
 import logger from "../utils/logger";
 
 /**
@@ -56,7 +56,7 @@ export interface RateLimitResult {
  */
 export async function checkRateLimit(
   userId: string,
-  action: "chat" | "deep-research",
+  action: "chat" | "deep-research"
 ): Promise<RateLimitResult> {
   // If job queue is not enabled, skip rate limiting
   if (!isJobQueueEnabled()) {
@@ -109,19 +109,17 @@ export async function checkRateLimit(
       // Get oldest entry to calculate reset time
       const oldest = await redis.zrange(key, 0, 0, "WITHSCORES");
       const resetIn =
-        oldest.length > 1
-          ? config.window - (now - parseInt(oldest[1] || "0"))
-          : config.window;
+        oldest.length > 1 ? config.window - (now - parseInt(oldest[1] || "0")) : config.window;
 
       logger.warn(
         {
-          userId,
           action,
           currentCount,
           max: config.max,
           resetIn,
+          userId,
         },
-        "rate_limit_exceeded",
+        "rate_limit_exceeded"
       );
 
       return {
@@ -133,13 +131,13 @@ export async function checkRateLimit(
 
     logger.info(
       {
-        userId,
         action,
         currentCount: currentCount + 1,
         max: config.max,
         remaining: config.max - currentCount - 1,
+        userId,
       },
-      "rate_limit_checked",
+      "rate_limit_checked"
     );
 
     return {
@@ -149,7 +147,7 @@ export async function checkRateLimit(
     };
   } catch (error) {
     // On Redis error, allow request but log warning
-    logger.error({ error, userId, action }, "rate_limit_check_failed");
+    logger.error({ action, error, userId }, "rate_limit_check_failed");
     return {
       allowed: true,
       remaining: 999,
@@ -195,7 +193,7 @@ export function rateLimitMiddleware(action: "chat" | "deep-research") {
 
     // Get user ID from auth context - auth is required, no anonymous fallback
     const auth = request.auth;
-    
+
     if (!auth?.userId) {
       // Should not happen if authResolver runs before this middleware
       logger.warn({ action }, "rate_limit_no_auth_context");

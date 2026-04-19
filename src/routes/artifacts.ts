@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
-import { getConversationBasePath, getStorageProvider } from "../storage";
 import { authResolver } from "../middleware/authResolver";
+import { getConversationBasePath, getStorageProvider } from "../storage";
 import logger from "../utils/logger";
 
 /**
@@ -13,9 +13,7 @@ import logger from "../utils/logger";
  */
 export const artifactsRoute = new Elysia().guard(
   {
-    beforeHandle: [
-      authResolver({ required: true }),
-    ],
+    beforeHandle: [authResolver({ required: true })],
   },
   (app) =>
     app.get("/api/artifacts/download", async ({ query, request, set }) => {
@@ -40,10 +38,10 @@ export const artifactsRoute = new Elysia().guard(
       if (userId !== authenticatedUserId) {
         logger.warn(
           {
-            requestedUserId: userId,
             authenticatedUserId,
             conversationStateId,
             path,
+            requestedUserId: userId,
           },
           "artifact_download_unauthorized_access_attempt"
         );
@@ -57,7 +55,7 @@ export const artifactsRoute = new Elysia().guard(
       // SECURITY: Block path traversal attacks
       if (path.includes("..") || path.includes("./") || path.includes("\\")) {
         logger.warn(
-          { userId, conversationStateId, path },
+          { conversationStateId, path, userId },
           "artifact_download_path_traversal_attempt"
         );
         set.status = 400;
@@ -89,14 +87,14 @@ export const artifactsRoute = new Elysia().guard(
         const url = await storage.getPresignedUrl(fullPath, 3600, filename);
 
         logger.info(
-          { userId, conversationStateId, filename },
+          { conversationStateId, filename, userId },
           "artifact_download_presigned_url_generated"
         );
 
         return { url };
       } catch (error) {
         logger.error(
-          { userId, conversationStateId, path, error },
+          { conversationStateId, error, path, userId },
           "failed_to_generate_presigned_url"
         );
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { route } from "preact-router";
 
 import { ChatInput } from "../components/ChatInput";
@@ -9,8 +9,6 @@ import { Sidebar } from "../components/Sidebar";
 import { ToastContainer } from "../components/Toast";
 import { TypingIndicator } from "../components/TypingIndicator";
 import { WelcomeScreen } from "../components/WelcomeScreen";
-import { ConversationProvider } from "../providers/ConversationProvider";
-
 // Custom hooks
 import {
   useAuth,
@@ -23,8 +21,9 @@ import {
   useToast,
   useWebSocket,
 } from "../hooks";
-import { getMessagesByConversation, type Message as DBMessage } from "../lib/supabase";
 import type { Message as UIMessage } from "../hooks/useSessions";
+import { type Message as DBMessage, getMessagesByConversation } from "../lib/supabase";
+import { ConversationProvider } from "../providers/ConversationProvider";
 
 // Utils
 import { generateConversationId } from "../utils/helpers";
@@ -94,7 +93,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
     if (urlSessionId) {
       // URL has a session ID - try to load it
-      const sessionExists = sessions.some(s => s.id === urlSessionId);
+      const sessionExists = sessions.some((s) => s.id === urlSessionId);
 
       if (sessionExists && urlSessionId !== currentSessionId) {
         console.log("[ChatPage] Switching to URL session:", urlSessionId);
@@ -117,11 +116,10 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   }, [urlSessionId, sessions, isLoadingSessions, freshSessionCreated]);
 
   // Real-time states for thinking visualization and research state
-  const {
-    currentState,
-    conversationState,
-    refetchConversationState,
-  } = useStates(userId, currentSessionId);
+  const { currentState, conversationState, refetchConversationState } = useStates(
+    userId,
+    currentSessionId
+  );
 
   // Track processed message IDs to prevent duplicates (ref persists across renders)
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -143,31 +141,34 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
    * Returns true if we should add the message (not yet processed).
    * Returns false if message was already processed (skip adding).
    */
-  const tryMarkAsProcessed = useCallback((messageId: string | undefined, content?: string): boolean => {
-    if (!messageId) return true; // No ID to track, allow adding
+  const tryMarkAsProcessed = useCallback(
+    (messageId: string | undefined, content?: string): boolean => {
+      if (!messageId) return true; // No ID to track, allow adding
 
-    // Check if already processed
-    if (processedMessageIds.current.has(messageId)) {
-      console.log(`[ChatPage] Message already processed (by ID): ${messageId}`);
-      return false;
-    }
-
-    // Check if content already in UI (using ref for fresh data)
-    if (content) {
-      const existsInUI = messagesRef.current.some(
-        (m: UIMessage) => m.dbMessageId === messageId || m.content === content
-      );
-      if (existsInUI) {
-        console.log(`[ChatPage] Message already in UI: ${messageId}`);
-        processedMessageIds.current.add(messageId); // Mark to prevent future attempts
+      // Check if already processed
+      if (processedMessageIds.current.has(messageId)) {
+        console.log(`[ChatPage] Message already processed (by ID): ${messageId}`);
         return false;
       }
-    }
 
-    // Mark as processed IMMEDIATELY (atomic with check)
-    processedMessageIds.current.add(messageId);
-    return true;
-  }, []);
+      // Check if content already in UI (using ref for fresh data)
+      if (content) {
+        const existsInUI = messagesRef.current.some(
+          (m: UIMessage) => m.dbMessageId === messageId || m.content === content
+        );
+        if (existsInUI) {
+          console.log(`[ChatPage] Message already in UI: ${messageId}`);
+          processedMessageIds.current.add(messageId); // Mark to prevent future attempts
+          return false;
+        }
+      }
+
+      // Mark as processed IMMEDIATELY (atomic with check)
+      processedMessageIds.current.add(messageId);
+      return true;
+    },
+    []
+  );
 
   // Clear processed messages when switching conversations
   useEffect(() => {
@@ -175,49 +176,55 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   }, [currentSessionId]);
 
   // WebSocket message handler (backup for when polling doesn't catch it)
-  const handleMessageUpdated = useCallback(async (messageId: string, conversationId: string) => {
-    // Use ref to get latest currentSessionId (avoid stale closure)
-    if (conversationId !== currentSessionIdRef.current) return;
+  const handleMessageUpdated = useCallback(
+    async (messageId: string, conversationId: string) => {
+      // Use ref to get latest currentSessionId (avoid stale closure)
+      if (conversationId !== currentSessionIdRef.current) return;
 
-    try {
-      const dbMessages = await getMessagesByConversation(conversationId);
-      const updatedMsg = dbMessages?.find((m: DBMessage) => m.id === messageId);
+      try {
+        const dbMessages = await getMessagesByConversation(conversationId);
+        const updatedMsg = dbMessages?.find((m: DBMessage) => m.id === messageId);
 
-      if (updatedMsg?.content) {
-        // Atomic check-and-mark to prevent duplicates
-        if (tryMarkAsProcessed(messageId, updatedMsg.content)) {
-          addMessage({
-            id: Date.now(),
-            dbMessageId: messageId,
-            role: "assistant" as const,
-            content: updatedMsg.content,
-            timestamp: new Date(),
-          });
+        if (updatedMsg?.content) {
+          // Atomic check-and-mark to prevent duplicates
+          if (tryMarkAsProcessed(messageId, updatedMsg.content)) {
+            addMessage({
+              content: updatedMsg.content,
+              dbMessageId: messageId,
+              id: Date.now(),
+              role: "assistant" as const,
+              timestamp: new Date(),
+            });
+          }
+
+          // Clear all loading states
+          setIsDeepResearch(false);
+          setLoadingConversationId(null);
+          setLoadingMessageId(null);
         }
-
-        // Clear all loading states
-        setIsDeepResearch(false);
-        setLoadingConversationId(null);
-        setLoadingMessageId(null);
+      } catch (err) {
+        console.error("[ChatPage] WebSocket handler error:", err);
       }
-    } catch (err) {
-      console.error("[ChatPage] WebSocket handler error:", err);
-    }
-  }, [addMessage, tryMarkAsProcessed]);
+    },
+    [addMessage, tryMarkAsProcessed]
+  );
 
   // WebSocket state handler
-  const handleStateUpdated = useCallback(async (_stateId: string, conversationId: string) => {
-    if (conversationId !== currentSessionIdRef.current) return;
-    console.log("[ChatPage] WebSocket: State updated, triggering refetch");
-    await refetchConversationState();
-  }, [refetchConversationState]); // Using ref for currentSessionId
+  const handleStateUpdated = useCallback(
+    async (_stateId: string, conversationId: string) => {
+      if (conversationId !== currentSessionIdRef.current) return;
+      console.log("[ChatPage] WebSocket: State updated, triggering refetch");
+      await refetchConversationState();
+    },
+    [refetchConversationState]
+  ); // Using ref for currentSessionId
 
   // WebSocket for real-time notifications
-  const { isConnected: wsIsConnected, subscribe: wsSubscribe, unsubscribe: wsUnsubscribe } = useWebSocket(
-    userId,
-    handleMessageUpdated,
-    handleStateUpdated,
-  );
+  const {
+    isConnected: wsIsConnected,
+    subscribe: wsSubscribe,
+    unsubscribe: wsUnsubscribe,
+  } = useWebSocket(userId, handleMessageUpdated, handleStateUpdated);
 
   // Sync WebSocket connection state
   useEffect(() => {
@@ -233,36 +240,18 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   }, [currentSessionId, wsConnected, wsSubscribe, wsUnsubscribe]);
 
   // Chat API
-  const {
-    isLoading,
-    error,
-    sendMessage,
-    sendDeepResearchMessage,
-    clearError,
-    clearLoading,
-  } = useChatAPI();
+  const { isLoading, error, sendMessage, sendDeepResearchMessage, clearError, clearLoading } =
+    useChatAPI();
 
   // File upload
-  const {
-    selectedFile,
-    selectedFiles,
-    selectFile,
-    selectFiles,
-    removeFile,
-    clearFile,
-  } = useFileUpload();
+  const { selectedFile, selectedFiles, selectFile, selectFiles, removeFile, clearFile } =
+    useFileUpload();
 
   // Presigned S3 upload
-  const {
-    isUploading,
-    uploadFiles: uploadToS3,
-    clearUploadedFiles,
-  } = usePresignedUpload();
+  const { isUploading, uploadFiles: uploadToS3, clearUploadedFiles } = usePresignedUpload();
 
   // Auto-scroll
-  const { containerRef, scrollToBottom } = useAutoScroll([
-    currentSession.messages,
-  ]);
+  const { containerRef, scrollToBottom } = useAutoScroll([currentSession.messages]);
 
   // Input state
   const [inputValue, setInputValue] = useState("");
@@ -286,25 +275,25 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // Extract research state from conversation state
   const researchState = conversationState?.values
     ? {
-        plan: conversationState.values.plan,
+        currentHypothesis: conversationState.values.currentHypothesis,
+        currentObjective: conversationState.values.currentObjective,
         discoveries: conversationState.values.discoveries,
         keyInsights: conversationState.values.keyInsights,
         methodology: conversationState.values.methodology,
-        currentObjective: conversationState.values.currentObjective,
-        uploadedDatasets: conversationState.values.uploadedDatasets,
-        currentHypothesis: conversationState.values.currentHypothesis,
+        plan: conversationState.values.plan,
         suggestedNextSteps: conversationState.values.suggestedNextSteps,
+        uploadedDatasets: conversationState.values.uploadedDatasets,
       }
     : currentState?.values
       ? {
-          plan: currentState.values.plan,
+          currentHypothesis: currentState.values.currentHypothesis,
+          currentObjective: currentState.values.currentObjective,
           discoveries: currentState.values.discoveries,
           keyInsights: currentState.values.keyInsights,
           methodology: currentState.values.methodology,
-          currentObjective: currentState.values.currentObjective,
-          uploadedDatasets: currentState.values.uploadedDatasets,
-          currentHypothesis: currentState.values.currentHypothesis,
+          plan: currentState.values.plan,
           suggestedNextSteps: currentState.values.suggestedNextSteps,
+          uploadedDatasets: currentState.values.uploadedDatasets,
         }
       : null;
 
@@ -335,9 +324,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // If no messages yet, return undefined (new conversation)
   const detectedMode: "normal" | "deep" | undefined =
     messages.length === 0
-      ? undefined  // New conversation - let user choose
+      ? undefined // New conversation - let user choose
       : hasActiveDeepResearch
-        ? "deep"   // Has research state - deep research
+        ? "deep" // Has research state - deep research
         : "normal"; // Has messages but no research - normal chat
 
   // Get current conversation mode (explicit > detected > default to deep for new)
@@ -408,17 +397,17 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         }
 
         const capturedState = {
-          steps: currentState.values.steps,
           source: currentState.values.source,
+          steps: currentState.values.steps,
           thought: currentState.values.thought,
         };
 
         addMessage({
+          content: finalResponse,
           id: Date.now(),
           role: "assistant" as const,
-          content: finalResponse,
-          timestamp: new Date(),
           thinkingState: capturedState,
+          timestamp: new Date(),
         });
 
         scrollToBottom();
@@ -447,7 +436,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
     // If suggestedNextSteps just appeared (went from 0 to >0), research completed
     if (currentStepsCount > 0 && prevCount === 0) {
-      console.log("[ChatPage] Research completed - suggestedNextSteps appeared, refreshing messages");
+      console.log(
+        "[ChatPage] Research completed - suggestedNextSteps appeared, refreshing messages"
+      );
 
       // Refetch messages from DB to get the response
       refetchMessages().then(() => {
@@ -484,10 +475,10 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           if (tryMarkAsProcessed(messageId, targetMsg.content)) {
             console.log("[ChatPage] Poll: Found message content, adding to UI:", messageId);
             addMessage({
-              id: Date.now(),
-              dbMessageId: messageId,
-              role: "assistant" as const,
               content: targetMsg.content,
+              dbMessageId: messageId,
+              id: Date.now(),
+              role: "assistant" as const,
               timestamp: new Date(),
             });
           }
@@ -554,15 +545,15 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
               return {
                 ...msg,
                 thinkingState: {
-                  steps: state.values.steps,
                   source: state.values.source,
+                  steps: state.values.steps,
                   thought: state.values.thought,
                 },
               };
             }
 
             return msg;
-          }),
+          })
         );
 
         return attachedCount > 0;
@@ -609,11 +600,11 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
     clearFile();
 
     const userMessage = {
+      content: messageContent,
+      files: fileMetadata,
       id: Date.now(),
       role: "user" as const,
-      content: messageContent,
       timestamp: new Date(),
-      files: fileMetadata,
     };
 
     addMessage(userMessage);
@@ -627,9 +618,9 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         route(`/chat/${currentSessionId}`, true);
       }
       // Persist the mode for this conversation
-      setConversationModes(prev => ({
+      setConversationModes((prev) => ({
         ...prev,
-        [currentSessionId]: mode as "normal" | "deep"
+        [currentSessionId]: mode as "normal" | "deep",
       }));
     }
 
@@ -638,35 +629,42 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
     try {
       if (hasFiles && filesToUpload.length > 0) {
-        const uploadResults = await uploadToS3(filesToUpload, currentSessionId, actualUserId || undefined);
+        const uploadResults = await uploadToS3(
+          filesToUpload,
+          currentSessionId,
+          actualUserId || undefined
+        );
 
         if (uploadResults.length === 0) {
           throw new Error("Failed to upload files. Please try again.");
         }
 
-        const failedUploads = uploadResults.filter(f => f.status === 'error');
+        const failedUploads = uploadResults.filter((f) => f.status === "error");
         if (failedUploads.length > 0) {
-          const failedNames = failedUploads.map(f => f.filename).join(', ');
+          const failedNames = failedUploads.map((f) => f.filename).join(", ");
           throw new Error(`Failed to upload: ${failedNames}`);
         }
 
         clearUploadedFiles();
-        console.log(`[ChatPage] Files uploaded, proceeding to send message (${new Date().toISOString()})`);
+        console.log(
+          `[ChatPage] Files uploaded, proceeding to send message (${new Date().toISOString()})`
+        );
       }
 
       console.log(`[ChatPage] Calling sendMessage... (${new Date().toISOString()})`);
       if (mode === "deep") {
         const response = await sendDeepResearchMessage({
-          message: trimmedInput,
           conversationId: currentSessionId,
+          message: trimmedInput,
           userId: userId,
         });
 
         if (response.status === "rejected") {
           addMessage({
+            content:
+              response.error || "Deep research request was rejected. Please check the format.",
             id: Date.now(),
             role: "assistant" as const,
-            content: response.error || "Deep research request was rejected. Please check the format.",
             timestamp: new Date(),
           });
           scrollToBottom();
@@ -679,8 +677,8 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
         }
       } else {
         const response = await sendMessage({
-          message: trimmedInput,
           conversationId: currentSessionId,
+          message: trimmedInput,
           userId: userId,
         });
 
@@ -689,10 +687,10 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
           if (tryMarkAsProcessed(response.messageId, response.text)) {
             console.log(`[ChatPage] HTTP: Adding message from response: ${response.messageId}`);
             addMessage({
-              id: Date.now() + 1,
-              dbMessageId: response.messageId,
-              role: "assistant" as const,
               content: response.text,
+              dbMessageId: response.messageId,
+              id: Date.now() + 1,
+              role: "assistant" as const,
               timestamp: new Date(),
             });
             scrollToBottom();
@@ -733,14 +731,16 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
   // Show loading screen while initial data loads
   if (isLoadingSessions && sessions.length === 0) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'var(--bg-primary, #0a0a0a)',
-        color: 'var(--text-secondary, #a1a1a1)',
-      }}>
+      <div
+        style={{
+          alignItems: "center",
+          background: "var(--bg-primary, #0a0a0a)",
+          color: "var(--text-secondary, #a1a1a1)",
+          display: "flex",
+          height: "100vh",
+          justifyContent: "center",
+        }}
+      >
         Loading...
       </div>
     );
@@ -756,10 +756,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
       <div className="app">
         {/* Mobile overlay */}
         {isMobileSidebarOpen && (
-          <div
-            className="sidebar-overlay"
-            onClick={() => setIsMobileSidebarOpen(false)}
-          />
+          <div className="sidebar-overlay" onClick={() => setIsMobileSidebarOpen(false)} />
         )}
 
         <Sidebar
@@ -779,7 +776,14 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
             onClick={() => setIsMobileSidebarOpen(true)}
             aria-label="Open menu"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="3" y1="12" x2="21" y2="12"></line>
               <line x1="3" y1="6" x2="21" y2="6"></line>
               <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -790,7 +794,7 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
 
           <div className="chat-container" ref={containerRef}>
             {isLoadingSessions ? (
-              <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+              <div style={{ color: "var(--text-secondary)", padding: "2rem", textAlign: "center" }}>
                 Loading conversations...
               </div>
             ) : (
@@ -837,16 +841,15 @@ export function ChatPage({ sessionId: urlSessionId }: ChatPageProps) {
             onFileRemove={removeFile}
             conversationMode={currentConversationMode}
             onModeChange={(newMode: "normal" | "deep") => {
-              setConversationModes(prev => ({
+              setConversationModes((prev) => ({
                 ...prev,
-                [currentSessionId]: newMode
+                [currentSessionId]: newMode,
               }));
             }}
             isNewConversation={messages.length === 0}
           />
         </div>
       </div>
-
     </ConversationProvider>
   );
 }

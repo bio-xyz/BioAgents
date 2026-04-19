@@ -111,8 +111,8 @@ export const clarificationRoute = new Elysia().guard(
           if (!query || typeof query !== "string" || query.trim().length === 0) {
             set.status = 400;
             return {
-              ok: false,
               error: "Missing required field: query",
+              ok: false,
             };
           }
 
@@ -123,386 +123,335 @@ export const clarificationRoute = new Elysia().guard(
           const auth = request.auth;
           if (!auth?.userId) {
             set.status = 401;
-            return { ok: false, error: "Authentication required" };
+            return { error: "Authentication required", ok: false };
           }
 
           const userId = auth.userId;
 
           logger.info(
             {
-              userId,
+              datasetCount: datasets?.length || 0,
               queryLength: query.length,
               queryPreview: query.substring(0, 100),
-              datasetCount: datasets?.length || 0,
+              userId,
             },
-            "clarification_generate_questions_request",
+            "clarification_generate_questions_request"
           );
 
           try {
             // Generate questions using the agent
-            const result = await clarificationQuestionsAgent({ query, datasets });
+            const result = await clarificationQuestionsAgent({ datasets, query });
 
             // Create session in database
             const session = await createClarificationSession({
-              userId,
               initialQuery: query,
               questions: result.questions,
+              userId,
             });
 
             logger.info(
               {
-                sessionId: session.id,
                 questionCount: result.questions.length,
+                sessionId: session.id,
               },
-              "clarification_session_created",
+              "clarification_session_created"
             );
 
             return {
               ok: true,
-              sessionId: session.id,
               questions: result.questions,
               reasoning: result.reasoning,
+              sessionId: session.id,
             };
           } catch (error) {
             logger.error(
-              { error, userId, query: query.substring(0, 100) },
-              "clarification_generate_questions_failed",
+              { error, query: query.substring(0, 100), userId },
+              "clarification_generate_questions_failed"
             );
             set.status = 500;
             return {
+              error: error instanceof Error ? error.message : "Failed to generate questions",
               ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to generate questions",
             };
           }
-        },
+        }
       )
 
       // Submit answers and get generated plan
-      .post(
-        "/api/clarification/submit-answers",
-        async (ctx): Promise<SubmitAnswersResponse> => {
-          const { body, set, request } = ctx;
-          const parsedBody = body as {
-            sessionId?: string;
-            answers?: ClarificationAnswer[];
-            datasets?: Array<{ filename: string; description?: string }>;
-          };
+      .post("/api/clarification/submit-answers", async (ctx): Promise<SubmitAnswersResponse> => {
+        const { body, set, request } = ctx;
+        const parsedBody = body as {
+          sessionId?: string;
+          answers?: ClarificationAnswer[];
+          datasets?: Array<{ filename: string; description?: string }>;
+        };
 
-          // Validate input
-          const { sessionId, answers, datasets } = parsedBody;
-          if (!sessionId || !answers || !Array.isArray(answers)) {
-            set.status = 400;
+        // Validate input
+        const { sessionId, answers, datasets } = parsedBody;
+        if (!sessionId || !answers || !Array.isArray(answers)) {
+          set.status = 400;
+          return {
+            error: "Missing required fields: sessionId and answers",
+            ok: false,
+          };
+        }
+
+        // Get userId from auth context
+        const auth = request.auth;
+        if (!auth?.userId) {
+          set.status = 401;
+          return { error: "Authentication required", ok: false };
+        }
+
+        const userId = auth.userId;
+
+        logger.info(
+          {
+            answerCount: answers.length,
+            sessionId,
+            userId,
+          },
+          "clarification_submit_answers_request"
+        );
+
+        try {
+          // Get session and verify ownership
+          const session = await getClarificationSessionForUser(sessionId, userId);
+          if (!session) {
+            set.status = 404;
             return {
+              error: "Session not found or access denied",
               ok: false,
-              error: "Missing required fields: sessionId and answers",
             };
           }
 
-          // Get userId from auth context
-          const auth = request.auth;
-          if (!auth?.userId) {
-            set.status = 401;
-            return { ok: false, error: "Authentication required" };
+          // Validate session status
+          if (session.status !== "questions_generated") {
+            set.status = 400;
+            return {
+              error: `Cannot submit answers: session status is ${session.status}`,
+              ok: false,
+            };
           }
 
-          const userId = auth.userId;
+          // Submit answers to database
+          await submitClarificationAnswers(sessionId, answers);
+
+          // Generate plan using the agent
+          const planResult = await clarificationPlanAgent({
+            answers,
+            datasets,
+            query: session.initial_query,
+            questions: session.questions,
+          });
+
+          // Save plan to database
+          const updatedSession = await setClarificationPlan(sessionId, planResult.plan);
 
           logger.info(
             {
-              userId,
               sessionId,
-              answerCount: answers.length,
+              taskCount: planResult.plan.initialTasks.length,
             },
-            "clarification_submit_answers_request",
+            "clarification_plan_generated"
           );
 
-          try {
-            // Get session and verify ownership
-            const session = await getClarificationSessionForUser(
-              sessionId,
-              userId,
-            );
-            if (!session) {
-              set.status = 404;
-              return {
-                ok: false,
-                error: "Session not found or access denied",
-              };
-            }
+          return {
+            ok: true,
+            plan: planResult.plan,
+            sessionId: updatedSession.id,
+          };
+        } catch (error) {
+          logger.error({ error, sessionId, userId }, "clarification_submit_answers_failed");
+          set.status = 500;
+          return {
+            error: error instanceof Error ? error.message : "Failed to submit answers",
+            ok: false,
+          };
+        }
+      })
 
-            // Validate session status
-            if (session.status !== "questions_generated") {
-              set.status = 400;
-              return {
-                ok: false,
-                error: `Cannot submit answers: session status is ${session.status}`,
-              };
-            }
+      // Provide feedback on plan or approve it
+      .post("/api/clarification/plan-feedback", async (ctx): Promise<PlanFeedbackResponse> => {
+        const { body, set, request } = ctx;
+        const parsedBody = body as {
+          sessionId?: string;
+          feedback?: string;
+          approved?: boolean;
+          datasets?: Array<{ filename: string; description?: string }>;
+        };
 
-            // Submit answers to database
-            await submitClarificationAnswers(sessionId, answers);
+        // Validate input
+        const { sessionId, feedback, approved, datasets } = parsedBody;
+        if (!sessionId || typeof approved !== "boolean") {
+          set.status = 400;
+          return {
+            error: "Missing required fields: sessionId and approved",
+            ok: false,
+          };
+        }
 
-            // Generate plan using the agent
-            const planResult = await clarificationPlanAgent({
+        // If not approving, feedback is required
+        if (!approved && (!feedback || feedback.trim().length === 0)) {
+          set.status = 400;
+          return {
+            error: "Feedback is required when not approving the plan",
+            ok: false,
+          };
+        }
+
+        // Get userId from auth context - require authentication
+        const auth = request.auth;
+        if (!auth?.userId) {
+          set.status = 401;
+          return { error: "Authentication required", ok: false };
+        }
+
+        const userId = auth.userId;
+
+        logger.info(
+          {
+            approved,
+            hasFeedback: !!feedback,
+            sessionId,
+            userId,
+          },
+          "clarification_plan_feedback_request"
+        );
+
+        try {
+          // Get session and verify ownership
+          const session = await getClarificationSessionForUser(sessionId, userId);
+          if (!session) {
+            set.status = 404;
+            return {
+              error: "Session not found or access denied",
+              ok: false,
+            };
+          }
+
+          // Validate session status
+          if (session.status !== "plan_generated" && session.status !== "answers_submitted") {
+            set.status = 400;
+            return {
+              error: `Cannot provide feedback: session status is ${session.status}`,
+              ok: false,
+            };
+          }
+
+          // Check that plan exists
+          if (!session.plan) {
+            set.status = 400;
+            return {
+              error: "No plan to provide feedback on",
+              ok: false,
+            };
+          }
+
+          if (approved) {
+            // Approve the plan
+            const updatedSession = await approveClarificationPlan(sessionId);
+
+            logger.info({ sessionId }, "clarification_plan_approved");
+
+            return {
+              approved: true,
+              ok: true,
+              plan: updatedSession.plan!,
+              sessionId: updatedSession.id,
+            };
+          } else {
+            // Regenerate plan based on feedback
+            const planResult = await clarificationPlanRegenerateAgent({
+              answers: session.answers,
+              datasets,
+              feedback: feedback!,
+              previousPlan: session.plan,
               query: session.initial_query,
               questions: session.questions,
-              answers,
-              datasets,
             });
 
-            // Save plan to database
-            const updatedSession = await setClarificationPlan(
+            // Add feedback entry and update plan
+            const updatedSession = await addPlanFeedback({
+              approved: false,
+              feedback: feedback!,
+              previousPlan: session.plan,
+              regeneratedPlan: planResult.plan,
               sessionId,
-              planResult.plan,
-            );
+            });
 
             logger.info(
               {
                 sessionId,
                 taskCount: planResult.plan.initialTasks.length,
               },
-              "clarification_plan_generated",
+              "clarification_plan_regenerated"
             );
 
             return {
+              approved: false,
               ok: true,
-              sessionId: updatedSession.id,
               plan: planResult.plan,
-            };
-          } catch (error) {
-            logger.error(
-              { error, userId, sessionId },
-              "clarification_submit_answers_failed",
-            );
-            set.status = 500;
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to submit answers",
+              sessionId: updatedSession.id,
             };
           }
-        },
-      )
-
-      // Provide feedback on plan or approve it
-      .post(
-        "/api/clarification/plan-feedback",
-        async (ctx): Promise<PlanFeedbackResponse> => {
-          const { body, set, request } = ctx;
-          const parsedBody = body as {
-            sessionId?: string;
-            feedback?: string;
-            approved?: boolean;
-            datasets?: Array<{ filename: string; description?: string }>;
+        } catch (error) {
+          logger.error({ error, sessionId, userId }, "clarification_plan_feedback_failed");
+          set.status = 500;
+          return {
+            error: error instanceof Error ? error.message : "Failed to process feedback",
+            ok: false,
           };
-
-          // Validate input
-          const { sessionId, feedback, approved, datasets } = parsedBody;
-          if (!sessionId || typeof approved !== "boolean") {
-            set.status = 400;
-            return {
-              ok: false,
-              error: "Missing required fields: sessionId and approved",
-            };
-          }
-
-          // If not approving, feedback is required
-          if (!approved && (!feedback || feedback.trim().length === 0)) {
-            set.status = 400;
-            return {
-              ok: false,
-              error: "Feedback is required when not approving the plan",
-            };
-          }
-
-          // Get userId from auth context - require authentication
-          const auth = request.auth;
-          if (!auth?.userId) {
-            set.status = 401;
-            return { ok: false, error: "Authentication required" };
-          }
-
-          const userId = auth.userId;
-
-          logger.info(
-            {
-              userId,
-              sessionId,
-              approved,
-              hasFeedback: !!feedback,
-            },
-            "clarification_plan_feedback_request",
-          );
-
-          try {
-            // Get session and verify ownership
-            const session = await getClarificationSessionForUser(
-              sessionId,
-              userId,
-            );
-            if (!session) {
-              set.status = 404;
-              return {
-                ok: false,
-                error: "Session not found or access denied",
-              };
-            }
-
-            // Validate session status
-            if (
-              session.status !== "plan_generated" &&
-              session.status !== "answers_submitted"
-            ) {
-              set.status = 400;
-              return {
-                ok: false,
-                error: `Cannot provide feedback: session status is ${session.status}`,
-              };
-            }
-
-            // Check that plan exists
-            if (!session.plan) {
-              set.status = 400;
-              return {
-                ok: false,
-                error: "No plan to provide feedback on",
-              };
-            }
-
-            if (approved) {
-              // Approve the plan
-              const updatedSession = await approveClarificationPlan(sessionId);
-
-              logger.info(
-                { sessionId },
-                "clarification_plan_approved",
-              );
-
-              return {
-                ok: true,
-                sessionId: updatedSession.id,
-                plan: updatedSession.plan!,
-                approved: true,
-              };
-            } else {
-              // Regenerate plan based on feedback
-              const planResult = await clarificationPlanRegenerateAgent({
-                query: session.initial_query,
-                questions: session.questions,
-                answers: session.answers,
-                previousPlan: session.plan,
-                feedback: feedback!,
-                datasets,
-              });
-
-              // Add feedback entry and update plan
-              const updatedSession = await addPlanFeedback({
-                sessionId,
-                feedback: feedback!,
-                previousPlan: session.plan,
-                regeneratedPlan: planResult.plan,
-                approved: false,
-              });
-
-              logger.info(
-                {
-                  sessionId,
-                  taskCount: planResult.plan.initialTasks.length,
-                },
-                "clarification_plan_regenerated",
-              );
-
-              return {
-                ok: true,
-                sessionId: updatedSession.id,
-                plan: planResult.plan,
-                approved: false,
-              };
-            }
-          } catch (error) {
-            logger.error(
-              { error, userId, sessionId },
-              "clarification_plan_feedback_failed",
-            );
-            set.status = 500;
-            return {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to process feedback",
-            };
-          }
-        },
-      )
+        }
+      })
 
       // Get session state
-      .get(
-        "/api/clarification/:sessionId",
-        async (ctx): Promise<GetSessionResponse> => {
-          const { params, set, request } = ctx;
-          const { sessionId } = params;
+      .get("/api/clarification/:sessionId", async (ctx): Promise<GetSessionResponse> => {
+        const { params, set, request } = ctx;
+        const { sessionId } = params;
 
-          // Get userId from auth context - require authentication
-          const auth = request.auth;
-          if (!auth?.userId) {
-            set.status = 401;
-            return { ok: false, error: "Authentication required" };
-          }
+        // Get userId from auth context - require authentication
+        const auth = request.auth;
+        if (!auth?.userId) {
+          set.status = 401;
+          return { error: "Authentication required", ok: false };
+        }
 
-          const userId = auth.userId;
+        const userId = auth.userId;
 
-          logger.info(
-            { userId, sessionId },
-            "clarification_get_session_request",
-          );
+        logger.info({ sessionId, userId }, "clarification_get_session_request");
 
-          try {
-            // Get session and verify ownership
-            const session = await getClarificationSessionForUser(
-              sessionId,
-              userId,
-            );
-            if (!session) {
-              set.status = 404;
-              return {
-                ok: false,
-                error: "Session not found or access denied",
-              };
-            }
-
+        try {
+          // Get session and verify ownership
+          const session = await getClarificationSessionForUser(sessionId, userId);
+          if (!session) {
+            set.status = 404;
             return {
-              ok: true,
-              session: {
-                id: session.id,
-                status: session.status,
-                initial_query: session.initial_query,
-                questions: session.questions,
-                answers: session.answers,
-                plan: session.plan,
-                created_at: session.created_at,
-                updated_at: session.updated_at,
-              },
-            };
-          } catch (error) {
-            logger.error(
-              { error, userId, sessionId },
-              "clarification_get_session_failed",
-            );
-            set.status = 500;
-            return {
+              error: "Session not found or access denied",
               ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to get session",
             };
           }
-        },
-      ),
+
+          return {
+            ok: true,
+            session: {
+              answers: session.answers,
+              created_at: session.created_at,
+              id: session.id,
+              initial_query: session.initial_query,
+              plan: session.plan,
+              questions: session.questions,
+              status: session.status,
+              updated_at: session.updated_at,
+            },
+          };
+        } catch (error) {
+          logger.error({ error, sessionId, userId }, "clarification_get_session_failed");
+          set.status = 500;
+          return {
+            error: error instanceof Error ? error.message : "Failed to get session",
+            ok: false,
+          };
+        }
+      })
 );

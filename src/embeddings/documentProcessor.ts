@@ -32,9 +32,7 @@ export class DocumentProcessor {
           const rawContent = await fs.readFile(filePath, "utf-8");
           const parsed = matter<Record<string, unknown>>(rawContent);
           frontMatterData =
-            parsed.attributes && typeof parsed.attributes === "object"
-              ? parsed.attributes
-              : {};
+            parsed.attributes && typeof parsed.attributes === "object" ? parsed.attributes : {};
           content = parsed.body;
           break;
 
@@ -51,8 +49,7 @@ export class DocumentProcessor {
             await parser.destroy();
             content = pdfResult.text;
           } catch (pdfError: unknown) {
-            const message =
-              pdfError instanceof Error ? pdfError.message : String(pdfError);
+            const message = pdfError instanceof Error ? pdfError.message : String(pdfError);
             logger.error(`PDF parsing error for ${fileName}: ${message}`);
             throw new Error(`Failed to parse PDF ${fileName}: ${message}`);
           }
@@ -64,15 +61,15 @@ export class DocumentProcessor {
       }
 
       return {
-        title: fileName,
         content: content.trim(),
         metadata: {
           filePath,
-          type: ext.slice(1),
-          size: stats.size,
           lastModified: stats.mtime,
+          size: stats.size,
+          type: ext.slice(1),
           ...frontMatterData,
         },
+        title: fileName,
       };
     } catch (error) {
       logger.error({ err: error }, `Error processing ${filePath}`);

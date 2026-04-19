@@ -1,9 +1,4 @@
-import type {
-  LLMProvider,
-  LLMRequest,
-  LLMResponse,
-  WebSearchResult,
-} from "./types";
+import type { LLMProvider, LLMRequest, LLMResponse, WebSearchResult } from "./types";
 
 export abstract class LLMAdapter {
   protected provider: LLMProvider;

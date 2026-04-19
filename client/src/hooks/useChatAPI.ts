@@ -48,9 +48,7 @@ export interface UseChatAPIReturn {
   isLoading: boolean;
   error: string;
   sendMessage: (params: SendMessageParams) => Promise<ChatResponse>;
-  sendDeepResearchMessage: (
-    params: SendMessageParams,
-  ) => Promise<DeepResearchResponse>;
+  sendDeepResearchMessage: (params: SendMessageParams) => Promise<DeepResearchResponse>;
   clearError: () => void;
   clearLoading: () => void;
 }
@@ -77,7 +75,7 @@ export function useChatAPI(): UseChatAPIReturn {
     pollUrl: string,
     messageId: string,
     maxAttempts = 180, // 3 minutes for regular chat
-    intervalMs = 1000,
+    intervalMs = 1000
   ): Promise<{ text: string; messageId: string; files?: ChatResponse["files"] }> => {
     const authToken = getAuthToken();
     const headers: Record<string, string> = {};
@@ -88,9 +86,9 @@ export function useChatAPI(): UseChatAPIReturn {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const response = await fetch(pollUrl, {
-          method: "GET",
-          headers,
           credentials: "include",
+          headers,
+          method: "GET",
         });
 
         if (!response.ok) {
@@ -102,9 +100,9 @@ export function useChatAPI(): UseChatAPIReturn {
 
         if (data.status === "completed" && data.result) {
           return {
-            text: data.result.text || data.result.response || "",
-            messageId,
             files: data.result.files,
+            messageId,
+            text: data.result.text || data.result.response || "",
           };
         }
 
@@ -126,9 +124,7 @@ export function useChatAPI(): UseChatAPIReturn {
   /**
    * Send a chat message to the API
    */
-  const sendMessage = async (
-    params: SendMessageParams,
-  ): Promise<ChatResponse> => {
+  const sendMessage = async (params: SendMessageParams): Promise<ChatResponse> => {
     setIsLoading(true);
     setError("");
 
@@ -165,10 +161,10 @@ export function useChatAPI(): UseChatAPIReturn {
       }
 
       const response = await fetch("/api/chat", {
-        method: "POST",
         body: formData,
         credentials: "include",
         headers,
+        method: "POST",
       });
 
       // Handle 401 Unauthorized - session expired
@@ -190,9 +186,9 @@ export function useChatAPI(): UseChatAPIReturn {
         console.log("[useChatAPI] Queue mode detected, polling for result...", data);
         const result = await pollForResult(data.pollUrl, data.messageId);
         return {
-          text: result.text,
-          messageId: result.messageId,
           files: result.files,
+          messageId: result.messageId,
+          text: result.text,
         };
       }
 
@@ -201,14 +197,12 @@ export function useChatAPI(): UseChatAPIReturn {
       }
 
       return {
-        text: data.text,
         files: data.files,
+        text: data.text,
       };
     } catch (err: unknown) {
       const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Failed to send message. Please try again.";
+        err instanceof Error ? err.message : "Failed to send message. Please try again.";
       setError(errorMessage);
 
       if (!errorMessage.includes("Session expired")) {
@@ -225,7 +219,7 @@ export function useChatAPI(): UseChatAPIReturn {
    * Send a deep research request to the API
    */
   const sendDeepResearchMessage = async (
-    params: SendMessageParams,
+    params: SendMessageParams
   ): Promise<DeepResearchResponse> => {
     setIsLoading(true);
     setError("");
@@ -263,10 +257,10 @@ export function useChatAPI(): UseChatAPIReturn {
       }
 
       const response = await fetch("/api/deep-research/start", {
-        method: "POST",
         body: formData,
         credentials: "include",
         headers,
+        method: "POST",
       });
 
       // Handle 401 Unauthorized
@@ -280,10 +274,10 @@ export function useChatAPI(): UseChatAPIReturn {
       // If validation failed (status 400 with rejected status), return the error
       if (response.status === 400 && data.status === "rejected") {
         return {
-          messageId: null,
           conversationId: data.conversationId,
-          status: "rejected",
           error: data.error,
+          messageId: null,
+          status: "rejected",
         };
       }
 
@@ -300,15 +294,13 @@ export function useChatAPI(): UseChatAPIReturn {
       }
 
       return {
-        messageId: data.messageId ?? null,
         conversationId: data.conversationId ?? conversationId,
+        messageId: data.messageId ?? null,
         status: "processing",
       };
     } catch (err: unknown) {
       const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Failed to start deep research. Please try again.";
+        err instanceof Error ? err.message : "Failed to start deep research. Please try again.";
       setError(errorMessage);
       setIsLoading(false);
 
@@ -338,11 +330,11 @@ export function useChatAPI(): UseChatAPIReturn {
   };
 
   return {
-    isLoading,
-    error,
-    sendMessage,
-    sendDeepResearchMessage,
     clearError,
     clearLoading,
+    error,
+    isLoading,
+    sendDeepResearchMessage,
+    sendMessage,
   };
 }

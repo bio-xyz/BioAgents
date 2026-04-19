@@ -32,7 +32,7 @@ function s3ErrorFields(error: unknown): {
     metadata && typeof metadata === "object" && typeof metadata.httpStatusCode === "number"
       ? metadata.httpStatusCode
       : undefined;
-  return { name, message, httpStatusCode };
+  return { httpStatusCode, message, name };
 }
 
 export class S3StorageProvider extends StorageProvider {
@@ -54,11 +54,11 @@ export class S3StorageProvider extends StorageProvider {
     const isS3Compatible = !!config.endpoint;
 
     this.client = new S3Client({
-      region: config.region,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
+      region: config.region,
       ...(config.endpoint && { endpoint: config.endpoint }),
       // Disable SDK checksum features for S3-compatible services
       // This prevents x-amz-checksum-* headers that cause CORS/compatibility issues
@@ -70,22 +70,18 @@ export class S3StorageProvider extends StorageProvider {
 
     if (logger) {
       logger.info(
-        `S3 Storage Provider initialized for bucket: ${this.bucket}${isS3Compatible ? " (S3-compatible mode)" : ""}`,
+        `S3 Storage Provider initialized for bucket: ${this.bucket}${isS3Compatible ? " (S3-compatible mode)" : ""}`
       );
     }
   }
 
-  async upload(
-    path: string,
-    buffer: Buffer,
-    mimeType: string,
-  ): Promise<string> {
+  async upload(path: string, buffer: Buffer, mimeType: string): Promise<string> {
     try {
       const command = new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: path,
         Body: buffer,
+        Bucket: this.bucket,
         ContentType: mimeType,
+        Key: path,
       });
 
       await this.client.send(command);
@@ -123,13 +119,13 @@ export class S3StorageProvider extends StorageProvider {
       if (logger) {
         logger.error(
           {
-            path,
             bucket: this.bucket,
-            errorName: fields.name,
             errorCode: fields.httpStatusCode,
             errorMessage: fields.message,
+            errorName: fields.name,
+            path,
           },
-          "s3_download_failed",
+          "s3_download_failed"
         );
       }
       throw new Error(`S3 download failed: ${fields.name || "UnknownError"} - ${path}`);
@@ -160,8 +156,8 @@ export class S3StorageProvider extends StorageProvider {
 
       if (logger) {
         logger.info(
-          { path, requestedRange: `${start}-${end}`, receivedBytes: byteArray.length },
-          "s3_range_download_success",
+          { path, receivedBytes: byteArray.length, requestedRange: `${start}-${end}` },
+          "s3_range_download_success"
         );
       }
 
@@ -171,14 +167,14 @@ export class S3StorageProvider extends StorageProvider {
       if (logger) {
         logger.error(
           {
-            path,
             bucket: this.bucket,
-            range: `${start}-${end}`,
-            errorName: fields.name,
             errorCode: fields.httpStatusCode,
             errorMessage: fields.message,
+            errorName: fields.name,
+            path,
+            range: `${start}-${end}`,
           },
-          "s3_range_download_failed",
+          "s3_range_download_failed"
         );
       }
       throw new Error(`S3 range download failed: ${fields.name || "UnknownError"} - ${path}`);
@@ -231,7 +227,7 @@ export class S3StorageProvider extends StorageProvider {
   async getPresignedUrl(
     path: string,
     expiresIn: number = 3600,
-    filename?: string,
+    filename?: string
   ): Promise<string> {
     try {
       const command = new GetObjectCommand({
@@ -245,22 +241,15 @@ export class S3StorageProvider extends StorageProvider {
       const url = await getSignedUrl(this.client, command, { expiresIn });
 
       if (logger) {
-        logger.info(
-          `Generated presigned URL for S3: ${path}, expires in ${expiresIn}s`,
-        );
+        logger.info(`Generated presigned URL for S3: ${path}, expires in ${expiresIn}s`);
       }
 
       return url;
     } catch (error) {
       if (logger) {
-        logger.error(
-          { err: error },
-          `Failed to generate presigned URL for S3: ${path}`,
-        );
+        logger.error({ err: error }, `Failed to generate presigned URL for S3: ${path}`);
       }
-      throw new Error(
-        `S3 presigned URL generation failed: ${(error as Error).message}`,
-      );
+      throw new Error(`S3 presigned URL generation failed: ${(error as Error).message}`);
     }
   }
 
@@ -268,13 +257,13 @@ export class S3StorageProvider extends StorageProvider {
     path: string,
     contentType: string,
     expiresIn: number = 3600,
-    contentLength?: number,
+    contentLength?: number
   ): Promise<string> {
     try {
       const command = new PutObjectCommand({
         Bucket: this.bucket,
-        Key: path,
         ContentType: contentType,
+        Key: path,
         // When ContentLength is included, S3 will REJECT uploads with different size
         // This prevents abuse: user cannot upload 5GB using a URL signed for 50MB
         ...(contentLength && { ContentLength: contentLength }),
@@ -285,25 +274,20 @@ export class S3StorageProvider extends StorageProvider {
       if (logger) {
         logger.info(
           {
-            path,
-            expiresIn,
             contentLength: contentLength || "not enforced",
+            expiresIn,
+            path,
           },
-          "presigned_upload_url_generated",
+          "presigned_upload_url_generated"
         );
       }
 
       return url;
     } catch (error) {
       if (logger) {
-        logger.error(
-          { err: error },
-          `Failed to generate presigned upload URL for S3: ${path}`,
-        );
+        logger.error({ err: error }, `Failed to generate presigned upload URL for S3: ${path}`);
       }
-      throw new Error(
-        `S3 presigned upload URL generation failed: ${(error as Error).message}`,
-      );
+      throw new Error(`S3 presigned upload URL generation failed: ${(error as Error).message}`);
     }
   }
 }

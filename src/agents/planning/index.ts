@@ -2,12 +2,7 @@ import character from "../../character";
 import { LLM } from "../../llm/provider";
 import { parseLLMProviderName } from "../../llm/types";
 import { getUploadPath } from "../../storage";
-import type {
-  ConversationState,
-  Message,
-  PlanTask,
-  State,
-} from "../../types/core";
+import type { ConversationState, Message, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { extractPlanningResult } from "../../utils/planningJsonExtractor";
 import { formatFileSize } from "../fileUpload/utils";
@@ -22,10 +17,7 @@ import {
  * - For artifacts: looks up path by artifact ID from completed tasks
  * - For uploaded files: uses uploads/{filename} path
  */
-function resolveDatasetPaths(
-  newTasks: PlanTask[],
-  existingPlan: PlanTask[],
-): PlanTask[] {
+function resolveDatasetPaths(newTasks: PlanTask[], existingPlan: PlanTask[]): PlanTask[] {
   const artifactMap = new Map<string, string>();
 
   for (const task of existingPlan) {
@@ -77,11 +69,17 @@ export async function planningAgent(input: {
   usageType?: TokenUsageType;
   researchMode?: ResearchMode;
 }): Promise<PlanningResult> {
-  const { state, conversationState, message, mode = "initial", usageType, researchMode = "semi-autonomous" } = input;
+  const {
+    state,
+    conversationState,
+    message,
+    mode = "initial",
+    usageType,
+    researchMode = "semi-autonomous",
+  } = input;
 
   // Check if plan is empty (indicates first planning or fresh start)
-  const hasPlan =
-    conversationState.values.plan && conversationState.values.plan.length > 0;
+  const hasPlan = conversationState.values.plan && conversationState.values.plan.length > 0;
 
   let result: PlanningResult;
 
@@ -127,49 +125,40 @@ async function generateInitialPlan(
   message: Message,
   conversationState: ConversationState,
   usageType?: TokenUsageType,
-  researchMode: ResearchMode = "semi-autonomous",
+  researchMode: ResearchMode = "semi-autonomous"
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-  const planningApiKey =
-    process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const planningApiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!planningApiKey) {
-    throw new Error(
-      `${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
     apiKey: planningApiKey,
+    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
   });
 
   // Build context (may include uploaded datasets even if no plan exists)
-  const conversationId =
-    conversationState.values.conversationId || message.conversation_id;
-  const context = await buildContextFromState(
-    conversationState,
-    conversationId,
-  );
+  const conversationId = conversationState.values.conversationId || message.conversation_id;
+  const context = await buildContextFromState(conversationState, conversationId);
 
-  const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace(
-    "{context}",
-    context,
-  ).replace("{userMessage}", message.question)
+  const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace("{context}", context)
+    .replace("{userMessage}", message.question)
     .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
-    model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
+    maxTokens: 1024,
+    messageId: message.id,
     messages: [
       {
-        role: "user" as const,
         content: planningPrompt,
+        role: "user" as const,
       },
     ],
-    maxTokens: 1024,
-    thinkingBudget: 2048,
+    model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
     systemInstruction: character.system,
-    messageId: message.id,
+    thinkingBudget: 2048,
     usageType,
   });
 
@@ -180,14 +169,14 @@ async function generateInitialPlan(
 
   logger.info(
     {
-      mode: "initial_no_plan",
       currentObjective: result.currentObjective,
+      mode: "initial_no_plan",
       plan: result.plan.map(
         (t) =>
-          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`,
+          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`
       ),
     },
-    "initial_plan_generated",
+    "initial_plan_generated"
   );
 
   return result;
@@ -202,34 +191,26 @@ async function generatePlan(
   message: Message,
   mode: PlanningMode = "initial",
   usageType?: TokenUsageType,
-  researchMode: ResearchMode = "semi-autonomous",
+  researchMode: ResearchMode = "semi-autonomous"
 ): Promise<PlanningResult> {
   const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-  const planningApiKey =
-    process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const planningApiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!planningApiKey) {
-    throw new Error(
-      `${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
     apiKey: planningApiKey,
+    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
   });
 
   // Build context from latest results
-  const conversationId =
-    conversationState.values.conversationId || state.values.conversationId;
-  const context = await buildContextFromState(
-    conversationState,
-    conversationId,
-  );
+  const conversationId = conversationState.values.conversationId || state.values.conversationId;
+  const context = await buildContextFromState(conversationState, conversationId);
 
   // Select prompt based on mode
-  const promptTemplate =
-    mode === "initial" ? INITIAL_PLANNING_PROMPT : NEXT_PLANNING_PROMPT;
+  const promptTemplate = mode === "initial" ? INITIAL_PLANNING_PROMPT : NEXT_PLANNING_PROMPT;
 
   // Replace placeholders
   const planningPrompt = promptTemplate
@@ -238,17 +219,17 @@ async function generatePlan(
     .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
-    model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
+    maxTokens: 1024,
+    messageId: message.id,
     messages: [
       {
-        role: "user" as const,
         content: planningPrompt,
+        role: "user" as const,
       },
     ],
-    maxTokens: 1024,
-    thinkingBudget: 2048,
+    model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-pro",
     systemInstruction: character.system,
-    messageId: message.id,
+    thinkingBudget: 2048,
     usageType,
   });
 
@@ -259,14 +240,14 @@ async function generatePlan(
 
   logger.info(
     {
-      mode,
       currentObjective: result.currentObjective,
+      mode,
       plan: result.plan.map(
         (t) =>
-          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`,
+          `${t.type} task: ${t.objective} datasets: ${t.datasets?.map((d) => `${d.filename} (${d.description})`).join(", ") || "none"}`
       ),
     },
-    "plan_generated",
+    "plan_generated"
   );
 
   return result;
@@ -277,7 +258,7 @@ async function generatePlan(
  */
 async function buildContextFromState(
   conversationState: ConversationState,
-  conversationId?: string,
+  conversationId?: string
 ): Promise<string> {
   const contextParts: string[] = [];
 
@@ -341,9 +322,7 @@ async function buildContextFromState(
               parts.push(`Assistant: ${msg.summary}`);
             } else if (msg.content) {
               const content =
-                msg.content.length > 300
-                  ? msg.content.substring(0, 300) + "..."
-                  : msg.content;
+                msg.content.length > 300 ? msg.content.substring(0, 300) + "..." : msg.content;
               parts.push(`Assistant: ${content}`);
             }
 
@@ -353,46 +332,41 @@ async function buildContextFromState(
 
         if (conversationHistory) {
           contextParts.push(
-            `Recent Conversation History (last ${orderedMessages.length} exchanges):\n${conversationHistory}`,
+            `Recent Conversation History (last ${orderedMessages.length} exchanges):\n${conversationHistory}`
           );
         }
       }
     } catch (error) {
-      logger.warn(
-        { error },
-        "Failed to fetch conversation history for planning",
-      );
+      logger.warn({ error }, "Failed to fetch conversation history for planning");
     }
   }
 
   // Add hypothesis if available
   if (conversationState.values.currentHypothesis) {
-    contextParts.push(
-      `Current Hypothesis: ${conversationState.values.currentHypothesis}`,
-    );
+    contextParts.push(`Current Hypothesis: ${conversationState.values.currentHypothesis}`);
   }
 
   if (conversationState.values.objective) {
     contextParts.push(
-      `Main Objective (the user message that kicked off the research): ${conversationState.values.objective}`,
+      `Main Objective (the user message that kicked off the research): ${conversationState.values.objective}`
     );
   }
 
   if (conversationState.values.evolvingObjective) {
     contextParts.push(
-      `Evolving Research Direction (the high-level research goal, evolves slowly across iterations): ${conversationState.values.evolvingObjective}`,
+      `Evolving Research Direction (the high-level research goal, evolves slowly across iterations): ${conversationState.values.evolvingObjective}`
     );
   }
 
   if (conversationState.values.currentObjective) {
     contextParts.push(
-      `Current Objective (the current goal of the research, updated after each research iteration): ${conversationState.values.currentObjective}`,
+      `Current Objective (the current goal of the research, updated after each research iteration): ${conversationState.values.currentObjective}`
     );
   }
 
   if (conversationState.values.keyInsights?.length) {
     contextParts.push(
-      `Key Insights:\n${conversationState.values.keyInsights.map((insight, i) => `  ${i + 1}. ${insight}`).join("\n")}`,
+      `Key Insights:\n${conversationState.values.keyInsights.map((insight, i) => `  ${i + 1}. ${insight}`).join("\n")}`
     );
   }
 
@@ -421,14 +395,14 @@ async function buildContextFromState(
           const sizeStr = ds.size ? ` [${formatFileSize(ds.size)}]` : "";
           return `  - ${ds.filename}${sizeStr} (ID: ${ds.id}): ${ds.description}`;
         })
-        .join("\n")}`,
+        .join("\n")}`
     );
   }
 
   // Add artifacts from completed analysis tasks
   const completedAnalysisTasks =
     conversationState.values.plan?.filter(
-      (task) => task.type === "ANALYSIS" && task.end && task.artifacts?.length,
+      (task) => task.type === "ANALYSIS" && task.end && task.artifacts?.length
     ) || [];
 
   if (completedAnalysisTasks.length > 0) {
@@ -436,13 +410,11 @@ async function buildContextFromState(
       .flatMap((task) =>
         task.artifacts!.map((artifact) => {
           return `  - ${artifact.name} (id: ${artifact.id}) [from ${task.id}]: ${artifact.description}`;
-        }),
+        })
       )
       .join("\n");
 
-    contextParts.push(
-      `Available Artifacts (from completed analysis tasks):\n${artifactsText}`,
-    );
+    contextParts.push(`Available Artifacts (from completed analysis tasks):\n${artifactsText}`);
   }
 
   // Add suggested next steps if available (from previous iteration's "next" planning)
@@ -457,12 +429,8 @@ async function buildContextFromState(
       })
       .join("\n");
 
-    contextParts.push(
-      `Suggested Next Steps (from previous iteration):\n${suggestionsText}`,
-    );
+    contextParts.push(`Suggested Next Steps (from previous iteration):\n${suggestionsText}`);
   }
 
-  return contextParts.length > 0
-    ? contextParts.join("\n")
-    : "No previous results available";
+  return contextParts.length > 0 ? contextParts.join("\n") : "No previous results available";
 }

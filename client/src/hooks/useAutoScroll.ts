@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'preact/hooks';
-import type { Ref } from 'preact';
+import type { Ref } from "preact";
+import { useEffect, useRef } from "preact/hooks";
 
 export interface UseAutoScrollReturn {
   containerRef: Ref<HTMLDivElement>;

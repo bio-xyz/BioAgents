@@ -1,23 +1,15 @@
 import type { WebSearchResult } from "../llm/types";
-import type {
-  ConversationState,
-  ConversationStateValues,
-  State,
-  StateValues,
-} from "../types/core";
+import type { ConversationState, ConversationStateValues, State, StateValues } from "../types/core";
 import logger from "./logger";
 
-export function addVariablesToState(
-  state: State,
-  variables: Partial<StateValues>,
-): void;
+export function addVariablesToState(state: State, variables: Partial<StateValues>): void;
 export function addVariablesToState(
   state: ConversationState,
-  variables: Partial<ConversationStateValues>,
+  variables: Partial<ConversationStateValues>
 ): void;
 export function addVariablesToState(
   state: State | ConversationState,
-  variables: Partial<StateValues> | Partial<ConversationStateValues>,
+  variables: Partial<StateValues> | Partial<ConversationStateValues>
 ) {
   state.values = {
     ...state.values,
@@ -43,9 +35,7 @@ export function endStep(state: State, stepName: string) {
   state.values.steps[stepName] = step;
 }
 
-export function cleanWebSearchResults(
-  webSearchResults: WebSearchResult[],
-): WebSearchResult[] {
+export function cleanWebSearchResults(webSearchResults: WebSearchResult[]): WebSearchResult[] {
   return webSearchResults.map((result) => {
     let cleanedTitle = result.title;
 
@@ -86,7 +76,7 @@ export function cleanWebSearchResults(
  * @returns Formatted conversation history string
  */
 export function formatConversationHistory(
-  messages: Array<{ question?: string; content?: string }>,
+  messages: Array<{ question?: string; content?: string }>
 ): string {
   if (!messages || messages.length === 0) {
     return "";
@@ -111,7 +101,7 @@ export function parseKeyValueXml(text: string): Record<string, unknown> | null {
 
   // First, try to find a specific <response> block (the one we actually want)
   // Use a more permissive regex to handle cases where there might be multiple XML blocks
-  let xmlBlockMatch = text.match(/<response>([\s\S]*?)<\/response>/);
+  const xmlBlockMatch = text.match(/<response>([\s\S]*?)<\/response>/);
   let xmlContent: string;
 
   if (xmlBlockMatch) {
@@ -157,9 +147,7 @@ export function parseKeyValueXml(text: string): Record<string, unknown> | null {
         result[key] = value;
       }
     } else {
-      logger.warn(
-        `Mismatched XML tags found: <${match[1]}> and </${match[3]}>`,
-      );
+      logger.warn(`Mismatched XML tags found: <${match[1]}> and </${match[3]}>`);
       // Potentially skip this mismatched pair or return null depending on strictness needed
     }
   }

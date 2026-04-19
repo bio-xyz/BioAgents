@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { getMimeTypeFromFilename, getStorageProvider } from "../../storage";
+import { awaitEdisonTask, startEdisonTask } from "../../utils/edison";
 import logger from "../../utils/logger";
-import {
-  startEdisonTask,
-  awaitEdisonTask,
-} from "../../utils/edison";
 import type { Dataset } from "./index";
 
 /**
@@ -14,7 +11,7 @@ export async function analyzeWithEdison(
   objective: string,
   datasets: Dataset[],
   userId: string,
-  conversationStateId: string,
+  conversationStateId: string
 ): Promise<{ output: string; jobId: string }> {
   const EDISON_API_URL = process.env.EDISON_API_URL;
   const EDISON_API_KEY = process.env.EDISON_API_KEY;
@@ -23,10 +20,7 @@ export async function analyzeWithEdison(
     throw new Error("Edison API URL or API key not configured");
   }
 
-  logger.info(
-    { objective, datasetCount: datasets.length },
-    "starting_edison_analysis",
-  );
+  logger.info({ datasetCount: datasets.length, objective }, "starting_edison_analysis");
 
   // Upload files to Edison storage and get entry IDs
   const dataStorageEntryIds = await uploadFilesToEdison(
@@ -34,12 +28,12 @@ export async function analyzeWithEdison(
     EDISON_API_KEY,
     datasets,
     userId,
-    conversationStateId,
+    conversationStateId
   );
 
   logger.info(
     { dataStorageEntryIds, datasetCount: datasets.length },
-    "files_uploaded_to_edison_storage",
+    "files_uploaded_to_edison_storage"
   );
 
   // Format query with dataset information (no file content)
@@ -51,20 +45,16 @@ export async function analyzeWithEdison(
     EDISON_API_KEY,
     "ANALYSIS",
     finalQuery,
-    dataStorageEntryIds,
+    dataStorageEntryIds
   );
 
   logger.info(
-    { taskId: taskResponse.task_id, datasetCount: datasets.length },
-    "edison_analysis_task_started_awaiting_completion",
+    { datasetCount: datasets.length, taskId: taskResponse.task_id },
+    "edison_analysis_task_started_awaiting_completion"
   );
 
   // Poll for task completion
-  const result = await awaitEdisonTask(
-    EDISON_API_URL,
-    EDISON_API_KEY,
-    taskResponse.task_id,
-  );
+  const result = await awaitEdisonTask(EDISON_API_URL, EDISON_API_KEY, taskResponse.task_id);
 
   if (result.error) {
     throw new Error(`Edison analysis task failed: ${result.error}`);
@@ -73,8 +63,8 @@ export async function analyzeWithEdison(
   logger.info({ taskId: taskResponse.task_id }, "edison_analysis_completed");
 
   return {
-    output: result.answer || "No answer received from Edison",
     jobId: taskResponse.task_id,
+    output: result.answer || "No answer received from Edison",
   };
 }
 
@@ -87,7 +77,7 @@ async function uploadFilesToEdison(
   apiKey: string,
   datasets: Dataset[],
   userId: string,
-  conversationStateId: string,
+  conversationStateId: string
 ): Promise<string[]> {
   if (!datasets || datasets.length === 0) {
     return [];
@@ -98,24 +88,18 @@ async function uploadFilesToEdison(
   for (const dataset of datasets) {
     try {
       if (!dataset.path) {
-        logger.warn(
-          { filename: dataset.filename },
-          "skipping_file_no_artifact_path",
-        );
+        logger.warn({ filename: dataset.filename }, "skipping_file_no_artifact_path");
         continue;
       }
 
       const fileBuffer = await fetchFileBufferFromStorage(
         userId,
         conversationStateId,
-        dataset.path,
+        dataset.path
       );
 
       if (!fileBuffer) {
-        logger.warn(
-          { filename: dataset.filename },
-          "skipping_file_upload_no_buffer",
-        );
+        logger.warn({ filename: dataset.filename }, "skipping_file_upload_no_buffer");
         continue;
       }
 
@@ -126,47 +110,37 @@ async function uploadFilesToEdison(
       });
       formData.append("file", blob, dataset.filename);
       formData.append("name", dataset.filename);
-      formData.append(
-        "description",
-        dataset.description || `Dataset: ${dataset.filename}`,
-      );
+      formData.append("description", dataset.description || `Dataset: ${dataset.filename}`);
 
       // Upload to Edison storage
       const endpoint = `${apiUrl}/api/v1/edison/storage/upload/file`;
       const response = await fetch(endpoint, {
-        method: "POST",
+        body: formData,
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
-        body: formData,
+        method: "POST",
       });
 
       if (!response.ok) {
         const errorText = await response.text();
         logger.error(
-          { filename: dataset.filename, status: response.status, errorText },
-          "edison_file_upload_failed",
+          { errorText, filename: dataset.filename, status: response.status },
+          "edison_file_upload_failed"
         );
-        throw new Error(
-          `Failed to upload ${dataset.filename}: ${response.status} - ${errorText}`,
-        );
+        throw new Error(`Failed to upload ${dataset.filename}: ${response.status} - ${errorText}`);
       }
 
       const uploadRaw: unknown = await response.json();
-      const uploadResult = z
-        .object({ entry_id: z.string() })
-        .parse(uploadRaw);
+      const uploadResult = z.object({ entry_id: z.string() }).parse(uploadRaw);
       entryIds.push(uploadResult.entry_id);
 
       logger.info(
-        { filename: dataset.filename, entryId: uploadResult.entry_id },
-        "file_uploaded_to_edison",
+        { entryId: uploadResult.entry_id, filename: dataset.filename },
+        "file_uploaded_to_edison"
       );
     } catch (error) {
-      logger.error(
-        { error, filename: dataset.filename },
-        "failed_to_upload_file_to_edison",
-      );
+      logger.error({ error, filename: dataset.filename }, "failed_to_upload_file_to_edison");
       throw error;
     }
   }
@@ -178,10 +152,7 @@ async function uploadFilesToEdison(
  * Format the analysis query with dataset information
  * Does not include file content - files are uploaded separately
  */
-function formatQueryWithDatasetInfo(
-  objective: string,
-  datasets: Dataset[],
-): string {
+function formatQueryWithDatasetInfo(objective: string, datasets: Dataset[]): string {
   if (!datasets || datasets.length === 0) {
     return objective;
   }
@@ -212,7 +183,7 @@ Note: Full dataset files have been uploaded and are available for analysis.`;
 async function fetchFileBufferFromStorage(
   userId: string,
   conversationStateId: string,
-  relativePath: string,
+  relativePath: string
 ): Promise<Buffer | null> {
   const storageProvider = getStorageProvider();
 
@@ -222,15 +193,11 @@ async function fetchFileBufferFromStorage(
   }
 
   try {
-    return await storageProvider.fetchFileByRelativePath(
-      userId,
-      conversationStateId,
-      relativePath,
-    );
+    return await storageProvider.fetchFileByRelativePath(userId, conversationStateId, relativePath);
   } catch (error) {
     logger.error(
-      { error, userId, conversationStateId, relativePath },
-      "failed_to_download_file_from_storage",
+      { conversationStateId, error, relativePath, userId },
+      "failed_to_download_file_from_storage"
     );
     throw error;
   }

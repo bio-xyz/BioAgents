@@ -16,24 +16,18 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { getServiceClient } from "../../db/client";
-import {
-  getConversation,
-  getConversationState,
-  getUser,
-} from "../../db/operations";
+import { getConversation, getConversationState, getUser } from "../../db/operations";
 import { LLM } from "../../llm/provider";
 import { parseLLMProviderName } from "../../llm/types";
 import { getStorageProvider } from "../../storage";
-import type {
-  ConversationStateValues,
-  Discovery,
-  PlanTask,
-} from "../../types/core";
+import type { ConversationStateValues, Discovery, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
 import type { PaperGenerationStage } from "../queue/types";
-import { fetchAndWriteBibtex } from "./bib/fetchBibtex";
-import { extractCitationKeys } from "./bib/extractKeys";
 import type { CitationKeyInfo } from "./bib/extractKeys";
+import { extractCitationKeys } from "./bib/extractKeys";
+import type { ExtractedRef } from "./bib/extractRefs";
+import { deduplicateRefs, extractReferences } from "./bib/extractRefs";
+import { fetchAndWriteBibtex } from "./bib/fetchBibtex";
 import { pandocConvert } from "./convert/pandocConvert";
 import { assembleMarkdown } from "./markdown/assembleMarkdown";
 import { validateMarkdown } from "./markdown/validateMarkdown";
@@ -42,19 +36,9 @@ import {
   generateDiscoverySectionPrompt,
   generateFrontMatterPrompt,
 } from "./prompts";
-import type {
-  DiscoverySection,
-  FigureInfo,
-  PaperGenerationResult,
-  PaperMetadata,
-} from "./types";
+import type { DiscoverySection, FigureInfo, PaperGenerationResult, PaperMetadata } from "./types";
 import { downloadDiscoveryFigures } from "./utils/artifacts";
 import { compileLatexToPDF, extractLastLines } from "./utils/compile";
-import {
-  extractReferences,
-  deduplicateRefs,
-} from "./bib/extractRefs";
-import type { ExtractedRef } from "./bib/extractRefs";
 
 // Use service client to bypass RLS - auth is verified before calling this service
 const supabase = getServiceClient();
@@ -76,12 +60,9 @@ export async function generatePaperFromConversation(
   conversationId: string,
   userId: string,
   existingPaperId?: string,
-  onProgress?: ProgressCallback,
+  onProgress?: ProgressCallback
 ): Promise<PaperGenerationResult> {
-  logger.info(
-    { conversationId, userId, existingPaperId },
-    "paper_generation_started",
-  );
+  logger.info({ conversationId, existingPaperId, userId }, "paper_generation_started");
 
   // --- 1. Validate & authenticate ---
   await onProgress?.("validating");
@@ -92,16 +73,12 @@ export async function generatePaperFromConversation(
   }
 
   if (conversation.user_id !== userId) {
-    throw new Error(
-      `User ${userId} does not own conversation ${conversationId}`,
-    );
+    throw new Error(`User ${userId} does not own conversation ${conversationId}`);
   }
 
   const conversationStateId = conversation.conversation_state_id;
   if (!conversationStateId) {
-    throw new Error(
-      `Conversation ${conversationId} has no conversation_state_id`,
-    );
+    throw new Error(`Conversation ${conversationId} has no conversation_state_id`);
   }
 
   const stateRecord = await getConversationState(conversationStateId);
@@ -116,16 +93,11 @@ export async function generatePaperFromConversation(
   const userEmail = user?.email;
 
   // Generate authors string
-  const isRealEmail =
-    userEmail &&
-    !userEmail.endsWith("@temp.local") &&
-    userEmail.includes("@");
+  const isRealEmail = userEmail && !userEmail.endsWith("@temp.local") && userEmail.includes("@");
 
   const agentName = process.env.AGENT_NAME;
   const agentEmail = process.env.AGENT_EMAIL;
-  const agentAuthor = agentName
-    ? (agentEmail ? `${agentName} (${agentEmail})` : agentName)
-    : null;
+  const agentAuthor = agentName ? (agentEmail ? `${agentName} (${agentEmail})` : agentName) : null;
 
   let authors: string;
   if (isRealEmail && agentAuthor) {
@@ -138,10 +110,7 @@ export async function generatePaperFromConversation(
     authors = "Anonymous";
   }
 
-  logger.info(
-    { userId, hasEmail: !!userEmail, isRealEmail, authors },
-    "paper_authors_determined",
-  );
+  logger.info({ authors, hasEmail: !!userEmail, isRealEmail, userId }, "paper_authors_determined");
 
   // --- 2. Setup workspace ---
   const paperId = existingPaperId || randomUUID();
@@ -149,11 +118,11 @@ export async function generatePaperFromConversation(
 
   if (!existingPaperId) {
     const { error: insertError } = await supabase.from("paper").insert({
-      id: paperId,
-      user_id: userId,
       conversation_id: conversationId,
+      id: paperId,
       pdf_path: pdfPath,
       status: "processing",
+      user_id: userId,
     });
 
     if (insertError) {
@@ -204,28 +173,22 @@ export async function generatePaperFromConversation(
 
     logger.info(
       {
-        totalRefs: uniqueRefs.length,
         doiCount: uniqueRefs.filter((r) => r.type === "doi").length,
+        totalRefs: uniqueRefs.length,
         urlCount: uniqueRefs.filter((r) => r.type !== "doi").length,
       },
-      "collected_refs_from_evidence",
+      "collected_refs_from_evidence"
     );
 
     // --- 5. Fetch BibTeX → refs.bib ---
     const bibPath = path.join(latexDir, "refs.bib");
-    const { entries: bibEntries } = await fetchAndWriteBibtex(
-      uniqueRefs,
-      bibPath,
-    );
+    const { entries: bibEntries } = await fetchAndWriteBibtex(uniqueRefs, bibPath);
 
     // --- 6. Extract citation keys from entries ---
     const availableKeys = extractCitationKeys(bibEntries);
     const knownKeySet = new Set(bibEntries.map((e) => e.citekey));
 
-    logger.info(
-      { keyCount: availableKeys.length },
-      "citation_keys_extracted",
-    );
+    logger.info({ keyCount: availableKeys.length }, "citation_keys_extracted");
 
     // --- 7. LLM Call 1: Front matter ---
     await onProgress?.("metadata");
@@ -235,7 +198,7 @@ export async function generatePaperFromConversation(
       evidenceTasks,
       authors,
       availableKeys,
-      paperId,
+      paperId
     );
 
     // --- 8. Download figures ---
@@ -249,7 +212,7 @@ export async function generatePaperFromConversation(
         i + 1,
         figuresDir,
         userId,
-        conversationStateId,
+        conversationStateId
       );
       allFigures.set(i, figures);
     }
@@ -263,23 +226,23 @@ export async function generatePaperFromConversation(
       figuresDir,
       availableKeys,
       3,
-      paperId,
+      paperId
     );
 
     // --- 11. Assemble Markdown document ---
     await onProgress?.("latex_assembly");
 
     const mdPath = assembleMarkdown({
-      title: metadata.title,
-      authors: metadata.authors,
       abstract: metadata.abstract,
-      researchSnapshot: metadata.researchSnapshot,
+      authors: metadata.authors,
       background: metadata.background,
+      bibFilename: "refs.bib",
       discoverySections,
       keyInsights: metadata.keyInsights,
-      summaryOfDiscoveries: metadata.summaryOfDiscoveries,
-      bibFilename: "refs.bib",
       outputDir: latexDir,
+      researchSnapshot: metadata.researchSnapshot,
+      summaryOfDiscoveries: metadata.summaryOfDiscoveries,
+      title: metadata.title,
     });
 
     // --- 12. Validate Markdown ---
@@ -358,16 +321,16 @@ export async function generatePaperFromConversation(
         .eq("id", paperId);
 
       if (updateError) {
-        logger.warn({ updateError, paperId }, "failed_to_update_paper_status");
+        logger.warn({ paperId, updateError }, "failed_to_update_paper_status");
       }
     }
 
     logger.info({ paperId }, "paper_generation_completed");
 
     return {
-      paperId,
       conversationId,
       conversationStateId,
+      paperId,
       pdfPath,
       pdfUrl,
       rawLatexUrl,
@@ -381,11 +344,11 @@ export async function generatePaperFromConversation(
 
     logger.error(
       {
+        conversationId,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        conversationId,
       },
-      "paper_generation_failed",
+      "paper_generation_failed"
     );
     throw error;
   }
@@ -396,9 +359,7 @@ export async function generatePaperFromConversation(
 /**
  * Index tasks by jobId for quick lookup
  */
-function indexTasksByJobId(
-  state: ConversationStateValues,
-): Map<string, PlanTask> {
+function indexTasksByJobId(state: ConversationStateValues): Map<string, PlanTask> {
   const map = new Map<string, PlanTask>();
 
   if (state.plan) {
@@ -429,7 +390,7 @@ function isValidJobId(jobId: string | undefined | null): jobId is string {
  */
 function mapDiscoveriesToTasks(
   state: ConversationStateValues,
-  tasksByJobId: Map<string, PlanTask>,
+  tasksByJobId: Map<string, PlanTask>
 ): Array<{
   discovery: Discovery;
   index: number;
@@ -471,7 +432,7 @@ function mapDiscoveriesToTasks(
     if (hasInvalidJobIds) {
       logger.warn(
         { discoveryIndex: index + 1, validJobIds: allJobIds },
-        "discovery_has_invalid_job_ids_including_all_tasks",
+        "discovery_has_invalid_job_ids_including_all_tasks"
       );
       const taskIds = new Set(allowedTasks.map((t) => t.jobId || t.id));
       for (const task of allTasks) {
@@ -482,14 +443,11 @@ function mapDiscoveriesToTasks(
     }
 
     if (allowedTasks.length === 0) {
-      logger.warn(
-        { discoveryIndex: index + 1 },
-        "discovery_no_valid_tasks_using_all",
-      );
-      return { discovery, index, allowedTasks: allTasks };
+      logger.warn({ discoveryIndex: index + 1 }, "discovery_no_valid_tasks_using_all");
+      return { allowedTasks: allTasks, discovery, index };
     }
 
-    return { discovery, index, allowedTasks };
+    return { allowedTasks, discovery, index };
   });
 }
 
@@ -501,13 +459,11 @@ async function generatePaperMetadata(
   evidenceTasks: PlanTask[],
   authors: string,
   availableKeys: CitationKeyInfo[],
-  paperId?: string,
+  paperId?: string
 ): Promise<PaperMetadata> {
   logger.info("generating_paper_front_matter");
 
-  const LLM_PROVIDER = parseLLMProviderName(
-    process.env.PAPER_GEN_LLM_PROVIDER || "openai",
-  );
+  const LLM_PROVIDER = parseLLMProviderName(process.env.PAPER_GEN_LLM_PROVIDER || "openai");
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
   const apiKey =
     process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
@@ -516,14 +472,12 @@ async function generatePaperMetadata(
     "";
 
   if (!apiKey) {
-    throw new Error(
-      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
-    );
+    throw new Error(`API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`);
   }
 
   const llm = new LLM({
-    name: LLM_PROVIDER,
     apiKey,
+    name: LLM_PROVIDER,
   });
 
   // Generate front matter (title, abstract, snapshot) — retry once on parse failure
@@ -539,7 +493,7 @@ async function generatePaperMetadata(
     3000,
     "front matter",
     (parsed) => !!(parsed.title && parsed.abstract && parsed.researchSnapshot),
-    paperId,
+    paperId
   );
 
   if (
@@ -548,17 +502,13 @@ async function generatePaperMetadata(
     !frontMatterParsed.researchSnapshot
   ) {
     throw new Error(
-      `Missing fields in front matter response. Keys found: ${Object.keys(frontMatterParsed).join(", ")}`,
+      `Missing fields in front matter response. Keys found: ${Object.keys(frontMatterParsed).join(", ")}`
     );
   }
 
   // Generate background section (with citations) — retry once on parse failure
   logger.info("generating_background_section");
-  const backgroundPrompt = generateBackgroundPrompt(
-    state,
-    evidenceTasks,
-    availableKeys,
-  );
+  const backgroundPrompt = generateBackgroundPrompt(state, evidenceTasks, availableKeys);
   const backgroundParsed = await callLLMWithRetry<{
     background?: string;
   }>(
@@ -568,12 +518,12 @@ async function generatePaperMetadata(
     5000,
     "background",
     (parsed) => !!parsed.background,
-    paperId,
+    paperId
   );
 
   if (!backgroundParsed.background) {
     throw new Error(
-      `Missing background field in response. Keys found: ${Object.keys(backgroundParsed).join(", ")}`,
+      `Missing background field in response. Keys found: ${Object.keys(backgroundParsed).join(", ")}`
     );
   }
 
@@ -590,13 +540,13 @@ async function generatePaperMetadata(
   logger.info("paper_front_matter_generated");
 
   return {
-    title: frontMatterParsed.title,
-    authors,
     abstract: frontMatterParsed.abstract,
+    authors,
     background: backgroundParsed.background,
-    researchSnapshot: frontMatterParsed.researchSnapshot,
     keyInsights,
+    researchSnapshot: frontMatterParsed.researchSnapshot,
     summaryOfDiscoveries,
+    title: frontMatterParsed.title,
   };
 }
 
@@ -610,7 +560,7 @@ async function generateDiscoverySectionsParallel(
   figuresDir: string,
   availableKeys: CitationKeyInfo[],
   maxConcurrency: number,
-  paperId?: string,
+  paperId?: string
 ): Promise<DiscoverySection[]> {
   const results: DiscoverySection[] = [];
 
@@ -626,9 +576,9 @@ async function generateDiscoverySectionsParallel(
           allFigures.get(ctx.index) || [],
           figuresDir,
           availableKeys,
-          paperId,
-        ),
-      ),
+          paperId
+        )
+      )
     );
 
     results.push(...batchResults);
@@ -644,30 +594,27 @@ async function generateDiscoverySection(
   figures: FigureInfo[],
   figuresDir: string,
   availableKeys: CitationKeyInfo[],
-  paperId?: string,
+  paperId?: string
 ): Promise<DiscoverySection> {
   // Calculate task output stats for logging
   const taskOutputStats = allowedTasks.map((task) => ({
     jobId: task.jobId,
-    type: task.type,
     outputLength: task.output?.length || 0,
+    type: task.type,
   }));
-  const totalTaskOutputChars = taskOutputStats.reduce(
-    (sum, t) => sum + t.outputLength,
-    0,
-  );
+  const totalTaskOutputChars = taskOutputStats.reduce((sum, t) => sum + t.outputLength, 0);
 
   logger.info(
     {
       discoveryIndex,
-      taskCount: allowedTasks.length,
       figureCount: figures.length,
       figureFilenames: figures.map((f) => f.filename),
+      taskCount: allowedTasks.length,
+      taskOutputStats,
       taskTypes: allowedTasks.map((t) => t.type),
       totalTaskOutputChars,
-      taskOutputStats,
     },
-    "generating_discovery_section",
+    "generating_discovery_section"
   );
 
   let prompt = generateDiscoverySectionPrompt(
@@ -675,7 +622,7 @@ async function generateDiscoverySection(
     discoveryIndex,
     allowedTasks,
     figures,
-    availableKeys,
+    availableKeys
   );
 
   logger.info(
@@ -684,12 +631,10 @@ async function generateDiscoverySection(
       promptLength: prompt.length,
       promptLengthKB: Math.round(prompt.length / 1024),
     },
-    "discovery_prompt_generated",
+    "discovery_prompt_generated"
   );
 
-  const LLM_PROVIDER = parseLLMProviderName(
-    process.env.PAPER_GEN_LLM_PROVIDER || "openai",
-  );
+  const LLM_PROVIDER = parseLLMProviderName(process.env.PAPER_GEN_LLM_PROVIDER || "openai");
   const LLM_MODEL = process.env.PAPER_GEN_LLM_MODEL || "gpt-4o";
   const apiKey =
     process.env[`${LLM_PROVIDER.toUpperCase()}_API_KEY`] ||
@@ -698,14 +643,12 @@ async function generateDiscoverySection(
     "";
 
   if (!apiKey) {
-    throw new Error(
-      `API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`,
-    );
+    throw new Error(`API key not configured for paper generation LLM provider: ${LLM_PROVIDER}`);
   }
 
   const llm = new LLM({
-    name: LLM_PROVIDER,
     apiKey,
+    name: LLM_PROVIDER,
   });
 
   let attempt = 0;
@@ -770,19 +713,16 @@ async function generateDiscoverySection(
               imageCount++;
 
               contentBlocks.push({
-                type: "image",
                 source: {
-                  type: "base64",
-                  media_type: mediaType,
                   data: base64Image,
+                  media_type: mediaType,
+                  type: "base64",
                 },
+                type: "image",
               });
             }
           } catch (error) {
-            logger.warn(
-              { figure: figure.filename, error },
-              "failed_to_encode_image",
-            );
+            logger.warn({ error, figure: figure.filename }, "failed_to_encode_image");
           }
         }
 
@@ -798,12 +738,12 @@ async function generateDiscoverySection(
             totalImageSizeKB: Math.round(totalImageSizeBytes / 1024),
             totalImageSizeMB: (totalImageSizeBytes / (1024 * 1024)).toFixed(2),
           },
-          "discovery_figures_encoded_for_llm",
+          "discovery_figures_encoded_for_llm"
         );
 
         contentBlocks.push({
-          type: "text",
           text: prompt,
+          type: "text",
         });
 
         messageContent = contentBlocks;
@@ -814,11 +754,11 @@ async function generateDiscoverySection(
       const llmStartTime = Date.now();
 
       const response = await llm.createChatCompletion({
-        messages: [{ role: "user", content: messageContent }],
-        model: LLM_MODEL,
-        temperature: 0.3,
         maxTokens: 8000,
+        messages: [{ content: messageContent, role: "user" }],
+        model: LLM_MODEL,
         paperId,
+        temperature: 0.3,
         usageType: "paper-generation",
       });
 
@@ -833,14 +773,14 @@ async function generateDiscoverySection(
           responseLength: content.length,
           responseLengthKB: Math.round(content.length / 1024),
         },
-        "discovery_llm_call_completed",
+        "discovery_llm_call_completed"
       );
 
       // Parse JSON response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error(
-          `No JSON found in LLM response. Content preview: ${content.substring(0, 300)}`,
+          `No JSON found in LLM response. Content preview: ${content.substring(0, 300)}`
         );
       }
 
@@ -851,7 +791,7 @@ async function generateDiscoverySection(
 
       if (!parsed.sectionMarkdown) {
         throw new Error(
-          `Missing sectionMarkdown in response. Keys found: ${Object.keys(parsed).join(", ")}`,
+          `Missing sectionMarkdown in response. Keys found: ${Object.keys(parsed).join(", ")}`
         );
       }
 
@@ -862,14 +802,11 @@ async function generateDiscoverySection(
       };
     } catch (error) {
       attempt++;
-      logger.warn(
-        { attempt, error, discoveryIndex },
-        "failed_to_generate_discovery_section",
-      );
+      logger.warn({ attempt, discoveryIndex, error }, "failed_to_generate_discovery_section");
 
       if (attempt >= maxAttempts) {
         throw new Error(
-          `Failed to generate discovery section ${discoveryIndex} after ${maxAttempts} attempts: ${error}`,
+          `Failed to generate discovery section ${discoveryIndex} after ${maxAttempts} attempts: ${error}`
         );
       }
 
@@ -892,17 +829,17 @@ async function callLLMWithRetry<T extends Record<string, any>>(
   label: string,
   validate: (parsed: T) => boolean,
   paperId?: string,
-  maxAttempts = 2,
+  maxAttempts = 2
 ): Promise<T> {
   let currentPrompt = prompt;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await llm.createChatCompletion({
-      messages: [{ role: "user", content: currentPrompt }],
-      model,
-      temperature: 0.3,
       maxTokens,
+      messages: [{ content: currentPrompt, role: "user" }],
+      model,
       paperId,
+      temperature: 0.3,
       usageType: "paper-generation",
     });
 
@@ -912,23 +849,21 @@ async function callLLMWithRetry<T extends Record<string, any>>(
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error(
-          `No JSON found in LLM response for ${label}. Content preview: ${content.substring(0, 300)}`,
+          `No JSON found in LLM response for ${label}. Content preview: ${content.substring(0, 300)}`
         );
       }
 
       const parsed = JSON.parse(jsonMatch[0]) as T;
 
       if (!validate(parsed)) {
-        throw new Error(
-          `Invalid ${label} response. Keys found: ${Object.keys(parsed).join(", ")}`,
-        );
+        throw new Error(`Invalid ${label} response. Keys found: ${Object.keys(parsed).join(", ")}`);
       }
 
       return parsed;
     } catch (error) {
       logger.warn(
-        { attempt, label, error: error instanceof Error ? error.message : String(error) },
-        "llm_json_parse_failed",
+        { attempt, error: error instanceof Error ? error.message : String(error), label },
+        "llm_json_parse_failed"
       );
 
       if (attempt >= maxAttempts) throw error;
@@ -948,11 +883,11 @@ async function callLLMWithRetry<T extends Record<string, any>>(
 function cleanupWorkDir(workDir: string): void {
   try {
     if (fs.existsSync(workDir)) {
-      fs.rmSync(workDir, { recursive: true, force: true });
+      fs.rmSync(workDir, { force: true, recursive: true });
       logger.info({ workDir }, "temp_dir_cleaned");
     }
   } catch (error) {
-    logger.warn({ workDir, error }, "failed_to_cleanup_temp_dir");
+    logger.warn({ error, workDir }, "failed_to_cleanup_temp_dir");
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState } from "preact/hooks";
 
 export interface UseFileUploadReturn {
   selectedFile: File | null;
@@ -25,14 +25,14 @@ export function useFileUpload(): UseFileUploadReturn {
    * Handle single file selection (legacy support)
    */
   const selectFile = (file: File) => {
-    console.log('[useFileUpload.selectFile] File selected:', file.name, file.size);
+    console.log("[useFileUpload.selectFile] File selected:", file.name, file.size);
     if (file.size > MAX_TOTAL_SIZE) {
       alert(`File ${file.name} is too large. Maximum total size is 2GB.`);
       return;
     }
     setSelectedFile(file);
     setSelectedFiles([file]);
-    console.log('[useFileUpload.selectFile] State updated');
+    console.log("[useFileUpload.selectFile] State updated");
   };
 
   /**
@@ -42,7 +42,9 @@ export function useFileUpload(): UseFileUploadReturn {
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
     if (totalSize > MAX_TOTAL_SIZE) {
-      alert(`Total file size (${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB) exceeds the 2GB limit.`);
+      alert(
+        `Total file size (${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB) exceeds the 2GB limit.`
+      );
       return;
     }
 
@@ -98,13 +100,13 @@ export function useFileUpload(): UseFileUploadReturn {
   };
 
   return {
+    addFile,
+    clearFile,
+    clearFiles,
+    removeFile,
     selectedFile,
     selectedFiles,
     selectFile,
     selectFiles,
-    addFile,
-    removeFile,
-    clearFile,
-    clearFiles,
   };
 }

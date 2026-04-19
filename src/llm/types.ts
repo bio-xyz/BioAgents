@@ -14,11 +14,11 @@ export interface LLMProvider {
   name: LLMProviderName;
   apiKey: string;
   baseUrl?: string;
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
@@ -31,7 +31,7 @@ export interface LLMRequest {
   effort?: string;
   maxTokens?: number;
   temperature?: number;
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: "low" | "medium" | "high";
   format?: ResponseFormatTextConfig; // Optional format for structured output (e.g., zodTextFormat)
   fileUris?: Array<{ fileUri: string; mimeType: string }>; // For Gemini File API
   stream?: boolean; // Enable streaming responses
@@ -42,7 +42,7 @@ export interface LLMRequest {
   usageType?: "chat" | "deep-research" | "paper-generation"; // Usage context type
 }
 // Coming soon: additional tool types
-export type LLMToolType = 'webSearch' | 'codeExecution';
+export type LLMToolType = "webSearch" | "codeExecution";
 export interface LLMTool {
   type: LLMToolType;
 }

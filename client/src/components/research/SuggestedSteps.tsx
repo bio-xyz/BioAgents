@@ -24,45 +24,53 @@ export function SuggestedSteps({ steps, onSelectStep, onCustomInput, disabled }:
   if (!steps || steps.length === 0) return null;
 
   const getStepConfig = (type: string) => {
-    const configs: Record<string, { icon: string; label: string; color: string; bgColor: string }> = {
-      LITERATURE: {
-        icon: "📚",
-        label: "Literature Search",
-        color: "#8b5cf6",
-        bgColor: "rgba(139, 92, 246, 0.1)",
-      },
-      ANALYSIS: {
-        icon: "📊",
-        label: "Data Analysis",
-        color: "#06b6d4",
-        bgColor: "rgba(6, 182, 212, 0.1)",
-      },
-      HYPOTHESIS: {
-        icon: "💡",
-        label: "Hypothesis Generation",
-        color: "#f59e0b",
-        bgColor: "rgba(245, 158, 11, 0.1)",
-      },
-      REFLECTION: {
-        icon: "🔍",
-        label: "Reflection",
-        color: "#10b981",
-        bgColor: "rgba(16, 185, 129, 0.1)",
-      },
-      PLANNING: {
-        icon: "📋",
-        label: "Planning",
-        color: "#3b82f6",
-        bgColor: "rgba(59, 130, 246, 0.1)",
-      },
-      CODE_EXEC: {
-        icon: "💻",
-        label: "Code Execution",
-        color: "#ec4899",
-        bgColor: "rgba(236, 72, 153, 0.1)",
-      },
-    };
-    return configs[type] || { icon: "⚡", label: type, color: "#6b7280", bgColor: "rgba(107, 114, 128, 0.1)" };
+    const configs: Record<string, { icon: string; label: string; color: string; bgColor: string }> =
+      {
+        ANALYSIS: {
+          bgColor: "rgba(6, 182, 212, 0.1)",
+          color: "#06b6d4",
+          icon: "📊",
+          label: "Data Analysis",
+        },
+        CODE_EXEC: {
+          bgColor: "rgba(236, 72, 153, 0.1)",
+          color: "#ec4899",
+          icon: "💻",
+          label: "Code Execution",
+        },
+        HYPOTHESIS: {
+          bgColor: "rgba(245, 158, 11, 0.1)",
+          color: "#f59e0b",
+          icon: "💡",
+          label: "Hypothesis Generation",
+        },
+        LITERATURE: {
+          bgColor: "rgba(139, 92, 246, 0.1)",
+          color: "#8b5cf6",
+          icon: "📚",
+          label: "Literature Search",
+        },
+        PLANNING: {
+          bgColor: "rgba(59, 130, 246, 0.1)",
+          color: "#3b82f6",
+          icon: "📋",
+          label: "Planning",
+        },
+        REFLECTION: {
+          bgColor: "rgba(16, 185, 129, 0.1)",
+          color: "#10b981",
+          icon: "🔍",
+          label: "Reflection",
+        },
+      };
+    return (
+      configs[type] || {
+        bgColor: "rgba(107, 114, 128, 0.1)",
+        color: "#6b7280",
+        icon: "⚡",
+        label: type,
+      }
+    );
   };
 
   return (
@@ -82,10 +90,12 @@ export function SuggestedSteps({ steps, onSelectStep, onCustomInput, disabled }:
               className="suggested-step-card"
               onClick={() => onSelectStep(step, index)}
               disabled={disabled}
-              style={{
-                "--step-color": config.color,
-                "--step-bg": config.bgColor,
-              } as JSX.CSSProperties}
+              style={
+                {
+                  "--step-bg": config.bgColor,
+                  "--step-color": config.color,
+                } as JSX.CSSProperties
+              }
             >
               <div className="suggested-step-header">
                 <span className="suggested-step-type-badge">

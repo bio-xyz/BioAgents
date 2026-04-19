@@ -9,13 +9,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages/messages";
 
 import { LLMAdapter } from "../adapter";
-import type {
-  LLMProvider,
-  LLMRequest,
-  LLMResponse,
-  LLMTool,
-  WebSearchResult,
-} from "../types";
+import type { LLMProvider, LLMRequest, LLMResponse, LLMTool, WebSearchResult } from "../types";
 import { enrichMessagesWithUrlContent, hasUrlInMessages } from "./utils";
 
 interface BuildRequestOptions {
@@ -50,10 +44,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Handle streaming
     if (request.stream && request.onStreamChunk) {
-      return this.createStreamingCompletion(
-        anthropicRequest,
-        request.onStreamChunk,
-      );
+      return this.createStreamingCompletion(anthropicRequest, request.onStreamChunk);
     }
 
     try {
@@ -69,7 +60,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private async createStreamingCompletion(
     anthropicRequest: MessageCreateParamsNonStreaming,
-    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>
   ): Promise<LLMResponse> {
     try {
       let fullText = "";
@@ -94,16 +85,14 @@ export class AnthropicAdapter extends LLMAdapter {
       return {
         content: fullText,
         usage: {
-          promptTokens,
           completionTokens,
+          promptTokens,
           totalTokens: promptTokens + completionTokens,
         },
       };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(
-          `Anthropic streaming completion failed: ${error.message}`,
-        );
+        throw new Error(`Anthropic streaming completion failed: ${error.message}`);
       }
       throw error;
     }
@@ -122,10 +111,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Handle streaming
     if (request.stream && request.onStreamChunk) {
-      return this.createStreamingWebSearch(
-        anthropicRequest,
-        request.onStreamChunk,
-      );
+      return this.createStreamingWebSearch(anthropicRequest, request.onStreamChunk);
     }
 
     try {
@@ -141,7 +127,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private async createStreamingWebSearch(
     anthropicRequest: MessageCreateParamsNonStreaming,
-    onStreamChunk: (chunk: string, fullText: string) => Promise<void>,
+    onStreamChunk: (chunk: string, fullText: string) => Promise<void>
   ): Promise<{
     cleanedLLMOutput: string;
     llmOutput: string;
@@ -165,22 +151,18 @@ export class AnthropicAdapter extends LLMAdapter {
 
       return {
         ...result,
-        llmOutput: fullText,
         cleanedLLMOutput: result.cleanedLLMOutput || fullText,
+        llmOutput: fullText,
       };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(
-          `Anthropic streaming web search failed: ${error.message}`,
-        );
+        throw new Error(`Anthropic streaming web search failed: ${error.message}`);
       }
       throw error;
     }
   }
 
-  protected transformRequest(
-    request: LLMRequest,
-  ): MessageCreateParamsNonStreaming {
+  protected transformRequest(request: LLMRequest): MessageCreateParamsNonStreaming {
     return this.buildRequest(request);
   }
 
@@ -190,26 +172,25 @@ export class AnthropicAdapter extends LLMAdapter {
 
     return {
       content,
+      finishReason: response.stop_reason ?? undefined,
       usage: response.usage
         ? {
-            promptTokens: response.usage.input_tokens,
             completionTokens: response.usage.output_tokens,
-            totalTokens:
-              response.usage.input_tokens + response.usage.output_tokens,
+            promptTokens: response.usage.input_tokens,
+            totalTokens: response.usage.input_tokens + response.usage.output_tokens,
           }
         : undefined,
-      finishReason: response.stop_reason ?? undefined,
     };
   }
 
   private async enrichRequestIfNeeded(
     request: LLMRequest,
-    _forceWebSearch = false,
+    _forceWebSearch = false
   ): Promise<LLMRequest> {
     // Build temporary messages to check for URLs
     const tempMessages = request.messages.map((m) => ({
-      role: m.role,
       content: m.content,
+      role: m.role,
     }));
 
     const hasUrl = hasUrlInMessages(tempMessages);
@@ -225,26 +206,24 @@ export class AnthropicAdapter extends LLMAdapter {
     return {
       ...request,
       messages: enrichedMessages.map((m) => ({
-        role: m.role as "system" | "user" | "assistant",
         content: m.content,
+        role: m.role as "system" | "user" | "assistant",
       })),
     };
   }
 
   private buildRequest(
     request: LLMRequest,
-    options: BuildRequestOptions = {},
+    options: BuildRequestOptions = {}
   ): MessageCreateParamsNonStreaming {
     const { includeWebSearch = false } = options;
 
     const userAndAssistantMessages = request.messages.filter(
-      (message) => message.role === "user" || message.role === "assistant",
+      (message) => message.role === "user" || message.role === "assistant"
     );
 
     if (userAndAssistantMessages.length === 0) {
-      throw new Error(
-        "Anthropic requires at least one user or assistant message in the request",
-      );
+      throw new Error("Anthropic requires at least one user or assistant message in the request");
     }
 
     const systemSegments: string[] = [];
@@ -262,7 +241,8 @@ export class AnthropicAdapter extends LLMAdapter {
 
     // Detect Opus 4.6 models which require adaptive thinking (budget_tokens is deprecated)
     const isOpus46 = request.model.includes("opus-4-6");
-    const useAdaptiveThinking = isOpus46 && (request.thinkingBudget !== undefined || request.effort !== undefined);
+    const useAdaptiveThinking =
+      isOpus46 && (request.thinkingBudget !== undefined || request.effort !== undefined);
 
     // For adaptive thinking (Opus 4.6), no need to inflate max_tokens with thinking budget
     // For budget_tokens mode (Sonnet 4.6 and older), max_tokens must be > budget_tokens
@@ -273,12 +253,12 @@ export class AnthropicAdapter extends LLMAdapter {
         : baseMaxTokens;
 
     const anthropicRequest: MessageCreateParamsNonStreaming = {
-      model: request.model,
-      messages: userAndAssistantMessages.map((message) => ({
-        role: message.role as "user" | "assistant",
-        content: message.content,
-      })),
       max_tokens: effectiveMaxTokens,
+      messages: userAndAssistantMessages.map((message) => ({
+        content: message.content,
+        role: message.role as "user" | "assistant",
+      })),
+      model: request.model,
     };
 
     if (systemSegments.length > 0) {
@@ -295,17 +275,21 @@ export class AnthropicAdapter extends LLMAdapter {
       // Opus 4.6: Use adaptive thinking with effort parameter (GA, no beta needed)
       type Effort = "low" | "medium" | "high";
       const validEfforts: Effort[] = ["low", "medium", "high"];
-      const rawEffort = request.effort ?? (request.thinkingBudget !== undefined
-        ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
-        : "medium");
-      const effort: Effort = validEfforts.includes(rawEffort as Effort) ? rawEffort as Effort : "medium";
+      const rawEffort =
+        request.effort ??
+        (request.thinkingBudget !== undefined
+          ? this.mapThinkingBudgetToEffort(request.thinkingBudget)
+          : "medium");
+      const effort: Effort = validEfforts.includes(rawEffort as Effort)
+        ? (rawEffort as Effort)
+        : "medium";
       anthropicRequest.thinking = { type: "adaptive" };
       anthropicRequest.output_config = { effort };
     } else if (request.thinkingBudget !== undefined) {
       // Sonnet 4.6 and older models: Use budget_tokens (still supported)
       anthropicRequest.thinking = {
-        type: "enabled",
         budget_tokens: request.thinkingBudget,
+        type: "enabled",
       };
     }
 
@@ -316,16 +300,14 @@ export class AnthropicAdapter extends LLMAdapter {
 
     if (includeWebSearch) {
       anthropicRequest.tools = this.ensureWebSearchTool(anthropicRequest.tools);
-      anthropicRequest.tool_choice = this.ensureToolChoice(
-        anthropicRequest.tool_choice,
-      );
+      anthropicRequest.tool_choice = this.ensureToolChoice(anthropicRequest.tool_choice);
     }
 
     return anthropicRequest;
   }
 
   private mapTools(
-    tools: LLMTool[] | undefined,
+    tools: LLMTool[] | undefined
   ): NonNullable<MessageCreateParamsNonStreaming["tools"]> {
     if (!Array.isArray(tools)) {
       return [];
@@ -334,23 +316,20 @@ export class AnthropicAdapter extends LLMAdapter {
     return tools
       .map((tool) => this.mapToolToAnthropic(tool))
       .filter(
-        (
-          tool,
-        ): tool is NonNullable<
-          MessageCreateParamsNonStreaming["tools"]
-        >[number] => tool !== null,
+        (tool): tool is NonNullable<MessageCreateParamsNonStreaming["tools"]>[number] =>
+          tool !== null
       );
   }
 
   private mapToolToAnthropic(
-    tool: LLMTool,
+    tool: LLMTool
   ): NonNullable<MessageCreateParamsNonStreaming["tools"]>[number] | null {
     switch (tool.type) {
       case "webSearch":
         return {
-          type: "web_search_20250305",
-          name: "web_search",
           max_uses: 3,
+          name: "web_search",
+          type: "web_search_20250305",
         };
       default:
         return null;
@@ -358,7 +337,7 @@ export class AnthropicAdapter extends LLMAdapter {
   }
 
   private ensureWebSearchTool(
-    tools?: MessageCreateParamsNonStreaming["tools"],
+    tools?: MessageCreateParamsNonStreaming["tools"]
   ): MessageCreateParamsNonStreaming["tools"] {
     const updatedTools = tools ? [...tools] : [];
     const hasWebSearchTool = updatedTools.some((tool) => {
@@ -372,9 +351,9 @@ export class AnthropicAdapter extends LLMAdapter {
 
     if (!hasWebSearchTool) {
       updatedTools.push({
-        type: "web_search_20250305",
-        name: "web_search",
         max_uses: 3,
+        name: "web_search",
+        type: "web_search_20250305",
       });
     }
 
@@ -413,12 +392,11 @@ export class AnthropicAdapter extends LLMAdapter {
         });
 
         return innerText;
-      },
+      }
     );
 
     const webSearchBlock = response.content.find(
-      (block): block is WebSearchToolResultBlock =>
-        block.type === "web_search_tool_result",
+      (block): block is WebSearchToolResultBlock => block.type === "web_search_tool_result"
     );
 
     let rawResults: WebSearchResultBlock[] = [];
@@ -426,10 +404,7 @@ export class AnthropicAdapter extends LLMAdapter {
       rawResults = webSearchBlock.content as WebSearchResultBlock[];
     }
 
-    const webSearchResults = this.buildWebSearchResults(
-      rawResults,
-      citationIndices,
-    );
+    const webSearchResults = this.buildWebSearchResults(rawResults, citationIndices);
 
     return {
       cleanedLLMOutput: cleanedLLMOutput.trim(),
@@ -447,7 +422,7 @@ export class AnthropicAdapter extends LLMAdapter {
 
   private buildWebSearchResults(
     results: WebSearchResultBlock[],
-    citationIndices: Set<number>,
+    citationIndices: Set<number>
   ): WebSearchResult[] {
     const deduped = new Map<string, WebSearchResult>();
 
@@ -469,10 +444,10 @@ export class AnthropicAdapter extends LLMAdapter {
       }
 
       deduped.set(normalized, {
+        index: order,
+        originalUrl: result.url,
         title: result.title || "",
         url: result.url,
-        originalUrl: result.url,
-        index: order,
       });
     });
 

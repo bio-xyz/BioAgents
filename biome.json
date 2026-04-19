@@ -30,7 +30,8 @@
       "quoteStyle": "double",
       "semicolons": "always",
       "trailingCommas": "es5"
-    }
+    },
+    "globals": ["Bun"]
   },
   "linter": {
     "enabled": true,

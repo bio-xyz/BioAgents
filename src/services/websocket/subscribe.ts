@@ -5,9 +5,9 @@
  * When a notification is received, it's broadcast to connected WebSocket clients.
  */
 
+import logger from "../../utils/logger";
 import { getSubscriber } from "../queue/connection";
 import { broadcastToConversation } from "./handler";
-import logger from "../../utils/logger";
 
 let isSubscribed = false;
 
@@ -40,14 +40,14 @@ export async function startRedisSubscription() {
 
         logger.info(
           {
-            type: notification.type,
-            jobId: notification.jobId,
             conversationId,
+            jobId: notification.jobId,
+            type: notification.type,
           },
-          "redis_notification_received_and_broadcast",
+          "redis_notification_received_and_broadcast"
         );
       } catch (e) {
-        logger.error({ error: e, channel, message }, "redis_message_processing_failed");
+        logger.error({ channel, error: e, message }, "redis_message_processing_failed");
       }
     });
 
