@@ -353,7 +353,7 @@ export function useSessions(providedUserId?: string, wsConnected?: boolean): Use
             return session;
           })
         );
-      } catch (err) {
+      } catch {
         // Silently ignore polling errors
       }
     };

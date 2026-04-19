@@ -55,7 +55,6 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
   const { userId, conversationStateId } = useConversation();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
-  const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
   const allArtifacts = results.flatMap((r) => r.artifacts || []);
@@ -106,9 +105,6 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
   };
 
   const handleDownload = async (artifact: Artifact) => {
-    const artifactKey = artifact.id || artifact.filename;
-    setIsDownloading(artifactKey);
-
     try {
       if (artifact.path && userId && conversationStateId) {
         const url = await fetchPresignedUrl(userId, conversationStateId, artifact.path);
@@ -133,8 +129,6 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
       throw new Error("No download method available");
     } catch (err) {
       console.error("Failed to download artifact:", err);
-    } finally {
-      setIsDownloading(null);
     }
   };
 
@@ -176,6 +170,7 @@ export function ArtifactViewer({ results, defaultExpanded = true }: Props) {
         <div className="artifact-viewer-content">
           {/* Console Output */}
           {results.map((result, resultIndex) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: results arrive append-only from backend; never reordered mid-render
             <div key={resultIndex} className="artifact-execution-block">
               {result.output && (
                 <div className="artifact-output">

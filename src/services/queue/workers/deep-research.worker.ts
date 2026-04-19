@@ -225,14 +225,8 @@ async function processDeepResearchJob(
     }
 
     // Import required modules
-    const {
-      getMessage,
-      getState,
-      getConversationState,
-      updateConversationState,
-      updateMessage,
-      updateState,
-    } = await import("../../../db/operations");
+    const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
+      await import("../../../db/operations");
     updateConversationStateRef = updateConversationState;
 
     // Get message record

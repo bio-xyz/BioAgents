@@ -115,7 +115,8 @@ export async function requestUploadUrl(
     try {
       conversation = await getConversation(conversationId);
     } catch (error) {
-      // Conversation doesn't exist yet (happens when uploading before first message)
+      // Expected when uploading before first message; log so genuine DB failures stay observable.
+      logger.debug({ conversationId, error }, "getConversation_failed_treating_as_missing");
       conversation = null;
     }
 

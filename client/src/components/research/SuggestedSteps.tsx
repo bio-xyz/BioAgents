@@ -86,7 +86,7 @@ export function SuggestedSteps({ steps, onSelectStep, onCustomInput, disabled }:
           const config = getStepConfig(step.type);
           return (
             <button
-              key={index}
+              key={`${step.type}-${step.objective}`}
               className="suggested-step-card"
               onClick={() => onSelectStep(step, index)}
               disabled={disabled}

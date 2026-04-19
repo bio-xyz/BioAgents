@@ -248,9 +248,7 @@ Description:`;
 
     return description;
   } catch (error) {
-    if (logger) {
-      logger.warn(`Failed to generate description for ${filename}, using fallback`);
-    }
+    logger?.warn({ error }, `Failed to generate description for ${filename}, using fallback`);
     // Fallback to basic description
     return `${filename} (${mimeType})`;
   }
