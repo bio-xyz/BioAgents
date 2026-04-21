@@ -25,6 +25,10 @@ export interface RunChatAgentParams {
   loadHistory?: boolean;
   /** Called after each tool execution. Callers customise for DB updates, notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called on each text chunk during streaming. Synchronous to avoid backpressure. */
+  onTextDelta?: (delta: string) => void;
+  /** Called after LLM response with tool_use blocks, BEFORE tools execute. */
+  onStreamPause?: () => Promise<void>;
 }
 
 export interface RunChatAgentResult {
@@ -177,6 +181,8 @@ export async function runChatAgent(
       maxTokens,
       apiKey,
       onToolResult: params.onToolResult,
+      onTextDelta: params.onTextDelta,
+      onStreamPause: params.onStreamPause,
     },
     conversationHistory.length > 0 ? conversationHistory : undefined,
   );
