@@ -359,6 +359,346 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     );
 
     // =========================================================================
+    // SSE STREAMING PATH (in-process, bypasses queue mode)
+    // Triggered when client sends Accept: text/event-stream header.
+    // Non-SSE requests fall through to the existing queue/JSON paths below.
+    // =========================================================================
+    const acceptsSSE = request.headers
+      .get("accept")
+      ?.includes("text/event-stream");
+
+    if (acceptsSSE) {
+      logger.info(
+        { messageId: createdMessage.id, conversationId },
+        "chat_using_sse_mode",
+      );
+
+      // Import SSE dependencies at function scope (dynamic for TDZ safety)
+      const { runChatAgent } = await import("../chat-agent/runner");
+      const { fileUploadAgent } = await import("../agents/fileUpload");
+      const { getPendingFileIds, getFileStatus } = await import(
+        "../services/files/status"
+      );
+      const { getFileProcessQueue } = await import(
+        "../services/queue/queues"
+      );
+      const {
+        getConversationState,
+        updateMessage,
+        updateConversationState,
+      } = await import("../db/operations");
+
+      const encoder = new TextEncoder();
+      const sseStartTime = Date.now();
+      let turnIndex = 0;
+      let streamStarted = false;
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          // Helper: safe enqueue (swallows errors if client disconnected)
+          const send = (event: string, data: unknown) => {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+                ),
+              );
+            } catch {
+              // Controller closed (client disconnected). Keep running so DB save happens.
+            }
+          };
+
+          // SSE comment frame - ignored by the client parser but keeps the
+          // connection alive through proxies (nginx default idle timeout 60s,
+          // Vercel edge 30s, etc.). Critical for long silent periods:
+          // tool execution (literature_search 30s timeout), file processing
+          // (up to 2 min) can easily exceed proxy idle limits.
+          const sendHeartbeat = () => {
+            try {
+              controller.enqueue(
+                encoder.encode(`: heartbeat ${Date.now()}\n\n`),
+              );
+            } catch {
+              // Controller closed
+            }
+          };
+
+          const startHeartbeat = () => {
+            if (heartbeatTimer) return;
+            // 15s interval: well under nginx (60s), Vercel edge (30s), CDN limits
+            heartbeatTimer = setInterval(sendHeartbeat, 15_000);
+          };
+
+          const stopHeartbeat = () => {
+            if (heartbeatTimer) {
+              clearInterval(heartbeatTimer);
+              heartbeatTimer = null;
+            }
+          };
+
+          const safeClose = () => {
+            stopHeartbeat();
+            try {
+              controller.close();
+            } catch {
+              // Already closed
+            }
+          };
+
+          try {
+            // Send init FIRST so client knows the request was accepted and
+            // can render its streaming bubble immediately. Then start heartbeats
+            // to keep proxies alive during the silent file-wait period.
+            send("init", {
+              messageId: createdMessage.id,
+              conversationId,
+            });
+            startHeartbeat();
+
+            // === File handling: TWO paths, handle both ===
+            //
+            // Path A: raw files in FormData (legacy direct upload).
+            // Process synchronously, mutates conversation state with uploadedDatasets.
+            if (files.length > 0) {
+              const conversationStateForFiles: ConversationState = {
+                id: conversationStateRecord.id,
+                values: conversationStateRecord.values,
+              };
+              await fileUploadAgent({
+                conversationState: conversationStateForFiles,
+                files,
+                userId,
+              });
+              conversationStateRecord.values =
+                conversationStateForFiles.values;
+            }
+
+            // Path B: presigned S3 upload flow (usePresignedUpload.ts).
+            // Files uploaded directly to S3 BEFORE this request, processed
+            // async by file-process worker. Port the exact wait logic from
+            // chat.worker.ts:95-174 so SSE doesn't race with file processing.
+            // Without this, the agent runs before uploaded datasets are ready.
+            if (conversationStateRecord.id) {
+              const pendingFileIds = await getPendingFileIds(
+                conversationStateRecord.id,
+              );
+              if (pendingFileIds.length > 0) {
+                logger.info(
+                  { messageId: createdMessage.id, pendingFileIds },
+                  "chat_sse_waiting_for_file_processing",
+                );
+                // CRITICAL: getFileProcessQueue() returns null when
+                // USE_JOB_QUEUE=false (queues.ts:120). Must null-guard before
+                // calling .getJob() or we null-deref in in-process mode.
+                const fileProcessQueue = getFileProcessQueue();
+                const maxWaitMs = 120_000; // 2 min cap, matches worker
+                const pollIntervalMs = 500;
+                const startWait = Date.now();
+
+                for (const fileId of pendingFileIds) {
+                  while (Date.now() - startWait < maxWaitMs) {
+                    // Prefer file status check (always available, DB-backed).
+                    // Queue job state only consulted when the queue exists.
+                    const fileStatus = await getFileStatus(fileId);
+                    if (fileStatus?.status === "ready") break;
+                    if (fileStatus?.status === "error") {
+                      logger.warn(
+                        { messageId: createdMessage.id, fileId },
+                        "chat_sse_file_failed_continuing",
+                      );
+                      break;
+                    }
+
+                    // Secondary signal from BullMQ job state when queue exists
+                    if (fileProcessQueue) {
+                      const fileJob = await fileProcessQueue.getJob(fileId);
+                      const fileJobState = fileJob
+                        ? await fileJob.getState()
+                        : null;
+                      if (fileJobState === "completed" || !fileJob) break;
+                      if (fileJobState === "failed") {
+                        logger.warn(
+                          { messageId: createdMessage.id, fileId },
+                          "chat_sse_file_job_failed_continuing",
+                        );
+                        break;
+                      }
+                    }
+
+                    await new Promise((r) =>
+                      setTimeout(r, pollIntervalMs),
+                    );
+                  }
+                }
+
+                // Refresh conversation state to pick up uploadedDatasets
+                const fresh = await getConversationState(
+                  conversationStateRecord.id,
+                );
+                if (fresh) {
+                  conversationStateRecord.values = fresh.values;
+                }
+              }
+            }
+
+            const result = await runChatAgent({
+              conversationId,
+              message,
+              uploadedDatasets:
+                conversationStateRecord.values.uploadedDatasets,
+              loadHistory: true,
+              onTextDelta: (delta) => {
+                if (!streamStarted) {
+                  streamStarted = true;
+                  turnIndex++;
+                  send("stream_start", { turnIndex });
+                }
+                send("delta", { text: delta, turnIndex });
+              },
+              onStreamPause: async () => {
+                // Called by loop.ts AFTER finalMessage, BEFORE tool execution
+                if (streamStarted) {
+                  send("stream_end", {
+                    isFinal: false,
+                    turnIndex,
+                    reason: "paused",
+                  });
+                  streamStarted = false;
+                }
+              },
+              onToolResult: async (info) => {
+                // Mirror existing in-process path: update conversation state
+                if (!conversationStateRecord.id) return;
+                try {
+                  await updateConversationState(conversationStateRecord.id, {
+                    ...conversationStateRecord.values,
+                    agentProgress: {
+                      stage: `tool:${info.toolName}`,
+                      toolCallCount: info.toolCallCount,
+                      lastToolCallId: info.toolCallId,
+                      isError: info.result.isError ?? false,
+                    },
+                  });
+                } catch (err) {
+                  logger.warn(
+                    { error: err, toolName: info.toolName },
+                    "conversation_state_update_failed",
+                  );
+                }
+              },
+            });
+
+            // === Truncation guard ===
+            // Matches existing non-SSE path at chat.ts:568.
+            // Never persist a partial answer as success.
+            if (result.hitMaxTokens) {
+              if (streamStarted) {
+                send("stream_end", {
+                  isFinal: false,
+                  turnIndex,
+                  reason: "truncated",
+                });
+              }
+              send("error", {
+                reason: "truncated",
+                message:
+                  "Response was truncated. Please try a shorter question.",
+              });
+              safeClose();
+              logger.warn(
+                { messageId: createdMessage.id },
+                "chat_sse_truncated",
+              );
+              return;
+            }
+            if (!result.replyText) {
+              send("error", {
+                reason: "empty_reply",
+                message: "No response generated. Please try again.",
+              });
+              safeClose();
+              logger.warn(
+                { messageId: createdMessage.id },
+                "chat_sse_empty_reply",
+              );
+              return;
+            }
+
+            // === Persist to DB BEFORE sending done ===
+            // Contract: "done" means the message is durably saved. If DB save
+            // fails, we send "error" instead - client keeps user message visible.
+            const responseTime = Date.now() - sseStartTime;
+            await updateMessage(createdMessage.id, {
+              content: result.replyText,
+            });
+            await updateMessageResponseTime(createdMessage.id, responseTime);
+
+            // === Terminal success signals (only after durable write) ===
+            if (streamStarted) {
+              send("stream_end", {
+                isFinal: true,
+                turnIndex,
+                reason: "complete",
+              });
+            }
+            send("done", { messageId: createdMessage.id });
+            safeClose();
+
+            logger.info(
+              {
+                messageId: createdMessage.id,
+                conversationId,
+                toolCallCount: result.toolCallCount,
+                totalInputTokens: result.totalInputTokens,
+                totalOutputTokens: result.totalOutputTokens,
+                responseTime,
+                replyLength: result.replyText.length,
+                streaming: true,
+              },
+              "chat_sse_completed",
+            );
+          } catch (err) {
+            logger.error(
+              { error: err, messageId: createdMessage.id },
+              "chat_sse_error",
+            );
+            send("error", {
+              reason: "agent_error",
+              message:
+                err instanceof Error ? err.message : "Streaming failed",
+            });
+            safeClose();
+          }
+        },
+        cancel() {
+          // Client disconnected. Agent loop keeps running via the awaited
+          // runChatAgent call - DB save still happens. send() becomes no-op.
+          // Clear the heartbeat timer to prevent leak.
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+          }
+          logger.info(
+            { messageId: createdMessage.id },
+            "chat_sse_client_disconnected",
+          );
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          // Disable nginx buffering - critical for real-time streaming
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
+    // =========================================================================
     // DUAL MODE: Check if job queue is enabled
     // =========================================================================
     const { isJobQueueEnabled } = await import("../services/queue/connection");
