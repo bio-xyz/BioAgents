@@ -663,10 +663,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               { error: err, messageId: createdMessage.id },
               "chat_sse_error",
             );
+            // Generic client-facing message -- raw err.message can leak
+            // internal detail (Anthropic SDK errors, DB errors, etc.). Full
+            // error is already captured in the logger.error above.
             send("error", {
               reason: "agent_error",
-              message:
-                err instanceof Error ? err.message : "Streaming failed",
+              message: "Something went wrong while generating the response. Please try again.",
             });
             safeClose();
           }
