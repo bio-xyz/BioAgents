@@ -1,5 +1,6 @@
-import type { AnalysisArtifact, PlanTask } from "../types/core";
+import type { ConversationStateValues, StateValues } from "../types/core";
 import logger from "../utils/logger";
+import { cleanValues } from "./cleanValues";
 import { getServiceClient } from "./client";
 
 // Use service client to bypass RLS - auth is verified by middleware
@@ -21,16 +22,16 @@ export interface Conversation {
   conversation_state_id?: string;
 }
 
-export interface State {
+export interface DbState {
   id?: string;
-  values: any;
+  values: StateValues;
   created_at?: string;
   updated_at?: string;
 }
 
-export interface ConversationState {
+export interface DbConversationState {
   id?: string;
-  values: any;
+  values: ConversationStateValues;
   created_at?: string;
   updated_at?: string;
 }
@@ -41,20 +42,16 @@ export interface Message {
   user_id: string;
   question?: string;
   content: string;
-  summary?: string; // Optional summary for agent messages
+  summary?: string;
   state_id?: string;
   response_time?: number;
   source?: string;
-  files?: any; // JSONB field for file metadata
+  files?: Array<{ name: string; size: number; type: string }>;
 }
 
 // User operations
 export async function getUser(userId: string) {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", userId)
-    .single();
+  const { data, error } = await supabase.from("users").select("*").eq("id", userId).single();
 
   if (error && error.code !== "PGRST116") {
     logger.error(`[getUser] Error getting user: ${error.message}`);
@@ -66,7 +63,7 @@ export async function getUser(userId: string) {
 export async function createUser(userData: User) {
   const { data, error } = await supabase
     .from("users")
-    .upsert(userData, { onConflict: "id", ignoreDuplicates: true })
+    .upsert(userData, { ignoreDuplicates: true, onConflict: "id" })
     .select()
     .single();
 
@@ -92,9 +89,7 @@ export async function createConversation(conversationData: Conversation) {
     .single();
 
   if (error) {
-    logger.error(
-      `[createConversation] Error creating conversation: ${error.message}`,
-    );
+    logger.error(`[createConversation] Error creating conversation: ${error.message}`);
     throw error;
   }
   return data;
@@ -102,11 +97,7 @@ export async function createConversation(conversationData: Conversation) {
 
 // Message operations
 export async function createMessage(messageData: Message) {
-  const { data, error } = await supabase
-    .from("messages")
-    .insert(messageData)
-    .select()
-    .single();
+  const { data, error } = await supabase.from("messages").insert(messageData).select().single();
 
   if (error) {
     logger.error(`[createMessage] Error creating message: ${error.message}`);
@@ -144,10 +135,7 @@ export async function getMessage(id: string) {
   return data;
 }
 
-export async function getMessagesByConversation(
-  conversationId: string,
-  limit?: number,
-) {
+export async function getMessagesByConversation(conversationId: string, limit?: number) {
   let query = supabase
     .from("messages")
     .select("*, state:states(*)")
@@ -162,7 +150,7 @@ export async function getMessagesByConversation(
 
   if (error) {
     logger.error(
-      `[getMessagesByConversation] Error getting messages by conversation: ${error.message}`,
+      `[getMessagesByConversation] Error getting messages by conversation: ${error.message}`
     );
     throw error;
   }
@@ -170,12 +158,8 @@ export async function getMessagesByConversation(
 }
 
 // State operations
-export async function createState(stateData: { values: any }) {
-  const { data, error } = await supabase
-    .from("states")
-    .insert(stateData)
-    .select()
-    .single();
+export async function createState(stateData: { values: StateValues }) {
+  const { data, error } = await supabase.from("states").insert(stateData).select().single();
 
   if (error) {
     logger.error(`[createState] Error creating state: ${error.message}`);
@@ -189,7 +173,7 @@ export async function createState(stateData: { values: any }) {
  * Automatically strips file buffers and parsedText to prevent Supabase timeout
  * These large fields are kept in memory for processing but not persisted
  */
-export async function updateState(id: string, values: any) {
+export async function updateState(id: string, values: Partial<StateValues>) {
   const cleanedValues = cleanValues(values);
 
   const { data, error } = await supabase
@@ -207,11 +191,7 @@ export async function updateState(id: string, values: any) {
 }
 
 export async function getState(id: string) {
-  const { data, error } = await supabase
-    .from("states")
-    .select("*")
-    .eq("id", id)
-    .single();
+  const { data, error } = await supabase.from("states").select("*").eq("id", id).single();
 
   if (error) {
     logger.error(`[getState] Error getting state: ${error.message}`);
@@ -221,7 +201,9 @@ export async function getState(id: string) {
 }
 
 // ConversationState operations
-export async function createConversationState(stateData: { values: any }) {
+export async function createConversationState(stateData: {
+  values: Partial<ConversationStateValues>;
+}) {
   const { data, error } = await supabase
     .from("conversation_states")
     .insert(stateData)
@@ -229,9 +211,7 @@ export async function createConversationState(stateData: { values: any }) {
     .single();
 
   if (error) {
-    logger.error(
-      `[createConversationState] Error creating conversation state: ${error.message}`,
-    );
+    logger.error(`[createConversationState] Error creating conversation state: ${error.message}`);
     throw error;
   }
   return data;
@@ -239,12 +219,12 @@ export async function createConversationState(stateData: { values: any }) {
 
 export async function updateConversationState(
   id: string,
-  values: any,
-  options?: { preserveUploadedDatasets?: boolean },
+  values: Partial<ConversationStateValues>,
+  options?: { preserveUploadedDatasets?: boolean }
 ) {
   const { preserveUploadedDatasets = true } = options || {};
 
-  let finalValues = { ...values };
+  const finalValues = { ...values };
 
   // IMPORTANT: By default, always preserve uploadedDatasets from the database
   // This prevents race conditions where chat/deep-research workers
@@ -266,9 +246,7 @@ export async function updateConversationState(
     .single();
 
   if (error) {
-    logger.error(
-      `[updateConversationState] Error updating conversation state: ${error.message}`,
-    );
+    logger.error(`[updateConversationState] Error updating conversation state: ${error.message}`);
     throw error;
   }
   return data;
@@ -282,9 +260,7 @@ export async function getConversationState(id: string) {
     .single();
 
   if (error) {
-    logger.error(
-      `[getConversationState] Error getting conversation state: ${error.message}`,
-    );
+    logger.error(`[getConversationState] Error getting conversation state: ${error.message}`);
     throw error;
   }
   return data;
@@ -292,16 +268,10 @@ export async function getConversationState(id: string) {
 
 // Get conversation by ID
 export async function getConversation(id: string) {
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("*")
-    .eq("id", id)
-    .single();
+  const { data, error } = await supabase.from("conversations").select("*").eq("id", id).single();
 
   if (error) {
-    logger.error(
-      `[getConversation] Error getting conversation: ${error.message}`,
-    );
+    logger.error(`[getConversation] Error getting conversation: ${error.message}`);
     throw error;
   }
   return data;
@@ -316,19 +286,14 @@ export async function getUserConversations(userId: string) {
     .order("created_at", { ascending: false });
 
   if (error) {
-    logger.error(
-      `[getUserConversations] Error getting user conversations: ${error.message}`,
-    );
+    logger.error(`[getUserConversations] Error getting user conversations: ${error.message}`);
     throw error;
   }
   return data || [];
 }
 
 // Update conversation to link conversation_state_id
-export async function updateConversation(
-  id: string,
-  updates: Partial<Conversation>,
-) {
+export async function updateConversation(id: string, updates: Partial<Conversation>) {
   const { data, error } = await supabase
     .from("conversations")
     .update(updates)
@@ -337,68 +302,14 @@ export async function updateConversation(
     .single();
 
   if (error) {
-    logger.error(
-      `[updateConversation] Error updating conversation: ${error.message}`,
-    );
+    logger.error(`[updateConversation] Error updating conversation: ${error.message}`);
     throw error;
   }
   return data;
 }
 
-// Helper to clean large fields from state values before persisting
-function cleanValues(values: any): any {
-  const cleanedValues = { ...values };
-
-  // Strip buffers and parsedText from rawFiles if present
-  if (cleanedValues.rawFiles?.length) {
-    cleanedValues.rawFiles = cleanedValues.rawFiles.map((f: any) => ({
-      ...f,
-      buffer: undefined,
-      parsedText: undefined,
-    }));
-  }
-
-  // Strip binary buffers from datasets if present, but PRESERVE content (text)
-  // Content is the parsed text we want to pass to the LLM
-  if (cleanedValues.uploadedDatasets?.length) {
-    cleanedValues.uploadedDatasets = cleanedValues.uploadedDatasets.map(
-      (d: any) => ({
-        ...d,
-        buffer: undefined, // Strip binary buffer, but keep content (text)
-      }),
-    );
-  }
-
-  // Strip buffers from plan datasets if present
-  if (cleanedValues.plan?.length) {
-    cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
-      if (task.datasets?.length) {
-        const cleanedDatasets = task.datasets.map((d: any) => ({
-          ...d,
-          content: undefined,
-        }));
-        return { ...task, datasets: cleanedDatasets };
-      }
-      return task;
-    });
-  }
-
-  // Strip content from plan artifacts if present
-  if (cleanedValues.plan?.length) {
-    cleanedValues.plan = cleanedValues.plan.map((task: PlanTask) => {
-      if (task.artifacts?.length) {
-        const cleanedArtifacts = task.artifacts.map((a: AnalysisArtifact) => ({
-          ...a,
-          content: undefined,
-        }));
-        return { ...task, artifacts: cleanedArtifacts };
-      }
-      return task;
-    });
-  }
-
-  return cleanedValues;
-}
+// cleanValues is extracted to ./cleanValues for testability without Supabase init.
+export { cleanValues };
 
 // ============================================================================
 // Token Usage Operations
@@ -432,11 +343,7 @@ export async function createTokenUsage(
     throw new Error("Either message_id or paper_id must be provided");
   }
 
-  const { data, error } = await supabase
-    .from("token_usage")
-    .insert(tokenUsage)
-    .select()
-    .single();
+  const { data, error } = await supabase.from("token_usage").insert(tokenUsage).select().single();
 
   if (error) {
     throw error;

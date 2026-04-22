@@ -1,4 +1,17 @@
+import { z } from "zod";
 import logger from "./logger";
+
+const EdisonTaskResponseSchema = z.object({
+  job_type: z.string(),
+  status: z.string(),
+  task_id: z.string(),
+});
+
+const EdisonStatusResponseSchema = z.object({
+  answer: z.string().optional(),
+  error: z.string().optional(),
+  status: z.string(),
+});
 
 /**
  * Start an async Edison task
@@ -8,7 +21,7 @@ export async function startEdisonTask(
   apiKey: string,
   jobType: string,
   query: string,
-  dataStorageEntryIds?: string[],
+  dataStorageEntryIds?: string[]
 ): Promise<{ task_id: string; status: string; job_type: string }> {
   const endpoint = `${apiUrl}/api/v1/edison/run/async`;
 
@@ -27,12 +40,12 @@ export async function startEdisonTask(
   }
 
   const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
     body: JSON.stringify(requestBody),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
   });
 
   if (!response.ok) {
@@ -40,7 +53,18 @@ export async function startEdisonTask(
     throw new Error(`Edison API error: ${response.status} - ${errorText}`);
   }
 
-  return await response.json();
+  const data: unknown = await response.json();
+  // Use safeParse so upstream schema drift surfaces as a clear error rather than
+  // a raw ZodError crash that bypasses caller error handling.
+  const parsed = EdisonTaskResponseSchema.safeParse(data);
+  if (!parsed.success) {
+    logger.error(
+      { issues: parsed.error.issues, raw: data },
+      "edison_task_response_schema_mismatch"
+    );
+    throw new Error("Edison task response shape changed — check logs for schema issues");
+  }
+  return parsed.data;
 }
 
 /**
@@ -49,12 +73,9 @@ export async function startEdisonTask(
 export async function awaitEdisonTask(
   apiUrl: string,
   apiKey: string,
-  taskId: string,
+  taskId: string
 ): Promise<{ answer?: string; error?: string }> {
-  const timeoutMinutes = parseInt(
-    process.env.EDISON_TASK_TIMEOUT_MINUTES || "30",
-    10,
-  );
+  const timeoutMinutes = parseInt(process.env.EDISON_TASK_TIMEOUT_MINUTES || "30", 10);
   const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 3000; // Poll every 3 seconds
   const startTime = Date.now();
@@ -68,41 +89,44 @@ export async function awaitEdisonTask(
 
     try {
       // Poll status endpoint
-      const response = await fetch(
-        `${apiUrl}/api/v1/edison/task/${taskId}/status`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
+      const response = await fetch(`${apiUrl}/api/v1/edison/task/${taskId}/status`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
         },
-      );
+        method: "GET",
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        logger.error(
-          { taskId, status: response.status, errorText },
-          "edison_status_check_failed",
-        );
+        logger.error({ errorText, status: response.status, taskId }, "edison_status_check_failed");
         return { error: `Failed to check status: ${response.status}` };
       }
 
-      const statusData = await response.json();
+      const raw: unknown = await response.json();
+      const parsed = EdisonStatusResponseSchema.safeParse(raw);
+      if (!parsed.success) {
+        logger.error(
+          { issues: parsed.error.issues, raw, taskId },
+          "edison_status_response_schema_mismatch"
+        );
+        return { error: "Edison status response shape changed — check logs" };
+      }
+      const statusData = parsed.data;
       const status = statusData.status;
 
-      logger.debug({ taskId, status }, "edison_task_status_check");
+      logger.debug({ status, taskId }, "edison_task_status_check");
 
       if (status === "success") {
-        return { answer: statusData.answer || "" };
+        return { answer: statusData.answer ?? "" };
       } else if (status === "failed") {
-        return { error: statusData.error || "Task failed" };
+        return { error: statusData.error ?? "Task failed" };
       } else if (status === "queued" || status === "in progress") {
         // Still processing, wait and poll again
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
       } else {
         // Unknown status
-        logger.warn({ taskId, status }, "edison_unknown_status");
+        logger.warn({ status, taskId }, "edison_unknown_status");
         return { error: `Unknown status: ${status}` };
       }
     } catch (err) {

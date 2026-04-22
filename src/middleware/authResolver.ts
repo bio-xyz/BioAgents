@@ -42,19 +42,16 @@ function constantTimeCompare(a: string, b: string): boolean {
  * This is only used when the caller is already trusted (valid API key or
  * AUTH_MODE=none), so accepting the provided userId is safe.
  */
-function resolveProvidedUserId(request: Request, body?: any): string {
+function resolveProvidedUserId(request: Request, body?: unknown): string {
   // 1. Check X-User-Id header (useful for GET requests that have no body)
   const headerUserId = request.headers.get("X-User-Id");
-  if (
-    headerUserId &&
-    typeof headerUserId === "string" &&
-    headerUserId.length > 0
-  ) {
+  if (headerUserId && typeof headerUserId === "string" && headerUserId.length > 0) {
     return headerUserId;
   }
 
   // 2. Check body.userId
-  const bodyUserId = body?.userId;
+  const bodyRecord: Record<string, unknown> = body && typeof body === "object" ? { ...body } : {};
+  const bodyUserId = bodyRecord.userId;
   if (bodyUserId && typeof bodyUserId === "string" && bodyUserId.length > 0) {
     return bodyUserId;
   }
@@ -122,19 +119,19 @@ export function authResolver(options: AuthResolverOptions = {}) {
     body,
   }: {
     request: Request & { auth?: AuthContext };
-    set: any;
-    body?: any;
+    set: { status?: number | string; headers: Record<string, string | number> };
+    body?: unknown;
   }) => {
     let auth: AuthContext | null = null;
     const path = new URL(request.url).pathname;
 
     logger?.info(
       {
-        path,
         mode: config.mode,
+        path,
         required,
       },
-      "auth_resolver_start",
+      "auth_resolver_start"
     );
 
     // =====================================================
@@ -145,30 +142,29 @@ export function authResolver(options: AuthResolverOptions = {}) {
       const token = extractBearerToken(authHeader);
 
       // Only verify if it looks like a JWT (has dots) or if we're in JWT mode
-      const shouldVerifyJwt =
-        token && (config.mode === "jwt" || token.includes("."));
+      const shouldVerifyJwt = token && (config.mode === "jwt" || token.includes("."));
 
       if (shouldVerifyJwt && token) {
         const result = await verifyJWT(token);
 
         if (result.valid && result.payload) {
           auth = {
-            userId: result.payload.sub,
-            method: "jwt",
-            verified: true,
-            email: result.payload.email,
-            orgId: result.payload.orgId,
             claims: result.payload as unknown as Record<string, unknown>,
+            email: result.payload.email,
+            method: "jwt",
+            orgId: result.payload.orgId,
+            userId: result.payload.sub,
+            verified: true,
           };
 
           logger?.info(
             {
-              userId: auth.userId,
-              method: "jwt",
               hasEmail: !!auth.email,
               hasOrgId: !!auth.orgId,
+              method: "jwt",
+              userId: auth.userId,
             },
-            "auth_resolved_jwt",
+            "auth_resolved_jwt"
           );
         } else if (config.mode === "jwt") {
           // JWT provided but invalid - only reject in strict JWT mode
@@ -177,7 +173,7 @@ export function authResolver(options: AuthResolverOptions = {}) {
               error: result.error,
               path,
             },
-            "auth_jwt_invalid",
+            "auth_jwt_invalid"
           );
 
           // In JWT mode, invalid JWT = reject (don't fall through)
@@ -185,8 +181,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
             set.status = 401;
             return {
               error: "Invalid authentication",
-              message: result.error || "JWT verification failed",
               hint: "Provide a valid JWT signed with BIOAGENTS_SECRET",
+              message: result.error || "JWT verification failed",
             };
           }
         }
@@ -203,17 +199,17 @@ export function authResolver(options: AuthResolverOptions = {}) {
       const userId = resolveProvidedUserId(request, body);
 
       auth = {
-        userId,
         method: "api_key",
+        userId,
         verified: false, // Caller-provided userId, not cryptographic
       };
 
       logger?.info(
         {
-          userId,
           method: "api_key",
+          userId,
         },
-        "auth_resolved_api_key",
+        "auth_resolved_api_key"
       );
     }
 
@@ -224,17 +220,17 @@ export function authResolver(options: AuthResolverOptions = {}) {
       const userId = resolveProvidedUserId(request, body);
 
       auth = {
-        userId,
         method: "anonymous",
+        userId,
         verified: false,
       };
 
       logger?.info(
         {
-          userId,
           method: "anonymous",
+          userId,
         },
-        "auth_resolved_anonymous",
+        "auth_resolved_anonymous"
       );
     }
 
@@ -245,10 +241,10 @@ export function authResolver(options: AuthResolverOptions = {}) {
       if (required) {
         logger?.warn(
           {
-            path,
             mode: config.mode,
+            path,
           },
-          "auth_required_but_missing",
+          "auth_required_but_missing"
         );
 
         set.status = 401;
@@ -257,8 +253,8 @@ export function authResolver(options: AuthResolverOptions = {}) {
         if (config.mode === "jwt") {
           return {
             error: "Authentication required",
-            message: "Valid JWT required",
             hint: "Include 'Authorization: Bearer <jwt>' header with a JWT signed using BIOAGENTS_SECRET",
+            message: "Valid JWT required",
           };
         } else {
           return {
@@ -270,31 +266,31 @@ export function authResolver(options: AuthResolverOptions = {}) {
 
       // Not required - create anonymous auth
       auth = {
-        userId: generateUUID(),
         method: "anonymous",
+        userId: generateUUID(),
         verified: false,
       };
 
       logger?.info(
         {
-          userId: auth.userId,
           method: "anonymous",
+          userId: auth.userId,
         },
-        "auth_resolved_anonymous_fallback",
+        "auth_resolved_anonymous_fallback"
       );
     }
 
     // Attach auth context to request
-    (request as any).auth = auth;
+    request.auth = auth;
 
     logger?.info(
       {
-        userId: auth.userId,
         method: auth.method,
-        verified: auth.verified,
         path,
+        userId: auth.userId,
+        verified: auth.verified,
       },
-      "auth_resolver_complete",
+      "auth_resolver_complete"
     );
   };
 }
@@ -321,7 +317,7 @@ export function authBeforeHandle(options: { optional?: boolean } = {}) {
  */
 export async function resolveAuth(
   request: Request,
-  body?: any,
+  body?: unknown
 ): Promise<{
   authenticated: boolean;
   userId?: string;
@@ -338,8 +334,8 @@ export async function resolveAuth(
     if (result.valid && result.payload?.sub) {
       return {
         authenticated: true,
-        userId: result.payload.sub,
         method: "jwt",
+        userId: result.payload.sub,
       };
     }
   }
@@ -348,8 +344,8 @@ export async function resolveAuth(
   if (isValidApiKey(request)) {
     return {
       authenticated: true,
-      userId: resolveProvidedUserId(request, body),
       method: "api_key",
+      userId: resolveProvidedUserId(request, body),
     };
   }
 
@@ -357,8 +353,8 @@ export async function resolveAuth(
   if (config.mode === "none") {
     return {
       authenticated: true,
-      userId: resolveProvidedUserId(request, body),
       method: "anonymous",
+      userId: resolveProvidedUserId(request, body),
     };
   }
 

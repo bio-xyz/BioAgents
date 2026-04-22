@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { getServiceClient } from "../../db/client";
 import { authResolver } from "../../middleware/authResolver";
-import type { AuthContext } from "../../types/auth";
+import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 
@@ -75,20 +75,31 @@ export const deepResearchBranchRoute = new Elysia().guard(
       }),
     ],
   },
-  (app) => app.post("/api/deep-research/branch", deepResearchBranchHandler),
+  (app) => app.post("/api/deep-research/branch", deepResearchBranchHandler)
 );
 
-async function deepResearchBranchHandler(ctx: any) {
+function parseBranchBody(body: unknown): BranchBody {
+  if (typeof body !== "object" || body === null) return {};
+  const record = body as Record<string, unknown>;
+  const pickString = (v: unknown) => (typeof v === "string" ? v : undefined);
+  return {
+    conversationId: pickString(record.conversationId),
+    objective: pickString(record.objective),
+    title: pickString(record.title),
+  };
+}
+
+async function deepResearchBranchHandler(ctx: ElysiaRouteContext) {
   const { body, set, request } = ctx;
-  const parsedBody = body as BranchBody;
-  const auth = (request as any).auth as AuthContext | undefined;
+  const parsedBody = parseBranchBody(body);
+  const auth = request.auth;
   const userId = auth?.userId;
 
   if (!userId) {
     set.status = 401;
     return {
-      ok: false,
       error: "Authentication required",
+      ok: false,
     };
   }
 
@@ -99,65 +110,63 @@ async function deepResearchBranchHandler(ctx: any) {
   if (!sourceConversationId) {
     set.status = 400;
     return {
-      ok: false,
       error: "Missing required field: conversationId",
+      ok: false,
     };
   }
 
   if (!title) {
     set.status = 400;
     return {
-      ok: false,
       error: "Missing required field: title",
+      ok: false,
     };
   }
 
   const supabase = getServiceClient();
 
   try {
-    const { data: sourceConversation, error: sourceConversationError } =
-      await supabase
-        .from("conversations")
-        .select("id, user_id, conversation_state_id")
-        .eq("id", sourceConversationId)
-        .single();
+    const { data: sourceConversation, error: sourceConversationError } = await supabase
+      .from("conversations")
+      .select("id, user_id, conversation_state_id")
+      .eq("id", sourceConversationId)
+      .single();
 
     if (sourceConversationError || !sourceConversation) {
       set.status = 404;
       return {
-        ok: false,
         error: "Source conversation not found",
+        ok: false,
       };
     }
 
     if (sourceConversation.user_id !== userId) {
       set.status = 403;
       return {
-        ok: false,
         error: "Access denied: conversation belongs to another user",
+        ok: false,
       };
     }
 
     if (!sourceConversation.conversation_state_id) {
       set.status = 400;
       return {
-        ok: false,
         error: "Source conversation has no deep research state",
+        ok: false,
       };
     }
 
-    const { data: sourceConversationState, error: sourceStateError } =
-      await supabase
-        .from("conversation_states")
-        .select("id, values")
-        .eq("id", sourceConversation.conversation_state_id)
-        .single();
+    const { data: sourceConversationState, error: sourceStateError } = await supabase
+      .from("conversation_states")
+      .select("id, values")
+      .eq("id", sourceConversation.conversation_state_id)
+      .single();
 
     if (sourceStateError || !sourceConversationState) {
       set.status = 404;
       return {
-        ok: false,
         error: "Source conversation state not found",
+        ok: false,
       };
     }
 
@@ -172,9 +181,7 @@ async function deepResearchBranchHandler(ctx: any) {
     });
 
     const finalObjective =
-      objectiveOverride ||
-      sourceObjective ||
-      normalizeObjective(branchedValues.objective);
+      objectiveOverride || sourceObjective || normalizeObjective(branchedValues.objective);
     branchedValues.objective = finalObjective;
     branchedValues.conversationTitle = title;
     branchedValues.suggestedNextSteps = [];
@@ -191,44 +198,42 @@ async function deepResearchBranchHandler(ctx: any) {
       logger.error(
         {
           err: newStateError,
-          userId,
           sourceConversationId,
+          userId,
         },
-        "deep_research_branch_create_state_failed",
+        "deep_research_branch_create_state_failed"
       );
       set.status = 500;
       return {
-        ok: false,
         error: "Failed to create branched conversation state",
+        ok: false,
       };
     }
 
     const branchedConversationId = generateUUID();
 
-    const { error: createConversationError } = await supabase
-      .from("conversations")
-      .insert({
-        id: branchedConversationId,
-        user_id: userId,
-        title: normalizeTitle(title),
-        conversation_state_id: newConversationState.id,
-        parent_conversation_id: sourceConversationId,
-      });
+    const { error: createConversationError } = await supabase.from("conversations").insert({
+      conversation_state_id: newConversationState.id,
+      id: branchedConversationId,
+      parent_conversation_id: sourceConversationId,
+      title: normalizeTitle(title),
+      user_id: userId,
+    });
 
     if (createConversationError) {
       logger.error(
         {
-          err: createConversationError,
-          userId,
-          sourceConversationId,
           branchedConversationId,
+          err: createConversationError,
+          sourceConversationId,
+          userId,
         },
-        "deep_research_branch_create_conversation_failed",
+        "deep_research_branch_create_conversation_failed"
       );
       set.status = 500;
       return {
-        ok: false,
         error: "Failed to create branched conversation",
+        ok: false,
       };
     }
 
@@ -241,12 +246,12 @@ async function deepResearchBranchHandler(ctx: any) {
     if (sourceMessagesError) {
       logger.error(
         {
-          err: sourceMessagesError,
-          userId,
-          sourceConversationId,
           branchedConversationId,
+          err: sourceMessagesError,
+          sourceConversationId,
+          userId,
         },
-        "deep_research_branch_fetch_messages_failed",
+        "deep_research_branch_fetch_messages_failed"
       );
       const { error: deleteConvError } = await supabase
         .from("conversations")
@@ -258,41 +263,39 @@ async function deepResearchBranchHandler(ctx: any) {
         .eq("id", newConversationState.id);
       if (deleteConvError || deleteStateError) {
         logger.error(
-          { deleteConvError, deleteStateError, branchedConversationId },
-          "deep_research_branch_rollback_failed",
+          { branchedConversationId, deleteConvError, deleteStateError },
+          "deep_research_branch_rollback_failed"
         );
       }
       set.status = 500;
       return {
-        ok: false,
         error: "Failed to copy source messages",
+        ok: false,
       };
     }
 
     if (sourceMessages && sourceMessages.length > 0) {
-      const copiedMessages = (
-        sourceMessages as unknown as Record<string, unknown>[]
-      ).map((row) => ({
-        ...row,
-        source: row.source ?? "ui",
-        conversation_id: branchedConversationId,
-        user_id: userId,
-        state_id: null,
-      }));
+      const copiedMessages = (sourceMessages as unknown as Record<string, unknown>[]).map(
+        (row) => ({
+          ...row,
+          conversation_id: branchedConversationId,
+          source: row.source ?? "ui",
+          state_id: null,
+          user_id: userId,
+        })
+      );
 
-      const { error: copyMessagesError } = await supabase
-        .from("messages")
-        .insert(copiedMessages);
+      const { error: copyMessagesError } = await supabase.from("messages").insert(copiedMessages);
 
       if (copyMessagesError) {
         logger.error(
           {
-            err: copyMessagesError,
-            userId,
-            sourceConversationId,
             branchedConversationId,
+            err: copyMessagesError,
+            sourceConversationId,
+            userId,
           },
-          "deep_research_branch_copy_messages_failed",
+          "deep_research_branch_copy_messages_failed"
         );
         const { error: deleteConvError } = await supabase
           .from("conversations")
@@ -304,45 +307,45 @@ async function deepResearchBranchHandler(ctx: any) {
           .eq("id", newConversationState.id);
         if (deleteConvError || deleteStateError) {
           logger.error(
-            { deleteConvError, deleteStateError, branchedConversationId },
-            "deep_research_branch_rollback_failed",
+            { branchedConversationId, deleteConvError, deleteStateError },
+            "deep_research_branch_rollback_failed"
           );
         }
         set.status = 500;
         return {
-          ok: false,
           error: "Failed to copy messages into branched conversation",
+          ok: false,
         };
       }
     }
 
     logger.info(
       {
-        userId,
-        sourceConversationId,
         branchedConversationId,
+        sourceConversationId,
+        userId,
       },
-      "deep_research_branch_created",
+      "deep_research_branch_created"
     );
 
     set.status = 201;
     return {
-      ok: true,
       conversationId: branchedConversationId,
+      ok: true,
     };
   } catch (error) {
     logger.error(
       {
         err: error,
-        userId,
         sourceConversationId,
+        userId,
       },
-      "deep_research_branch_failed",
+      "deep_research_branch_failed"
     );
     set.status = 500;
     return {
-      ok: false,
       error: "Failed to branch deep research conversation",
+      ok: false,
     };
   }
 }

@@ -6,10 +6,21 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error("Missing Supabase environment variables. Make sure SUPABASE_URL and SUPABASE_ANON_KEY are set in .env file.");
+  throw new Error(
+    "Missing Supabase environment variables. Make sure SUPABASE_URL and SUPABASE_ANON_KEY are set in .env file."
+  );
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+export interface MessageFileMetadata {
+  name?: string;
+  size?: number;
+  type?: string;
+  filename?: string;
+  mimeType?: string;
+  [key: string]: unknown;
+}
 
 export interface Message {
   id?: string;
@@ -18,17 +29,18 @@ export interface Message {
   question?: string;
   content: string;
   summary?: string; // Optional summary for agent messages
-  state?: any;
+  state?: Record<string, unknown>;
   response_time?: number;
   source?: string;
   created_at?: string;
-  files?: any; // JSONB field for file metadata
+  updated_at?: string;
+  files?: MessageFileMetadata[]; // JSONB field for file metadata
 }
 
 // Client-side database operations
 export async function getConversationsByUser(userId: string) {
   console.log("[supabase] Fetching conversations for user_id:", userId);
-  
+
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
@@ -39,17 +51,14 @@ export async function getConversationsByUser(userId: string) {
     console.error("[supabase] Error fetching conversations:", error);
     throw error;
   }
-  
+
   console.log("[supabase] Found conversations for userId:", data?.length || 0);
   return data;
 }
 
-export async function getMessagesByConversation(
-  conversationId: string,
-  limit?: number
-) {
+export async function getMessagesByConversation(conversationId: string, limit?: number) {
   console.log("[supabase] Fetching messages for conversation_id:", conversationId);
-  
+
   let query = supabase
     .from("messages")
     .select("*")
@@ -66,7 +75,7 @@ export async function getMessagesByConversation(
     console.error("[supabase] Error fetching messages:", error);
     throw error;
   }
-  
+
   console.log("[supabase] Found messages:", data?.length || 0);
   return data;
 }

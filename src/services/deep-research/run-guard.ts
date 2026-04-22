@@ -1,8 +1,8 @@
 import { getConversationState, updateConversationState } from "../../db/operations";
-import { getBullMQConnection } from "../queue/connection";
+import type { ConversationStateValues } from "../../types/core";
 import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
-import type { ConversationStateValues } from "../../types/core";
+import { getBullMQConnection } from "../queue/connection";
 
 const START_MUTEX_TTL_SECONDS = 15;
 const START_MUTEX_RETRY_DELAY_MS = 100;
@@ -29,55 +29,40 @@ export type StartMutexLock = {
   fallback: boolean;
 };
 
-export async function acquireStartMutex(
-  conversationStateId: string,
-): Promise<StartMutexLock> {
+export async function acquireStartMutex(conversationStateId: string): Promise<StartMutexLock> {
   const key = `lock:deep_research:start:${conversationStateId}`;
   const token = generateUUID();
 
   // In non-queue mode with no Redis config, skip mutex and fall back to best-effort DB checks.
-  if (
-    process.env.USE_JOB_QUEUE !== "true"
-    && !process.env.REDIS_URL
-    && !process.env.REDIS_HOST
-  ) {
-    return { key, token, acquired: false, fallback: true };
+  if (process.env.USE_JOB_QUEUE !== "true" && !process.env.REDIS_URL && !process.env.REDIS_HOST) {
+    return { acquired: false, fallback: true, key, token };
   }
 
   try {
     const redis = getBullMQConnection();
 
     for (let attempt = 0; attempt <= START_MUTEX_MAX_RETRIES; attempt++) {
-      const acquired = await redis.set(
-        key,
-        token,
-        "EX",
-        START_MUTEX_TTL_SECONDS,
-        "NX",
-      );
+      const acquired = await redis.set(key, token, "EX", START_MUTEX_TTL_SECONDS, "NX");
       if (acquired === "OK") {
-        return { key, token, acquired: true, fallback: false };
+        return { acquired: true, fallback: false, key, token };
       }
 
       if (attempt < START_MUTEX_MAX_RETRIES) {
         await new Promise((resolve) =>
-          setTimeout(resolve, START_MUTEX_RETRY_DELAY_MS * (attempt + 1)),
+          setTimeout(resolve, START_MUTEX_RETRY_DELAY_MS * (attempt + 1))
         );
       }
     }
 
     logger.warn(
       { conversationStateId, key, retries: START_MUTEX_MAX_RETRIES },
-      "deep_research_start_mutex_not_acquired",
+      "deep_research_start_mutex_not_acquired"
     );
 
-    return { key, token, acquired: false, fallback: false };
+    return { acquired: false, fallback: false, key, token };
   } catch (error) {
-    logger.warn(
-      { error, conversationStateId },
-      "deep_research_start_mutex_unavailable_fallback",
-    );
-    return { key, token, acquired: false, fallback: true };
+    logger.warn({ conversationStateId, error }, "deep_research_start_mutex_unavailable_fallback");
+    return { acquired: false, fallback: true, key, token };
   }
 }
 
@@ -90,13 +75,10 @@ export async function releaseStartMutex(lock: StartMutexLock): Promise<void> {
       "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
       1,
       lock.key,
-      lock.token,
+      lock.token
     );
   } catch (error) {
-    logger.warn(
-      { error, key: lock.key },
-      "deep_research_start_mutex_release_failed",
-    );
+    logger.warn({ error, key: lock.key }, "deep_research_start_mutex_release_failed");
   }
 }
 
@@ -112,12 +94,12 @@ function getHeartbeatAndExpiry(run: DeepResearchRun): {
 } {
   const heartbeatMs = parseTimestampMs(run.lastHeartbeatAt);
   const expiresMs = parseTimestampMs(run.expiresAt);
-  return { heartbeatMs, expiresMs };
+  return { expiresMs, heartbeatMs };
 }
 
 export function isStaleRun(
   run?: ConversationStateValues["deepResearchRun"],
-  nowMs: number = Date.now(),
+  nowMs: number = Date.now()
 ): boolean {
   if (!run?.isRunning) return false;
 
@@ -141,33 +123,33 @@ export function isStaleRun(
 
 export function isActiveRun(
   run?: ConversationStateValues["deepResearchRun"],
-  nowMs: number = Date.now(),
+  nowMs: number = Date.now()
 ): run is DeepResearchRun {
   return !!run?.isRunning && !isStaleRun(run, nowMs);
 }
 
 export function getActiveRunForDedupFromValues(
-  values: any,
-  nowMs: number = Date.now(),
+  values: Partial<ConversationStateValues> | null | undefined,
+  nowMs: number = Date.now()
 ): ActiveRunDedupInfo | null {
-  const run = values?.deepResearchRun as ConversationStateValues["deepResearchRun"];
+  const run = values?.deepResearchRun;
   if (!isActiveRun(run, nowMs)) return null;
   if (!run.rootMessageId || !run.stateId || !run.mode) return null;
 
   return {
-    messageId: run.rootMessageId,
-    stateId: run.stateId,
-    mode: run.mode,
-    jobId: run.jobId,
-    startedAt: run.startedAt,
-    lastHeartbeatAt: run.lastHeartbeatAt,
     expiresAt: run.expiresAt,
+    jobId: run.jobId,
+    lastHeartbeatAt: run.lastHeartbeatAt,
+    messageId: run.rootMessageId,
+    mode: run.mode,
+    startedAt: run.startedAt,
+    stateId: run.stateId,
   };
 }
 
 export async function getActiveRunForDedup(
   conversationStateId: string,
-  nowMs: number = Date.now(),
+  nowMs: number = Date.now()
 ): Promise<ActiveRunDedupInfo | null> {
   const record = await getConversationState(conversationStateId);
   if (!record) return null;
@@ -180,7 +162,7 @@ function buildRunTimestamps(nowMs: number): {
 } {
   const nowIso = new Date(nowMs).toISOString();
   const expiresIso = new Date(nowMs + RUN_STALE_MS).toISOString();
-  return { nowIso, expiresIso };
+  return { expiresIso, nowIso };
 }
 
 export async function markRunStarted(params: {
@@ -198,13 +180,13 @@ export async function markRunStarted(params: {
 
   const run: DeepResearchRun = {
     isRunning: true,
+    mode,
     rootMessageId,
     stateId,
-    mode,
     ...(jobId ? { jobId } : {}),
-    startedAt: nowIso,
-    lastHeartbeatAt: nowIso,
     expiresAt: expiresIso,
+    lastHeartbeatAt: nowIso,
+    startedAt: nowIso,
   };
 
   values.deepResearchRun = run;
@@ -231,8 +213,8 @@ export async function touchRun(params: {
 
   values.deepResearchRun = {
     ...run,
-    lastHeartbeatAt: nowIso,
     expiresAt: expiresIso,
+    lastHeartbeatAt: nowIso,
   };
 
   await updateConversationState(conversationStateId, values);
@@ -259,9 +241,9 @@ export async function updateRunJobId(params: {
 
   values.deepResearchRun = {
     ...run,
+    expiresAt: expiresIso,
     jobId,
     lastHeartbeatAt: nowIso,
-    expiresAt: expiresIso,
   };
 
   await updateConversationState(conversationStateId, values);
@@ -301,12 +283,12 @@ export async function markRunFinished(params: {
 
   values.deepResearchRun = {
     ...run,
-    isRunning: false,
-    lastResult: result,
-    lastError: error || undefined,
     endedAt: nowIso,
-    lastHeartbeatAt: nowIso,
     expiresAt: nowIso,
+    isRunning: false,
+    lastError: error || undefined,
+    lastHeartbeatAt: nowIso,
+    lastResult: result,
   };
 
   await updateConversationState(conversationStateId, values);

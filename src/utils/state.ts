@@ -1,10 +1,15 @@
 import type { WebSearchResult } from "../llm/types";
-import type { State } from "../types/core";
+import type { ConversationState, ConversationStateValues, State, StateValues } from "../types/core";
 import logger from "./logger";
 
+export function addVariablesToState(state: State, variables: Partial<StateValues>): void;
 export function addVariablesToState(
-  state: State,
-  variables: Record<string, any>,
+  state: ConversationState,
+  variables: Partial<ConversationStateValues>
+): void;
+export function addVariablesToState(
+  state: State | ConversationState,
+  variables: Partial<StateValues> | Partial<ConversationStateValues>
 ) {
   state.values = {
     ...state.values,
@@ -25,15 +30,12 @@ export function endStep(state: State, stepName: string) {
   if (!state.values.steps) {
     state.values.steps = {};
   }
-  if (!state.values.steps[stepName]) {
-    state.values.steps[stepName] = {};
-  }
-  state.values.steps[stepName].end = Date.now();
+  const step = state.values.steps[stepName] ?? { start: Date.now() };
+  step.end = Date.now();
+  state.values.steps[stepName] = step;
 }
 
-export function cleanWebSearchResults(
-  webSearchResults: WebSearchResult[],
-): WebSearchResult[] {
+export function cleanWebSearchResults(webSearchResults: WebSearchResult[]): WebSearchResult[] {
   return webSearchResults.map((result) => {
     let cleanedTitle = result.title;
 
@@ -73,7 +75,9 @@ export function cleanWebSearchResults(
  * @param messages - Array of messages from the database
  * @returns Formatted conversation history string
  */
-export function formatConversationHistory(messages: any[]): string {
+export function formatConversationHistory(
+  messages: Array<{ question?: string; content?: string }>
+): string {
   if (!messages || messages.length === 0) {
     return "";
   }
@@ -92,12 +96,12 @@ export function formatConversationHistory(messages: any[]): string {
     .join("\n");
 }
 
-export function parseKeyValueXml(text: string): Record<string, any> | null {
+export function parseKeyValueXml(text: string): Record<string, unknown> | null {
   if (!text) return null;
 
   // First, try to find a specific <response> block (the one we actually want)
   // Use a more permissive regex to handle cases where there might be multiple XML blocks
-  let xmlBlockMatch = text.match(/<response>([\s\S]*?)<\/response>/);
+  const xmlBlockMatch = text.match(/<response>([\s\S]*?)<\/response>/);
   let xmlContent: string;
 
   if (xmlBlockMatch) {
@@ -115,7 +119,7 @@ export function parseKeyValueXml(text: string): Record<string, any> | null {
     logger.debug(`Found XML block with tag: ${fallbackMatch[1]}`);
   }
 
-  const result: Record<string, any> = {};
+  const result: Record<string, unknown> = {};
 
   // Regex to find <key>value</key> patterns
   const tagPattern = /<([\w-]+)>([\s\S]*?)<\/([\w-]+)>/g;
@@ -143,9 +147,7 @@ export function parseKeyValueXml(text: string): Record<string, any> | null {
         result[key] = value;
       }
     } else {
-      logger.warn(
-        `Mismatched XML tags found: <${match[1]}> and </${match[3]}>`,
-      );
+      logger.warn(`Mismatched XML tags found: <${match[1]}> and </${match[3]}>`);
       // Potentially skip this mismatched pair or return null depending on strictness needed
     }
   }
