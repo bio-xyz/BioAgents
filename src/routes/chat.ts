@@ -363,30 +363,19 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Triggered when client sends Accept: text/event-stream header.
     // Non-SSE requests fall through to the existing queue/JSON paths below.
     // =========================================================================
-    const acceptsSSE = request.headers
-      .get("accept")
-      ?.includes("text/event-stream");
+    const acceptsSSE = request.headers.get("accept")?.includes("text/event-stream");
 
     if (acceptsSSE) {
-      logger.info(
-        { messageId: createdMessage.id, conversationId },
-        "chat_using_sse_mode",
-      );
+      logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_sse_mode");
 
       // Import SSE dependencies at function scope (dynamic for TDZ safety)
       const { runChatAgent } = await import("../chat-agent/runner");
       const { fileUploadAgent } = await import("../agents/fileUpload");
-      const { getPendingFileIds, getFileStatus } = await import(
-        "../services/files/status"
+      const { getPendingFileIds, getFileStatus } = await import("../services/files/status");
+      const { getFileProcessQueue } = await import("../services/queue/queues");
+      const { getConversationState, updateMessage, updateConversationState } = await import(
+        "../db/operations"
       );
-      const { getFileProcessQueue } = await import(
-        "../services/queue/queues"
-      );
-      const {
-        getConversationState,
-        updateMessage,
-        updateConversationState,
-      } = await import("../db/operations");
 
       const encoder = new TextEncoder();
       const sseStartTime = Date.now();
@@ -395,14 +384,22 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
       const stream = new ReadableStream({
+        cancel() {
+          // Client disconnected. Agent loop keeps running via the awaited
+          // runChatAgent call - DB save still happens. send() becomes no-op.
+          // Clear the heartbeat timer to prevent leak.
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+          }
+          logger.info({ messageId: createdMessage.id }, "chat_sse_client_disconnected");
+        },
         async start(controller) {
           // Helper: safe enqueue (swallows errors if client disconnected)
           const send = (event: string, data: unknown) => {
             try {
               controller.enqueue(
-                encoder.encode(
-                  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
-                ),
+                encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
               );
             } catch {
               // Controller closed (client disconnected). Keep running so DB save happens.
@@ -416,9 +413,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           // (up to 2 min) can easily exceed proxy idle limits.
           const sendHeartbeat = () => {
             try {
-              controller.enqueue(
-                encoder.encode(`: heartbeat ${Date.now()}\n\n`),
-              );
+              controller.enqueue(encoder.encode(`: heartbeat ${Date.now()}\n\n`));
             } catch {
               // Controller closed
             }
@@ -451,8 +446,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             // can render its streaming bubble immediately. Then start heartbeats
             // to keep proxies alive during the silent file-wait period.
             send("init", {
-              messageId: createdMessage.id,
               conversationId,
+              messageId: createdMessage.id,
             });
             startHeartbeat();
 
@@ -470,8 +465,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 files,
                 userId,
               });
-              conversationStateRecord.values =
-                conversationStateForFiles.values;
+              conversationStateRecord.values = conversationStateForFiles.values;
             }
 
             // Path B: presigned S3 upload flow (usePresignedUpload.ts).
@@ -480,13 +474,11 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             // chat.worker.ts:95-174 so SSE doesn't race with file processing.
             // Without this, the agent runs before uploaded datasets are ready.
             if (conversationStateRecord.id) {
-              const pendingFileIds = await getPendingFileIds(
-                conversationStateRecord.id,
-              );
+              const pendingFileIds = await getPendingFileIds(conversationStateRecord.id);
               if (pendingFileIds.length > 0) {
                 logger.info(
                   { messageId: createdMessage.id, pendingFileIds },
-                  "chat_sse_waiting_for_file_processing",
+                  "chat_sse_waiting_for_file_processing"
                 );
                 // CRITICAL: getFileProcessQueue() returns null when
                 // USE_JOB_QUEUE=false (queues.ts:120). Must null-guard before
@@ -504,8 +496,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                     if (fileStatus?.status === "ready") break;
                     if (fileStatus?.status === "error") {
                       logger.warn(
-                        { messageId: createdMessage.id, fileId },
-                        "chat_sse_file_failed_continuing",
+                        { fileId, messageId: createdMessage.id },
+                        "chat_sse_file_failed_continuing"
                       );
                       break;
                     }
@@ -513,29 +505,23 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                     // Secondary signal from BullMQ job state when queue exists
                     if (fileProcessQueue) {
                       const fileJob = await fileProcessQueue.getJob(fileId);
-                      const fileJobState = fileJob
-                        ? await fileJob.getState()
-                        : null;
+                      const fileJobState = fileJob ? await fileJob.getState() : null;
                       if (fileJobState === "completed" || !fileJob) break;
                       if (fileJobState === "failed") {
                         logger.warn(
-                          { messageId: createdMessage.id, fileId },
-                          "chat_sse_file_job_failed_continuing",
+                          { fileId, messageId: createdMessage.id },
+                          "chat_sse_file_job_failed_continuing"
                         );
                         break;
                       }
                     }
 
-                    await new Promise((r) =>
-                      setTimeout(r, pollIntervalMs),
-                    );
+                    await new Promise((r) => setTimeout(r, pollIntervalMs));
                   }
                 }
 
                 // Refresh conversation state to pick up uploadedDatasets
-                const fresh = await getConversationState(
-                  conversationStateRecord.id,
-                );
+                const fresh = await getConversationState(conversationStateRecord.id);
                 if (fresh) {
                   conversationStateRecord.values = fresh.values;
                 }
@@ -544,10 +530,19 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
             const result = await runChatAgent({
               conversationId,
-              message,
-              uploadedDatasets:
-                conversationStateRecord.values.uploadedDatasets,
               loadHistory: true,
+              message,
+              onStreamPause: async () => {
+                // Called by loop.ts AFTER finalMessage, BEFORE tool execution
+                if (streamStarted) {
+                  send("stream_end", {
+                    isFinal: false,
+                    reason: "paused",
+                    turnIndex,
+                  });
+                  streamStarted = false;
+                }
+              },
               onTextDelta: (delta) => {
                 if (!streamStarted) {
                   streamStarted = true;
@@ -556,17 +551,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 }
                 send("delta", { text: delta, turnIndex });
               },
-              onStreamPause: async () => {
-                // Called by loop.ts AFTER finalMessage, BEFORE tool execution
-                if (streamStarted) {
-                  send("stream_end", {
-                    isFinal: false,
-                    turnIndex,
-                    reason: "paused",
-                  });
-                  streamStarted = false;
-                }
-              },
               onToolResult: async (info) => {
                 // Mirror existing in-process path: update conversation state
                 if (!conversationStateRecord.id) return;
@@ -574,19 +558,20 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                   await updateConversationState(conversationStateRecord.id, {
                     ...conversationStateRecord.values,
                     agentProgress: {
+                      isError: info.result.isError ?? false,
+                      lastToolCallId: info.toolCallId,
                       stage: `tool:${info.toolName}`,
                       toolCallCount: info.toolCallCount,
-                      lastToolCallId: info.toolCallId,
-                      isError: info.result.isError ?? false,
                     },
                   });
                 } catch (err) {
                   logger.warn(
                     { error: err, toolName: info.toolName },
-                    "conversation_state_update_failed",
+                    "conversation_state_update_failed"
                   );
                 }
               },
+              uploadedDatasets: conversationStateRecord.values.uploadedDatasets,
             });
 
             // === Truncation guard ===
@@ -596,32 +581,25 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               if (streamStarted) {
                 send("stream_end", {
                   isFinal: false,
-                  turnIndex,
                   reason: "truncated",
+                  turnIndex,
                 });
               }
               send("error", {
+                message: "Response was truncated. Please try a shorter question.",
                 reason: "truncated",
-                message:
-                  "Response was truncated. Please try a shorter question.",
               });
               safeClose();
-              logger.warn(
-                { messageId: createdMessage.id },
-                "chat_sse_truncated",
-              );
+              logger.warn({ messageId: createdMessage.id }, "chat_sse_truncated");
               return;
             }
             if (!result.replyText) {
               send("error", {
-                reason: "empty_reply",
                 message: "No response generated. Please try again.",
+                reason: "empty_reply",
               });
               safeClose();
-              logger.warn(
-                { messageId: createdMessage.id },
-                "chat_sse_empty_reply",
-              );
+              logger.warn({ messageId: createdMessage.id }, "chat_sse_empty_reply");
               return;
             }
 
@@ -638,8 +616,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             if (streamStarted) {
               send("stream_end", {
                 isFinal: true,
-                turnIndex,
                 reason: "complete",
+                turnIndex,
               });
             }
             send("done", { messageId: createdMessage.id });
@@ -647,56 +625,40 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
             logger.info(
               {
-                messageId: createdMessage.id,
                 conversationId,
+                messageId: createdMessage.id,
+                replyLength: result.replyText.length,
+                responseTime,
+                streaming: true,
                 toolCallCount: result.toolCallCount,
                 totalInputTokens: result.totalInputTokens,
                 totalOutputTokens: result.totalOutputTokens,
-                responseTime,
-                replyLength: result.replyText.length,
-                streaming: true,
               },
-              "chat_sse_completed",
+              "chat_sse_completed"
             );
           } catch (err) {
-            logger.error(
-              { error: err, messageId: createdMessage.id },
-              "chat_sse_error",
-            );
+            logger.error({ error: err, messageId: createdMessage.id }, "chat_sse_error");
             // Generic client-facing message -- raw err.message can leak
             // internal detail (Anthropic SDK errors, DB errors, etc.). Full
             // error is already captured in the logger.error above.
             send("error", {
-              reason: "agent_error",
               message: "Something went wrong while generating the response. Please try again.",
+              reason: "agent_error",
             });
             safeClose();
           }
         },
-        cancel() {
-          // Client disconnected. Agent loop keeps running via the awaited
-          // runChatAgent call - DB save still happens. send() becomes no-op.
-          // Clear the heartbeat timer to prevent leak.
-          if (heartbeatTimer) {
-            clearInterval(heartbeatTimer);
-            heartbeatTimer = null;
-          }
-          logger.info(
-            { messageId: createdMessage.id },
-            "chat_sse_client_disconnected",
-          );
-        },
       });
 
       return new Response(stream, {
-        status: 200,
         headers: {
-          "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
+          "Content-Type": "text/event-stream",
           // Disable nginx buffering - critical for real-time streaming
           "X-Accel-Buffering": "no",
         },
+        status: 200,
       });
     }
 
