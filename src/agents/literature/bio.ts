@@ -50,6 +50,35 @@ type BioLiteratureResponse = {
   [key: string]: unknown;
 };
 
+export const DEFAULT_BIO_LITERATURE_SOURCES = [
+  "arxiv",
+  "pubmed",
+  "clinical-trials",
+] as const;
+
+export function resolveBioLiteratureSources(sources?: string[]): string[] {
+  const normalizedSources =
+    sources
+      ?.map((source) => source.trim())
+      .filter((source): source is string => source.length > 0) || [];
+
+  return normalizedSources.length > 0 ? normalizedSources : [...DEFAULT_BIO_LITERATURE_SOURCES];
+}
+
+export function buildBioLiteratureQueryPayload(
+  objective: string,
+  mode: BioLiteratureMode,
+  sources?: string[]
+) {
+  return {
+    question: objective,
+    max_results: 20,
+    per_source_limit: 5,
+    sources: resolveBioLiteratureSources(sources),
+    mode,
+  };
+}
+
 function extractAnswer(data: BioLiteratureResponse): string {
   const directResponse = data.response;
   const nestedResponse = data.output?.response;
@@ -170,9 +199,9 @@ async function pollBioLiteratureJob(
     const jobData = (await response.json()) as BioLiteratureResponse;
     const status = String(
       jobData.status ||
-        (jobData as { job_status?: string }).job_status ||
-        (jobData as { state?: string }).state ||
-        "",
+      (jobData as { job_status?: string }).job_status ||
+      (jobData as { state?: string }).state ||
+      "",
     ).toLowerCase();
 
     const answer = extractAnswer(jobData);
@@ -217,13 +246,16 @@ export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
   onPollUpdate?: OnPollUpdate,
+  sources?: string[]
 ): Promise<{ output: string; jobId?: string; reasoning?: string[] }> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
   }
 
-  logger.info({ objective }, "starting_bioliterature_search");
+  const payload = buildBioLiteratureQueryPayload(objective, mode, sources);
+
+  logger.info({ objective, sources: payload.sources }, "starting_bioliterature_search");
 
   const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
   const endpoint = `${baseUrl}/query`;
@@ -236,13 +268,7 @@ export async function searchBioLiterature(
         "Content-Type": "application/json",
         "X-API-Key": BIO_LIT_AGENT_API_KEY,
       },
-      body: JSON.stringify({
-        question: objective,
-        max_results: 20,
-        per_source_limit: 5,
-        sources: ["arxiv", "pubmed", "clinical-trials"],
-        mode,
-      }),
+      body: JSON.stringify(payload),
     },
     {
       onRetry: (attempt, error) =>

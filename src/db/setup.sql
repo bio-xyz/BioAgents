@@ -58,6 +58,10 @@ CREATE TABLE messages (
   state_id UUID REFERENCES states(id) ON DELETE SET NULL,
   response_time INTEGER, -- in milliseconds
   source TEXT DEFAULT 'ui', -- 'ui', 'twitter', etc.
+  source_selection_id TEXT CHECK (
+    source_selection_id IS NULL
+    OR source_selection_id IN ('alphafold_db', 'uniprot', 'alphafold_model')
+  ),
   files JSONB, -- stores file metadata for uploads
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -71,6 +75,7 @@ CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
 CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
 CREATE INDEX idx_messages_state_id ON messages(state_id);
+CREATE INDEX idx_messages_source_selection_id ON messages(source_selection_id);
 
 -- GIN index for JSONB fields (efficient for JSON queries)
 CREATE INDEX idx_states_values ON states USING GIN (values);

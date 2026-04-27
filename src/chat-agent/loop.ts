@@ -111,7 +111,11 @@ export async function runAgentLoop(
         "agent_tool_call_executing"
       );
 
-      const result = await executeTool(toolBlock.name, toolBlock.input as Record<string, unknown>);
+      const result = await executeTool(
+        toolBlock.name,
+        toolBlock.input as Record<string, unknown>,
+        config.toolExecutionContext
+      );
 
       // Notify caller (e.g. for DB state updates)
       if (config.onToolResult) {

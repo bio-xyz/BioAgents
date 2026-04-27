@@ -1,4 +1,5 @@
 import type { ConversationStateValues, StateValues } from "../types/core";
+import type { SourceSelectionId } from "../types/sourceSelection";
 import logger from "../utils/logger";
 import { cleanValues } from "./cleanValues";
 import { getServiceClient } from "./client";
@@ -46,6 +47,7 @@ export interface Message {
   state_id?: string;
   response_time?: number;
   source?: string;
+  source_selection_id?: SourceSelectionId;
   files?: Array<{ name: string; size: number; type: string }>;
 }
 

@@ -5,7 +5,7 @@
 
 import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 import logger from "../utils/logger";
-import type { AgentTool, AgentToolResult } from "./types";
+import type { AgentTool, AgentToolExecutionContext, AgentToolResult } from "./types";
 
 const tools = new Map<string, AgentTool>();
 
@@ -40,14 +40,15 @@ export function getToolDefinitions(): Tool[] {
  */
 export async function executeTool(
   name: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  context?: AgentToolExecutionContext
 ): Promise<AgentToolResult> {
   const tool = tools.get(name);
   if (!tool) {
     return { content: `Error: Unknown tool "${name}"`, isError: true };
   }
   try {
-    return await tool.execute(input);
+    return await tool.execute(input, context);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ error: message, toolName: name }, "agent_tool_execution_error");

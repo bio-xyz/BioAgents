@@ -8,7 +8,9 @@
 
 import { Job, Worker } from "bullmq";
 import type { ConversationState, PlanTask, State } from "../../../types/core";
+import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
+import { buildMessageStateValues } from "../../../utils/messageState";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -72,7 +74,10 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Initialize state objects
     const state: State = {
       id: stateRecord.id,
-      values: stateRecord.values,
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
+        message: messageRecord,
+      }),
     };
 
     const conversationState: ConversationState = {
@@ -129,7 +134,8 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
         messageId,
         message,
         conversationState,
-        startTime
+        startTime,
+        state.values.sourceSelectionId
       );
     }
 
@@ -201,6 +207,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       if (useBioLiterature) {
         const bioLiteraturePromise = literatureAgent({
           objective: task.objective,
+          sources: task.sources,
           type: "BIOLIT",
         }).then((result) => {
           task.output += `${result.output}\n\n`;
@@ -389,7 +396,8 @@ async function processWithAgentLoop(
   messageId: string,
   message: string,
   conversationState: ConversationState,
-  startTime: number
+  startTime: number,
+  sourceSelectionId?: SourceSelectionId
 ): Promise<ChatJobResult> {
   const { userId } = job.data;
 
@@ -443,6 +451,7 @@ async function processWithAgentLoop(
         await notifyJobProgress(job.id!, conversationId, "literature", 40);
       }
     },
+    sourceSelectionId,
     uploadedDatasets: conversationState.values.uploadedDatasets,
   });
 

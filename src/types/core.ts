@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SourceSelectionIdSchema, type SourceSelectionId } from "./sourceSelection";
 
 export const MessageSchema = z.object({
   content: z.string(),
@@ -8,6 +9,7 @@ export const MessageSchema = z.object({
   question: z.string(),
   response_time: z.number().optional(),
   source: z.string().optional(),
+  source_selection_id: SourceSelectionIdSchema.optional(),
   state: z.any().optional(),
   user_id: z.string().min(1),
 });
@@ -21,6 +23,7 @@ export interface StateValues {
   conversationId?: string;
   userId?: string;
   source?: string;
+  sourceSelectionId?: SourceSelectionId;
   isDeepResearch?: boolean;
 
   // Action responses
@@ -41,6 +44,7 @@ export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
   objective: string;
+  sources?: string[];
   datasets: Array<{
     filename: string;
     id: string;

@@ -7,6 +7,8 @@
 
 import type { ToolCallInfo } from "./types";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
+import type { SourceSelectionId } from "../types/sourceSelection";
+import { getChatAgentSourceSelectionGuidance } from "../utils/sourceSelectionRouting";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -15,6 +17,7 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 export interface RunChatAgentParams {
   conversationId: string;
   message: string;
+  sourceSelectionId?: SourceSelectionId;
   /** Uploaded datasets to inject into user message context (not system prompt, to avoid prompt injection) */
   uploadedDatasets?: Array<{
     filename: string;
@@ -94,7 +97,16 @@ export async function runChatAgent(
     parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || 4096;
 
   // --- 3. Build system prompt + dataset context for user message ---
-  const systemPrompt = AGENT_SYSTEM_PROMPT;
+  const sourceSelectionGuidance = getChatAgentSourceSelectionGuidance(
+    params.sourceSelectionId,
+    params.message
+  );
+  const systemPrompt = sourceSelectionGuidance
+    ? `${AGENT_SYSTEM_PROMPT}
+
+SOURCE SELECTION
+${sourceSelectionGuidance}`
+    : AGENT_SYSTEM_PROMPT;
 
   // Dataset content goes in the user message, NOT the system prompt,
   // to avoid elevating untrusted file contents to system-level authority.
@@ -176,6 +188,11 @@ export async function runChatAgent(
       maxToolCalls,
       maxTokens,
       apiKey,
+      toolExecutionContext: {
+        conversationId: params.conversationId,
+        sourceSelectionId: params.sourceSelectionId,
+        userMessage: params.message,
+      },
       onToolResult: params.onToolResult,
     },
     conversationHistory.length > 0 ? conversationHistory : undefined,

@@ -11,6 +11,7 @@ describe("extractPlanningResult", () => {
           level: 1,
           objective: "Search for biomarkers",
           output: "",
+          sources: ["alphafold_db"],
           type: "LITERATURE",
         },
       ],
@@ -19,6 +20,7 @@ describe("extractPlanningResult", () => {
     expect(result.currentObjective).toBe("Find biomarkers");
     expect(result.plan).toHaveLength(1);
     expect(result.plan[0]!.type).toBe("LITERATURE");
+    expect(result.plan[0]!.sources).toEqual(["alphafold_db"]);
   });
 
   test("strategy 2: JSON inside markdown code block", () => {
@@ -66,5 +68,21 @@ describe("extractPlanningResult", () => {
     expect(result.plan[0]!.datasets).toEqual([]);
     expect(result.plan[0]!.level).toBe(1);
     expect(result.plan[0]!.output).toBe("");
+  });
+
+  test("regex fallback works when sources are absent", () => {
+    const raw = `{
+      "currentObjective": "Find structures",
+      "plan": [
+        {
+          "type": "LITERATURE",
+          "objective": "Search AlphaFold entries"
+        }
+      ]
+    }`;
+
+    const result = extractPlanningResult(raw);
+    expect(result.plan).toHaveLength(1);
+    expect(result.plan[0]!.sources).toBeUndefined();
   });
 });

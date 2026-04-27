@@ -6,8 +6,10 @@ import { ensureUserAndConversation, setupConversationData } from "../services/ch
 import { createMessageRecord, updateMessageResponseTime } from "../services/chat/tools";
 import type { ConversationState, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
+import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
+import { buildMessageStateValues } from "../utils/messageState";
 import { generateUUID } from "../utils/uuid";
 
 /**
@@ -254,6 +256,14 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     const auth = request.auth;
     const userId = auth?.userId || generateUUID();
     const source = "api";
+    const sourceSelectionId = parseSourceSelectionId(asString(parsedBody.sourceSelectionId));
+    if (parsedBody.sourceSelectionId !== undefined && !sourceSelectionId) {
+      set.status = 400;
+      return {
+        error: "Invalid sourceSelectionId",
+        ok: false,
+      };
+    }
 
     logger.info(
       {
@@ -284,6 +294,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         messageLength: message.length,
         routeType: "chat-v2",
         source,
+        sourceSelectionId,
         userId,
       },
       "chat_request_received"
@@ -335,6 +346,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       isExternal: false,
       message,
       source,
+      sourceSelectionId,
       stateId: stateRecord.id,
       userId,
     });
@@ -441,12 +453,10 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Initialize state
     const state: State = {
       id: stateRecord.id,
-      values: {
-        conversationId,
-        messageId: createdMessage.id,
-        source: createdMessage.source,
-        userId,
-      },
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
+        message: createdMessage,
+      }),
     };
 
     // Initialize conversation state
@@ -522,6 +532,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           logger.warn({ error: err, toolName: info.toolName }, "conversation_state_update_failed");
         }
       },
+      sourceSelectionId: state.values.sourceSelectionId,
       uploadedDatasets: conversationState.values.uploadedDatasets,
     });
 

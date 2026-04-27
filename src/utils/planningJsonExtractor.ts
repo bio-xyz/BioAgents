@@ -6,6 +6,17 @@ export type PlanningResult = {
   plan: Array<PlanTask>;
 };
 
+function normalizeSources(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sources = value.filter(
+    (source): source is string => typeof source === "string" && source.length > 0
+  );
+  return sources.length > 0 ? sources : undefined;
+}
+
 /**
  * Extract planning result from LLM response using multiple strategies.
  * Never throws - always returns a usable result.
@@ -132,6 +143,7 @@ function normalizeResult(result: Partial<PlanningResult>): PlanningResult {
       ...task,
       type: task.type || "LITERATURE",
       objective: task.objective || "",
+      sources: normalizeSources(task.sources),
       datasets: task.datasets || [],
       level: task.level ?? index + 1,
       output: task.output || "",

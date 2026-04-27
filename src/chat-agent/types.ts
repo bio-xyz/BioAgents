@@ -3,6 +3,14 @@
  * Independent from src/llm/types.ts to avoid modifying shared interfaces.
  */
 
+import type { SourceSelectionId } from "../types/sourceSelection";
+
+export interface AgentToolExecutionContext {
+  conversationId: string;
+  userMessage: string;
+  sourceSelectionId?: SourceSelectionId;
+}
+
 /**
  * A registered tool with its JSON Schema and executor.
  */
@@ -10,7 +18,10 @@ export interface AgentTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>; // JSON Schema for Anthropic API
-  execute: (input: Record<string, unknown>) => Promise<AgentToolResult>;
+  execute: (
+    input: Record<string, unknown>,
+    context?: AgentToolExecutionContext
+  ) => Promise<AgentToolResult>;
 }
 
 /**
@@ -42,6 +53,7 @@ export interface AgentLoopConfig {
   maxTokens: number;
   temperature?: number;
   apiKey: string;
+  toolExecutionContext?: AgentToolExecutionContext;
   /** Called after each tool execution. Use for DB state updates, progress notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
 }

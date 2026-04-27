@@ -36,6 +36,7 @@ import {
   syncObjectiveTraceProgress,
 } from "../../../utils/deep-research/objective-trace";
 import logger from "../../../utils/logger";
+import { buildMessageStateValues } from "../../../utils/messageState";
 import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 import { getBullMQConnection } from "../connection";
 import {
@@ -250,10 +251,11 @@ async function processDeepResearchJob(
     // Initialize state objects
     const state: State = {
       id: stateRecord.id,
-      values: {
-        ...stateRecord.values,
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
         isDeepResearch: true,
-      },
+        message: messageRecord,
+      }),
     };
 
     conversationState = {
@@ -646,6 +648,7 @@ async function processDeepResearchJob(
         const primaryLiteraturePromise = literatureAgent({
           objective: task.objective,
           onPollUpdate,
+          sources: task.sources,
           type: primaryLiteratureType,
         }).then(async (result) => {
           task.output += `${result.output}\n\n`;

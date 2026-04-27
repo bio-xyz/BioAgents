@@ -40,6 +40,7 @@ import { notifyMessageUpdated, notifyStateUpdated } from "../../services/queue/n
 import { getDeepResearchQueue } from "../../services/queue/queues";
 import type { ConversationState, OnPollUpdate, PlanTask, State } from "../../types/core";
 import type { ElysiaRouteContext } from "../../types/elysia";
+import { parseSourceSelectionId } from "../../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../../utils/bodyParsing";
 import {
   clearDeepResearchActivity,
@@ -59,6 +60,7 @@ import {
 } from "../../utils/deep-research/objective-trace";
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
+import { buildMessageStateValues } from "../../utils/messageState";
 import { generateUUID } from "../../utils/uuid";
 
 type CreatedMessage = Awaited<ReturnType<typeof createMessage>>;
@@ -311,6 +313,14 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
 
   // Extract clarificationSessionId from request (optional)
   const clarificationSessionId = asString(parsedBody.clarificationSessionId);
+  const sourceSelectionId = parseSourceSelectionId(asString(parsedBody.sourceSelectionId));
+  if (parsedBody.sourceSelectionId !== undefined && !sourceSelectionId) {
+    set.status = 400;
+    return {
+      error: "Invalid sourceSelectionId",
+      ok: false,
+    };
+  }
 
   // Extract files from parsed body
   const files: File[] = extractFiles(parsedBody.files);
@@ -325,6 +335,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
         requestedResearchMode,
         routeType: "deep-research-v2-start",
         source,
+        sourceSelectionId,
         userId,
       },
       "deep_research_start_request_received"
@@ -573,6 +584,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
       isExternal: false,
       message,
       source,
+      sourceSelectionId,
       stateId: stateRecord.id,
       userId,
     });
@@ -585,6 +597,13 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
     }
 
     createdMessage = messageResult.message!;
+
+    stateRecord.values = buildMessageStateValues({
+      baseValues: stateRecord.values,
+      isDeepResearch: true,
+      message: createdMessage,
+    });
+    await updateState(stateRecord.id, stateRecord.values);
 
     const startedRun = await markRunStarted({
       conversationStateId: conversationStateRecord.id,
@@ -832,13 +851,11 @@ async function runDeepResearch(params: {
     // Initialize state
     const state: State = {
       id: stateRecord.id,
-      values: {
-        conversationId: createdMessage.conversation_id,
-        isDeepResearch: true, // Flag indicating deep research mode
-        messageId: createdMessage.id,
-        source: createdMessage.source,
-        userId: createdMessage.user_id,
-      },
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
+        isDeepResearch: true,
+        message: createdMessage,
+      }),
     };
 
     // Initialize conversation state
@@ -1309,6 +1326,7 @@ async function runDeepResearch(params: {
           const primaryLiteraturePromise = literatureAgent({
             objective: task.objective,
             onPollUpdate,
+            sources: task.sources,
             type: primaryLiteratureType,
           }).then(async (result) => {
             // Always append for Edison/BioLit (no count filtering)
