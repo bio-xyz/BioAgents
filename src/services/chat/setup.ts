@@ -95,6 +95,9 @@ export async function ensureUserAndConversation(
         ? (err as { code?: unknown }).code
         : undefined;
     if (errCode === "23505") {
+      if (logger) {
+        logger.warn({ conversationId, userId }, "conversation_create_race_23505");
+      }
       // Re-check ownership for the race condition case
       try {
         const racedConversation = await getConversation(conversationId);
