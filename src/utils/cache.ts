@@ -5,7 +5,7 @@ export class SimpleCache<T> {
 
   set(key: string, value: T, ttlMs = 300000) {
     // 5min default
-    this.cache.set(key, { value, expires: Date.now() + ttlMs });
+    this.cache.set(key, { expires: Date.now() + ttlMs, value });
   }
 
   get(key: string): T | null {

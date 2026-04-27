@@ -7,6 +7,6 @@
  * @deprecated Use authResolver from './authResolver' instead
  */
 
+export type { AuthResolverOptions as AuthOptions } from "../types/auth";
 // Re-export the new authResolver as authBeforeHandle for backward compatibility
 export { authBeforeHandle, authResolver } from "./authResolver";
-export type { AuthResolverOptions as AuthOptions } from "../types/auth";

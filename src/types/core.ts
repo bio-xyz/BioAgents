@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SourceSelectionIdSchema, type SourceSelectionId } from "./sourceSelection";
+import { type SourceSelectionId, SourceSelectionIdSchema } from "./sourceSelection";
 
 export const MessageSchema = z.object({
   content: z.string(),

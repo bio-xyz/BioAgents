@@ -8,9 +8,9 @@ interface ConversationContextValue {
 }
 
 const ConversationContext = createContext<ConversationContextValue>({
-  userId: null,
   conversationId: null,
   conversationStateId: null,
+  userId: null,
 });
 
 interface Props {
@@ -29,9 +29,9 @@ export function ConversationProvider({
   return (
     <ConversationContext.Provider
       value={{
-        userId: userId ?? null,
         conversationId: conversationId ?? null,
         conversationStateId: conversationStateId ?? null,
+        userId: userId ?? null,
       }}
     >
       {children}

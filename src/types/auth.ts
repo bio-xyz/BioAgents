@@ -130,8 +130,8 @@ export function getAuthConfig(): AuthConfig {
   const maxJwtExpiration = parseInt(process.env.MAX_JWT_EXPIRATION || "3600", 10); // 1h default
 
   return {
-    mode,
     hasSecret,
     maxJwtExpiration,
+    mode,
   };
 }

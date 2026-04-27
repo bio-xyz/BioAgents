@@ -38,43 +38,43 @@ export function Modal({ isOpen, onClose, children, maxWidth = "500px" }: ModalPr
   return (
     <div
       style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 9999,
-        display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
         animation: "fadeIn 0.2s ease-out",
+        bottom: 0,
+        display: "flex",
+        justifyContent: "center",
+        left: 0,
+        padding: "20px",
+        position: "fixed",
+        right: 0,
+        top: 0,
+        zIndex: 9999,
       }}
       onClick={onClose}
     >
       {/* Backdrop */}
       <div
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0, 0, 0, 0.85)",
-          backdropFilter: "blur(8px)",
           animation: "fadeIn 0.2s ease-out",
+          backdropFilter: "blur(8px)",
+          background: "rgba(0, 0, 0, 0.85)",
+          bottom: 0,
+          left: 0,
+          position: "absolute",
+          right: 0,
+          top: 0,
         }}
       />
 
       {/* Modal Content */}
       <div
         style={{
+          animation: "slideUp 0.3s ease-out",
+          maxHeight: "90vh",
+          maxWidth,
+          overflowY: "auto",
           position: "relative",
           width: "100%",
-          maxWidth,
-          maxHeight: "90vh",
-          overflowY: "auto",
-          animation: "slideUp 0.3s ease-out",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -83,20 +83,20 @@ export function Modal({ isOpen, onClose, children, maxWidth = "500px" }: ModalPr
           type="button"
           onClick={onClose}
           style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            width: "32px",
-            height: "32px",
-            borderRadius: "8px",
+            alignItems: "center",
             background: "rgba(255, 255, 255, 0.05)",
             border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: "8px",
             color: "#a1a1a1",
             cursor: "pointer",
             display: "flex",
-            alignItems: "center",
+            height: "32px",
             justifyContent: "center",
+            position: "absolute",
+            right: "16px",
+            top: "16px",
             transition: "all 0.2s ease",
+            width: "32px",
             zIndex: 1,
           }}
           onMouseOver={(e) => {

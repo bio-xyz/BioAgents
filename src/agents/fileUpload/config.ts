@@ -1,13 +1,13 @@
-import type { FileTypeConfig } from "./types";
 import {
-  parseExcel,
   parseCSV,
-  parseMarkdown,
-  parseJSON,
-  parseText,
-  parsePDF,
+  parseExcel,
   parseImage,
+  parseJSON,
+  parseMarkdown,
+  parsePDF,
+  parseText,
 } from "./parsers";
+import type { FileTypeConfig } from "./types";
 
 /**
  * Configuration for supported file types

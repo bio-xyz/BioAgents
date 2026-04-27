@@ -1,9 +1,9 @@
 {
-  "label": "Architecture",
-  "position": 4,
   "collapsed": false,
+  "label": "Architecture",
   "link": {
-    "type": "generated-index",
-    "description": "System architecture, agent design, and infrastructure details."
-  }
+    "description": "System architecture, agent design, and infrastructure details.",
+    "type": "generated-index"
+  },
+  "position": 4
 }
