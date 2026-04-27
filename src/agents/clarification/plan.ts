@@ -31,7 +31,7 @@ export type GeneratePlanOptions = {
  */
 function formatQuestionsAndAnswers(
   questions: ClarificationQuestion[],
-  answers: ClarificationAnswer[],
+  answers: ClarificationAnswer[]
 ): string {
   const answerMap = new Map(answers.map((a) => [a.questionIndex, a.answer]));
 
@@ -61,10 +61,7 @@ function formatAvailableDatasets(datasets?: DatasetInfo[]): string {
 function formatPlanForPrompt(plan: ClarificationPlan): string {
   const taskList = plan.initialTasks
     .map((t, i) => {
-      const filenames =
-        t.datasetFilenames.length > 0
-          ? t.datasetFilenames.join(", ")
-          : "None";
+      const filenames = t.datasetFilenames.length > 0 ? t.datasetFilenames.join(", ") : "None";
       return `  ${i + 1}. [${t.type}] ${t.objective}\n     Datasets: ${filenames}`;
     })
     .join("\n");
@@ -92,13 +89,10 @@ export async function generatePlanFromContext(input: {
     (process.env.PLANNING_LLM_PROVIDER as LLMProvider) ||
     "google";
 
-  const llmApiKey =
-    process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const model =
@@ -108,8 +102,8 @@ export async function generatePlanFromContext(input: {
     "gemini-2.5-pro";
 
   const llmProvider = new LLM({
-    name: CLARIFICATION_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: CLARIFICATION_LLM_PROVIDER,
   });
 
   const questionsAndAnswers = formatQuestionsAndAnswers(questions, answers);
@@ -120,20 +114,20 @@ export async function generatePlanFromContext(input: {
     .replace("{availableDatasets}", availableDatasets);
 
   logger.info(
-    { query: query.substring(0, 100), answerCount: answers.length, model },
-    "generating_clarification_plan",
+    { answerCount: answers.length, model, query: query.substring(0, 100) },
+    "generating_clarification_plan"
   );
 
   try {
     const response = await llmProvider.createChatCompletion({
-      model,
+      maxTokens: options.maxTokens ?? 2048,
       messages: [
         {
-          role: "user" as const,
           content: prompt,
+          role: "user" as const,
         },
       ],
-      maxTokens: options.maxTokens ?? 2048,
+      model,
       thinkingBudget: 2048,
     });
 
@@ -158,8 +152,8 @@ export async function generatePlanFromContext(input: {
 
     // Ensure arrays have defaults
     const plan: ClarificationPlan = {
-      objective: parsed.objective,
       initialTasks: parsed.initialTasks || [],
+      objective: parsed.objective,
     };
 
     logger.info(
@@ -167,7 +161,7 @@ export async function generatePlanFromContext(input: {
         objective: plan.objective.substring(0, 100),
         taskCount: plan.initialTasks.length,
       },
-      "clarification_plan_generated",
+      "clarification_plan_generated"
     );
 
     return plan;
@@ -189,8 +183,7 @@ export async function regeneratePlanFromFeedback(input: {
   datasets?: DatasetInfo[];
   options?: GeneratePlanOptions;
 }): Promise<ClarificationPlan> {
-  const { query, questions, answers, previousPlan, feedback, datasets, options = {} } =
-    input;
+  const { query, questions, answers, previousPlan, feedback, datasets, options = {} } = input;
 
   // Use planning LLM provider for plan generation
   const CLARIFICATION_LLM_PROVIDER: LLMProvider =
@@ -198,13 +191,10 @@ export async function regeneratePlanFromFeedback(input: {
     (process.env.PLANNING_LLM_PROVIDER as LLMProvider) ||
     "google";
 
-  const llmApiKey =
-    process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const model =
@@ -214,8 +204,8 @@ export async function regeneratePlanFromFeedback(input: {
     "gemini-2.5-pro";
 
   const llmProvider = new LLM({
-    name: CLARIFICATION_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: CLARIFICATION_LLM_PROVIDER,
   });
 
   const questionsAndAnswers = formatQuestionsAndAnswers(questions, answers);
@@ -230,24 +220,24 @@ export async function regeneratePlanFromFeedback(input: {
 
   logger.info(
     {
-      query: query.substring(0, 100),
+      datasetCount: datasets?.length ?? 0,
       feedback: feedback.substring(0, 100),
       model,
-      datasetCount: datasets?.length ?? 0,
+      query: query.substring(0, 100),
     },
-    "regenerating_clarification_plan",
+    "regenerating_clarification_plan"
   );
 
   try {
     const response = await llmProvider.createChatCompletion({
-      model,
+      maxTokens: options.maxTokens ?? 2048,
       messages: [
         {
-          role: "user" as const,
           content: prompt,
+          role: "user" as const,
         },
       ],
-      maxTokens: options.maxTokens ?? 2048,
+      model,
       thinkingBudget: 2048,
     });
 
@@ -261,10 +251,7 @@ export async function regeneratePlanFromFeedback(input: {
       const jsonStr = jsonMatch && jsonMatch[1] ? jsonMatch[1].trim() : content;
       parsed = JSON.parse(jsonStr);
     } catch (parseError) {
-      logger.error(
-        { content, parseError },
-        "failed_to_parse_regenerated_plan_response",
-      );
+      logger.error({ content, parseError }, "failed_to_parse_regenerated_plan_response");
       throw new Error("Failed to parse regenerated plan from LLM response");
     }
 
@@ -275,8 +262,8 @@ export async function regeneratePlanFromFeedback(input: {
 
     // Ensure arrays have defaults
     const plan: ClarificationPlan = {
-      objective: parsed.objective,
       initialTasks: parsed.initialTasks || [],
+      objective: parsed.objective,
     };
 
     logger.info(
@@ -284,12 +271,12 @@ export async function regeneratePlanFromFeedback(input: {
         objective: plan.objective.substring(0, 100),
         taskCount: plan.initialTasks.length,
       },
-      "clarification_plan_regenerated",
+      "clarification_plan_regenerated"
     );
 
     return plan;
   } catch (error) {
-    logger.error({ error, query, feedback }, "regenerate_plan_failed");
+    logger.error({ error, feedback, query }, "regenerate_plan_failed");
     throw error;
   }
 }

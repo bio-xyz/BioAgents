@@ -3,11 +3,7 @@ import { LLM } from "../../llm/provider";
 import type { LLMRequest } from "../../llm/types";
 import type { Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import {
-  answerModePrompt,
-  chatReplyPrompt,
-  reportModePrompt,
-} from "./prompts";
+import { answerModePrompt, chatReplyPrompt, reportModePrompt } from "./prompts";
 
 export type UploadedDataset = {
   id: string;
@@ -54,7 +50,7 @@ export type ReplyOptions = {
 export async function generateReply(
   question: string,
   context: ReplyContext,
-  options: ReplyOptions = {},
+  options: ReplyOptions = {}
 ): Promise<string> {
   const model = process.env.REPLY_LLM_MODEL || "gemini-2.5-pro";
 
@@ -66,22 +62,18 @@ export async function generateReply(
     mode = "REPORT"; // Intermediate replies are always progress reports
     logger.info(
       { mode: "REPORT", reason: "intermediate_reply" },
-      "skipping_classification_for_intermediate",
+      "skipping_classification_for_intermediate"
     );
   } else {
     mode = "ANSWER"; // Final replies always use ANSWER mode to deliver findings
-    logger.info(
-      { mode: "ANSWER", reason: "final_reply" },
-      "using_answer_mode_for_final",
-    );
+    logger.info({ mode: "ANSWER", reason: "final_reply" }, "using_answer_mode_for_final");
   }
 
   // Format completed tasks (2000 char limit to preserve citations)
   const completedTasksText = context.completedTasks
     .map((task, i) => {
       const output = task.output || "No output available";
-      const truncatedOutput =
-        output.length > 2000 ? `${output.substring(0, 2000)}...` : output;
+      const truncatedOutput = output.length > 2000 ? `${output.substring(0, 2000)}...` : output;
       return `${i + 1}. ${task.type} Task: ${task.objective}\n   Output: ${truncatedOutput}`;
     })
     .join("\n\n");
@@ -138,10 +130,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
       .replace("{{evolvingObjective}}", context.evolvingObjective || "Not set")
       .replace("{{keyInsights}}", keyInsightsText)
       .replace("{{discoveries}}", discoveriesText)
-      .replace(
-        "{{hypothesis}}",
-        context.hypothesis || "No hypothesis generated",
-      )
+      .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
       .replace("{{completedTasks}}", completedTasksText)
       .replace("{{nextPlan}}", nextPlanText);
   } else {
@@ -151,17 +140,11 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
       .replace("{{question}}", question)
       .replace("{{evolvingObjective}}", context.evolvingObjective || "Not set")
       .replace("{{completedTasks}}", completedTasksText)
-      .replace(
-        "{{hypothesis}}",
-        context.hypothesis || "No hypothesis generated",
-      )
+      .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
       .replace("{{nextPlan}}", nextPlanText)
       .replace("{{discoveries}}", discoveriesText)
       .replace("{{methodology}}", context.methodology || "Not specified")
-      .replace(
-        "{{currentObjective}}",
-        context.currentObjective || "Not specified",
-      );
+      .replace("{{currentObjective}}", context.currentObjective || "Not specified");
   }
 
   // For intermediate replies (research will auto-continue), don't ask for feedback
@@ -174,30 +157,26 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
   const llmApiKey = process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: REPLY_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: REPLY_LLM_PROVIDER,
   });
 
   const llmRequest: LLMRequest = {
-    model,
+    maxTokens: options.maxTokens ?? 5500,
+    messageId: options.messageId,
     messages: [
       {
-        role: "user" as const,
         content: replyInstruction,
+        role: "user" as const,
       },
     ],
-    maxTokens: options.maxTokens ?? 5500,
-    thinkingBudget: options.thinking
-      ? (options.thinkingBudget ?? 1024)
-      : undefined,
+    model,
     systemInstruction: character.system,
-    messageId: options.messageId,
+    thinkingBudget: options.thinking ? (options.thinkingBudget ?? 1024) : undefined,
     usageType: options.usageType,
   };
 
@@ -206,12 +185,12 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
 
     logger.info(
       {
-        replyLength: response.content.length,
         completedTaskCount: context.completedTasks.length,
         nextPlanCount: context.nextPlan.length,
+        replyLength: response.content.length,
         replyMode: mode,
       },
-      "reply_generated",
+      "reply_generated"
     );
 
     return response.content;
@@ -228,7 +207,7 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
 export async function generateChatReply(
   question: string,
   context: ReplyContext,
-  options: ReplyOptions = {},
+  options: ReplyOptions = {}
 ): Promise<string> {
   const model = process.env.REPLY_LLM_MODEL || "gemini-2.5-pro";
 
@@ -243,9 +222,7 @@ export async function generateChatReply(
   // Format key insights
   const keyInsightsText =
     context.keyInsights.length > 0
-      ? context.keyInsights
-          .map((insight, i) => `${i + 1}. ${insight}`)
-          .join("\n")
+      ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
       : "No key insights available.";
 
   // Format uploaded datasets with content if available (for chat mode)
@@ -254,8 +231,7 @@ export async function generateChatReply(
     context.uploadedDatasets && context.uploadedDatasets.length > 0
       ? context.uploadedDatasets
           .map((dataset, i) => {
-            const recentTag =
-              i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
+            const recentTag = i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
             let text = `${i + 1}. File: ${dataset.filename}${recentTag}\n   Description: ${dataset.description}`;
             if (dataset.content) {
               // Include content for chat mode (up to 30KB per file)
@@ -284,30 +260,28 @@ export async function generateChatReply(
   const llmApiKey = process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: REPLY_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: REPLY_LLM_PROVIDER,
   });
 
   const llmRequest: LLMRequest = {
-    model,
+    maxTokens: options.maxTokens ?? 1000, // Shorter for chat
+    messageId: options.messageId,
     messages: [
       {
-        role: "user" as const,
         content: replyInstruction,
+        role: "user" as const,
       },
     ],
-    maxTokens: options.maxTokens ?? 1000, // Shorter for chat
+    model,
+    systemInstruction: character.system,
     thinkingBudget: options.thinking
       ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
       : undefined,
-    systemInstruction: character.system,
-    messageId: options.messageId,
     usageType: options.usageType,
   };
 
@@ -316,12 +290,12 @@ export async function generateChatReply(
 
     logger.info(
       {
-        replyLength: response.content.length,
         completedTaskCount: context.completedTasks.length,
         hasHypothesis: !!context.hypothesis,
+        replyLength: response.content.length,
         uploadedDatasetsCount: context.uploadedDatasets?.length || 0,
       },
-      "chat_reply_generated",
+      "chat_reply_generated"
     );
 
     return response.content;

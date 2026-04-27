@@ -6,9 +6,9 @@
  */
 
 import { z } from "zod";
-import { registerTool } from "../registry";
 import logger from "../../utils/logger";
 import { resolveSourceSelectionLiteratureOverride } from "../../utils/sourceSelectionRouting";
+import { registerTool } from "../registry";
 
 // Only fast sources — Edison and BIOLITDEEP are excluded because they use
 // long-running polling (minutes), not suitable for chat mode.
@@ -20,26 +20,8 @@ const InputSchema = z.object({
 });
 
 registerTool({
-  name: "literature_search",
   description:
     "Search bioscience literature from a specific academic source. Available sources: 'openscholar' (academic papers via OpenScholar), 'biolit' (BioLiterature agent — arxiv, pubmed, clinical trials), 'knowledge' (local knowledge base). Call this tool multiple times with different sources or queries to cross-reference findings.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description:
-          "A clear, specific scientific question or topic to search for",
-      },
-      source: {
-        type: "string",
-        enum: VALID_SOURCES,
-        description:
-          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for broad search (arxiv, pubmed, clinical trials), 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
-      },
-    },
-    required: ["query"],
-  },
   execute: async (input, context) => {
     const parsed = InputSchema.parse(input);
     const { query, source } = parsed;
@@ -65,16 +47,16 @@ registerTool({
 
     // Map source to literatureAgent type
     const sourceToType = {
-      openscholar: "OPENSCHOLAR",
       biolit: "BIOLIT",
       knowledge: "KNOWLEDGE",
+      openscholar: "OPENSCHOLAR",
     } as const;
 
     // Check if source is configured
     const sourceEnvCheck = {
-      openscholar: "OPENSCHOLAR_API_URL",
       biolit: "BIO_LIT_AGENT_API_URL",
       knowledge: "KNOWLEDGE_DOCS_PATH",
+      openscholar: "OPENSCHOLAR_API_URL",
     } as const;
 
     const envVar = sourceEnvCheck[effectiveSource];
@@ -101,7 +83,10 @@ registerTool({
           type: sourceToType[effectiveSource],
         }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Timed out after ${TOOL_TIMEOUT_MS / 1000}s`)), TOOL_TIMEOUT_MS),
+          setTimeout(
+            () => reject(new Error(`Timed out after ${TOOL_TIMEOUT_MS / 1000}s`)),
+            TOOL_TIMEOUT_MS
+          )
         ),
       ]);
 
@@ -114,7 +99,7 @@ registerTool({
           query,
           source,
         },
-        "literature_search_tool_completed",
+        "literature_search_tool_completed"
       );
 
       if (!result.output.trim()) {
@@ -136,4 +121,21 @@ registerTool({
       };
     }
   },
+  inputSchema: {
+    properties: {
+      query: {
+        description: "A clear, specific scientific question or topic to search for",
+        type: "string",
+      },
+      source: {
+        description:
+          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for broad search (arxiv, pubmed, clinical trials), 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
+        enum: VALID_SOURCES,
+        type: "string",
+      },
+    },
+    required: ["query"],
+    type: "object",
+  },
+  name: "literature_search",
 });

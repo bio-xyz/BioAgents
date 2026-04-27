@@ -11,11 +11,11 @@
 // Must be first - polyfills for pdf-parse/pdfjs-dist
 import "./utils/canvas-polyfill";
 
+import { closeConnections } from "./services/queue/connection";
 import { startChatWorker } from "./services/queue/workers/chat.worker";
 import { startDeepResearchWorker } from "./services/queue/workers/deep-research.worker";
 import { createFileProcessWorker } from "./services/queue/workers/file-process.worker";
 import { startPaperGenerationWorker } from "./services/queue/workers/paper-generation.worker";
-import { closeConnections } from "./services/queue/connection";
 import logger from "./utils/logger";
 
 async function main() {
@@ -35,7 +35,7 @@ async function main() {
       paperGenerationConcurrency: process.env.PAPER_GENERATION_CONCURRENCY || 1,
       redisUrl: process.env.REDIS_URL ? "[REDACTED]" : "redis://localhost:6379",
     },
-    "workers_started",
+    "workers_started"
   );
 
   // Graceful shutdown handler

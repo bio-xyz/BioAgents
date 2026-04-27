@@ -2,12 +2,12 @@
 
 /* Container for research components */
 .research-section-container {
-  max-width: 900px;
-  margin: 24px auto;
-  padding: 0 32px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 900px;
+  padding: 0 32px;
+  margin: 24px auto;
   animation: fadeIn 0.4s ease-out;
 }
 
@@ -15,10 +15,10 @@
    Research Progress Bar
    ============================================ */
 .research-progress {
+  padding: 16px 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 16px 20px;
 }
 
 .research-progress-header {
@@ -30,8 +30,8 @@
 
 .research-progress-info {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
 }
 
 .research-progress-label {
@@ -41,33 +41,33 @@
 }
 
 .research-progress-level {
+  padding: 3px 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--accent-color);
   background: var(--accent-light);
-  padding: 3px 8px;
   border-radius: 4px;
 }
 
 .research-progress-stats {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
 }
 
 .research-progress-count {
+  font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   color: var(--text-secondary);
-  font-family: "JetBrains Mono", monospace;
 }
 
 .research-progress-current {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   font-size: 11px;
-  color: #3b82f6;
   font-weight: 500;
+  color: #3b82f6;
 }
 
 .research-progress-spinner {
@@ -80,11 +80,11 @@
 }
 
 .research-progress-bar-container {
+  position: relative;
   height: 6px;
+  overflow: hidden;
   background: var(--bg-tertiary);
   border-radius: 3px;
-  overflow: hidden;
-  position: relative;
 }
 
 .research-progress-bar {
@@ -104,7 +104,8 @@
 }
 
 @keyframes progressPulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0;
     transform: translateX(-20px);
   }
@@ -116,20 +117,20 @@
 
 .research-progress-steps {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
-  flex-wrap: wrap;
 }
 
 .research-progress-step {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   transition: all 0.2s;
 }
 
@@ -152,10 +153,10 @@
    Research State Panel
    ============================================ */
 .research-state-panel {
+  overflow: hidden;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  overflow: hidden;
   transition: all 0.3s ease;
 }
 
@@ -169,11 +170,11 @@
   justify-content: space-between;
   width: 100%;
   padding: 16px 20px;
+  font-family: inherit;
+  cursor: pointer;
   background: transparent;
   border: none;
-  cursor: pointer;
   transition: background 0.2s;
-  font-family: inherit;
 }
 
 .research-state-header:hover {
@@ -182,14 +183,14 @@
 
 .research-state-header-left {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
 }
 
 .research-state-header-right {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
 }
 
 .research-state-icon {
@@ -203,21 +204,21 @@
 }
 
 .research-level-badge {
+  padding: 3px 8px;
   font-size: 11px;
   font-weight: 600;
   color: #8b5cf6;
   background: rgba(139, 92, 246, 0.1);
-  padding: 3px 8px;
-  border-radius: 4px;
   border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 4px;
 }
 
 .research-steps-badge {
+  padding: 3px 8px;
   font-size: 11px;
   font-weight: 500;
   color: var(--accent-color);
   background: var(--accent-light);
-  padding: 3px 8px;
   border-radius: 4px;
 }
 
@@ -231,37 +232,37 @@
 }
 
 .research-state-content {
-  padding: 0 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 0 20px 20px;
   animation: slideDown 0.3s ease-out;
 }
 
 /* Research Section Styles */
 .research-section {
+  overflow: hidden;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .research-current-objective {
+  padding: 14px;
   background: rgba(59, 130, 246, 0.05);
   border-color: rgba(59, 130, 246, 0.15);
-  padding: 14px;
 }
 
 .research-section-label {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
   font-size: 11px;
   font-weight: 600;
   color: #3b82f6;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 8px;
 }
 
 .research-section-icon {
@@ -269,10 +270,10 @@
 }
 
 .research-objective-text {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
-  margin: 0;
 }
 
 .research-section-toggle {
@@ -281,11 +282,11 @@
   justify-content: space-between;
   width: 100%;
   padding: 12px 14px;
+  font-family: inherit;
+  cursor: pointer;
   background: transparent;
   border: none;
-  cursor: pointer;
   transition: background 0.2s;
-  font-family: inherit;
 }
 
 .research-section-toggle:hover {
@@ -294,8 +295,8 @@
 
 .research-section-toggle-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
@@ -323,10 +324,10 @@
 }
 
 .research-hypothesis-heading {
+  margin: 16px 0 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 16px 0 8px;
 }
 
 .research-hypothesis-heading:first-child {
@@ -350,50 +351,50 @@
 
 /* Discoveries Section */
 .research-discoveries-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .research-discovery-item {
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-secondary);
-  padding: 10px 12px;
   background: var(--bg-secondary);
-  border-radius: 6px;
   border-left: 3px solid #10b981;
+  border-radius: 6px;
 }
 
 /* Insights Section */
 .research-insights-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .research-insight-item {
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-secondary);
-  padding: 10px 12px;
   background: var(--bg-secondary);
-  border-radius: 6px;
   border-left: 3px solid var(--accent-color);
+  border-radius: 6px;
 }
 
 /* Methodology Section */
 .research-methodology-text {
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
-  margin: 0;
 }
 
 /* Datasets Section */
@@ -405,18 +406,18 @@
 
 .research-dataset-item {
   display: flex;
-  align-items: flex-start;
   gap: 10px;
+  align-items: flex-start;
   padding: 10px 12px;
   background: var(--bg-secondary);
-  border-radius: 6px;
   border: 1px solid var(--border-color);
+  border-radius: 6px;
 }
 
 .research-dataset-item svg {
-  color: var(--accent-color);
   flex-shrink: 0;
   margin-top: 2px;
+  color: var(--accent-color);
 }
 
 .research-dataset-info {
@@ -433,8 +434,8 @@
 
 .research-dataset-description {
   font-size: 12px;
-  color: var(--text-secondary);
   line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 /* Steps Section */
@@ -447,19 +448,19 @@
 .research-step-item {
   padding: 12px;
   background: var(--bg-secondary);
-  border-radius: 6px;
   border: 1px solid var(--border-color);
+  border-radius: 6px;
 }
 
 .research-step-type {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  margin-bottom: 8px;
   font-size: 11px;
   font-weight: 600;
-  padding: 4px 10px;
   border-radius: 4px;
-  margin-bottom: 8px;
 }
 
 .research-step-emoji {
@@ -468,25 +469,25 @@
 
 .research-step-header {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   margin-bottom: 8px;
 }
 
 .research-step-level {
+  padding: 2px 6px;
   font-size: 10px;
   font-weight: 600;
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
-  padding: 2px 6px;
   border-radius: 3px;
 }
 
 .research-step-objective {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-secondary);
-  margin: 0;
 }
 
 .research-step-datasets {
@@ -498,12 +499,12 @@
 
 .research-step-dataset-badge {
   display: inline-flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
+  padding: 3px 8px;
   font-size: 11px;
   color: var(--accent-color);
   background: var(--accent-light);
-  padding: 3px 8px;
   border-radius: 4px;
 }
 
@@ -513,45 +514,45 @@
 
 .research-step-output {
   margin-top: 10px;
-  background: var(--bg-primary);
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
   overflow: hidden;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
 }
 
 .research-step-output-content {
-  padding: 12px;
-  font-size: 12px;
-  font-family: "JetBrains Mono", monospace;
-  color: var(--text-tertiary);
   max-height: 300px;
-  overflow-y: auto;
+  padding: 12px;
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
   line-height: 1.5;
+  color: var(--text-tertiary);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .research-step-output-toggle {
   display: flex;
+  gap: 6px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   width: 100%;
   padding: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
   background: var(--bg-tertiary);
   border: none;
   border-top: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .research-step-output-toggle:hover {
-  background: var(--hover-bg);
   color: var(--text-primary);
+  background: var(--hover-bg);
 }
 
 .research-step-output-toggle svg {
@@ -560,9 +561,9 @@
 
 /* Current Running Step */
 .research-current-step {
+  padding: 14px;
   background: rgba(59, 130, 246, 0.05);
   border-color: rgba(59, 130, 246, 0.15);
-  padding: 14px;
 }
 
 .research-current-step .research-section-label {
@@ -573,11 +574,11 @@
   display: inline-block;
   width: 12px;
   height: 12px;
+  margin-right: 8px;
   border: 2px solid var(--border-color);
   border-top-color: #3b82f6;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
-  margin-right: 8px;
 }
 
 /* Loading State */
@@ -587,8 +588,8 @@
 
 .research-loading-indicator {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   padding: 12px 16px;
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
   border: 1px solid rgba(59, 130, 246, 0.2);
@@ -598,30 +599,30 @@
 .research-loading-indicator .research-step-spinner {
   width: 16px;
   height: 16px;
-  border-width: 2px;
   margin-right: 0;
+  border-width: 2px;
 }
 
 .research-loading-text {
   font-size: 13px;
-  color: var(--text-secondary);
   font-weight: 500;
+  color: var(--text-secondary);
 }
 
 /* ============================================
    Suggested Steps Component
    ============================================ */
 .suggested-steps-container {
+  padding: 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 20px;
 }
 
 .suggested-steps-header {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
   margin-bottom: 16px;
 }
 
@@ -636,9 +637,9 @@
 }
 
 .suggested-steps-hint {
+  margin-left: auto;
   font-size: 12px;
   color: var(--text-tertiary);
-  margin-left: auto;
 }
 
 .suggested-steps-list {
@@ -652,25 +653,25 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  cursor: pointer;
   transition: all 0.2s ease;
-  font-family: inherit;
-  text-align: left;
 }
 
 .suggested-step-card:hover:not(:disabled) {
-  border-color: var(--step-color, var(--accent-color));
   background: var(--step-bg, var(--accent-light));
-  transform: translateY(-2px);
+  border-color: var(--step-color, var(--accent-color));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .suggested-step-card:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .suggested-step-header {
@@ -681,15 +682,15 @@
 
 .suggested-step-type-badge {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
   color: var(--step-color, var(--accent-color));
   background: var(--step-bg, var(--accent-light));
-  padding: 4px 10px;
-  border-radius: 4px;
   border: 1px solid currentColor;
+  border-radius: 4px;
 }
 
 .suggested-step-emoji {
@@ -707,16 +708,16 @@
 }
 
 .suggested-step-objective {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
-  margin: 0;
 }
 
 .suggested-step-datasets {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   font-size: 11px;
   color: var(--text-tertiary);
 }
@@ -727,31 +728,31 @@
 
 .suggested-steps-custom {
   display: flex;
+  gap: 8px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   width: 100%;
   padding: 12px;
   margin-top: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  cursor: pointer;
   background: transparent;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
 .suggested-steps-custom:hover:not(:disabled) {
-  border-color: var(--accent-color);
   color: var(--accent-color);
   background: var(--accent-light);
+  border-color: var(--accent-color);
 }
 
 .suggested-steps-custom:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* ============================================
@@ -759,10 +760,10 @@
    ============================================ */
 .artifact-viewer {
   margin-top: 16px;
+  overflow: hidden;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  background: var(--bg-secondary);
-  overflow: hidden;
 }
 
 .artifact-viewer-header {
@@ -771,12 +772,12 @@
   justify-content: space-between;
   width: 100%;
   padding: 14px 16px;
+  font-family: inherit;
+  cursor: pointer;
   background: var(--bg-tertiary);
   border: none;
   border-bottom: 1px solid var(--border-color);
-  cursor: pointer;
   transition: background 0.2s;
-  font-family: inherit;
 }
 
 .artifact-viewer-header:hover {
@@ -785,8 +786,8 @@
 
 .artifact-viewer-header-left {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
 }
 
 .artifact-viewer-icon {
@@ -805,29 +806,29 @@
 }
 
 .artifact-badge {
+  padding: 3px 8px;
   font-size: 10px;
   font-weight: 500;
-  padding: 3px 8px;
   border-radius: 4px;
 }
 
 .artifact-badge-files {
-  background: rgba(16, 185, 129, 0.1);
   color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .artifact-badge-error {
-  background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .artifact-badge-time {
-  background: var(--bg-tertiary);
-  color: var(--text-tertiary);
-  border: 1px solid var(--border-color);
   font-family: "JetBrains Mono", monospace;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
 }
 
 .artifact-viewer-chevron {
@@ -840,10 +841,10 @@
 }
 
 .artifact-viewer-content {
-  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 12px;
   animation: slideDown 0.3s ease-out;
 }
 
@@ -855,22 +856,22 @@
 
 /* Console Output */
 .artifact-output {
+  overflow: hidden;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .artifact-output-header {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 10px 14px;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .artifact-output-header svg {
@@ -879,54 +880,54 @@
 
 .artifact-status-success {
   margin-left: auto;
-  color: #10b981;
   font-size: 11px;
+  color: #10b981;
 }
 
 .artifact-output-content {
+  max-height: 300px;
   padding: 14px;
   margin: 0;
+  overflow-y: auto;
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-primary);
-  white-space: pre-wrap;
   word-break: break-word;
-  max-height: 300px;
-  overflow-y: auto;
+  white-space: pre-wrap;
 }
 
 /* Error Output */
 .artifact-error {
+  overflow: hidden;
   background: rgba(239, 68, 68, 0.05);
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .artifact-error-header {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 10px 14px;
-  background: rgba(239, 68, 68, 0.1);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
   font-size: 12px;
   font-weight: 500;
   color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .artifact-error-content {
+  max-height: 200px;
   padding: 14px;
   margin: 0;
+  overflow-y: auto;
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.6;
   color: #fca5a5;
-  white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
+  white-space: pre-wrap;
 }
 
 /* Generated Files Section */
@@ -936,8 +937,8 @@
 
 .artifact-files-header {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   margin-bottom: 10px;
   font-size: 12px;
   font-weight: 500;
@@ -953,17 +954,17 @@
 .artifact-file-card {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
   transition: all 0.2s;
 }
 
 .artifact-file-card:hover {
   border-color: var(--accent-color);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .artifact-file-card.artifact-file-image {
@@ -971,12 +972,12 @@
 }
 
 .artifact-file-preview {
-  aspect-ratio: 16/10;
-  background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
 .artifact-file-preview img {
@@ -986,61 +987,61 @@
 }
 
 .artifact-file-icon {
-  padding: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
   color: var(--text-tertiary);
 }
 
 .artifact-file-info {
-  padding: 10px 12px;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
-  flex: 1;
+  padding: 10px 12px;
 }
 
 .artifact-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .artifact-file-desc {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
 }
 
 .artifact-file-download {
-  margin: 0 12px 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
   padding: 6px 10px;
+  margin: 0 12px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
   background: transparent;
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   transition: all 0.2s;
 }
 
 .artifact-file-download:hover {
+  color: white;
   background: var(--accent-color);
   border-color: var(--accent-color);
-  color: white;
 }
 
 /* Lightbox for image preview */
@@ -1048,37 +1049,37 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(0, 0, 0, 0.9);
   animation: fadeIn 0.2s ease-out;
 }
 
 .artifact-lightbox-content {
-  max-width: 90vw;
-  max-height: 90vh;
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 16px;
-  position: relative;
+  align-items: center;
+  max-width: 90vw;
+  max-height: 90vh;
 }
 
 .artifact-lightbox-close {
   position: absolute;
   top: -40px;
   right: 0;
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 6px;
-  color: white;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: white;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
   transition: background 0.2s;
 }
 
@@ -1096,8 +1097,8 @@
 .artifact-lightbox-info {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   text-align: center;
 }
 
@@ -1108,26 +1109,26 @@
 }
 
 .artifact-lightbox-desc {
+  max-width: 400px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
-  max-width: 400px;
 }
 
 .artifact-lightbox-download {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   padding: 8px 16px;
+  margin-top: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
   background: var(--accent-color);
   border: none;
   border-radius: 6px;
-  color: white;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
   transition: all 0.2s;
-  margin-top: 8px;
 }
 
 .artifact-lightbox-download:hover {
@@ -1138,9 +1139,9 @@
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
   .research-section-container {
+    gap: 12px;
     padding: 0 16px;
     margin: 16px auto;
-    gap: 12px;
   }
 
   .research-progress {
@@ -1149,8 +1150,8 @@
 
   .research-progress-header {
     flex-direction: column;
-    align-items: flex-start;
     gap: 8px;
+    align-items: flex-start;
   }
 
   .research-state-header {
@@ -1158,8 +1159,8 @@
   }
 
   .research-state-content {
-    padding: 0 16px 16px;
     gap: 10px;
+    padding: 0 16px 16px;
   }
 
   .suggested-steps-container {

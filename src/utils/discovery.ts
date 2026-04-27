@@ -21,7 +21,7 @@ const DISCOVERY_MESSAGE_COUNT = 3;
 export function getDiscoveryRunConfig(
   messageCount: number,
   allTasks: PlanTask[],
-  newTasks: PlanTask[],
+  newTasks: PlanTask[]
 ): DiscoveryRunConfig {
   // Run discovery if messageCount >= 3 (current + 2 previous)
   const hasEnoughMessages = messageCount >= DISCOVERY_MESSAGE_COUNT;
@@ -44,9 +44,7 @@ export function getDiscoveryRunConfig(
   }
 
   // Check if there are any tasks with outputs to consider
-  const tasksWithOutput = tasksToConsider.filter(
-    (task) => task.output && task.output.trim(),
-  );
+  const tasksWithOutput = tasksToConsider.filter((task) => task.output && task.output.trim());
 
   if (tasksWithOutput.length === 0) {
     logger.info(
@@ -54,7 +52,7 @@ export function getDiscoveryRunConfig(
         taskCount: tasksToConsider.length,
         tasksWithOutput: 0,
       },
-      "skipping_discovery_no_task_outputs",
+      "skipping_discovery_no_task_outputs"
     );
     return {
       shouldRunDiscovery: false,
@@ -64,14 +62,12 @@ export function getDiscoveryRunConfig(
 
   logger.info(
     {
-      taskCount: tasksWithOutput.length,
-      analysisTasks: tasksWithOutput.filter((t) => t.type === "ANALYSIS")
-        .length,
-      literatureTasks: tasksWithOutput.filter((t) => t.type === "LITERATURE")
-        .length,
+      analysisTasks: tasksWithOutput.filter((t) => t.type === "ANALYSIS").length,
       isFirstRun: messageCount === DISCOVERY_MESSAGE_COUNT,
+      literatureTasks: tasksWithOutput.filter((t) => t.type === "LITERATURE").length,
+      taskCount: tasksWithOutput.length,
     },
-    "discovery_run_configured",
+    "discovery_run_configured"
   );
 
   return {

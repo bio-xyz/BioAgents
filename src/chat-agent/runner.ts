@@ -5,10 +5,10 @@
  * All imports are dynamic to avoid TDZ issues in the worker process.
  */
 
-import type { ToolCallInfo } from "./types";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import { getChatAgentSourceSelectionGuidance } from "../utils/sourceSelectionRouting";
+import type { ToolCallInfo } from "./types";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -74,9 +74,7 @@ DATA SAFETY
 // Core runner
 // ---------------------------------------------------------------------------
 
-export async function runChatAgent(
-  params: RunChatAgentParams,
-): Promise<RunChatAgentResult> {
+export async function runChatAgent(params: RunChatAgentParams): Promise<RunChatAgentResult> {
   // Dynamic imports for TDZ safety in worker processes
   const logger = (await import("../utils/logger")).default;
 
@@ -89,12 +87,9 @@ export async function runChatAgent(
     throw new Error("ANTHROPIC_API_KEY is not configured");
   }
 
-  const model =
-    process.env.CHAT_AGENT_MODEL || "claude-sonnet-4-6";
-  const maxToolCalls =
-    parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || 10;
-  const maxTokens =
-    parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || 4096;
+  const model = process.env.CHAT_AGENT_MODEL || "claude-sonnet-4-6";
+  const maxToolCalls = parseInt(process.env.CHAT_AGENT_MAX_TOOL_CALLS || "") || 10;
+  const maxTokens = parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || 4096;
 
   // --- 3. Build system prompt + dataset context for user message ---
   const sourceSelectionGuidance = getChatAgentSourceSelectionGuidance(
@@ -136,10 +131,7 @@ ${sourceSelectionGuidance}`
     try {
       const { getMessagesByConversation } = await import("../db/operations");
       // Fetch 4 newest messages, skip current (first), yielding up to 3 prior exchanges
-      const recentMessages = await getMessagesByConversation(
-        params.conversationId,
-        4,
-      );
+      const recentMessages = await getMessagesByConversation(params.conversationId, 4);
 
       if (recentMessages && recentMessages.length > 1) {
         const previous = recentMessages.slice(1).reverse();
@@ -147,15 +139,13 @@ ${sourceSelectionGuidance}`
         for (const msg of previous) {
           if (msg.question && msg.content) {
             conversationHistory.push({
-              role: "user",
               content: msg.question,
+              role: "user",
             });
             conversationHistory.push({
-              role: "assistant",
               content:
-                msg.content.length > 4000
-                  ? msg.content.substring(0, 4000) + "..."
-                  : msg.content,
+                msg.content.length > 4000 ? msg.content.substring(0, 4000) + "..." : msg.content,
+              role: "assistant",
             });
           }
         }
@@ -166,12 +156,12 @@ ${sourceSelectionGuidance}`
           conversationId: params.conversationId,
           historyExchanges: conversationHistory.length / 2,
         },
-        "conversation_history_loaded",
+        "conversation_history_loaded"
       );
     } catch (err) {
       logger.warn(
-        { error: err, conversationId: params.conversationId },
-        "conversation_history_load_failed",
+        { conversationId: params.conversationId, error: err },
+        "conversation_history_load_failed"
       );
       // Continue without history — don't break the chat
     }
@@ -183,27 +173,27 @@ ${sourceSelectionGuidance}`
   const agentResult = await runAgentLoop(
     userMessage,
     {
-      model,
-      systemPrompt,
-      maxToolCalls,
-      maxTokens,
       apiKey,
+      maxTokens,
+      maxToolCalls,
+      model,
+      onToolResult: params.onToolResult,
+      systemPrompt,
       toolExecutionContext: {
         conversationId: params.conversationId,
         sourceSelectionId: params.sourceSelectionId,
         userMessage: params.message,
       },
-      onToolResult: params.onToolResult,
     },
-    conversationHistory.length > 0 ? conversationHistory : undefined,
+    conversationHistory.length > 0 ? conversationHistory : undefined
   );
 
   // --- 6. Return unified result ---
   return {
+    hitMaxTokens: agentResult.hitMaxTokens ?? false,
     replyText: agentResult.finalText,
     toolCallCount: agentResult.toolCallCount,
     totalInputTokens: agentResult.totalInputTokens,
     totalOutputTokens: agentResult.totalOutputTokens,
-    hitMaxTokens: agentResult.hitMaxTokens ?? false,
   };
 }

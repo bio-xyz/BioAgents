@@ -90,13 +90,7 @@ export async function planningAgent(input: {
   // If no existing plan and initial mode, use LLM with no-plan prompt
   if (!hasPlan && mode === "initial") {
     logger.info("No existing plan found, using LLM for initial planning");
-    result = await generateInitialPlan(
-      state,
-      message,
-      conversationState,
-      usageType,
-      researchMode
-    );
+    result = await generateInitialPlan(state, message, conversationState, usageType, researchMode);
   } else {
     // Otherwise, use LLM to plan based on current state
     result = await generatePlan(state, conversationState, message, mode, usageType, researchMode);

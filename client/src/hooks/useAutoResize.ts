@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef } from "preact/hooks";
 
 /**
  * Custom hook for auto-resizing textarea
@@ -12,7 +12,7 @@ export function useAutoResize(value: string, minRows = 1, maxRows = 10) {
     if (!textarea) return;
 
     // Reset height to recalculate
-    textarea.style.height = 'auto';
+    textarea.style.height = "auto";
 
     // Calculate the height
     const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 24;
@@ -29,9 +29,9 @@ export function useAutoResize(value: string, minRows = 1, maxRows = 10) {
 
     // Show scrollbar if content exceeds maxHeight
     if (textarea.scrollHeight > maxHeight) {
-      textarea.style.overflowY = 'auto';
+      textarea.style.overflowY = "auto";
     } else {
-      textarea.style.overflowY = 'hidden';
+      textarea.style.overflowY = "hidden";
     }
   }, [value, minRows, maxRows]);
 

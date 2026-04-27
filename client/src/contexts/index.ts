@@ -1,1 +1,1 @@
-export { AuthProvider, useAuthContext, getAuthTokenFromStorage } from './AuthContext';
+export { AuthProvider, getAuthTokenFromStorage, useAuthContext } from "./AuthContext";

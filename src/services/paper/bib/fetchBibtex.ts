@@ -14,16 +14,12 @@ import {
   resolveMultipleDOIs,
 } from "../utils/bibtex";
 import type { ExtractedRef } from "./extractRefs";
-import {
-  refToCitekey,
-  createMiscBibtexEntry,
-  noteForRefType,
-} from "./extractRefs";
+import { createMiscBibtexEntry, noteForRefType, refToCitekey } from "./extractRefs";
 export async function fetchAndWriteBibtex(
   refs: ExtractedRef[],
-  outputPath: string,
+  outputPath: string
 ): Promise<{ bibPath: string; entries: BibTeXEntry[] }> {
-  logger.info({ refCount: refs.length, outputPath }, "fetching_bibtex_for_refs");
+  logger.info({ outputPath, refCount: refs.length }, "fetching_bibtex_for_refs");
 
   // Split refs by type: DOIs get full metadata, others get @misc entries
   const doiRefs = refs.filter((r) => r.type === "doi");
@@ -38,9 +34,9 @@ export async function fetchAndWriteBibtex(
     const note = noteForRefType(ref);
     const bibtex = createMiscBibtexEntry(citekey, ref.title, ref.url, note);
     return {
-      doi: "",
-      citekey,
       bibtex,
+      citekey,
+      doi: "",
       url: ref.url,
     };
   });
@@ -54,12 +50,12 @@ export async function fetchAndWriteBibtex(
 
   logger.info(
     {
-      resolved: deduped.length,
+      bibPath: outputPath,
       doiCount: doiRefs.length,
       miscCount: miscEntries.length,
-      bibPath: outputPath,
+      resolved: deduped.length,
     },
-    "bibtex_file_written",
+    "bibtex_file_written"
   );
 
   return { bibPath: outputPath, entries: deduped };

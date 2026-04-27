@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 
 export interface Character {
   name: string;
@@ -82,12 +82,17 @@ function loadCharacter(): Character {
           console.log(`[Character] Loaded character "${parsed.name}" from file: ${characterFile}`);
           return parsed as Character;
         }
-        console.warn(`[Character] File ${characterFile} missing 'name' or 'system' field, using default`);
+        console.warn(
+          `[Character] File ${characterFile} missing 'name' or 'system' field, using default`
+        );
       } else {
         console.warn(`[Character] File not found: ${characterFile}, using default`);
       }
     } catch (error) {
-      console.warn(`[Character] Failed to load character from file: ${characterFile}, using default:`, error);
+      console.warn(
+        `[Character] Failed to load character from file: ${characterFile}, using default:`,
+        error
+      );
     }
   }
 

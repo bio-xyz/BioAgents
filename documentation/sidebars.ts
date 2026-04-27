@@ -1,44 +1,40 @@
-import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
+import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     {
-      type: 'category',
-      label: 'Getting Started',
       collapsed: false,
       items: [
-        'getting-started/introduction',
-        'getting-started/installation',
-        'getting-started/configuration',
+        "getting-started/introduction",
+        "getting-started/installation",
+        "getting-started/configuration",
       ],
+      label: "Getting Started",
+      type: "category",
     },
     {
-      type: 'category',
-      label: 'Guides',
       collapsed: false,
       items: [
-        'guides/authentication',
-        'guides/deep-research',
-        'guides/file-upload',
-        'guides/job-queue',
-        'guides/websocket',
+        "guides/authentication",
+        "guides/deep-research",
+        "guides/file-upload",
+        "guides/job-queue",
+        "guides/websocket",
       ],
+      label: "Guides",
+      type: "category",
     },
     {
-      type: 'category',
-      label: 'Architecture',
       collapsed: true,
-      items: [
-        'architecture/overview',
-      ],
+      items: ["architecture/overview"],
+      label: "Architecture",
+      type: "category",
     },
     {
-      type: 'category',
-      label: 'Deployment',
       collapsed: true,
-      items: [
-        'deployment/docker',
-      ],
+      items: ["deployment/docker"],
+      label: "Deployment",
+      type: "category",
     },
   ],
 };

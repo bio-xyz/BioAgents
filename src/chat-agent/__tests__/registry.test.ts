@@ -23,8 +23,7 @@ describe("chat-agent registry", () => {
     const context: AgentToolExecutionContext = {
       conversationId: "conversation-1",
       sourceSelectionId: "alphafold_db",
-      userMessage:
-        "Protein sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP",
+      userMessage: "Protein sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP",
     };
 
     const result = await executeTool(toolName, {}, context);

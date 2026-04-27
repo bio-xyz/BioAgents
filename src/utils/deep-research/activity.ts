@@ -14,11 +14,11 @@ type BuildDeepResearchActivityParams = {
 };
 
 const ACTIVITY_LABELS: Record<DeepResearchActivityPhase, string> = {
-  planning: "Planning research",
-  literature: "Researching literature",
   analysis: "Analyzing data",
-  reflection: "Synthesizing findings",
+  literature: "Researching literature",
   next_steps: "Planning next step",
+  planning: "Planning research",
+  reflection: "Synthesizing findings",
   reply: "Drafting response",
 };
 
@@ -29,10 +29,10 @@ function buildDeepResearchActivity({
   taskType,
 }: BuildDeepResearchActivityParams): DeepResearchActivity {
   return {
-    phase,
     label: ACTIVITY_LABELS[phase],
-    objective: normalizeDeepResearchObjective(objective),
     level,
+    objective: normalizeDeepResearchObjective(objective),
+    phase,
     taskType,
     updatedAt: new Date().toISOString(),
   };
@@ -40,15 +40,13 @@ function buildDeepResearchActivity({
 
 export function setDeepResearchActivity(
   values: ConversationStateValues,
-  params: BuildDeepResearchActivityParams,
+  params: BuildDeepResearchActivityParams
 ): DeepResearchActivity {
   const activity = buildDeepResearchActivity(params);
   values.currentActivity = activity;
   return activity;
 }
 
-export function clearDeepResearchActivity(
-  values: ConversationStateValues,
-): void {
+export function clearDeepResearchActivity(values: ConversationStateValues): void {
   delete values.currentActivity;
 }

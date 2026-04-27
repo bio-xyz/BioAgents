@@ -53,17 +53,17 @@ export const authRoute = new Elysia({ prefix: "/api/auth" })
       if (!UI_PASSWORD) {
         if (!hasSecret) {
           return {
+            message: "Authentication not required (no password or secret configured)",
             success: true,
-            message: "Authentication not required (no password or secret configured)"
           };
         }
 
         // Generate JWT for anonymous access
         const token = await generateUIToken(generateDevUserId());
         return {
+          message: "Authentication not required",
           success: true,
           token,
-          message: "Authentication not required"
         };
       }
 
@@ -73,8 +73,8 @@ export const authRoute = new Elysia({ prefix: "/api/auth" })
           // No secret configured - can't generate JWT
           set.status = 500;
           return {
+            message: "Server misconfigured: BIOAGENTS_SECRET required for JWT auth",
             success: false,
-            message: "Server misconfigured: BIOAGENTS_SECRET required for JWT auth"
           };
         }
 
@@ -82,19 +82,19 @@ export const authRoute = new Elysia({ prefix: "/api/auth" })
         const token = await generateUIToken(generateDevUserId());
         if (!token) {
           set.status = 500;
-          return { success: false, message: "Failed to generate authentication token" };
+          return { message: "Failed to generate authentication token", success: false };
         }
 
         return {
+          expiresIn: JWT_EXPIRATION,
           success: true,
           token,
-          expiresIn: JWT_EXPIRATION
         };
       }
 
       // Invalid password
       set.status = 401;
-      return { success: false, message: "Invalid password" };
+      return { message: "Invalid password", success: false };
     },
     {
       body: t.Object({
@@ -120,9 +120,7 @@ export const authRoute = new Elysia({ prefix: "/api/auth" })
     let userId: string | null = null;
 
     if (authHeader) {
-      const token = authHeader.startsWith("Bearer ")
-        ? authHeader.slice(7)
-        : authHeader;
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
 
       const result = await verifyJWT(token);
       if (result.valid && result.payload) {
@@ -137,8 +135,8 @@ export const authRoute = new Elysia({ prefix: "/api/auth" })
     }
 
     return {
-      isAuthRequired,
       isAuthenticated,
+      isAuthRequired,
       userId,
     };
   });

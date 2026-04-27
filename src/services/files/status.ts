@@ -38,10 +38,7 @@ export interface FileStatusRecord {
 const fileStatusMap = new Map<string, FileStatusRecord>();
 
 // TTL for status records (configurable, default 1 hour)
-const statusTtlMinutes = parseInt(
-  process.env.FILE_STATUS_TTL_MINUTES || "60",
-  10,
-);
+const statusTtlMinutes = parseInt(process.env.FILE_STATUS_TTL_MINUTES || "60", 10);
 const STATUS_TTL_MS = statusTtlMinutes * 60 * 1000;
 
 /**
@@ -59,20 +56,17 @@ async function getRedisClient() {
  * Create a new file status record
  */
 export async function createFileStatus(
-  data: Omit<
-    FileStatusRecord,
-    "status" | "createdAt" | "updatedAt" | "expiresAt"
-  >,
+  data: Omit<FileStatusRecord, "status" | "createdAt" | "updatedAt" | "expiresAt">
 ): Promise<FileStatusRecord> {
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + STATUS_TTL_MS).toISOString();
 
   const record: FileStatusRecord = {
     ...data,
-    status: "pending",
     createdAt: now,
-    updatedAt: now,
     expiresAt,
+    status: "pending",
+    updatedAt: now,
   };
 
   const redis = await getRedisClient();
@@ -80,12 +74,7 @@ export async function createFileStatus(
   if (redis) {
     // Queue mode: Store in Redis
     const key = `file:status:${data.fileId}`;
-    await redis.set(
-      key,
-      JSON.stringify(record),
-      "EX",
-      Math.floor(STATUS_TTL_MS / 1000),
-    );
+    await redis.set(key, JSON.stringify(record), "EX", Math.floor(STATUS_TTL_MS / 1000));
     logger.info({ fileId: data.fileId, key }, "file_status_created_redis");
   } else {
     // In-process mode: Store in memory
@@ -99,9 +88,7 @@ export async function createFileStatus(
 /**
  * Get file status by fileId
  */
-export async function getFileStatus(
-  fileId: string,
-): Promise<FileStatusRecord | null> {
+export async function getFileStatus(fileId: string): Promise<FileStatusRecord | null> {
   const redis = await getRedisClient();
 
   if (redis) {
@@ -121,9 +108,7 @@ export async function getFileStatus(
  */
 export async function updateFileStatus(
   fileId: string,
-  updates: Partial<
-    Pick<FileStatusRecord, "status" | "description" | "error" | "jobId">
-  >,
+  updates: Partial<Pick<FileStatusRecord, "status" | "description" | "error" | "jobId">>
 ): Promise<FileStatusRecord | null> {
   const record = await getFileStatus(fileId);
 
@@ -145,24 +130,13 @@ export async function updateFileStatus(
     // Recalculate TTL based on remaining time
     const remainingTtl = Math.max(
       0,
-      Math.floor((new Date(record.expiresAt).getTime() - Date.now()) / 1000),
+      Math.floor((new Date(record.expiresAt).getTime() - Date.now()) / 1000)
     );
-    await redis.set(
-      key,
-      JSON.stringify(updatedRecord),
-      "EX",
-      remainingTtl || 3600,
-    );
-    logger.info(
-      { fileId, status: updates.status },
-      "file_status_updated_redis",
-    );
+    await redis.set(key, JSON.stringify(updatedRecord), "EX", remainingTtl || 3600);
+    logger.info({ fileId, status: updates.status }, "file_status_updated_redis");
   } else {
     fileStatusMap.set(fileId, updatedRecord);
-    logger.info(
-      { fileId, status: updates.status },
-      "file_status_updated_memory",
-    );
+    logger.info({ fileId, status: updates.status }, "file_status_updated_memory");
   }
 
   return updatedRecord;
@@ -188,9 +162,7 @@ export async function deleteFileStatus(fileId: string): Promise<void> {
  * Get all pending/processing file IDs for a conversation state
  * Used by chat worker to wait for file processing to complete
  */
-export async function getPendingFileIds(
-  conversationStateId: string,
-): Promise<string[]> {
+export async function getPendingFileIds(conversationStateId: string): Promise<string[]> {
   const redis = await getRedisClient();
 
   if (redis) {
@@ -199,13 +171,7 @@ export async function getPendingFileIds(
     let cursor = "0";
 
     do {
-      const [nextCursor, keys] = await redis.scan(
-        cursor,
-        "MATCH",
-        "file:status:*",
-        "COUNT",
-        100,
-      );
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "file:status:*", "COUNT", 100);
       cursor = nextCursor;
 
       for (const key of keys) {

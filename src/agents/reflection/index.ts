@@ -1,10 +1,6 @@
-import type {
-  ConversationState,
-  Message,
-  PlanTask,
-} from "../../types/core";
+import type { ConversationState, Message, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { reflectOnWorld, type ReflectionDoc } from "./utils";
+import { type ReflectionDoc, reflectOnWorld } from "./utils";
 
 type ReflectionResult = {
   conversationTitle?: string;
@@ -39,12 +35,12 @@ export async function reflectionAgent(input: {
 
   logger.info(
     {
+      currentInsights: conversationState.values.keyInsights?.length || 0,
+      hasHypothesis: !!hypothesis,
       hasObjective: !!conversationState.values.objective,
       taskCount: completedMaxTasks.length,
-      hasHypothesis: !!hypothesis,
-      currentInsights: conversationState.values.keyInsights?.length || 0,
     },
-    "reflection_agent_started",
+    "reflection_agent_started"
   );
 
   try {
@@ -55,20 +51,20 @@ export async function reflectionAgent(input: {
     completedMaxTasks.forEach((task, index) => {
       logger.info(
         {
-          taskIndex: index,
-          taskType: task.type,
-          taskLevel: task.level,
           hasOutput: !!task.output,
           outputLength: task.output?.length || 0,
+          taskIndex: index,
+          taskLevel: task.level,
+          taskType: task.type,
         },
-        "processing_max_level_task_for_reflection",
+        "processing_max_level_task_for_reflection"
       );
 
       if (task.output && task.output.trim()) {
         reflectionDocs.push({
-          title: `${task.type} Task (Level ${task.level}) Output`,
-          text: `Task Objective: ${task.objective}\n\nOutput:\n${task.output}`,
           context: `Output from level ${task.level} ${task.type} task`,
+          text: `Task Objective: ${task.objective}\n\nOutput:\n${task.output}`,
+          title: `${task.type} Task (Level ${task.level}) Output`,
         });
       }
     });
@@ -76,45 +72,39 @@ export async function reflectionAgent(input: {
     // Add hypothesis if available
     if (hypothesis) {
       reflectionDocs.push({
-        title: "Current Hypothesis",
-        text: hypothesis,
         context: "Working hypothesis from completed tasks",
+        text: hypothesis,
+        title: "Current Hypothesis",
       });
     }
 
     // Add existing world state
     const worldContextParts: string[] = [];
     if (conversationState.values.objective) {
-      worldContextParts.push(
-        `Main Objective: ${conversationState.values.objective}`,
-      );
+      worldContextParts.push(`Main Objective: ${conversationState.values.objective}`);
     }
     if (conversationState.values.evolvingObjective) {
       worldContextParts.push(
-        `Evolving Research Direction: ${conversationState.values.evolvingObjective}`,
+        `Evolving Research Direction: ${conversationState.values.evolvingObjective}`
       );
     }
     if (conversationState.values.currentObjective) {
-      worldContextParts.push(
-        `Current Objective: ${conversationState.values.currentObjective}`,
-      );
+      worldContextParts.push(`Current Objective: ${conversationState.values.currentObjective}`);
     }
     if (conversationState.values.methodology) {
-      worldContextParts.push(
-        `Current Methodology: ${conversationState.values.methodology}`,
-      );
+      worldContextParts.push(`Current Methodology: ${conversationState.values.methodology}`);
     }
     if (conversationState.values.keyInsights?.length) {
       worldContextParts.push(
-        `Existing Key Insights (${conversationState.values.keyInsights.length}):\n${conversationState.values.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")}`,
+        `Existing Key Insights (${conversationState.values.keyInsights.length}):\n${conversationState.values.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")}`
       );
     }
 
     if (worldContextParts.length > 0) {
       reflectionDocs.push({
-        title: "Current World State",
-        text: worldContextParts.join("\n\n"),
         context: "Existing world state to be updated",
+        text: worldContextParts.join("\n\n"),
+        title: "Current World State",
       });
     }
 
@@ -123,53 +113,50 @@ export async function reflectionAgent(input: {
       const end = new Date().toISOString();
       return {
         conversationTitle: conversationState.values.conversationTitle,
-        evolvingObjective: conversationState.values.evolvingObjective,
         currentObjective: conversationState.values.currentObjective,
+        end,
+        evolvingObjective: conversationState.values.evolvingObjective,
         keyInsights: conversationState.values.keyInsights || [],
         methodology: conversationState.values.methodology,
         start,
-        end,
       };
     }
 
-    logger.info(
-      { docCount: reflectionDocs.length },
-      "reflecting_on_world_state",
-    );
+    logger.info({ docCount: reflectionDocs.length }, "reflecting_on_world_state");
 
     // Reflect and update world state
     const { text, thought } = await reflectOnWorld(
       message.question || conversationState.values.objective || "",
       reflectionDocs,
       {
-        maxTokens: 4000,
-        thinking: true,
-        thinkingBudget: 4096,
-        messageId: message.id,
-        usageType: "deep-research",
-        // Pass existing values to preserve on parse failure
-        existingObjective: conversationState.values.currentObjective,
         existingEvolvingObjective: conversationState.values.evolvingObjective,
         existingInsights: conversationState.values.keyInsights,
         existingMethodology: conversationState.values.methodology,
+        // Pass existing values to preserve on parse failure
+        existingObjective: conversationState.values.currentObjective,
         existingTitle: conversationState.values.conversationTitle,
-      },
+        maxTokens: 4000,
+        messageId: message.id,
+        thinking: true,
+        thinkingBudget: 4096,
+        usageType: "deep-research",
+      }
     );
 
     const end = new Date().toISOString();
 
     logger.info(
       {
-        thought,
         reflectionDocs,
+        thought,
       },
-      "reflection_agent_completed",
+      "reflection_agent_completed"
     );
 
     return {
       ...text,
-      start,
       end,
+      start,
     };
   } catch (err) {
     logger.error({ err }, "reflection_agent_failed");

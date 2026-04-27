@@ -23,7 +23,7 @@ function sleep(ms: number): Promise<void> {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -62,7 +62,7 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
             "User-Agent": DOI_USER_AGENT,
           },
         },
-        DOI_FETCH_TIMEOUT_MS,
+        DOI_FETCH_TIMEOUT_MS
       );
 
       if (response.ok) {
@@ -72,8 +72,8 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
       // Log non-OK responses with status code
       if (response.status === 429) {
         logger.warn(
-          { doi: normalizedDOI, status: response.status, attempt },
-          "doi_org_rate_limited",
+          { attempt, doi: normalizedDOI, status: response.status },
+          "doi_org_rate_limited"
         );
         // Wait longer on rate limit
         await sleep(DOI_RETRY_BASE_DELAY_MS * attempt * 2);
@@ -82,28 +82,23 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
 
       if (response.status >= 500) {
         logger.warn(
-          { doi: normalizedDOI, status: response.status, attempt },
-          "doi_org_server_error",
+          { attempt, doi: normalizedDOI, status: response.status },
+          "doi_org_server_error"
         );
         await sleep(DOI_RETRY_BASE_DELAY_MS * attempt);
         continue;
       }
 
       // 404 or other client errors - don't retry, try fallback
-      logger.warn(
-        { doi: normalizedDOI, status: response.status },
-        "doi_org_client_error",
-      );
+      logger.warn({ doi: normalizedDOI, status: response.status }, "doi_org_client_error");
       break;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      const isTimeout =
-        errorMessage.includes("abort") || errorMessage.includes("timeout");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = errorMessage.includes("abort") || errorMessage.includes("timeout");
 
       logger.warn(
-        { doi: normalizedDOI, attempt, error: errorMessage, isTimeout },
-        "doi_org_resolution_failed",
+        { attempt, doi: normalizedDOI, error: errorMessage, isTimeout },
+        "doi_org_resolution_failed"
       );
 
       if (attempt < DOI_RETRY_ATTEMPTS) {
@@ -122,7 +117,7 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
             "User-Agent": DOI_USER_AGENT,
           },
         },
-        DOI_FETCH_TIMEOUT_MS,
+        DOI_FETCH_TIMEOUT_MS
       );
 
       if (response.ok) {
@@ -131,8 +126,8 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
 
       if (response.status === 429) {
         logger.warn(
-          { doi: normalizedDOI, status: response.status, attempt },
-          "crossref_rate_limited",
+          { attempt, doi: normalizedDOI, status: response.status },
+          "crossref_rate_limited"
         );
         await sleep(DOI_RETRY_BASE_DELAY_MS * attempt * 2);
         continue;
@@ -140,26 +135,22 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
 
       if (response.status >= 500) {
         logger.warn(
-          { doi: normalizedDOI, status: response.status, attempt },
-          "crossref_server_error",
+          { attempt, doi: normalizedDOI, status: response.status },
+          "crossref_server_error"
         );
         await sleep(DOI_RETRY_BASE_DELAY_MS * attempt);
         continue;
       }
 
       // 404 or other client errors - don't retry
-      logger.warn(
-        { doi: normalizedDOI, status: response.status },
-        "crossref_client_error",
-      );
+      logger.warn({ doi: normalizedDOI, status: response.status }, "crossref_client_error");
       break;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       logger.warn(
-        { doi: normalizedDOI, attempt, error: errorMessage },
-        "crossref_resolution_failed",
+        { attempt, doi: normalizedDOI, error: errorMessage },
+        "crossref_resolution_failed"
       );
 
       if (attempt < DOI_RETRY_ATTEMPTS) {
@@ -176,9 +167,7 @@ export async function resolveDOIToBibTeX(doi: string): Promise<string | null> {
  * Resolve multiple DOIs to BibTeX entries
  * Uses batched sequential processing to avoid rate limiting
  */
-export async function resolveMultipleDOIs(
-  dois: string[],
-): Promise<BibTeXEntry[]> {
+export async function resolveMultipleDOIs(dois: string[]): Promise<BibTeXEntry[]> {
   const uniqueDOIs = Array.from(new Set(dois.map(normalizeDOI)));
   logger.info({ count: uniqueDOIs.length }, "resolving_dois_to_bibtex");
 
@@ -192,10 +181,7 @@ export async function resolveMultipleDOIs(
     const batchNumber = Math.floor(i / DOI_BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(uniqueDOIs.length / DOI_BATCH_SIZE);
 
-    logger.info(
-      { batchNumber, totalBatches, batchSize: batch.length },
-      "processing_doi_batch",
-    );
+    logger.info({ batchNumber, batchSize: batch.length, totalBatches }, "processing_doi_batch");
 
     // Process batch sequentially (not in parallel) to be gentle on APIs
     for (const doi of batch) {
@@ -214,9 +200,9 @@ export async function resolveMultipleDOIs(
       }
 
       results.push({
-        doi,
-        citekey: extracted.citekey,
         bibtex: extracted.bibtex,
+        citekey: extracted.citekey,
+        doi,
       });
       resolvedCount++;
     }
@@ -228,8 +214,8 @@ export async function resolveMultipleDOIs(
   }
 
   logger.info(
-    { resolved: resolvedCount, failed: failedCount, total: uniqueDOIs.length },
-    "doi_resolution_complete",
+    { failed: failedCount, resolved: resolvedCount, total: uniqueDOIs.length },
+    "doi_resolution_complete"
   );
 
   return results;
@@ -253,15 +239,12 @@ export function extractCitekeyFromBibTeX(bibtex: string): string | null {
     }
   }
 
-  logger.warn(
-    { bibtexPreview: bibtex.substring(0, 200) },
-    "failed_to_extract_citekey",
-  );
+  logger.warn({ bibtexPreview: bibtex.substring(0, 200) }, "failed_to_extract_citekey");
   return null;
 }
 
 export function extractAndSanitizeBibTeXEntry(
-  bibtex: string,
+  bibtex: string
 ): { citekey: string; bibtex: string } | null {
   const originalCitekey = extractCitekeyFromBibTeX(bibtex);
   if (!originalCitekey) return null;
@@ -278,13 +261,10 @@ export function extractAndSanitizeBibTeXEntry(
 
   if (sanitizedCitekey !== originalCitekey) {
     sanitizedBibtex = rewriteBibTeXCitekey(sanitizedBibtex, sanitizedCitekey);
-    logger.info(
-      { original: originalCitekey, sanitized: sanitizedCitekey },
-      "sanitized_citekey",
-    );
+    logger.info({ original: originalCitekey, sanitized: sanitizedCitekey }, "sanitized_citekey");
   }
 
-  return { citekey: sanitizedCitekey, bibtex: sanitizedBibtex };
+  return { bibtex: sanitizedBibtex, citekey: sanitizedCitekey };
 }
 
 /**
@@ -321,22 +301,15 @@ export function decodeHtmlEntitiesForLatex(text: string): string {
   );
 }
 
-export function rewriteBibTeXCitekey(
-  bibtex: string,
-  newCitekey: string,
-): string {
+export function rewriteBibTeXCitekey(bibtex: string, newCitekey: string): string {
   return bibtex.replace(/^(@\w+\{)[^,]+,/m, `$1${newCitekey},`);
 }
 
-export function deduplicateAndResolveCollisions(
-  entries: BibTeXEntry[],
-): BibTeXEntry[] {
+export function deduplicateAndResolveCollisions(entries: BibTeXEntry[]): BibTeXEntry[] {
   const dedupMap = new Map<string, BibTeXEntry>();
   for (const entry of entries) {
     // For DOI entries, dedup by normalized DOI; for non-DOI, dedup by citekey
-    const dedupKey = entry.doi
-      ? `doi:${normalizeDOI(entry.doi)}`
-      : `key:${entry.citekey}`;
+    const dedupKey = entry.doi ? `doi:${normalizeDOI(entry.doi)}` : `key:${entry.citekey}`;
     if (!dedupMap.has(dedupKey)) {
       dedupMap.set(dedupKey, entry);
     }
@@ -353,14 +326,11 @@ export function deduplicateAndResolveCollisions(
     if (usageCount > 0) {
       finalCitekey = `${entry.citekey}_${usageCount + 1}`;
       const updatedBibtex = rewriteBibTeXCitekey(entry.bibtex, finalCitekey);
-      logger.info(
-        { original: entry.citekey, disambiguated: finalCitekey },
-        "citekey_collision",
-      );
+      logger.info({ disambiguated: finalCitekey, original: entry.citekey }, "citekey_collision");
       finalEntries.push({
-        doi: entry.doi,
-        citekey: finalCitekey,
         bibtex: updatedBibtex,
+        citekey: finalCitekey,
+        doi: entry.doi,
         url: entry.url,
       });
     } else {
@@ -381,14 +351,7 @@ export function deduplicateAndResolveCollisions(
  * Skips url, doi, and eprint fields where underscores are valid.
  */
 export function escapeBibTeXFieldUnderscores(bibtex: string): string {
-  const skipFields = new Set([
-    "url",
-    "doi",
-    "eprint",
-    "file",
-    "archiveprefix",
-    "primaryclass",
-  ]);
+  const skipFields = new Set(["url", "doi", "eprint", "file", "archiveprefix", "primaryclass"]);
 
   return bibtex.replace(
     /(\b(\w+)\s*=\s*\{)((?:[^{}]|\{[^{}]*\})*)\}/gi,
@@ -402,7 +365,7 @@ export function escapeBibTeXFieldUnderscores(bibtex: string): string {
         .map((part: string) => part.replace(/_/g, "\\_"))
         .join("\\_");
       return `${prefix}${sanitized}}`;
-    },
+    }
   );
 }
 
@@ -410,12 +373,9 @@ export function generateBibTeXFile(entries: BibTeXEntry[]): string {
   const header = `% BibTeX references for Deep Research paper\n\n`;
   const bibContent = entries
     .map((entry) => {
-      const comment = entry.doi
-        ? `% DOI: ${entry.doi}`
-        : `% URL: ${entry.url || "unknown"}`;
+      const comment = entry.doi ? `% DOI: ${entry.doi}` : `% URL: ${entry.url || "unknown"}`;
       return `${comment}\n${entry.bibtex}\n`;
     })
     .join("\n");
   return header + bibContent;
 }
-

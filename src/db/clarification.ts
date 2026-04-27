@@ -32,10 +32,10 @@ export async function createClarificationSession(input: {
   const { data, error } = await supabase
     .from("clarification_sessions")
     .insert({
-      user_id: userId,
       initial_query: initialQuery,
       questions: questions,
       status: "questions_generated" as ClarificationStatus,
+      user_id: userId,
     })
     .select()
     .single();
@@ -43,7 +43,7 @@ export async function createClarificationSession(input: {
   if (error) {
     logger.error(
       { error, userId },
-      "[createClarificationSession] Error creating clarification session",
+      "[createClarificationSession] Error creating clarification session"
     );
     throw error;
   }
@@ -55,7 +55,7 @@ export async function createClarificationSession(input: {
  * Get a clarification session by ID
  */
 export async function getClarificationSession(
-  sessionId: string,
+  sessionId: string
 ): Promise<ClarificationSession | null> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -70,7 +70,7 @@ export async function getClarificationSession(
     }
     logger.error(
       { error, sessionId },
-      "[getClarificationSession] Error getting clarification session",
+      "[getClarificationSession] Error getting clarification session"
     );
     throw error;
   }
@@ -83,7 +83,7 @@ export async function getClarificationSession(
  */
 export async function getClarificationSessionForUser(
   sessionId: string,
-  userId: string,
+  userId: string
 ): Promise<ClarificationSession | null> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -99,7 +99,7 @@ export async function getClarificationSessionForUser(
     }
     logger.error(
       { error, sessionId, userId },
-      "[getClarificationSessionForUser] Error getting clarification session",
+      "[getClarificationSessionForUser] Error getting clarification session"
     );
     throw error;
   }
@@ -112,7 +112,7 @@ export async function getClarificationSessionForUser(
  */
 export async function submitClarificationAnswers(
   sessionId: string,
-  answers: ClarificationAnswer[],
+  answers: ClarificationAnswer[]
 ): Promise<ClarificationSession> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -125,10 +125,7 @@ export async function submitClarificationAnswers(
     .single();
 
   if (error) {
-    logger.error(
-      { error, sessionId },
-      "[submitClarificationAnswers] Error submitting answers",
-    );
+    logger.error({ error, sessionId }, "[submitClarificationAnswers] Error submitting answers");
     throw error;
   }
 
@@ -140,7 +137,7 @@ export async function submitClarificationAnswers(
  */
 export async function setClarificationPlan(
   sessionId: string,
-  plan: ClarificationPlan,
+  plan: ClarificationPlan
 ): Promise<ClarificationSession> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -153,10 +150,7 @@ export async function setClarificationPlan(
     .single();
 
   if (error) {
-    logger.error(
-      { error, sessionId },
-      "[setClarificationPlan] Error setting plan",
-    );
+    logger.error({ error, sessionId }, "[setClarificationPlan] Error setting plan");
     throw error;
   }
 
@@ -174,8 +168,7 @@ export async function addPlanFeedback(input: {
   regeneratedPlan?: ClarificationPlan;
   approved: boolean;
 }): Promise<ClarificationSession> {
-  const { sessionId, feedback, previousPlan, regeneratedPlan, approved } =
-    input;
+  const { sessionId, feedback, previousPlan, regeneratedPlan, approved } = input;
 
   // First get the current session to append to plan_feedback
   const session = await getClarificationSession(sessionId);
@@ -184,26 +177,24 @@ export async function addPlanFeedback(input: {
   }
 
   const newFeedbackEntry: PlanFeedbackEntry = {
+    approved,
     feedback,
     previousPlan,
     regeneratedPlan,
     timestamp: new Date().toISOString(),
-    approved,
   };
 
   const updatedFeedback = [...(session.plan_feedback || []), newFeedbackEntry];
 
   // Determine new status and plan
-  const newStatus: ClarificationStatus = approved
-    ? "plan_approved"
-    : "plan_generated";
+  const newStatus: ClarificationStatus = approved ? "plan_approved" : "plan_generated";
   const newPlan = regeneratedPlan || session.plan;
 
   const { data, error } = await supabase
     .from("clarification_sessions")
     .update({
-      plan_feedback: updatedFeedback,
       plan: newPlan,
+      plan_feedback: updatedFeedback,
       status: newStatus,
     })
     .eq("id", sessionId)
@@ -211,10 +202,7 @@ export async function addPlanFeedback(input: {
     .single();
 
   if (error) {
-    logger.error(
-      { error, sessionId },
-      "[addPlanFeedback] Error adding plan feedback",
-    );
+    logger.error({ error, sessionId }, "[addPlanFeedback] Error adding plan feedback");
     throw error;
   }
 
@@ -224,9 +212,7 @@ export async function addPlanFeedback(input: {
 /**
  * Approve the current plan for a clarification session
  */
-export async function approveClarificationPlan(
-  sessionId: string,
-): Promise<ClarificationSession> {
+export async function approveClarificationPlan(sessionId: string): Promise<ClarificationSession> {
   const { data, error } = await supabase
     .from("clarification_sessions")
     .update({
@@ -237,10 +223,7 @@ export async function approveClarificationPlan(
     .single();
 
   if (error) {
-    logger.error(
-      { error, sessionId },
-      "[approveClarificationPlan] Error approving plan",
-    );
+    logger.error({ error, sessionId }, "[approveClarificationPlan] Error approving plan");
     throw error;
   }
 
@@ -253,7 +236,7 @@ export async function approveClarificationPlan(
  */
 export async function linkSessionToConversation(
   sessionId: string,
-  conversationId: string,
+  conversationId: string
 ): Promise<ClarificationSession> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -266,8 +249,8 @@ export async function linkSessionToConversation(
 
   if (error) {
     logger.error(
-      { error, sessionId, conversationId },
-      "[linkSessionToConversation] Error linking session to conversation",
+      { conversationId, error, sessionId },
+      "[linkSessionToConversation] Error linking session to conversation"
     );
     throw error;
   }
@@ -279,7 +262,7 @@ export async function linkSessionToConversation(
  * Abandon a clarification session (e.g., user starts over)
  */
 export async function abandonClarificationSession(
-  sessionId: string,
+  sessionId: string
 ): Promise<ClarificationSession> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -291,10 +274,7 @@ export async function abandonClarificationSession(
     .single();
 
   if (error) {
-    logger.error(
-      { error, sessionId },
-      "[abandonClarificationSession] Error abandoning session",
-    );
+    logger.error({ error, sessionId }, "[abandonClarificationSession] Error abandoning session");
     throw error;
   }
 
@@ -306,7 +286,7 @@ export async function abandonClarificationSession(
  */
 export async function getUserClarificationSessions(
   userId: string,
-  limit: number = 10,
+  limit: number = 10
 ): Promise<ClarificationSession[]> {
   const { data, error } = await supabase
     .from("clarification_sessions")
@@ -316,10 +296,7 @@ export async function getUserClarificationSessions(
     .limit(limit);
 
   if (error) {
-    logger.error(
-      { error, userId },
-      "[getUserClarificationSessions] Error getting user sessions",
-    );
+    logger.error({ error, userId }, "[getUserClarificationSessions] Error getting user sessions");
     throw error;
   }
 

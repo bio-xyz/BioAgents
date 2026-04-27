@@ -43,9 +43,7 @@ function findSequenceInBackticks(message: string): string | undefined {
 }
 
 function findSequenceInFasta(message: string): string | undefined {
-  const fastaMatches = message.matchAll(
-    /(?:^|\n)>\s*[^\n]*\n(([A-Za-z*-]+\s*){20,})/gm
-  );
+  const fastaMatches = message.matchAll(/(?:^|\n)>\s*[^\n]*\n(([A-Za-z*-]+\s*){20,})/gm);
 
   for (const match of fastaMatches) {
     const candidate = normalizeSequenceCandidate(match[1] || "");
@@ -99,9 +97,7 @@ export function extractExplicitProteinSequence(message: string): string | undefi
   }
 
   return (
-    findSequenceInFasta(message) ||
-    findSequenceInBackticks(message) ||
-    findLabeledSequence(message)
+    findSequenceInFasta(message) || findSequenceInBackticks(message) || findLabeledSequence(message)
   );
 }
 

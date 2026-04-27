@@ -18,19 +18,17 @@ export type CitationKeyInfo = {
 /**
  * Extract citation key metadata from BibTeX entries for prompt injection
  */
-export function extractCitationKeys(
-  entries: BibTeXEntry[],
-): CitationKeyInfo[] {
+export function extractCitationKeys(entries: BibTeXEntry[]): CitationKeyInfo[] {
   return entries.map((entry) => {
     const title = extractBibtexField(entry.bibtex, "title");
     const author = extractBibtexField(entry.bibtex, "author");
 
     return {
-      key: entry.citekey,
-      doi: entry.doi,
-      url: entry.url,
-      title,
       author,
+      doi: entry.doi,
+      key: entry.citekey,
+      title,
+      url: entry.url,
     };
   });
 }
@@ -39,10 +37,7 @@ export function extractCitationKeys(
  * Extract a field value from a BibTeX entry string
  */
 function extractBibtexField(bibtex: string, field: string): string {
-  const pattern = new RegExp(
-    `${field}\\s*=\\s*[{"]([^}"]+)[}"]`,
-    "i",
-  );
+  const pattern = new RegExp(`${field}\\s*=\\s*[{"]([^}"]+)[}"]`, "i");
   const match = bibtex.match(pattern);
   return match?.[1]?.trim() || "";
 }

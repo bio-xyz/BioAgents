@@ -6,6 +6,7 @@
  */
 
 import { Queue } from "bullmq";
+import logger from "../../utils/logger";
 import { getBullMQConnection, isJobQueueEnabled } from "./connection";
 import type {
   ChatJobData,
@@ -17,13 +18,13 @@ import type {
   PaperGenerationJobData,
   PaperGenerationJobResult,
 } from "./types";
-import logger from "../../utils/logger";
 
 // Queue instances (lazy initialized)
 let chatQueueInstance: Queue<ChatJobData, ChatJobResult> | null = null;
 let deepResearchQueueInstance: Queue<DeepResearchJobData, DeepResearchJobResult> | null = null;
 let fileProcessQueueInstance: Queue<FileProcessJobData, FileProcessJobResult> | null = null;
-let paperGenerationQueueInstance: Queue<PaperGenerationJobData, PaperGenerationJobResult> | null = null;
+let paperGenerationQueueInstance: Queue<PaperGenerationJobData, PaperGenerationJobResult> | null =
+  null;
 
 /**
  * Get or create the chat queue
@@ -45,8 +46,8 @@ export function getChatQueue(): Queue<ChatJobData, ChatJobResult> {
         // Retry configuration
         attempts: 3, // Retry up to 3 times on failure
         backoff: {
-          type: "exponential", // 1s, 2s, 4s delays
           delay: 1000,
+          type: "exponential", // 1s, 2s, 4s delays
         },
         // Timeout - chat should complete within 3 minutes
         // timeout: 180000, // 3 minutes hard limit - DISABLED for now, using worker lockDuration instead
@@ -81,27 +82,30 @@ export function getDeepResearchQueue(): Queue<DeepResearchJobData, DeepResearchJ
   }
 
   if (!deepResearchQueueInstance) {
-    deepResearchQueueInstance = new Queue<DeepResearchJobData, DeepResearchJobResult>("deep-research", {
-      connection: getBullMQConnection(),
-      defaultJobOptions: {
-        // Retry configuration (fewer retries for long jobs)
-        attempts: 2, // Retry up to 2 times
-        backoff: {
-          type: "exponential", // 5s, 10s delays
-          delay: 5000,
+    deepResearchQueueInstance = new Queue<DeepResearchJobData, DeepResearchJobResult>(
+      "deep-research",
+      {
+        connection: getBullMQConnection(),
+        defaultJobOptions: {
+          // Retry configuration (fewer retries for long jobs)
+          attempts: 2, // Retry up to 2 times
+          backoff: {
+            delay: 5000,
+            type: "exponential", // 5s, 10s delays
+          },
+          // NO TIMEOUT - deep research can take 20-30+ minutes
+          // timeout: undefined,
+          // Job cleanup
+          removeOnComplete: {
+            age: 86400, // Keep for 24 hours
+            count: 500,
+          },
+          removeOnFail: {
+            age: 604800, // Keep failed for 7 days
+          },
         },
-        // NO TIMEOUT - deep research can take 20-30+ minutes
-        // timeout: undefined,
-        // Job cleanup
-        removeOnComplete: {
-          age: 86400, // Keep for 24 hours
-          count: 500,
-        },
-        removeOnFail: {
-          age: 604800, // Keep failed for 7 days
-        },
-      },
-    });
+      }
+    );
 
     logger.info({ queue: "deep-research" }, "deep_research_queue_initialized");
   }
@@ -128,8 +132,8 @@ export function getFileProcessQueue(): Queue<FileProcessJobData, FileProcessJobR
       defaultJobOptions: {
         attempts: 3,
         backoff: {
-          type: "exponential",
           delay: 1000,
+          type: "exponential",
         },
         removeOnComplete: {
           age: 3600, // Keep for 1 hour
@@ -161,22 +165,25 @@ export function getPaperGenerationQueue(): Queue<PaperGenerationJobData, PaperGe
   }
 
   if (!paperGenerationQueueInstance) {
-    paperGenerationQueueInstance = new Queue<PaperGenerationJobData, PaperGenerationJobResult>("paper-generation", {
-      connection: getBullMQConnection(),
-      defaultJobOptions: {
-        // NO RETRY - paper gen has internal fallback strategies
-        attempts: 1,
-        // NO TIMEOUT - let it run as long as needed
-        // Job cleanup
-        removeOnComplete: {
-          age: 86400, // Keep for 24 hours
-          count: 500,
+    paperGenerationQueueInstance = new Queue<PaperGenerationJobData, PaperGenerationJobResult>(
+      "paper-generation",
+      {
+        connection: getBullMQConnection(),
+        defaultJobOptions: {
+          // NO RETRY - paper gen has internal fallback strategies
+          attempts: 1,
+          // NO TIMEOUT - let it run as long as needed
+          // Job cleanup
+          removeOnComplete: {
+            age: 86400, // Keep for 24 hours
+            count: 500,
+          },
+          removeOnFail: {
+            age: 604800, // Keep failed for 7 days
+          },
         },
-        removeOnFail: {
-          age: 604800, // Keep failed for 7 days
-        },
-      },
-    });
+      }
+    );
 
     logger.info({ queue: "paper-generation" }, "paper_generation_queue_initialized");
   }
@@ -188,13 +195,14 @@ export function getPaperGenerationQueue(): Queue<PaperGenerationJobData, PaperGe
  * Close all queue instances (for graceful shutdown)
  */
 export async function closeQueues(): Promise<void> {
-  const queues = [chatQueueInstance, deepResearchQueueInstance, fileProcessQueueInstance, paperGenerationQueueInstance];
+  const queues = [
+    chatQueueInstance,
+    deepResearchQueueInstance,
+    fileProcessQueueInstance,
+    paperGenerationQueueInstance,
+  ];
 
-  await Promise.all(
-    queues
-      .filter((q): q is Queue => q !== null)
-      .map((q) => q.close()),
-  );
+  await Promise.all(queues.filter((q): q is Queue => q !== null).map((q) => q.close()));
 
   chatQueueInstance = null;
   deepResearchQueueInstance = null;

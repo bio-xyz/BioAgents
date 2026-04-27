@@ -15,10 +15,9 @@ export const STORAGE_CONFIG = {
   provider: process.env.STORAGE_PROVIDER?.toLowerCase(),
   s3: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID,
-    secretAccessKey:
-      process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION || process.env.S3_REGION || "us-east-1",
     bucket: process.env.S3_BUCKET,
     endpoint: process.env.S3_ENDPOINT,
+    region: process.env.AWS_REGION || process.env.S3_REGION || "us-east-1",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY,
   },
 };
