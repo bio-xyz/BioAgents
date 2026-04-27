@@ -1,5 +1,5 @@
 import { LLM } from "../../llm/provider";
-import type { Discovery, LLMProvider, PlanTask, AnalysisArtifact } from "../../types/core";
+import type { AnalysisArtifact, Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
 import { discoveryPrompt } from "./prompts";
 
@@ -30,7 +30,7 @@ export async function extractDiscoveries(
   existingDiscoveries: Discovery[],
   conversationHistory: string,
   documents: DiscoveryDoc[],
-  options: DiscoveryOptions = {},
+  options: DiscoveryOptions = {}
 ): Promise<DiscoveryResult> {
   const model = process.env.DISCOVERY_LLM_MODEL || "gemini-2.5-pro";
 
@@ -54,33 +54,28 @@ export async function extractDiscoveries(
 
   const DISCOVERY_LLM_PROVIDER: LLMProvider =
     (process.env.DISCOVERY_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey =
-    process.env[`${DISCOVERY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${DISCOVERY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${DISCOVERY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${DISCOVERY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: DISCOVERY_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: DISCOVERY_LLM_PROVIDER,
   });
 
   const llmRequest = {
-    model,
+    maxTokens: options.maxTokens ?? 8000,
+    messageId: options.messageId,
     messages: [
       {
-        role: "user" as const,
         content: discoveryInstruction,
+        role: "user" as const,
       },
     ],
-    maxTokens: options.maxTokens ?? 8000,
-    thinkingBudget: options.thinking
-      ? (options.thinkingBudget ?? 4096)
-      : undefined,
-    messageId: options.messageId,
+    model,
+    thinkingBudget: options.thinking ? (options.thinkingBudget ?? 4096) : undefined,
     usageType: options.usageType,
   };
 
@@ -95,19 +90,14 @@ export async function extractDiscoveries(
         .replace(/\n?```$/, "")
         .trim();
       parsedResponse = JSON.parse(cleaned);
-    } catch (parseError) {
+    } catch {
       // try to locate the json inbetween {} in the message content
-      const jsonMatch = response.content.match(
-        /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
-      );
+      const jsonMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
       const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
       try {
         parsedResponse = JSON.parse(jsonString);
       } catch {
-        logger.warn(
-          { content: response.content.substring(0, 300) },
-          "discovery_json_parse_failed"
-        );
+        logger.warn({ content: response.content.substring(0, 300) }, "discovery_json_parse_failed");
         // Preserve existing discoveries from conversation state
         parsedResponse = { discoveries: existingDiscoveries };
       }
@@ -124,7 +114,7 @@ export async function extractDiscoveries(
         docCount: documents.length,
         existingDiscoveriesCount: existingDiscoveries.length,
       },
-      "discovery_extraction_completed",
+      "discovery_extraction_completed"
     );
 
     return {
@@ -143,7 +133,7 @@ export async function extractDiscoveries(
  */
 export function fixDiscoveryArtifactPaths(
   discoveries: Discovery[],
-  tasks: PlanTask[],
+  tasks: PlanTask[]
 ): Discovery[] {
   // Build lookup map: filename -> correct artifact
   const artifactsByName = new Map<string, AnalysisArtifact>();
@@ -165,9 +155,7 @@ export function fixDiscoveryArtifactPaths(
     ...discovery,
     artifacts: (discovery.artifacts || []).map((artifact) => {
       // Try to find matching task artifact by name
-      const matchByName = artifact.name
-        ? artifactsByName.get(artifact.name)
-        : null;
+      const matchByName = artifact.name ? artifactsByName.get(artifact.name) : null;
       if (matchByName?.path) {
         return { ...artifact, path: matchByName.path };
       }

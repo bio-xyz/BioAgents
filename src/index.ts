@@ -3,23 +3,22 @@ import "./utils/canvas-polyfill";
 
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
+import { adminJobsRoute } from "./routes/admin/jobs";
+import { createQueueDashboard } from "./routes/admin/queue-dashboard";
 import { artifactsRoute } from "./routes/artifacts";
 import { authRoute } from "./routes/auth";
 import { chatRoute } from "./routes/chat";
 import { clarificationRoute } from "./routes/clarification";
+import { deepResearchBranchRoute } from "./routes/deep-research/branch";
+import { deepResearchPaperRoute } from "./routes/deep-research/paper";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
-import { deepResearchPaperRoute } from "./routes/deep-research/paper";
-import { deepResearchBranchRoute } from "./routes/deep-research/branch";
 import { filesRoute } from "./routes/files";
-import logger from "./utils/logger";
-
 // BullMQ Queue imports (conditional)
-import { isJobQueueEnabled, closeConnections } from "./services/queue/connection";
-import { websocketHandler, cleanupDeadConnections } from "./services/websocket/handler";
+import { closeConnections, isJobQueueEnabled } from "./services/queue/connection";
+import { cleanupDeadConnections, websocketHandler } from "./services/websocket/handler";
 import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
-import { createQueueDashboard } from "./routes/admin/queue-dashboard";
-import { adminJobsRoute } from "./routes/admin/jobs";
+import logger from "./utils/logger";
 
 // ============================================================================
 // CORS Configuration - Security Critical
@@ -34,7 +33,9 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 const ALLOWED_ORIGINS: string[] = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+  ? process.env.ALLOWED_ORIGINS.split(",")
+      .map((o) => o.trim())
+      .filter(Boolean)
   : DEFAULT_ALLOWED_ORIGINS;
 
 // Log CORS configuration on startup
@@ -67,7 +68,7 @@ function validateCorsOrigin(request: Request): boolean {
   }
 
   // Log rejected origin for security monitoring
-  logger.warn({ origin, allowedOrigins: ALLOWED_ORIGINS }, "cors_origin_rejected");
+  logger.warn({ allowedOrigins: ALLOWED_ORIGINS, origin }, "cors_origin_rejected");
   return false;
 }
 
@@ -77,19 +78,12 @@ const app = new Elysia()
   // Enable CORS with origin whitelist
   .use(
     cors({
-      origin: validateCorsOrigin,
+      allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "X-Requested-With"],
       credentials: true,
-      allowedHeaders: [
-        "Content-Type",
-        "Authorization",
-        "X-API-Key",
-        "X-Requested-With",
-      ],
-      exposeHeaders: [
-        "Content-Type",
-      ],
+      exposeHeaders: ["Content-Type"],
       maxAge: 86400, // Cache preflight for 24 hours
-    }),
+      origin: validateCorsOrigin,
+    })
   )
 
   // ============================================================================
@@ -120,10 +114,7 @@ const app = new Elysia()
   // Basic request logging
   .onRequest(({ request }) => {
     if (!logger) return;
-    logger.info(
-      { method: request.method, url: request.url },
-      "incoming_request",
-    );
+    logger.info({ method: request.method, url: request.url }, "incoming_request");
   })
   .onError(({ code, error }) => {
     if (!logger) return;
@@ -144,11 +135,9 @@ const app = new Elysia()
 
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
-    const seoDescription =
-      process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
     const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
-    const ogImageUrl =
-      process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
+    const ogImageUrl = process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
       .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
@@ -221,7 +210,7 @@ const app = new Elysia()
           enabled: true,
           redis: "connected",
         };
-      } catch (error) {
+      } catch {
         health.jobQueue = {
           enabled: true,
           redis: "disconnected",
@@ -240,8 +229,8 @@ const app = new Elysia()
   // Suppress Chrome DevTools 404 error
   .get("/.well-known/appspecific/com.chrome.devtools.json", () => {
     return new Response(JSON.stringify({}), {
-      status: 200,
       headers: { "Content-Type": "application/json" },
+      status: 200,
     });
   })
 
@@ -265,14 +254,14 @@ if (queueDashboard) {
   if (ADMIN_PASSWORD) {
     app.onBeforeHandle(({ request, set }) => {
       const url = new URL(request.url);
-      
+
       // Only protect /admin/* routes
       if (!url.pathname.startsWith("/admin")) {
         return;
       }
 
       const authHeader = request.headers.get("Authorization");
-      
+
       // Check for valid basic auth
       if (!authHeader || !authHeader.startsWith("Basic ")) {
         set.status = 401;
@@ -297,9 +286,15 @@ if (queueDashboard) {
         return new Response("Unauthorized", { status: 401 });
       }
     });
-    logger.info({ path: "/admin/queues", authEnabled: true }, "bull_board_dashboard_mounted_with_auth");
+    logger.info(
+      { authEnabled: true, path: "/admin/queues" },
+      "bull_board_dashboard_mounted_with_auth"
+    );
   } else {
-    logger.info({ path: "/admin/queues", authEnabled: false }, "bull_board_dashboard_mounted_no_auth");
+    logger.info(
+      { authEnabled: false, path: "/admin/queues" },
+      "bull_board_dashboard_mounted_no_auth"
+    );
   }
 
   app.use(queueDashboard);
@@ -327,11 +322,9 @@ app
 
     // Inject SEO metadata from environment variables
     const seoTitle = process.env.SEO_TITLE || "BioAgents Chat";
-    const seoDescription =
-      process.env.SEO_DESCRIPTION || "AI-powered chat interface";
+    const seoDescription = process.env.SEO_DESCRIPTION || "AI-powered chat interface";
     const faviconUrl = process.env.FAVICON_URL || "/favicon.ico";
-    const ogImageUrl =
-      process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
+    const ogImageUrl = process.env.OG_IMAGE_URL || "https://bioagents.xyz/og-image.png";
 
     htmlContent = htmlContent
       .replace(/\{\{SEO_TITLE\}\}/g, seoTitle)
@@ -355,26 +348,26 @@ const hasSecret = !!process.env.BIOAGENTS_SECRET;
 
 app.listen(
   {
-    port,
     hostname,
+    port,
   },
   async () => {
     if (logger) {
       logger.info({ url: `http://${hostname}:${port}` }, "server_listening");
       logger.info(
         {
-          nodeEnv: process.env.NODE_ENV || "development",
-          isProduction,
           authRequired: isProduction,
-          secretConfigured: hasSecret,
+          isProduction,
           jobQueueEnabled: isJobQueueEnabled(),
+          nodeEnv: process.env.NODE_ENV || "development",
+          secretConfigured: hasSecret,
         },
-        "auth_configuration",
+        "auth_configuration"
       );
     } else {
       console.log(`Server listening on http://${hostname}:${port}`);
       console.log(
-        `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`,
+        `Auth config: NODE_ENV=${process.env.NODE_ENV}, production=${isProduction}, secretConfigured=${hasSecret}`
       );
       console.log(`Job queue: ${isJobQueueEnabled() ? "enabled" : "disabled"}`);
     }
@@ -401,7 +394,7 @@ app.listen(
         cleanupDeadConnections();
       }, 30000);
     }
-  },
+  }
 );
 
 // Graceful shutdown handler

@@ -43,20 +43,20 @@ export async function analysisAgent(input: {
   onPollUpdate?: OnPollUpdate;
 }): Promise<AnalysisResult> {
   const { objective, datasets, type, userId, conversationStateId, onPollUpdate } = input;
-  let result: AnalysisResult = {
-    objective,
-    start: new Date().toISOString(),
-    output: "",
+  const result: AnalysisResult = {
     artifacts: [],
+    objective,
+    output: "",
+    start: new Date().toISOString(),
   };
 
   logger.info(
     {
+      datasets: datasets.map((d) => `${d.filename} (${d.description})`),
       objective,
       type,
-      datasets: datasets.map((d) => `${d.filename} (${d.description})`),
     },
-    "analysis_agent_started",
+    "analysis_agent_started"
   );
 
   try {
@@ -66,7 +66,7 @@ export async function analysisAgent(input: {
           objective,
           datasets,
           userId,
-          conversationStateId,
+          conversationStateId
         );
         result.output = output;
         result.jobId = jobId;
@@ -78,7 +78,7 @@ export async function analysisAgent(input: {
           datasets,
           userId,
           conversationStateId,
-          onPollUpdate,
+          onPollUpdate
         );
         result.output = output;
         result.artifacts = artifacts;
@@ -96,10 +96,7 @@ export async function analysisAgent(input: {
 
   result.end = new Date().toISOString();
 
-  logger.info(
-    { objective, type, outputLength: result.output.length },
-    "analysis_agent_completed",
-  );
+  logger.info({ objective, outputLength: result.output.length, type }, "analysis_agent_completed");
 
   return result;
 }

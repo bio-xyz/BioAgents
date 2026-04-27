@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useAutoResize } from "../hooks";
 import { Icon } from "./icons";
 
@@ -62,41 +62,57 @@ export function ChatInput({
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
-    console.log('[ChatInput] handleFileChange - files received:', files.length, files.map(f => f.name));
+    console.log(
+      "[ChatInput] handleFileChange - files received:",
+      files.length,
+      files.map((f) => f.name)
+    );
     processFiles(files);
     // Reset file input to allow selecting the same file again
     e.target.value = "";
   };
 
   const processFiles = (files) => {
-    console.log('[ChatInput] processFiles - input files:', files.length);
+    console.log("[ChatInput] processFiles - input files:", files.length);
     if (files.length === 0) {
-      console.log('[ChatInput] processFiles - no files to process');
+      console.log("[ChatInput] processFiles - no files to process");
       return;
     }
 
     // Filter out unsupported files and hidden files
-    const supportedExtensions = ['.xlsx', '.xls', '.csv', '.md', '.json', '.txt', '.pdf', '.png', '.jpg', '.jpeg', '.webp'];
-    const filteredFiles = files.filter(file => {
+    const supportedExtensions = [
+      ".xlsx",
+      ".xls",
+      ".csv",
+      ".md",
+      ".json",
+      ".txt",
+      ".pdf",
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+    ];
+    const filteredFiles = files.filter((file) => {
       // Skip hidden files (starting with .)
-      if (file.name.startsWith('.')) {
-        console.log('[ChatInput] processFiles - skipping hidden file:', file.name);
+      if (file.name.startsWith(".")) {
+        console.log("[ChatInput] processFiles - skipping hidden file:", file.name);
         return false;
       }
       // Check extension
-      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      const ext = "." + file.name.split(".").pop()?.toLowerCase();
       const isSupported = supportedExtensions.includes(ext);
       if (!isSupported) {
-        console.log('[ChatInput] processFiles - unsupported extension:', file.name, ext);
+        console.log("[ChatInput] processFiles - unsupported extension:", file.name, ext);
       }
       return isSupported;
     });
 
-    console.log('[ChatInput] processFiles - filtered files:', filteredFiles.length);
+    console.log("[ChatInput] processFiles - filtered files:", filteredFiles.length);
 
     if (filteredFiles.length === 0 && files.length > 0) {
       // All files were filtered out - notify user
-      alert(`No supported files found. Supported formats: ${supportedExtensions.join(', ')}`);
+      alert(`No supported files found. Supported formats: ${supportedExtensions.join(", ")}`);
       return;
     }
 
@@ -173,18 +189,14 @@ export function ChatInput({
   };
 
   const filesToDisplay =
-    selectedFiles && selectedFiles.length > 0
-      ? selectedFiles
-      : selectedFile
-        ? [selectedFile]
-        : [];
+    selectedFiles && selectedFiles.length > 0 ? selectedFiles : selectedFile ? [selectedFile] : [];
   const hasFiles = filesToDisplay.length > 0;
 
   // Format file size
   const formatSize = (bytes) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   // Get total size
@@ -192,7 +204,7 @@ export function ChatInput({
 
   return (
     <div
-      className={`input-container ${isDragOver ? 'drag-over' : ''}`}
+      className={`input-container ${isDragOver ? "drag-over" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -221,7 +233,7 @@ export function ChatInput({
             <div className="file-preview-inline">
               <div className="file-preview-header">
                 <span className="file-count">
-                  {filesToDisplay.length} file{filesToDisplay.length !== 1 ? 's' : ''}
+                  {filesToDisplay.length} file{filesToDisplay.length !== 1 ? "s" : ""}
                   <span className="file-total-size">({formatSize(totalSize)})</span>
                 </span>
                 <button
@@ -234,12 +246,10 @@ export function ChatInput({
               </div>
               <div className="file-chips-container">
                 {filesToDisplay.map((file, index) => (
-                  <div key={`${file.name}-${index}`} className="file-chip">
+                  <div key={`${file.name}-${file.size}-${file.lastModified}`} className="file-chip">
                     <Icon name="file" size={14} />
                     <span className="file-name" title={file.name}>
-                      {file.name.length > 25
-                        ? file.name.substring(0, 22) + "..."
-                        : file.name}
+                      {file.name.length > 25 ? file.name.substring(0, 22) + "..." : file.name}
                     </span>
                     <span className="file-size">{formatSize(file.size)}</span>
                     <button
@@ -304,7 +314,10 @@ export function ChatInput({
                 </button>
               </div>
             ) : (
-              <div className="mode-indicator" title={mode === "deep" ? "Deep Research mode" : "Chat mode"}>
+              <div
+                className="mode-indicator"
+                title={mode === "deep" ? "Deep Research mode" : "Chat mode"}
+              >
                 <Icon name={mode === "deep" ? "globe" : "messageSquare"} size={14} />
                 <span>{mode === "deep" ? "Deep Research" : "Chat"}</span>
               </div>
@@ -346,10 +359,7 @@ export function ChatInput({
 
       {/* Click outside to close upload menu */}
       {showUploadMenu && (
-        <div
-          className="upload-menu-backdrop"
-          onClick={() => setShowUploadMenu(false)}
-        />
+        <div className="upload-menu-backdrop" onClick={() => setShowUploadMenu(false)} />
       )}
     </div>
   );

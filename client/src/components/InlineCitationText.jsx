@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import { parseCitationsFromText, extractDomainName } from '../utils/parseCitations';
+// biome-ignore-all lint/security/noDangerouslySetInnerHtml: Markdown HTML is sanitized with DOMPurify before rendering.
+
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { extractDomainName, parseCitationsFromText } from "../utils/parseCitations";
 
 /**
  * Component that renders text with inline citations
@@ -15,10 +17,7 @@ export function InlineCitationText({ content }) {
   const contentRef = useRef(null);
   const hoverTimeoutRef = useRef(null);
 
-  const { citations } = useMemo(() =>
-    parseCitationsFromText(content),
-    [content]
-  );
+  const { citations } = useMemo(() => parseCitationsFromText(content), [content]);
 
   const contentWithAnchors = useMemo(() => {
     if (citations.length === 0) {
@@ -35,13 +34,13 @@ export function InlineCitationText({ content }) {
       const anchor = `<span data-citation-anchor="${citation.index}"></span>`;
       processedContent = processedContent.replace(
         citation.originalMatch,
-        `${citation.text}${anchor}`,
+        `${citation.text}${anchor}`
       );
     });
 
     // Now remove any remaining [text]{} patterns that weren't in citations (empty URLs)
     // Use the same regex to clean up
-    processedContent = processedContent.replace(/\[([^\]]*)\]\{([^\}]*)\}/g, '$1');
+    processedContent = processedContent.replace(/\[([^\]]*)\]\{([^\}]*)\}/g, "$1");
 
     return processedContent;
   }, [citations, content]);
@@ -51,12 +50,7 @@ export function InlineCitationText({ content }) {
     const { textWithoutCitations } = parseCitationsFromText(content);
     const rawHtml = marked(textWithoutCitations);
     const sanitizedHtml = DOMPurify.sanitize(rawHtml);
-    return (
-      <div
-        className="message-content"
-        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-      />
-    );
+    return <div className="message-content" dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />;
   }
 
   const handleCitationHover = (citation, e) => {
@@ -72,8 +66,8 @@ export function InlineCitationText({ content }) {
     // Calculate position relative to content container
     // This keeps the hover card within the message content width
     const position = {
-      x: rect.left - contentContainer.left + rect.width / 2,  // Relative to content container
-      y: rect.top - contentContainer.top - 10,                // 10px above button, relative to container
+      x: rect.left - contentContainer.left + rect.width / 2, // Relative to content container
+      y: rect.top - contentContainer.top - 10, // 10px above button, relative to container
     };
 
     setHoverPosition(position);
@@ -85,7 +79,7 @@ export function InlineCitationText({ content }) {
     e.preventDefault();
     e.stopPropagation();
     if (currentSourceIndex > 0) {
-      setCurrentSourceIndex(prev => prev - 1);
+      setCurrentSourceIndex((prev) => prev - 1);
     }
   };
 
@@ -93,7 +87,7 @@ export function InlineCitationText({ content }) {
     e.preventDefault();
     e.stopPropagation();
     if (hoveredCitation && currentSourceIndex < hoveredCitation.urls.length - 1) {
-      setCurrentSourceIndex(prev => prev + 1);
+      setCurrentSourceIndex((prev) => prev + 1);
     }
   };
 
@@ -107,10 +101,10 @@ export function InlineCitationText({ content }) {
   const handleCitationClick = (citation, e) => {
     e.preventDefault();
     if (citation.urls.length === 1) {
-      window.open(citation.urls[0], '_blank', 'noopener,noreferrer');
+      window.open(citation.urls[0], "_blank", "noopener,noreferrer");
     } else if (citation.urls.length > 1) {
-      citation.urls.forEach(url => {
-        window.open(url, '_blank', 'noopener,noreferrer');
+      citation.urls.forEach((url) => {
+        window.open(url, "_blank", "noopener,noreferrer");
       });
     }
   };
@@ -131,11 +125,11 @@ export function InlineCitationText({ content }) {
       const anchor = contentRef.current.querySelector(`[data-citation-anchor="${citation.index}"]`);
       if (!anchor) return;
 
-      anchor.classList.add('citation-button-wrapper');
-      anchor.innerHTML = '';
+      anchor.classList.add("citation-button-wrapper");
+      anchor.innerHTML = "";
 
-      const button = document.createElement('button');
-      button.className = 'citation-button';
+      const button = document.createElement("button");
+      button.className = "citation-button";
       button.textContent = `[${citation.index}]`;
 
       const firstUrl = citation.urls[0];
@@ -146,7 +140,7 @@ export function InlineCitationText({ content }) {
         // Use index if URL parsing fails
       }
 
-      button.title = `View source: ${domainName}${citation.urls.length > 1 ? ` (+${citation.urls.length - 1})` : ''}`;
+      button.title = `View source: ${domainName}${citation.urls.length > 1 ? ` (+${citation.urls.length - 1})` : ""}`;
       button.onclick = (e) => handleCitationClick(citation, e);
       button.onmouseenter = (e) => handleCitationHover(citation, e);
       button.onmouseleave = handleCitationLeave;
@@ -154,7 +148,6 @@ export function InlineCitationText({ content }) {
       anchor.appendChild(button);
     });
   }, [citations, contentWithAnchors]);
-
 
   // Render markdown with citations removed, then inject buttons via DOM manipulation
   const rawHtml = marked(contentWithAnchors);
@@ -209,7 +202,7 @@ export function InlineCitationText({ content }) {
                       const hostname = new URL(hoveredCitation.urls[currentSourceIndex]).hostname;
                       return extractDomainName(hostname);
                     } catch {
-                      return 'Source';
+                      return "Source";
                     }
                   })()}
                 </p>
@@ -226,9 +219,7 @@ export function InlineCitationText({ content }) {
             </div>
 
             {hoveredCitation.text && (
-              <p className="citation-preview-text">
-                {hoveredCitation.text}
-              </p>
+              <p className="citation-preview-text">{hoveredCitation.text}</p>
             )}
 
             {hoveredCitation.urls.length > 1 && (
