@@ -376,7 +376,10 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Triggered when client sends Accept: text/event-stream header.
     // Non-SSE requests fall through to the existing queue/JSON paths below.
     // =========================================================================
-    const acceptsSSE = request.headers.get("accept")?.includes("text/event-stream");
+    // RFC 7231 §5.3.2 mandates case-insensitive media-type comparison; lowercase
+    // before substring match so non-browser clients with `text/Event-Stream` etc.
+    // don't silently fall through to the JSON path.
+    const acceptsSSE = request.headers.get("accept")?.toLowerCase().includes("text/event-stream");
 
     if (acceptsSSE) {
       logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_sse_mode");
