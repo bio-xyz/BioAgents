@@ -14,6 +14,7 @@ import { generateUUID } from "../utils/uuid";
  * Response type for synchronous chat (in-process mode)
  */
 type ChatV2Response = {
+  messageId: string;
   text: string;
   userId?: string;
 };
@@ -550,6 +551,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     );
 
     const response: ChatV2Response = {
+      messageId: createdMessage.id,
       text: replyText,
       userId,
     };
