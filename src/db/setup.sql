@@ -59,6 +59,8 @@ CREATE TABLE messages (
   response_time INTEGER, -- in milliseconds
   source TEXT DEFAULT 'ui', -- 'ui', 'twitter', etc.
   files JSONB, -- stores file metadata for uploads
+  status TEXT NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'COMPLETE', 'FAILED')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -71,6 +73,8 @@ CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
 CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
 CREATE INDEX idx_messages_state_id ON messages(state_id);
+-- Partial index for the periodic sweeper to find stuck-pending rows fast
+CREATE INDEX idx_messages_status_pending ON messages(created_at) WHERE status = 'PENDING';
 
 -- GIN index for JSONB fields (efficient for JSON queries)
 CREATE INDEX idx_states_values ON states USING GIN (values);

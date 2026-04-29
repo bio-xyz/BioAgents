@@ -121,12 +121,13 @@ export async function runChatAgent(params: RunChatAgentParams): Promise<RunChatA
 
   if (params.loadHistory !== false) {
     try {
-      const { getMessagesByConversation } = await import("../db/operations");
-      // Fetch 4 newest messages, skip current (first), yielding up to 3 prior exchanges
-      const recentMessages = await getMessagesByConversation(params.conversationId, 4);
+      const { getCompletedMessagesByConversation } = await import("../db/operations");
+      // Up to 3 prior completed exchanges. The COMPLETE-only helper excludes
+      // the current in-flight row and any pending orphans, so no slicing.
+      const recentMessages = await getCompletedMessagesByConversation(params.conversationId, 3);
 
-      if (recentMessages && recentMessages.length > 1) {
-        const previous = recentMessages.slice(1).reverse();
+      if (recentMessages && recentMessages.length > 0) {
+        const previous = recentMessages.reverse();
 
         for (const msg of previous) {
           if (msg.question && msg.content) {

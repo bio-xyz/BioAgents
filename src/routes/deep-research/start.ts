@@ -1761,6 +1761,7 @@ These molecular changes align with established longevity pathways (Converging nu
       await updateMessage(currentMessage.id, {
         content: replyResult.reply,
         response_time: iterationResponseTime, // Mark message as complete so UI displays it
+        status: "COMPLETE",
         summary: replyResult.summary,
       });
 

@@ -3,7 +3,11 @@ import { Elysia } from "elysia";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
-import { createMessageRecord, updateMessageResponseTime } from "../services/chat/tools";
+import {
+  createMessageRecord,
+  markMessageFailed,
+  updateMessageResponseTime,
+} from "../services/chat/tools";
 import type { ConversationState, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
@@ -225,6 +229,14 @@ async function chatRetryHandler(ctx: ElysiaRouteContext<{ jobId: string }>) {
  * - USE_JOB_QUEUE=true: Enqueues to BullMQ and returns immediately
  */
 export async function chatHandler(ctx: ElysiaRouteContext) {
+  // Hoisted so the outer catch can mark the message FAILED on any handled
+  // terminal error (fileUploadAgent / runChatAgent / final DB write throws).
+  // Set immediately after createMessageRecord succeeds; null until then.
+  let createdMessageId: string | null = null;
+  // Set true after the durable status=COMPLETE write succeeds so a post-save
+  // throw (best-effort calls, logger, etc.) doesn't downgrade the row.
+  let replyPersisted = false;
+
   try {
     const { body, set, request } = ctx;
     const startTime = Date.now();
@@ -348,6 +360,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     }
 
     const createdMessage = messageResult.message!;
+    createdMessageId = createdMessage.id;
 
     logger.info(
       {
@@ -395,6 +408,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           logger.info({ messageId: createdMessage.id }, "chat_sse_client_disconnected");
         },
         async start(controller) {
+          // Tracks whether the COMPLETE durable write succeeded. The catch
+          // handler below uses this to avoid downgrading a successfully-saved
+          // reply to FAILED when a post-save step (e.g. logger / safeClose)
+          // throws.
+          let replyPersisted = false;
+
           // Helper: safe enqueue (swallows errors if client disconnected)
           const send = (event: string, data: unknown) => {
             try {
@@ -589,6 +608,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 message: "Response was truncated. Please try a shorter question.",
                 reason: "truncated",
               });
+              await markMessageFailed(createdMessage.id);
               safeClose();
               logger.warn({ messageId: createdMessage.id }, "chat_sse_truncated");
               return;
@@ -598,6 +618,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 message: "No response generated. Please try again.",
                 reason: "empty_reply",
               });
+              await markMessageFailed(createdMessage.id);
               safeClose();
               logger.warn({ messageId: createdMessage.id }, "chat_sse_empty_reply");
               return;
@@ -609,7 +630,9 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             const responseTime = Date.now() - sseStartTime;
             await updateMessage(createdMessage.id, {
               content: result.replyText,
+              status: "COMPLETE",
             });
+            replyPersisted = true;
             await updateMessageResponseTime(createdMessage.id, responseTime);
 
             // === Terminal success signals (only after durable write) ===
@@ -645,6 +668,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               message: "Something went wrong while generating the response. Please try again.",
               reason: "agent_error",
             });
+            // Only mark FAILED if the reply hasn't already been durably saved.
+            // A post-save throw (e.g. logger / safeClose / response-time write)
+            // must not downgrade a successful reply to FAILED.
+            if (!replyPersisted) {
+              await markMessageFailed(createdMessage.id);
+            }
             safeClose();
           }
         },
@@ -834,6 +863,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Handle empty response from max_tokens truncation
     if (!replyText || agentResult.hitMaxTokens) {
       logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
+      await markMessageFailed(createdMessage.id);
       set.status = 500;
       return {
         error: "Response was truncated. Please try a shorter question.",
@@ -865,7 +895,9 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     const { updateMessage } = await import("../db/operations");
     await updateMessage(createdMessage.id, {
       content: replyText,
+      status: "COMPLETE",
     });
+    replyPersisted = true;
 
     logger.info(
       { contentLength: replyText.length, messageId: createdMessage.id },
@@ -913,6 +945,15 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       },
       "chat_unhandled_error"
     );
+
+    // If a message row was created but the request didn't reach the durable
+    // COMPLETE write, mark it FAILED so the COMPLETE-only history filter
+    // treats it as a dead row immediately rather than waiting for the 60-min
+    // sweeper. Skip when replyPersisted is true to avoid downgrading a
+    // successful row when a post-save step (logger / response build) throws.
+    if (createdMessageId && !replyPersisted) {
+      await markMessageFailed(createdMessageId);
+    }
 
     const { set } = ctx;
     set.status = 500;

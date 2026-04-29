@@ -330,27 +330,31 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     );
 
     // Save reply to message
-    await updateMessage(messageId, { content: replyText });
-
-    // Calculate and update response time
+    await updateMessage(messageId, { content: replyText, status: "COMPLETE" });
     const responseTime = Date.now() - startTime;
-    await updateMessageResponseTime(messageId, responseTime);
 
-    // Notify: Message updated (content is now available)
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
-
-    logger.info(
-      {
-        jobId: job.id,
-        messageId,
-        responseTime,
-        responseTimeSec: (responseTime / 1000).toFixed(2),
-      },
-      "chat_job_completed"
-    );
-
-    // Notify: Job completed
-    await notifyJobCompleted(job.id!, conversationId, messageId);
+    // Best-effort: response-time write and pub/sub notifications. Reply is
+    // already durably saved with status=COMPLETE, so failures here must not
+    // bubble to the outer catch and downgrade the row to FAILED.
+    try {
+      await updateMessageResponseTime(messageId, responseTime);
+      await notifyMessageUpdated(job.id!, conversationId, messageId);
+      logger.info(
+        {
+          jobId: job.id,
+          messageId,
+          responseTime,
+          responseTimeSec: (responseTime / 1000).toFixed(2),
+        },
+        "chat_job_completed"
+      );
+      await notifyJobCompleted(job.id!, conversationId, messageId);
+    } catch (notifyErr) {
+      logger.warn(
+        { error: notifyErr, jobId: job.id, messageId },
+        "chat_job_post_reply_notify_failed"
+      );
+    }
 
     return {
       responseTime,
@@ -371,7 +375,11 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Notify: Job failed (on final attempt, or immediately for unrecoverable errors)
     const { UnrecoverableError } = await import("bullmq");
     if (job.attemptsMade + 1 >= (job.opts.attempts || 3) || error instanceof UnrecoverableError) {
-      await notifyJobFailed(job.id!, conversationId, messageId);
+      const { markMessageFailed } = await import("../../chat/tools");
+      await Promise.all([
+        notifyJobFailed(job.id!, conversationId, messageId),
+        markMessageFailed(messageId),
+      ]);
     }
 
     // Re-throw to trigger retry (if attempts remaining)
@@ -456,7 +464,7 @@ async function processWithAgentLoop(
   // Critical: persist the reply first. If this fails, retrying is correct
   // because the LLM result would otherwise be lost.
   const responseTime = Date.now() - startTime;
-  await updateMessage(messageId, { content: result.replyText });
+  await updateMessage(messageId, { content: result.replyText, status: "COMPLETE" });
   await updateMessageResponseTime(messageId, responseTime);
 
   // Best-effort: progress updates and notifications. Reply is already saved,

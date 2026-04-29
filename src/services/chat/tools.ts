@@ -67,3 +67,26 @@ export async function updateMessageResponseTime(
     if (logger) logger.error({ err }, "failed_to_update_response_time");
   }
 }
+
+/**
+ * Best-effort transition of a message row to FAILED. Guarded so callers
+ * can't accidentally downgrade a COMPLETE row — the UPDATE only matches
+ * rows that aren't already terminal-COMPLETE. Never throws; if the UPDATE
+ * itself fails, the periodic sweeper catches stale PENDING rows later.
+ */
+export async function markMessageFailed(messageId: string): Promise<void> {
+  try {
+    const { getServiceClient } = await import("../../db/client");
+    const supabase = getServiceClient();
+    const { error } = await supabase
+      .from("messages")
+      .update({ status: "FAILED" })
+      .eq("id", messageId)
+      .neq("status", "COMPLETE");
+    if (error) {
+      logger.warn({ err: error, messageId }, "failed_to_mark_message_failed");
+    }
+  } catch (err) {
+    logger.warn({ err, messageId }, "failed_to_mark_message_failed");
+  }
+}

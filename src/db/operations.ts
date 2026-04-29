@@ -36,6 +36,8 @@ export interface DbConversationState {
   updated_at?: string;
 }
 
+export type MessageStatus = "PENDING" | "COMPLETE" | "FAILED";
+
 export interface Message {
   id?: string;
   conversation_id: string;
@@ -47,6 +49,7 @@ export interface Message {
   response_time?: number;
   source?: string;
   files?: Array<{ name: string; size: number; type: string }>;
+  status?: MessageStatus;
 }
 
 // User operations
@@ -151,6 +154,36 @@ export async function getMessagesByConversation(conversationId: string, limit?: 
   if (error) {
     logger.error(
       `[getMessagesByConversation] Error getting messages by conversation: ${error.message}`
+    );
+    throw error;
+  }
+  return data;
+}
+
+/**
+ * Chat-only history loader. Returns COMPLETE rows only — PENDING (in-flight
+ * or orphaned) and FAILED rows are excluded so the chat agent never sees a
+ * null-content row in its context window. Use this from chat-side history
+ * builders only; deep-research callers should use getMessagesByConversation
+ * which returns all rows.
+ */
+export async function getCompletedMessagesByConversation(conversationId: string, limit?: number) {
+  let query = supabase
+    .from("messages")
+    .select("*, state:states(*)")
+    .eq("conversation_id", conversationId)
+    .eq("status", "COMPLETE")
+    .order("created_at", { ascending: false });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    logger.error(
+      `[getCompletedMessagesByConversation] Error getting completed messages: ${error.message}`
     );
     throw error;
   }
