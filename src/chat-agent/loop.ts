@@ -12,6 +12,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import logger from "../utils/logger";
 import { executeTool, getToolDefinitions } from "./registry";
+import { previewValue } from "./streaming";
 import type { AgentLoopConfig, AgentLoopResult } from "./types";
 
 const DEFAULT_TEMPERATURE = 0.3;
@@ -39,6 +40,7 @@ export async function runAgentLoop(
   let finalText = "";
 
   while (true) {
+    config.signal?.throwIfAborted();
     const isAtCap = toolCallCount >= config.maxToolCalls;
 
     logger.info(
@@ -57,7 +59,7 @@ export async function runAgentLoop(
       tools: !isAtCap && toolDefs.length > 0 ? toolDefs : undefined,
     };
 
-    const response = await client.messages.create(requestParams);
+    const response = await client.messages.create(requestParams, { signal: config.signal });
 
     // Track token usage
     if (response.usage) {
@@ -111,11 +113,40 @@ export async function runAgentLoop(
         "agent_tool_call_executing"
       );
 
+      await config.onStreamEvent?.({
+        data: {
+          inputPreview: previewValue(toolBlock.input),
+          scope: "orchestrator",
+          status: "started",
+          toolCallId: toolBlock.id,
+          toolName: toolBlock.name,
+        },
+        event: "tool_call",
+      });
+
+      const toolExecutionContext = config.toolExecutionContext
+        ? {
+            ...config.toolExecutionContext,
+            parentToolCallId: toolBlock.id,
+          }
+        : undefined;
+
       const result = await executeTool(
         toolBlock.name,
         toolBlock.input as Record<string, unknown>,
-        config.toolExecutionContext
+        toolExecutionContext
       );
+
+      await config.onStreamEvent?.({
+        data: {
+          outputPreview: previewValue(result.content),
+          scope: "orchestrator",
+          status: result.isError ? "failed" : "completed",
+          toolCallId: toolBlock.id,
+          toolName: toolBlock.name,
+        },
+        event: "tool_result",
+      });
 
       // Notify caller (e.g. for DB state updates)
       if (config.onToolResult) {

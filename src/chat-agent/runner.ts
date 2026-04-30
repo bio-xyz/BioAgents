@@ -8,6 +8,7 @@
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import { getChatAgentSourceSelectionGuidance } from "../utils/sourceSelectionRouting";
+import type { ChatStreamEventEmitter } from "./streaming";
 import type { ToolCallInfo } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,9 @@ export interface RunChatAgentParams {
   loadHistory?: boolean;
   /** Called after each tool execution. Callers customise for DB updates, notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called as streamable progress events occur inside the chat agent. */
+  onStreamEvent?: ChatStreamEventEmitter;
+  signal?: AbortSignal;
 }
 
 export interface RunChatAgentResult {
@@ -177,10 +181,14 @@ ${sourceSelectionGuidance}`
       maxTokens,
       maxToolCalls,
       model,
+      onStreamEvent: params.onStreamEvent,
       onToolResult: params.onToolResult,
+      signal: params.signal,
       systemPrompt,
       toolExecutionContext: {
         conversationId: params.conversationId,
+        emitStreamEvent: params.onStreamEvent,
+        signal: params.signal,
         sourceSelectionId: params.sourceSelectionId,
         userMessage: params.message,
       },

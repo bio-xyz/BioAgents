@@ -70,6 +70,60 @@ registerTool({
     const TOOL_TIMEOUT_MS = parseInt(process.env.CHAT_TOOL_TIMEOUT_MS || "30000", 10);
 
     try {
+      if (effectiveSource === "biolit") {
+        const { openLiteratureAgentStream } = await import(
+          "../../services/literature/agent-stream"
+        );
+        const { consumeLiteratureAgentStream } = await import(
+          "../../services/literature/agent-stream-events"
+        );
+        const abortController = new AbortController();
+        const abortFromParent = () => abortController.abort(context?.signal?.reason);
+        const timeout = setTimeout(
+          () => abortController.abort(`Timed out after ${TOOL_TIMEOUT_MS / 1000}s`),
+          TOOL_TIMEOUT_MS
+        );
+
+        if (context?.signal) {
+          if (context.signal.aborted) {
+            abortFromParent();
+          } else {
+            context.signal.addEventListener("abort", abortFromParent, { once: true });
+          }
+        }
+
+        try {
+          const stream = await openLiteratureAgentStream({
+            question: effectiveQuery,
+            signal: abortController.signal,
+            sources: override.sources,
+          });
+          const streamResult = await consumeLiteratureAgentStream({
+            emitStreamEvent: context?.emitStreamEvent,
+            parentToolCallId: context?.parentToolCallId,
+            stream,
+          });
+
+          logger.info(
+            {
+              effectiveQuery,
+              outputLength: streamResult.content.length,
+              query,
+              source,
+            },
+            "literature_search_biolit_stream_completed"
+          );
+
+          return {
+            content: streamResult.content,
+            isError: streamResult.isError,
+          };
+        } finally {
+          clearTimeout(timeout);
+          context?.signal?.removeEventListener("abort", abortFromParent);
+        }
+      }
+
       const { literatureAgent } = await import("../../agents/literature");
 
       // Note: Promise.race does not cancel the losing promise. On timeout,

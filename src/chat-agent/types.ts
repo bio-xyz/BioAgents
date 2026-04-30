@@ -4,11 +4,15 @@
  */
 
 import type { SourceSelectionId } from "../types/sourceSelection";
+import type { ChatStreamEventEmitter } from "./streaming";
 
 export interface AgentToolExecutionContext {
   conversationId: string;
   userMessage: string;
   sourceSelectionId?: SourceSelectionId;
+  signal?: AbortSignal;
+  emitStreamEvent?: ChatStreamEventEmitter;
+  parentToolCallId?: string;
 }
 
 /**
@@ -53,9 +57,12 @@ export interface AgentLoopConfig {
   maxTokens: number;
   temperature?: number;
   apiKey: string;
+  signal?: AbortSignal;
   toolExecutionContext?: AgentToolExecutionContext;
   /** Called after each tool execution. Use for DB state updates, progress notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called as streamable progress events occur inside the agent loop. */
+  onStreamEvent?: ChatStreamEventEmitter;
 }
 
 /**
