@@ -14,6 +14,7 @@ import { deepResearchPaperRoute } from "./routes/deep-research/paper";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { filesRoute } from "./routes/files";
+import { literatureAgentStreamRoute } from "./routes/literature-agent-stream";
 // BullMQ Queue imports (conditional)
 import { closeConnections, isJobQueueEnabled } from "./services/queue/connection";
 import { cleanupDeadConnections, websocketHandler } from "./services/websocket/handler";
@@ -242,6 +243,7 @@ const app = new Elysia()
   .use(deepResearchBranchRoute) // POST /api/deep-research/branch to fork a conversation with copied state
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
+  .use(literatureAgentStreamRoute) // POST /api/literature/agent/stream for Literature SSE bridge
   .use(filesRoute); // POST /api/files/* for direct S3 file uploads
 
 // Mount Bull Board dashboard (only when job queue is enabled)
