@@ -144,6 +144,21 @@ export interface PaperGenerationJobResult {
 }
 
 /**
+ * Job data for the periodic message-orphan sweeper.
+ * No payload — the sweeper computes its own cutoff timestamp at run time.
+ */
+export type MessageSweepJobData = Record<string, never>;
+
+/**
+ * Result returned by the message sweeper after each periodic run.
+ */
+export interface MessageSweepJobResult {
+  flippedCount: number;
+  cutoffIso: string;
+  durationMs: number;
+}
+
+/**
  * Paper generation progress stages
  */
 export type PaperGenerationStage =

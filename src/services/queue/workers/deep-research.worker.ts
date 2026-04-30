@@ -225,8 +225,9 @@ async function processDeepResearchJob(
     }
 
     // Import required modules
-    const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
-      await import("../../../db/operations");
+    const { getMessage, getState, getConversationState, updateConversationState } = await import(
+      "../../../db/operations"
+    );
     updateConversationStateRef = updateConversationState;
 
     // Get message record
@@ -1019,13 +1020,23 @@ async function processDeepResearchJob(
       );
     }
 
-    // Update the current message with the reply and mark as complete
+    // Update the current message with the reply. Sweeper exempts
+    // deep-research rows via the isDeepResearch flag so this is normally
+    // unguarded ground; the precondition (see markMessageComplete) is
+    // defensive against manual SQL flips or future callers.
     const iterationResponseTime = Date.now() - startTime;
-    await updateMessage(currentMessage.id, {
+    const { markMessageComplete } = await import("../../chat/tools");
+    const { updated } = await markMessageComplete(currentMessage.id, {
       content: replyResult.reply,
-      response_time: iterationResponseTime, // Mark message as complete so UI displays it
+      response_time: iterationResponseTime,
       summary: replyResult.summary,
     });
+    if (!updated) {
+      logger.warn(
+        { iterationNumber, jobId: job.id, messageId: currentMessage.id },
+        "deep_research_iteration_complete_skipped_row_not_pending"
+      );
+    }
 
     logger.info(
       {
