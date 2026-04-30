@@ -8,8 +8,15 @@
 
 import { type Job, Worker } from "bullmq";
 import logger from "../../../utils/logger";
-import { getBullMQConnection } from "../connection";
+import { getBullMQConnection, isJobQueueEnabled } from "../connection";
 import type { MessageSweepJobData, MessageSweepJobResult } from "../types";
+
+// BullMQ job states that indicate the worker hasn't picked up (or is still
+// running) the job. A row whose chat job is in any of these states is NOT
+// an orphan; the sweeper must leave it alone, otherwise the worker will
+// later overwrite the FAILED row with COMPLETE and silently violate the
+// terminal-state contract.
+const ALIVE_BULLMQ_STATES = new Set(["waiting", "delayed", "active", "paused"]);
 
 // Sized for chat-mode orphan recovery only. Chat replies finish in 10-30s,
 // so any PENDING row past 20min is definitively dead from a process-death
@@ -53,12 +60,83 @@ async function runSweep(jobId?: string | number): Promise<MessageSweepJobResult>
     throw selectError;
   }
 
-  const chatOrphanIds = (candidates ?? [])
+  let chatOrphanIds = (candidates ?? [])
     .filter((row) => {
       const state = row.state as { values?: { isDeepResearch?: boolean } } | null;
       return state?.values?.isDeepResearch !== true;
     })
     .map((row) => row.id as string);
+
+  // In queue mode, additionally skip rows whose chat BullMQ job is still
+  // alive (waiting / delayed / active / paused). The job hasn't been picked
+  // up by a worker yet — this is a slow worker or an offline worker, not a
+  // dead orphan. Flipping the row here would let the worker later overwrite
+  // FAILED with COMPLETE, breaking the terminal-state guarantee.
+  //
+  // Also check for the chat-retry-in-progress marker. The retry endpoint
+  // sets that marker between the PENDING reset and `job.retry()`, a window
+  // where BullMQ state is still `failed` (not in the alive set) but flipping
+  // the row would defeat the in-flight retry. The marker closes that race.
+  if (isJobQueueEnabled() && chatOrphanIds.length > 0) {
+    try {
+      const { getChatQueue } = await import("../queues");
+      const { getBullMQConnection } = await import("../connection");
+      const { chatRetryMarkerKey } = await import("../retry-marker");
+      const chatQueue = getChatQueue();
+      const redis = getBullMQConnection();
+
+      // Batch the marker existence check into one Redis round-trip via
+      // pipelining. With N candidates this collapses N EXISTS calls into
+      // one network hop; in steady state most calls return 0 anyway.
+      const markerKeys = chatOrphanIds.map((id) => chatRetryMarkerKey(id));
+      let markerByIndex = new Array<boolean>(chatOrphanIds.length).fill(false);
+      try {
+        const pipeline = redis.pipeline();
+        for (const key of markerKeys) pipeline.exists(key);
+        const results = await pipeline.exec();
+        if (results) {
+          markerByIndex = results.map(([_err, value]) => Number(value) > 0);
+        }
+      } catch (markerErr) {
+        logger.warn({ err: markerErr }, "message_sweeper_retry_marker_pipeline_failed");
+        // Treat all as alive on pipeline failure — safer than flipping rows
+        // we couldn't verify against the marker.
+        markerByIndex = markerByIndex.map(() => true);
+      }
+
+      // BullMQ state checks for the remaining candidates run in parallel.
+      // Per-candidate failure falls open (treat as alive) — safer than
+      // flipping a live row to FAILED.
+      const stateChecks = chatOrphanIds.map(async (id, i) => {
+        if (markerByIndex[i]) return { alive: true, id };
+        try {
+          const queueJob = await chatQueue.getJob(id);
+          if (!queueJob) return { alive: false, id };
+          const state = await queueJob.getState();
+          return { alive: ALIVE_BULLMQ_STATES.has(state), id };
+        } catch (jobErr) {
+          logger.warn({ err: jobErr, messageId: id }, "message_sweeper_job_state_check_failed");
+          return { alive: true, id };
+        }
+      });
+      const results = await Promise.all(stateChecks);
+      const liveJobIds = new Set(results.filter((r) => r.alive).map((r) => r.id));
+
+      if (liveJobIds.size > 0) {
+        logger.info(
+          { skippedCount: liveJobIds.size, totalCandidates: chatOrphanIds.length },
+          "message_sweeper_skipped_live_jobs"
+        );
+      }
+      chatOrphanIds = chatOrphanIds.filter((id) => !liveJobIds.has(id));
+    } catch (queueErr) {
+      // If we can't get the queue at all (Redis down, etc.), skip the whole
+      // sweep round. Better to leak rows for one interval than to flip live
+      // ones with no visibility into worker state.
+      logger.error({ err: queueErr, jobId }, "message_sweeper_queue_check_failed_skipping_sweep");
+      return { cutoffIso, durationMs: Date.now() - start, flippedCount: 0 };
+    }
+  }
 
   let flippedCount = 0;
   if (chatOrphanIds.length > 0) {

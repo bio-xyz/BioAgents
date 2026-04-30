@@ -5,8 +5,8 @@ import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
 import {
   createMessageRecord,
+  markMessageComplete,
   markMessageFailed,
-  updateMessageResponseTime,
 } from "../services/chat/tools";
 import type { ConversationState, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
@@ -190,9 +190,69 @@ async function chatRetryHandler(ctx: ElysiaRouteContext<{ jobId: string }>) {
     };
   }
 
+  // Hoisted so both the reset and the rollback path can share the client.
+  const { getServiceClient } = await import("../db/client");
+  const { getBullMQConnection } = await import("../services/queue/connection");
+  const { CHAT_RETRY_MARKER_TTL_SECONDS, chatRetryMarkerKey } = await import(
+    "../services/queue/retry-marker"
+  );
+  const supabase = getServiceClient();
+  const redis = getBullMQConnection();
+  const markerKey = chatRetryMarkerKey(jobId);
+
   try {
-    // Retry the job - moves it back to waiting state
-    await job.retry();
+    // Set the retry-in-progress marker BEFORE the PENDING reset so the
+    // sweeper can't race the reset → job.retry() window. Without this
+    // marker, the sweeper sees PENDING + BullMQ state still `failed`
+    // (we haven't called retry yet) and flips the row straight back to
+    // FAILED. TTL is the natural cleanup; once job.retry() succeeds the
+    // BullMQ state will be `waiting`/`active` which the sweeper already
+    // treats as alive, so an explicit clear isn't needed.
+    try {
+      await redis.set(markerKey, "1", "EX", CHAT_RETRY_MARKER_TTL_SECONDS);
+    } catch (markerErr) {
+      logger.error({ err: markerErr, jobId, userId }, "chat_retry_set_marker_failed");
+      set.status = 500;
+      return {
+        error: "Failed to coordinate retry; please try again",
+        ok: false,
+      };
+    }
+
+    // Reset the message row from FAILED back to PENDING before re-queueing
+    // the BullMQ job. The worker's markMessageComplete requires PENDING; if
+    // we skip this reset, a successful retry would leave the row FAILED
+    // while BullMQ marks the job completed and the success notification
+    // is silently suppressed by the early-exit on `updated === false`.
+    //
+    // This is the only sanctioned PENDING ← FAILED transition in the state
+    // machine. The terminal-state invariant still holds for natural flow;
+    // explicit user-initiated retry is the one allowed re-opening.
+    const { error: resetError } = await supabase
+      .from("messages")
+      .update({ status: "PENDING" })
+      .eq("id", jobId)
+      .eq("status", "FAILED");
+    if (resetError) {
+      logger.error({ error: resetError, jobId, userId }, "chat_retry_reset_message_status_failed");
+      set.status = 500;
+      return {
+        error: "Failed to reset message status for retry",
+        ok: false,
+      };
+    }
+
+    // Re-queue the BullMQ job. If this throws, roll the reset back so
+    // consumers don't see a stale "in-flight" row until the sweeper
+    // catches it. markMessageFailed's guard against downgrading COMPLETE
+    // makes this safe: in the only state we care about (PENDING), it
+    // flips to FAILED; in any other state it's a no-op.
+    try {
+      await job.retry();
+    } catch (retryErr) {
+      await markMessageFailed(jobId);
+      throw retryErr;
+    }
 
     logger.info(
       {
@@ -389,9 +449,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       const { fileUploadAgent } = await import("../agents/fileUpload");
       const { getPendingFileIds, getFileStatus } = await import("../services/files/status");
       const { getFileProcessQueue } = await import("../services/queue/queues");
-      const { getConversationState, updateMessage, updateConversationState } = await import(
-        "../db/operations"
-      );
+      const { getConversationState, updateConversationState } = await import("../db/operations");
 
       const encoder = new TextEncoder();
       const sseStartTime = Date.now();
@@ -628,15 +686,27 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             }
 
             // === Persist to DB BEFORE sending done ===
-            // Contract: "done" means the message is durably saved. If DB save
-            // fails, we send "error" instead - client keeps user message visible.
+            // Contract: "done" means the message is durably saved. The
+            // PENDING precondition (see markMessageComplete) means a row
+            // already moved to a terminal state surfaces as `error`.
             const responseTime = Date.now() - sseStartTime;
-            await updateMessage(createdMessage.id, {
+            const { updated } = await markMessageComplete(createdMessage.id, {
               content: result.replyText,
-              status: "COMPLETE",
+              response_time: responseTime,
             });
+            if (!updated) {
+              send("error", {
+                message: "Response failed to save. Please retry.",
+                reason: "agent_error",
+              });
+              safeClose();
+              logger.warn(
+                { messageId: createdMessage.id },
+                "chat_sse_complete_skipped_row_not_pending"
+              );
+              return;
+            }
             replyPersisted = true;
-            await updateMessageResponseTime(createdMessage.id, responseTime);
 
             // === Terminal success signals (only after durable write) ===
             if (streamStarted) {
@@ -894,20 +964,29 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Calculate response time
     const responseTime = Date.now() - startTime;
 
-    // Save the response to the message's content field
-    const { updateMessage } = await import("../db/operations");
-    await updateMessage(createdMessage.id, {
+    // Save the response to the message's content field. Guarded so a
+    // sweeper-flipped FAILED row isn't silently overwritten with COMPLETE.
+    const { updated } = await markMessageComplete(createdMessage.id, {
       content: replyText,
-      status: "COMPLETE",
+      response_time: responseTime,
     });
+    if (!updated) {
+      logger.warn(
+        { messageId: createdMessage.id },
+        "chat_in_process_complete_skipped_row_not_pending"
+      );
+      set.status = 500;
+      return {
+        error: "Response failed to save. Please retry.",
+        ok: false,
+      };
+    }
     replyPersisted = true;
 
     logger.info(
       { contentLength: replyText.length, messageId: createdMessage.id },
       "message_content_saved"
     );
-
-    await updateMessageResponseTime(createdMessage.id, responseTime);
 
     logger.info(
       {

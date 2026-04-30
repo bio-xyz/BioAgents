@@ -17,7 +17,6 @@ import {
   getConversationState,
   getMessagesByConversation,
   updateConversationState,
-  updateMessage,
   updateState,
 } from "../../db/operations";
 
@@ -1802,14 +1801,23 @@ These molecular changes align with established longevity pathways (Converging nu
         nextPlan: conversationState.values.suggestedNextSteps || [],
       });
 
-      // Update the current message with the reply and mark as complete
+      // Update the current message with the reply. Sweeper exempts
+      // deep-research rows via the isDeepResearch flag so this is normally
+      // unguarded ground; the precondition (see markMessageComplete) is
+      // defensive against manual SQL flips or future callers.
       const iterationResponseTime = Date.now() - iterationStartTime;
-      await updateMessage(currentMessage.id, {
+      const { markMessageComplete } = await import("../../services/chat/tools");
+      const { updated } = await markMessageComplete(currentMessage.id, {
         content: replyResult.reply,
-        response_time: iterationResponseTime, // Mark message as complete so UI displays it
-        status: "COMPLETE",
+        response_time: iterationResponseTime,
         summary: replyResult.summary,
       });
+      if (!updated) {
+        logger.warn(
+          { iterationCount, messageId: currentMessage.id },
+          "deep_research_in_process_complete_skipped_row_not_pending"
+        );
+      }
 
       logger.info(
         {
