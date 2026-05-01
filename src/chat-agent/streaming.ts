@@ -1,3 +1,5 @@
+import type { ProteinStructure } from "../types/core";
+
 export type ChatStreamScope = "orchestrator" | "literature";
 export type ChatToolStatus = "started" | "running" | "completed" | "failed";
 
@@ -34,6 +36,7 @@ export interface ChatToolResultStreamData {
 export interface ChatFinalStreamData {
   conversationId: string;
   messageId: string;
+  proteinStructures?: ProteinStructure[];
   text: string;
   userId: string;
 }

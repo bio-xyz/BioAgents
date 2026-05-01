@@ -117,6 +117,7 @@ registerTool({
           return {
             content: streamResult.content,
             isError: streamResult.isError,
+            proteinStructures: streamResult.proteinStructures,
           };
         } finally {
           clearTimeout(timeout);
@@ -159,10 +160,11 @@ registerTool({
       if (!result.output.trim()) {
         return {
           content: `No relevant literature found for: "${effectiveQuery}" (source: ${effectiveSource})`,
+          proteinStructures: result.proteinStructures,
         };
       }
 
-      return { content: result.output };
+      return { content: result.output, proteinStructures: result.proteinStructures };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error(

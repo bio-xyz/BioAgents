@@ -1,6 +1,11 @@
 import { createParser } from "eventsource-parser";
 import type { ChatStreamEventEmitter } from "../../chat-agent/streaming";
 import { previewValue } from "../../chat-agent/streaming";
+import type { ProteinStructure } from "../../types/core";
+import {
+  extractProteinStructuresFromBioLiteratureResponse,
+  mergeProteinStructures,
+} from "../../utils/proteinStructures";
 
 type JsonObject = Record<string, unknown>;
 
@@ -13,6 +18,7 @@ export interface ConsumeLiteratureStreamOptions {
 export interface ConsumeLiteratureStreamResult {
   content: string;
   isError?: boolean;
+  proteinStructures?: ProteinStructure[];
 }
 
 function asObject(value: unknown): JsonObject | undefined {
@@ -77,6 +83,7 @@ export async function consumeLiteratureAgentStream({
   const fallbackPrefix = parentToolCallId || "literature";
   const deltaParts: string[] = [];
   let finalText = "";
+  let proteinStructures: ProteinStructure[] = [];
   let streamError: string | undefined;
 
   function emit(event: Parameters<ChatStreamEventEmitter>[0]) {
@@ -135,6 +142,10 @@ export async function consumeLiteratureAgentStream({
       }
       case "final": {
         finalText = responseText(payload) || finalText;
+        proteinStructures = mergeProteinStructures(
+          proteinStructures,
+          extractProteinStructuresFromBioLiteratureResponse(payload)
+        );
         emit({
           data: {
             outputPreview: previewValue(finalText || deltaParts.join("")),
@@ -209,5 +220,8 @@ export async function consumeLiteratureAgentStream({
     };
   }
 
-  return { content };
+  return {
+    content,
+    proteinStructures: proteinStructures.length > 0 ? proteinStructures : undefined,
+  };
 }

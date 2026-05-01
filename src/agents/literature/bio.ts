@@ -1,6 +1,7 @@
-import type { OnPollUpdate } from "../../types/core";
+import type { OnPollUpdate, ProteinStructure } from "../../types/core";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
+import { extractProteinStructuresFromBioLiteratureResponse } from "../../utils/proteinStructures";
 import type { BioLiteratureMode } from ".";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
@@ -26,6 +27,7 @@ type BioLiteratureResponse = {
   formatted_answer?: string;
   references?: BioReference[];
   context_passages?: BioContextPassage[];
+  tool_results?: unknown;
   results?: unknown;
   job_id?: string;
   status?: string;
@@ -35,6 +37,7 @@ type BioLiteratureResponse = {
     answer?: string;
     references?: BioReference[];
     context_passages?: BioContextPassage[];
+    tool_results?: unknown;
     [key: string]: unknown;
   };
   output?: {
@@ -43,6 +46,7 @@ type BioLiteratureResponse = {
       answer?: string;
       references?: BioReference[];
       context_passages?: BioContextPassage[];
+      tool_results?: unknown;
       [key: string]: unknown;
     };
     [key: string]: unknown;
@@ -228,7 +232,12 @@ export async function searchBioLiterature(
   mode: BioLiteratureMode = "deep",
   onPollUpdate?: OnPollUpdate,
   sources?: string[]
-): Promise<{ output: string; jobId?: string; reasoning?: string[] }> {
+): Promise<{
+  output: string;
+  jobId?: string;
+  reasoning?: string[];
+  proteinStructures?: ProteinStructure[];
+}> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
@@ -283,6 +292,7 @@ export async function searchBioLiterature(
   const references = extractReferences(finalData);
   const contextPassages = extractContextPassages(finalData);
   const finalReasoning = Array.isArray(finalData.reasoning) ? finalData.reasoning : undefined;
+  const proteinStructures = extractProteinStructuresFromBioLiteratureResponse(finalData);
 
   logger.info(
     {
@@ -290,6 +300,7 @@ export async function searchBioLiterature(
       hasAnswer: Boolean(answer),
       jobId,
       mode,
+      proteinStructuresCount: proteinStructures.length,
       referencesCount: references.length,
     },
     "bioliterature_search_completed"
@@ -299,6 +310,7 @@ export async function searchBioLiterature(
     return {
       jobId,
       output: "No answer received from BioLiterature API",
+      proteinStructures,
       reasoning: finalReasoning,
     };
   }
@@ -306,6 +318,7 @@ export async function searchBioLiterature(
   return {
     jobId,
     output: answer,
+    proteinStructures,
     reasoning: finalReasoning,
   };
 }

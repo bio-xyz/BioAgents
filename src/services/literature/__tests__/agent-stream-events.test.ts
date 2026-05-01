@@ -112,4 +112,23 @@ describe("consumeLiteratureAgentStream", () => {
       event: "tool_result",
     });
   });
+
+  test("extracts AlphaFold protein structures from final tool results", async () => {
+    const stream = makeStream([
+      'event: final\ndata: {"runId":"run-3","sequence":1,"response":{"answer":"final answer","tool_results":{"search_alphafold":{"results":[{"id":"AF-Q8W3K0-F1","title":"RPP7","url":"https://alphafold.ebi.ac.uk/entry/AF-Q8W3K0-F1","source":"alphafold_db","metadata":{"entryId":"AF-Q8W3K0-F1","entryUrl":"https://alphafold.ebi.ac.uk/entry/AF-Q8W3K0-F1","bcifUrl":"https://alphafold.ebi.ac.uk/files/AF-Q8W3K0-F1-model_v6.bcif","averagePlddt":82.88,"gene":"RPP7"}}]}}}}\n\n',
+    ]);
+
+    const result = await consumeLiteratureAgentStream({ stream });
+
+    expect(result.proteinStructures).toEqual([
+      {
+        averagePlddt: 82.88,
+        bcifUrl: "https://alphafold.ebi.ac.uk/files/AF-Q8W3K0-F1-model_v6.bcif",
+        entryId: "AF-Q8W3K0-F1",
+        entryUrl: "https://alphafold.ebi.ac.uk/entry/AF-Q8W3K0-F1",
+        gene: "RPP7",
+        title: "RPP7",
+      },
+    ]);
+  });
 });

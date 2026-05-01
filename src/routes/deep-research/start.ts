@@ -61,6 +61,7 @@ import {
 import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { buildMessageStateValues } from "../../utils/messageState";
+import { mergeProteinStructures } from "../../utils/proteinStructures";
 import { generateUUID } from "../../utils/uuid";
 
 type CreatedMessage = Awaited<ReturnType<typeof createMessage>>;
@@ -1335,6 +1336,10 @@ async function runDeepResearch(params: {
             if (result.jobId) {
               task.jobId = result.jobId;
             }
+            task.proteinStructures = mergeProteinStructures(
+              task.proteinStructures,
+              result.proteinStructures
+            );
             if (conversationState.id) {
               await writeStateSerialized();
             }

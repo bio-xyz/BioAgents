@@ -37,6 +37,7 @@ import {
 } from "../../../utils/deep-research/objective-trace";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
+import { mergeProteinStructures } from "../../../utils/proteinStructures";
 import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 import { getBullMQConnection } from "../connection";
 import {
@@ -656,6 +657,10 @@ async function processDeepResearchJob(
           if (result.jobId) {
             task.jobId = result.jobId;
           }
+          task.proteinStructures = mergeProteinStructures(
+            task.proteinStructures,
+            result.proteinStructures
+          );
           if (activeConversationState.id) {
             await writeStateSerialized!();
           }

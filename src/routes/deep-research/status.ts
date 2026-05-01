@@ -8,8 +8,10 @@ import {
   markRunStarted,
   releaseStartMutex,
 } from "../../services/deep-research/run-guard";
+import type { ProteinStructure } from "../../types/core";
 import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
+import { mergeProteinStructures } from "../../utils/proteinStructures";
 
 type DeepResearchStatusResponse = {
   status: "processing" | "completed" | "failed";
@@ -23,6 +25,7 @@ type DeepResearchStatusResponse = {
       size?: number;
     }>;
     papers?: unknown[];
+    proteinStructures?: ProteinStructure[];
     webSearchResults?: unknown[];
   };
   error?: string;
@@ -181,6 +184,11 @@ export async function deepResearchStatusHandler(ctx: ElysiaRouteContext<{ messag
         ...(stateValues.semanticScholarPapers || []),
         ...(stateValues.kgPapers || []),
       ];
+      const proteinStructures = mergeProteinStructures(
+        ...((stateValues.plan || []) as Array<{ proteinStructures?: ProteinStructure[] }>).map(
+          (task) => task.proteinStructures
+        )
+      );
 
       const response: DeepResearchStatusResponse = {
         conversationId: message.conversation_id,
@@ -188,6 +196,7 @@ export async function deepResearchStatusHandler(ctx: ElysiaRouteContext<{ messag
         result: {
           files: fileMetadata,
           papers: papers.length > 0 ? papers : undefined,
+          proteinStructures: proteinStructures.length > 0 ? proteinStructures : undefined,
           text: stateValues.finalResponse,
           webSearchResults: stateValues.webSearchResults,
         },

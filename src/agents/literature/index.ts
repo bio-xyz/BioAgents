@@ -1,4 +1,4 @@
-import type { OnPollUpdate } from "../../types/core";
+import type { OnPollUpdate, ProteinStructure } from "../../types/core";
 import logger from "../../utils/logger";
 import { searchBioLiterature } from "./bio";
 import { searchEdison } from "./edison";
@@ -15,6 +15,7 @@ type LiteratureResult = {
   count?: number;
   jobId?: string; // Job ID from Edison or BioLit
   reasoning?: string[]; // Real-time reasoning trace from external agent
+  proteinStructures?: ProteinStructure[];
   start: string;
   end: string;
 };
@@ -47,6 +48,7 @@ export async function literatureAgent(input: {
   let count: number | undefined;
   let jobId: string | undefined;
   let reasoning: string[] | undefined;
+  let proteinStructures: ProteinStructure[] | undefined;
 
   try {
     switch (type) {
@@ -67,6 +69,7 @@ export async function literatureAgent(input: {
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;
+        proteinStructures = result.proteinStructures;
         break;
       }
       case "BIOLITDEEP": {
@@ -74,6 +77,7 @@ export async function literatureAgent(input: {
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;
+        proteinStructures = result.proteinStructures;
         break;
       }
       case "EDISON": {
@@ -106,6 +110,7 @@ export async function literatureAgent(input: {
     jobId,
     objective,
     output,
+    proteinStructures,
     reasoning,
     start,
   };

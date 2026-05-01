@@ -4,7 +4,7 @@ import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
 import { createMessageRecord, updateMessageResponseTime } from "../services/chat/tools";
-import type { ConversationState, State } from "../types/core";
+import type { ConversationState, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
@@ -24,6 +24,7 @@ const STREAM_HEADERS = {
  * Response type for synchronous chat (in-process mode)
  */
 type ChatV2Response = {
+  proteinStructures?: ProteinStructure[];
   text: string;
   userId?: string;
 };
@@ -506,6 +507,7 @@ export async function chatStreamHandler(ctx: ElysiaRouteContext) {
           data: {
             conversationId,
             messageId: createdMessage.id,
+            proteinStructures: agentResult.proteinStructures,
             text: replyText,
             userId,
           },
@@ -893,6 +895,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     );
 
     const response: ChatV2Response = {
+      proteinStructures: agentResult.proteinStructures,
       text: replyText,
       userId,
     };

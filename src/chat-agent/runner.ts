@@ -6,6 +6,7 @@
  */
 
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
+import type { ProteinStructure } from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import { getChatAgentSourceSelectionGuidance } from "../utils/sourceSelectionRouting";
 import type { ChatStreamEventEmitter } from "./streaming";
@@ -36,6 +37,7 @@ export interface RunChatAgentParams {
 
 export interface RunChatAgentResult {
   replyText: string;
+  proteinStructures?: ProteinStructure[];
   toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -199,6 +201,7 @@ ${sourceSelectionGuidance}`
   // --- 6. Return unified result ---
   return {
     hitMaxTokens: agentResult.hitMaxTokens ?? false,
+    proteinStructures: agentResult.proteinStructures,
     replyText: agentResult.finalText,
     toolCallCount: agentResult.toolCallCount,
     totalInputTokens: agentResult.totalInputTokens,

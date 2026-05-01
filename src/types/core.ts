@@ -57,10 +57,29 @@ export type PlanTask = {
   end?: string;
   output?: string;
   reasoning?: string[]; // Real-time reasoning trace from external agent (updated during polling)
+  proteinStructures?: ProteinStructure[];
   artifacts?: Array<AnalysisArtifact>;
 };
 
 export type OnPollUpdate = (update: { reasoning?: string[] }) => void | Promise<void>;
+
+export type ProteinStructure = {
+  entryId: string;
+  title?: string;
+  entryUrl?: string;
+  bcifUrl?: string;
+  cifUrl?: string;
+  pdbUrl?: string;
+  paeImageUrl?: string;
+  paeDocUrl?: string;
+  plddtDocUrl?: string;
+  uniprotAccession?: string;
+  uniprotId?: string;
+  uniprotDescription?: string;
+  gene?: string;
+  organismScientificName?: string;
+  averagePlddt?: number;
+};
 
 export type DeepResearchActivityPhase =
   | "planning"

@@ -6,6 +6,7 @@
  */
 
 import type { AuthMethod } from "../../types/auth";
+import type { ProteinStructure } from "../../types/core";
 import type { SourceSelectionId } from "../../types/sourceSelection";
 
 /**
@@ -85,6 +86,7 @@ export interface ChatJobResult {
   text: string;
   userId: string;
   responseTime: number;
+  proteinStructures?: ProteinStructure[];
 }
 
 /**
@@ -189,6 +191,7 @@ export interface Notification {
   fileId?: string;
   paperId?: string;
   progress?: { stage: string; percent: number };
+  data?: unknown;
   description?: string;
   error?: string;
 }

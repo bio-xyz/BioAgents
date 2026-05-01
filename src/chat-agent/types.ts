@@ -3,6 +3,7 @@
  * Independent from src/llm/types.ts to avoid modifying shared interfaces.
  */
 
+import type { ProteinStructure } from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import type { ChatStreamEventEmitter } from "./streaming";
 
@@ -34,6 +35,7 @@ export interface AgentTool {
 export interface AgentToolResult {
   content: string; // Stringified result for the LLM
   isError?: boolean; // If true, sent as is_error to the model
+  proteinStructures?: ProteinStructure[];
 }
 
 /**
@@ -70,6 +72,7 @@ export interface AgentLoopConfig {
  */
 export interface AgentLoopResult {
   finalText: string;
+  proteinStructures?: ProteinStructure[];
   toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;

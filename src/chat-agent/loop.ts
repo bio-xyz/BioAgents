@@ -11,6 +11,7 @@ import type {
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import logger from "../utils/logger";
+import { mergeProteinStructures } from "../utils/proteinStructures";
 import { executeTool, getToolDefinitions } from "./registry";
 import { previewValue } from "./streaming";
 import type { AgentLoopConfig, AgentLoopResult } from "./types";
@@ -38,6 +39,7 @@ export async function runAgentLoop(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalText = "";
+  let proteinStructures = mergeProteinStructures();
 
   while (true) {
     config.signal?.throwIfAborted();
@@ -83,7 +85,14 @@ export async function runAgentLoop(
         { hasText: finalText.length > 0, toolCallCount },
         "agent_loop_max_tokens_reached"
       );
-      return { finalText, hitMaxTokens: true, toolCallCount, totalInputTokens, totalOutputTokens };
+      return {
+        finalText,
+        hitMaxTokens: true,
+        proteinStructures,
+        toolCallCount,
+        totalInputTokens,
+        totalOutputTokens,
+      };
     }
 
     // If no tool calls — we're done
@@ -136,6 +145,7 @@ export async function runAgentLoop(
         toolBlock.input as Record<string, unknown>,
         toolExecutionContext
       );
+      proteinStructures = mergeProteinStructures(proteinStructures, result.proteinStructures);
 
       await config.onStreamEvent?.({
         data: {
@@ -185,5 +195,11 @@ export async function runAgentLoop(
     }
   }
 
-  return { finalText, toolCallCount, totalInputTokens, totalOutputTokens };
+  return {
+    finalText,
+    proteinStructures,
+    toolCallCount,
+    totalInputTokens,
+    totalOutputTokens,
+  };
 }

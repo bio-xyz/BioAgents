@@ -7,10 +7,11 @@
  */
 
 import { Job, Worker } from "bullmq";
-import type { ConversationState, PlanTask, State } from "../../../types/core";
+import type { ConversationState, PlanTask, ProteinStructure, State } from "../../../types/core";
 import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
+import { mergeProteinStructures } from "../../../utils/proteinStructures";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -183,6 +184,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Step 2: Execute literature tasks
     const { literatureAgent } = await import("../../../agents/literature");
     const completedTasks: PlanTask[] = [];
+    let proteinStructures: ProteinStructure[] = [];
 
     for (const task of literatureTasks) {
       task.start = new Date().toISOString();
@@ -212,6 +214,11 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
           type: "BIOLIT",
         }).then((result) => {
           task.output += `${result.output}\n\n`;
+          task.proteinStructures = mergeProteinStructures(
+            task.proteinStructures,
+            result.proteinStructures
+          );
+          proteinStructures = mergeProteinStructures(proteinStructures, result.proteinStructures);
         });
         literaturePromises.push(bioLiteraturePromise);
       }
@@ -358,9 +365,12 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     );
 
     // Notify: Job completed
-    await notifyJobCompleted(job.id!, conversationId, messageId);
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      proteinStructures,
+    });
 
     return {
+      proteinStructures,
       responseTime,
       text: replyText,
       userId,
@@ -475,7 +485,9 @@ async function processWithAgentLoop(
     await job.updateProgress({ percent: 90, stage: "reply" } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 90);
     await notifyMessageUpdated(job.id!, conversationId, messageId);
-    await notifyJobCompleted(job.id!, conversationId, messageId);
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      proteinStructures: result.proteinStructures,
+    });
   } catch (notifyErr) {
     logger.warn(
       { error: notifyErr, jobId: job.id, messageId },
@@ -494,7 +506,12 @@ async function processWithAgentLoop(
     "chat_job_agent_loop_completed"
   );
 
-  return { responseTime, text: result.replyText, userId };
+  return {
+    proteinStructures: result.proteinStructures,
+    responseTime,
+    text: result.replyText,
+    userId,
+  };
 }
 
 /**

@@ -91,10 +91,12 @@ export async function notifyJobCompleted(
   jobId: string,
   conversationId: string,
   messageId?: string,
-  stateId?: string
+  stateId?: string,
+  data?: unknown
 ): Promise<void> {
   await notify({
     conversationId,
+    data,
     jobId,
     messageId,
     stateId,
