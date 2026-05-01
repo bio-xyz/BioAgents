@@ -16,6 +16,20 @@ const STREAM_HEADERS = {
   "X-Accel-Buffering": "no",
 };
 
+const LITERATURE_AGENT_SOURCE_IDS = [
+  "alphafold_db",
+  "uniprot",
+  "pdb",
+  "pubmed",
+  "chembl",
+  "ensembl",
+  "enrichr",
+  "clinical-trials",
+  "open_targets",
+] as const;
+
+const LITERATURE_AGENT_SOURCE_ID_SET = new Set<string>(LITERATURE_AGENT_SOURCE_IDS);
+
 export const literatureAgentStreamRoute = new Elysia().guard(
   {
     beforeHandle: [
@@ -51,7 +65,9 @@ function parseSources(value: unknown): string[] | undefined | null {
     if (typeof source !== "string") return null;
 
     const trimmed = source.trim();
-    if (trimmed) sources.push(trimmed);
+    if (!trimmed) continue;
+    if (!LITERATURE_AGENT_SOURCE_ID_SET.has(trimmed)) return null;
+    sources.push(trimmed);
   }
 
   return sources.length > 0 ? sources : undefined;
@@ -82,7 +98,7 @@ export async function literatureAgentStreamHandler(ctx: ElysiaRouteContext) {
   if (sources === null) {
     set.status = 400;
     return {
-      error: "sources must be an array of strings",
+      error: "sources must be an array of supported literature source IDs",
       ok: false,
     };
   }

@@ -741,6 +741,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           message,
           messageId: createdMessage.id,
           requestedAt: new Date().toISOString(),
+          sourceSelectionId,
           userId,
         },
         {

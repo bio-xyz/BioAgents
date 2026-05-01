@@ -6,6 +6,7 @@
  */
 
 import type { AuthMethod } from "../../types/auth";
+import type { SourceSelectionId } from "../../types/sourceSelection";
 
 /**
  * Job data for chat queue
@@ -23,6 +24,7 @@ export interface ChatJobData {
 
   // File references (files uploaded before enqueue, stored in conversationState)
   fileIds?: string[];
+  sourceSelectionId?: SourceSelectionId;
 
   // Metadata
   requestedAt: string;

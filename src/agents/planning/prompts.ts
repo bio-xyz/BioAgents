@@ -57,7 +57,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
       "type": "LITERATURE or ANALYSIS",
-      "sources": ["alphafold_db"] // Optional. Only include for source-specific literature routing when explicitly required.
+      "sources": ["pubmed"] // Optional. Allowed source IDs: alphafold_db, uniprot, pdb, pubmed, chembl, ensembl, enrichr, clinical-trials, open_targets.
     }
   ]
 }
@@ -179,7 +179,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks. Leave empty for LITERATURE tasks.
       "type": "LITERATURE or ANALYSIS",
-      "sources": ["alphafold_db"] // Optional. Only include for source-specific literature routing when explicitly required.
+      "sources": ["pubmed"] // Optional. Allowed source IDs: alphafold_db, uniprot, pdb, pubmed, chembl, ensembl, enrichr, clinical-trials, open_targets.
     }
   ]
 }
@@ -313,7 +313,7 @@ OUTPUT FORMAT (you MUST respond with ONLY valid JSON):
       "objective": "Specific objective tailored to this task",
       "datasets": [{"filename": "example.csv", "id": "dataset-id", "description": "Brief dataset description"}], // Dataset metadata, only for ANALYSIS tasks
       "type": "LITERATURE or ANALYSIS",
-      "sources": ["alphafold_db"] // Optional. Only include for source-specific literature routing when explicitly required.
+      "sources": ["pubmed"] // Optional. Allowed source IDs: alphafold_db, uniprot, pdb, pubmed, chembl, ensembl, enrichr, clinical-trials, open_targets.
     }
   ]
 }

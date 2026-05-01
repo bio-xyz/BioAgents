@@ -77,7 +77,7 @@ describe("literatureAgentStreamRoute", () => {
       new Request("http://localhost/api/literature/agent/stream", {
         body: JSON.stringify({
           question: " What is CRISPR? ",
-          sources: [" pubmed ", "", "arxiv"],
+          sources: [" pubmed ", "", "open_targets"],
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -99,7 +99,7 @@ describe("literatureAgentStreamRoute", () => {
     expect(JSON.parse(String(upstreamInit?.body))).toEqual({
       mode: "fast",
       question: "What is CRISPR?",
-      sources: ["pubmed", "arxiv"],
+      sources: ["pubmed", "open_targets"],
     });
   });
 
@@ -145,6 +145,30 @@ describe("literatureAgentStreamRoute", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: "Missing required field: question",
+      ok: false,
+    });
+    expect(called).toBe(false);
+  });
+
+  test("rejects unsupported explicit source IDs", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response();
+    }) as unknown as typeof fetch;
+
+    const app = await createApp();
+    const response = await app.handle(
+      new Request("http://localhost/api/literature/agent/stream", {
+        body: JSON.stringify({ question: "What is CRISPR?", sources: ["arxiv"] }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "sources must be an array of supported literature source IDs",
       ok: false,
     });
     expect(called).toBe(false);

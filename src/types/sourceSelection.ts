@@ -1,6 +1,17 @@
 import { z } from "zod";
 
-export const SOURCE_SELECTION_IDS = ["alphafold_db", "uniprot", "alphafold_model"] as const;
+export const SOURCE_SELECTION_IDS = [
+  "alphafold_db",
+  "uniprot",
+  "pdb",
+  "pubmed",
+  "chembl",
+  "ensembl",
+  "enrichr",
+  "clinical-trials",
+  "open_targets",
+  "alphafold_model",
+] as const;
 
 export type SourceSelectionId = (typeof SOURCE_SELECTION_IDS)[number];
 

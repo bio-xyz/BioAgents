@@ -79,6 +79,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
         message: messageRecord,
       }),
     };
+    state.values.sourceSelectionId = job.data.sourceSelectionId ?? state.values.sourceSelectionId;
 
     const conversationState: ConversationState = {
       id: conversationStateRecord.id,
@@ -135,7 +136,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
         message,
         conversationState,
         startTime,
-        state.values.sourceSelectionId
+        job.data.sourceSelectionId ?? state.values.sourceSelectionId
       );
     }
 

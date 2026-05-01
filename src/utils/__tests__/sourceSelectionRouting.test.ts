@@ -92,4 +92,43 @@ describe("sourceSelectionRouting", () => {
       objective: "Find AlphaFold structure information for TP53",
     });
   });
+
+  test("runtime literature override forces non-AlphaFold source chips without rewriting query", () => {
+    expect(
+      resolveSourceSelectionLiteratureOverride({
+        objective: "Find TP53 records",
+        sourceSelectionId: "uniprot",
+        userMessage: "Find TP53 records",
+      })
+    ).toEqual({
+      objective: "Find TP53 records",
+      sources: ["uniprot"],
+    });
+  });
+
+  test("planning override attaches selected official source to literature tasks", () => {
+    const plan = applySourceSelectionPlanningOverrides({
+      plan: [
+        {
+          datasets: [],
+          objective: "Find clinical trial data for rapamycin",
+          type: "LITERATURE",
+        },
+        {
+          datasets: [],
+          objective: "Analyze uploaded table",
+          type: "ANALYSIS",
+        },
+      ],
+      sourceSelectionId: "clinical-trials",
+      userMessage: "Find clinical trial data for rapamycin",
+    });
+
+    expect(plan[0]).toMatchObject({
+      objective: "Find clinical trial data for rapamycin",
+      sources: ["clinical-trials"],
+      type: "LITERATURE",
+    });
+    expect(plan[1]?.sources).toBeUndefined();
+  });
 });

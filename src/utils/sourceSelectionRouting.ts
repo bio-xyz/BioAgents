@@ -16,6 +16,30 @@ const SOURCE_SELECTION_ROUTING_RULES: Partial<
     requiresExplicitProteinSequence: true,
     sources: ["alphafold_db"],
   },
+  chembl: {
+    sources: ["chembl"],
+  },
+  "clinical-trials": {
+    sources: ["clinical-trials"],
+  },
+  enrichr: {
+    sources: ["enrichr"],
+  },
+  ensembl: {
+    sources: ["ensembl"],
+  },
+  open_targets: {
+    sources: ["open_targets"],
+  },
+  pdb: {
+    sources: ["pdb"],
+  },
+  pubmed: {
+    sources: ["pubmed"],
+  },
+  uniprot: {
+    sources: ["uniprot"],
+  },
 };
 
 function normalizeSequenceCandidate(candidate: string): string {
@@ -126,7 +150,7 @@ export function getPlanningSourceSelectionGuidance(
     return `sourceSelectionId=${sourceSelectionId}. Only use a task-level "sources" override if the user message contains an explicit protein sequence. If no explicit protein sequence is present, do not force source-specific routing or rewrite the task objective to a sequence-only query.`;
   }
 
-  return `sourceSelectionId=${sourceSelectionId}. If you need a source-specific literature task for this request, include "sources": ${JSON.stringify(rule.sources)} on the relevant LITERATURE task.`;
+  return `sourceSelectionId=${sourceSelectionId}. This selected source is deterministic. Include "sources": ${JSON.stringify(rule.sources)} on each relevant LITERATURE task.`;
 }
 
 export function getChatAgentSourceSelectionGuidance(
@@ -148,7 +172,7 @@ export function getChatAgentSourceSelectionGuidance(
 
   if (rule.requiresExplicitProteinSequence && explicitProteinSequence) {
     return `- The user selected ${sourceSelectionId} and supplied an explicit protein sequence.
-- If you use literature_search, prefer source="biolit".
+- Call literature_search with source="biolit".
 - Treat the protein sequence itself as the primary search query and do not expand it with extra wording.`;
   }
 
@@ -157,7 +181,7 @@ export function getChatAgentSourceSelectionGuidance(
 - If no explicit protein sequence is present, ignore the source-selection hint and answer normally.`;
   }
 
-  return `- The user selected ${sourceSelectionId}. If you use literature_search for this request, prefer the source-specific route that can honor that selection.`;
+  return `- The user selected ${sourceSelectionId}. Call literature_search with source="biolit"; the runtime will force sources=${JSON.stringify(rule.sources)}.`;
 }
 
 export function resolveSourceSelectionLiteratureOverride(input: {
@@ -198,28 +222,39 @@ export function applySourceSelectionPlanningOverrides(input: {
   const { plan, sourceSelectionId, userMessage } = input;
   const rule = getSourceSelectionRoutingRule(sourceSelectionId);
 
-  if (!rule?.requiresExplicitProteinSequence) {
+  if (!rule) {
     return plan;
   }
 
-  const explicitProteinSequence = extractExplicitProteinSequence(userMessage);
-  if (!explicitProteinSequence) {
-    return plan;
-  }
+  if (rule.requiresExplicitProteinSequence) {
+    const explicitProteinSequence = extractExplicitProteinSequence(userMessage);
+    if (!explicitProteinSequence) {
+      return plan;
+    }
 
-  const firstLiteratureTask = plan.find((task) => task.type === "LITERATURE");
-  const nonLiteratureTasks = plan.filter((task) => task.type !== "LITERATURE");
+    const firstLiteratureTask = plan.find((task) => task.type === "LITERATURE");
+    const nonLiteratureTasks = plan.filter((task) => task.type !== "LITERATURE");
 
-  const literatureTask: PlanTask = {
-    ...(firstLiteratureTask || {
+    const literatureTask: PlanTask = {
+      ...(firstLiteratureTask || {
+        datasets: [],
+        type: "LITERATURE" as const,
+      }),
       datasets: [],
-      type: "LITERATURE" as const,
-    }),
-    datasets: [],
-    objective: explicitProteinSequence,
-    sources: [...rule.sources],
-    type: "LITERATURE",
-  };
+      objective: explicitProteinSequence,
+      sources: [...rule.sources],
+      type: "LITERATURE",
+    };
 
-  return [literatureTask, ...nonLiteratureTasks];
+    return [literatureTask, ...nonLiteratureTasks];
+  }
+
+  return plan.map((task) =>
+    task.type === "LITERATURE"
+      ? {
+          ...task,
+          sources: [...rule.sources],
+        }
+      : task
+  );
 }

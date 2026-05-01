@@ -60,7 +60,18 @@ CREATE TABLE messages (
   source TEXT DEFAULT 'ui', -- 'ui', 'twitter', etc.
   source_selection_id TEXT CHECK (
     source_selection_id IS NULL
-    OR source_selection_id IN ('alphafold_db', 'uniprot', 'alphafold_model')
+    OR source_selection_id IN (
+      'alphafold_db',
+      'uniprot',
+      'pdb',
+      'pubmed',
+      'chembl',
+      'ensembl',
+      'enrichr',
+      'clinical-trials',
+      'open_targets',
+      'alphafold_model'
+    )
   ),
   files JSONB, -- stores file metadata for uploads
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

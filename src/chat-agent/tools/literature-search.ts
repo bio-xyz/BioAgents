@@ -21,7 +21,7 @@ const InputSchema = z.object({
 
 registerTool({
   description:
-    "Search bioscience literature from a specific academic source. Available sources: 'openscholar' (academic papers via OpenScholar), 'biolit' (BioLiterature agent — arxiv, pubmed, clinical trials), 'knowledge' (local knowledge base). Call this tool multiple times with different sources or queries to cross-reference findings.",
+    "Search bioscience literature from a specific academic source. Available sources: 'openscholar' (academic papers via OpenScholar), 'biolit' (BioLiterature agent, including selected official-source overrides such as PubMed, UniProt, PDB, ChEMBL, Ensembl, Enrichr, ClinicalTrials.gov, Open Targets, and AlphaFold DB), 'knowledge' (local knowledge base). Call this tool multiple times with different sources or queries to cross-reference findings.",
   execute: async (input, context) => {
     const parsed = InputSchema.parse(input);
     const { query, source } = parsed;
@@ -183,7 +183,7 @@ registerTool({
       },
       source: {
         description:
-          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for broad search (arxiv, pubmed, clinical trials), 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
+          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for BioLiterature/official source requests, 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
         enum: VALID_SOURCES,
         type: "string",
       },
