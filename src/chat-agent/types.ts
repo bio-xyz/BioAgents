@@ -65,6 +65,10 @@ export interface AgentLoopConfig {
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
   /** Called as streamable progress events occur inside the agent loop. */
   onStreamEvent?: ChatStreamEventEmitter;
+  /** Called on each text chunk during streaming. Synchronous to avoid backpressure on the Anthropic stream. */
+  onTextDelta?: (delta: string) => void;
+  /** Called after LLM response with tool_use blocks, BEFORE tools execute. Use to flush stream buffer and notify frontend. */
+  onStreamPause?: () => Promise<void>;
 }
 
 /**

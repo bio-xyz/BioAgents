@@ -20,6 +20,7 @@ const COPY_MESSAGE_COLUMNS = [
   "clean_content",
   "citation_metadata",
   "response_time",
+  "status",
   "created_at",
 ] as const;
 
@@ -38,6 +39,37 @@ const COPY_STATE_KEYS = [
   "clarificationContext",
   "researchMode",
 ] as const;
+
+/**
+ * Normalize a source message row for insertion into the branched
+ * conversation.
+ *
+ * Branches are snapshots, not live continuations: once `state_id` is stripped
+ * the copied row can never be picked up by a worker in the branch. Any source
+ * row in PENDING status (whether genuinely in-flight or a deep-research
+ * failure that never wrote FAILED) is therefore non-executable in the branch
+ * and is normalized to FAILED at copy time.
+ *
+ * Trade-off: FAILED in branched conversations covers both "genuinely failed
+ * in source" and "unfinished at branch time and therefore non-completable
+ * in the branch." Acceptable because the branch's own status machine has
+ * no way to distinguish the two and the user's question is preserved either
+ * way.
+ */
+export function normalizeBranchedMessage(
+  row: Record<string, unknown>,
+  branchedConversationId: string,
+  userId: string
+): Record<string, unknown> {
+  return {
+    ...row,
+    conversation_id: branchedConversationId,
+    source: row.source ?? "ui",
+    state_id: null,
+    status: row.status === "PENDING" ? "FAILED" : row.status,
+    user_id: userId,
+  };
+}
 
 function toStateValues(rawValues: unknown): Record<string, unknown> {
   if (!rawValues) return {};
@@ -275,14 +307,8 @@ async function deepResearchBranchHandler(ctx: ElysiaRouteContext) {
     }
 
     if (sourceMessages && sourceMessages.length > 0) {
-      const copiedMessages = (sourceMessages as unknown as Record<string, unknown>[]).map(
-        (row) => ({
-          ...row,
-          conversation_id: branchedConversationId,
-          source: row.source ?? "ui",
-          state_id: null,
-          user_id: userId,
-        })
+      const copiedMessages = (sourceMessages as unknown as Record<string, unknown>[]).map((row) =>
+        normalizeBranchedMessage(row, branchedConversationId, userId)
       );
 
       const { error: copyMessagesError } = await supabase.from("messages").insert(copiedMessages);

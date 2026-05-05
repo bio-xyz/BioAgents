@@ -24,6 +24,24 @@ import {
 import type { ChatJobData, ChatJobResult, JobProgress } from "../types";
 
 /**
+ * Throws UnrecoverableError when markMessageComplete reported the row was
+ * no longer PENDING. Keeping the BullMQ job in `failed` state preserves
+ * retryability through `/api/chat/retry/:jobId`; returning success would
+ * mark the job `completed` and dead-end the user.
+ */
+async function failJobIfRowNoLongerPending(
+  updated: boolean,
+  jobId: string | undefined,
+  messageId: string,
+  logKey: string
+): Promise<void> {
+  if (updated) return;
+  const { UnrecoverableError } = await import("bullmq");
+  logger.warn({ jobId, messageId }, logKey);
+  throw new UnrecoverableError("Message row is no longer in PENDING state; cannot persist reply");
+}
+
+/**
  * Process a chat job
  * This is the core chat processing logic extracted from chatHandler
  */
@@ -51,9 +69,9 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
 
   try {
     // Import required modules
-    const { getMessage, getState, getConversationState, updateConversationState, updateMessage } =
-      await import("../../../db/operations");
-    const { updateMessageResponseTime } = await import("../../chat/tools");
+    const { getMessage, getState, getConversationState, updateConversationState } = await import(
+      "../../../db/operations"
+    );
 
     // Get message record (already created by route handler)
     const messageRecord = await getMessage(messageId);
@@ -344,30 +362,44 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       }
     );
 
-    // Save reply to message
-    await updateMessage(messageId, { content: replyText });
-
-    // Calculate and update response time
+    // Save reply to message. Guarded by markMessageComplete's PENDING
+    // precondition; see its JSDoc for the FAILED-is-terminal contract.
     const responseTime = Date.now() - startTime;
-    await updateMessageResponseTime(messageId, responseTime);
-
-    // Notify: Message updated (content is now available)
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
-
-    logger.info(
-      {
-        jobId: job.id,
-        messageId,
-        responseTime,
-        responseTimeSec: (responseTime / 1000).toFixed(2),
-      },
-      "chat_job_completed"
+    const { markMessageComplete } = await import("../../chat/tools");
+    const { updated } = await markMessageComplete(messageId, {
+      content: replyText,
+      response_time: responseTime,
+    });
+    await failJobIfRowNoLongerPending(
+      updated,
+      job.id,
+      messageId,
+      "chat_worker_legacy_complete_skipped_row_not_pending"
     );
 
-    // Notify: Job completed
-    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
-      proteinStructures,
-    });
+    // Best-effort: pub/sub notifications. Reply is already durably saved with
+    // status=COMPLETE, so failures here must not bubble to the outer catch
+    // and downgrade the row to FAILED.
+    try {
+      await notifyMessageUpdated(job.id!, conversationId, messageId);
+      logger.info(
+        {
+          jobId: job.id,
+          messageId,
+          responseTime,
+          responseTimeSec: (responseTime / 1000).toFixed(2),
+        },
+        "chat_job_completed"
+      );
+      await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+        proteinStructures,
+      });
+    } catch (notifyErr) {
+      logger.warn(
+        { error: notifyErr, jobId: job.id, messageId },
+        "chat_job_post_reply_notify_failed"
+      );
+    }
 
     return {
       proteinStructures,
@@ -389,7 +421,11 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Notify: Job failed (on final attempt, or immediately for unrecoverable errors)
     const { UnrecoverableError } = await import("bullmq");
     if (job.attemptsMade + 1 >= (job.opts.attempts || 3) || error instanceof UnrecoverableError) {
-      await notifyJobFailed(job.id!, conversationId, messageId);
+      const { markMessageFailed } = await import("../../chat/tools");
+      await Promise.all([
+        notifyJobFailed(job.id!, conversationId, messageId),
+        markMessageFailed(messageId),
+      ]);
     }
 
     // Re-throw to trigger retry (if attempts remaining)
@@ -423,8 +459,6 @@ async function processWithAgentLoop(
   }
 
   const { runChatAgent } = await import("../../../chat-agent/runner");
-  const { updateMessage } = await import("../../../db/operations");
-  const { updateMessageResponseTime } = await import("../../chat/tools");
 
   let literatureEmitted = false;
 
@@ -473,11 +507,20 @@ async function processWithAgentLoop(
     throw new UnrecoverableError("Agent loop response truncated (max_tokens)");
   }
 
-  // Critical: persist the reply first. If this fails, retrying is correct
-  // because the LLM result would otherwise be lost.
+  // Persist the reply with markMessageComplete's PENDING precondition;
+  // see its JSDoc for the FAILED-is-terminal contract.
   const responseTime = Date.now() - startTime;
-  await updateMessage(messageId, { content: result.replyText });
-  await updateMessageResponseTime(messageId, responseTime);
+  const { markMessageComplete } = await import("../../chat/tools");
+  const { updated } = await markMessageComplete(messageId, {
+    content: result.replyText,
+    response_time: responseTime,
+  });
+  await failJobIfRowNoLongerPending(
+    updated,
+    job.id,
+    messageId,
+    "chat_worker_agent_loop_complete_skipped_row_not_pending"
+  );
 
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.

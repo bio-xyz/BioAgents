@@ -127,9 +127,13 @@ export async function parseFilePreview(
 }
 
 /**
- * Extract text content from a PDF buffer using pdf-parse
+ * Extract text content from a PDF buffer using pdf-parse.
+ * Exported so integration tests can assert the catch path surfaces the
+ * underlying error message — a bare `{...error}` spread would produce
+ * `message: undefined` (Error props are non-enumerable) and degrade the
+ * user-visible return value to the literal string "unknown".
  */
-async function extractPDFText(buffer: Buffer, filename: string): Promise<string> {
+export async function extractPDFText(buffer: Buffer, filename: string): Promise<string> {
   logger.info({ bufferSize: buffer.length, filename }, "pdf_extraction_starting");
 
   try {

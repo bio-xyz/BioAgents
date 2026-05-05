@@ -17,7 +17,6 @@ import {
   getConversationState,
   getMessagesByConversation,
   updateConversationState,
-  updateMessage,
   updateState,
 } from "../../db/operations";
 
@@ -626,6 +625,19 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
     };
   }
 
+  // Mark the state row as deep-research at enqueue time so the message
+  // sweeper can distinguish queued deep-research jobs from chat orphans
+  // before the worker (which also sets this flag) ever runs. A queued job
+  // sitting in BullMQ backlog past the sweeper's threshold would otherwise
+  // get incorrectly swept. Strict — if this write fails the sweeper boundary
+  // is unsafe, so we surface the error instead of silently letting the job
+  // enqueue without a discriminator. The user retries; transient Supabase
+  // hiccups recover on the next request. Long-term fix is an atomic
+  // discriminator column on messages.
+  const stateValuesWithFlag = { ...stateRecord.values, isDeepResearch: true };
+  await updateState(stateRecord.id, stateValuesWithFlag);
+  stateRecord.values = stateValuesWithFlag;
+
   // =========================================================================
   // DUAL MODE: Check if job queue is enabled
   // =========================================================================
@@ -743,11 +755,28 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
         status: 202, // Accepted
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      // Status endpoint reads state.values.status to surface failure;
+      // without this update GET /api/deep-research/status/:messageId would
+      // keep reporting "processing" for a run that died before the worker
+      // ever owned it.
+      try {
+        await updateState(stateRecord.id, {
+          ...stateRecord.values,
+          error: errorMessage,
+          status: "failed",
+        });
+      } catch (stateErr) {
+        logger.warn(
+          { error: stateErr, stateId: stateRecord.id },
+          "deep_research_state_mark_failed_on_queue_error"
+        );
+      }
       if (runMarkedStarted) {
         try {
           await markRunFinished({
             conversationStateId: conversationStateRecord.id,
-            error: err instanceof Error ? err.message : "Unknown error",
+            error: errorMessage,
             result: "failed",
             rootMessageId: createdMessage.id,
             stateId: stateRecord.id,
@@ -794,11 +823,27 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
       logger.error({ err, messageId: createdMessage.id }, "deep_research_background_failed");
     });
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    // Synchronous failure before runDeepResearch's own try/catch fires.
+    // The async failure handler doesn't run here, so the status endpoint
+    // would otherwise keep reporting "processing" for a dead run.
+    try {
+      await updateState(stateRecord.id, {
+        ...stateRecord.values,
+        error: errorMessage,
+        status: "failed",
+      });
+    } catch (stateErr) {
+      logger.warn(
+        { error: stateErr, stateId: stateRecord.id },
+        "deep_research_state_mark_failed_on_in_process_start_error"
+      );
+    }
     if (runMarkedStarted) {
       try {
         await markRunFinished({
           conversationStateId: conversationStateRecord.id,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: errorMessage,
           result: "failed",
           rootMessageId: createdMessage.id,
           stateId: stateRecord.id,
@@ -1779,13 +1824,23 @@ These molecular changes align with established longevity pathways (Converging nu
         nextPlan: conversationState.values.suggestedNextSteps || [],
       });
 
-      // Update the current message with the reply and mark as complete
+      // Update the current message with the reply. Sweeper exempts
+      // deep-research rows via the isDeepResearch flag so this is normally
+      // unguarded ground; the precondition (see markMessageComplete) is
+      // defensive against manual SQL flips or future callers.
       const iterationResponseTime = Date.now() - iterationStartTime;
-      await updateMessage(currentMessage.id, {
+      const { markMessageComplete } = await import("../../services/chat/tools");
+      const { updated } = await markMessageComplete(currentMessage.id, {
         content: replyResult.reply,
-        response_time: iterationResponseTime, // Mark message as complete so UI displays it
+        response_time: iterationResponseTime,
         summary: replyResult.summary,
       });
+      if (!updated) {
+        logger.warn(
+          { iterationCount, messageId: currentMessage.id },
+          "deep_research_in_process_complete_skipped_row_not_pending"
+        );
+      }
 
       logger.info(
         {

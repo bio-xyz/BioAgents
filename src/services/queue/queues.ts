@@ -15,6 +15,8 @@ import type {
   DeepResearchJobResult,
   FileProcessJobData,
   FileProcessJobResult,
+  MessageSweepJobData,
+  MessageSweepJobResult,
   PaperGenerationJobData,
   PaperGenerationJobResult,
 } from "./types";
@@ -25,6 +27,7 @@ let deepResearchQueueInstance: Queue<DeepResearchJobData, DeepResearchJobResult>
 let fileProcessQueueInstance: Queue<FileProcessJobData, FileProcessJobResult> | null = null;
 let paperGenerationQueueInstance: Queue<PaperGenerationJobData, PaperGenerationJobResult> | null =
   null;
+let messageSweeperQueueInstance: Queue<MessageSweepJobData, MessageSweepJobResult> | null = null;
 
 /**
  * Get or create the chat queue
@@ -192,6 +195,41 @@ export function getPaperGenerationQueue(): Queue<PaperGenerationJobData, PaperGe
 }
 
 /**
+ * Get or create the message sweeper queue.
+ *
+ * Single-attempt jobs - if a sweep fails, the next scheduled run picks up
+ * the same stale rows.
+ */
+export function getMessageSweeperQueue(): Queue<MessageSweepJobData, MessageSweepJobResult> | null {
+  if (!isJobQueueEnabled()) {
+    return null;
+  }
+
+  if (!messageSweeperQueueInstance) {
+    messageSweeperQueueInstance = new Queue<MessageSweepJobData, MessageSweepJobResult>(
+      "message-sweeper",
+      {
+        connection: getBullMQConnection(),
+        defaultJobOptions: {
+          attempts: 1,
+          removeOnComplete: {
+            age: 86400, // Keep for 24 hours so we can audit how often the sweeper finds orphans
+            count: 200,
+          },
+          removeOnFail: {
+            age: 604800, // Keep failures for 7 days for debugging
+          },
+        },
+      }
+    );
+
+    logger.info({ queue: "message-sweeper" }, "message_sweeper_queue_initialized");
+  }
+
+  return messageSweeperQueueInstance;
+}
+
+/**
  * Close all queue instances (for graceful shutdown)
  */
 export async function closeQueues(): Promise<void> {
@@ -200,6 +238,7 @@ export async function closeQueues(): Promise<void> {
     deepResearchQueueInstance,
     fileProcessQueueInstance,
     paperGenerationQueueInstance,
+    messageSweeperQueueInstance,
   ];
 
   await Promise.all(queues.filter((q): q is Queue => q !== null).map((q) => q.close()));
@@ -208,6 +247,7 @@ export async function closeQueues(): Promise<void> {
   deepResearchQueueInstance = null;
   fileProcessQueueInstance = null;
   paperGenerationQueueInstance = null;
+  messageSweeperQueueInstance = null;
 
   logger.info("queues_closed");
 }

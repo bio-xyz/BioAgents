@@ -26,8 +26,27 @@ Other commands:
 - `bun format:check` / `bun format:write` — Biome format
 - `bun style:check` / `bun style:write` — Biome lint + format + import sorting (prefer pre-commit hook)
 - `bun typecheck` — TypeScript type checking
-- `bun test` — bun:test
+- `bun test` — bun:test (integration tests skip cleanly when env is absent)
 - `bun build:client` — Build Preact frontend
+
+### Integration tests
+
+Integration tests (describe blocks tagged `[integration]`) need a local Supabase stack plus `RUN_SUPABASE_INTEGRATION=1` and/or `RUN_PDF_INTEGRATION=1`. They skip when env is missing, so `bun test` on its own is always safe.
+
+```bash
+supabase start                                                      # pulls images on first run
+eval "$(supabase status -o env \
+  | sed -n -E 's/^API_URL="?([^"]+)"?$/export SUPABASE_URL=\1/p;
+               s/^SERVICE_ROLE_KEY="?([^"]+)"?$/export SUPABASE_SERVICE_KEY=\1/p;
+               s/^ANON_KEY="?([^"]+)"?$/export SUPABASE_ANON_KEY=\1/p')"
+export RUN_PDF_INTEGRATION=1
+export RUN_SUPABASE_INTEGRATION=1
+bun test --test-name-pattern '\[integration\]'                      # just integration suites
+bun test                                                            # full suite (unit + integration)
+supabase stop
+```
+
+CI runs these in a dedicated `integration` job (see `.github/workflows/ci.yml`) that spins up Supabase via `supabase/setup-cli` and Redis as a service container. No repo secrets required — the local stack generates its own keys.
 
 ## Tech Stack
 

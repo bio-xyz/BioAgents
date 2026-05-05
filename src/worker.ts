@@ -15,6 +15,10 @@ import { closeConnections } from "./services/queue/connection";
 import { startChatWorker } from "./services/queue/workers/chat.worker";
 import { startDeepResearchWorker } from "./services/queue/workers/deep-research.worker";
 import { createFileProcessWorker } from "./services/queue/workers/file-process.worker";
+import {
+  registerMessageSweeperSchedule,
+  startMessageSweeperWorker,
+} from "./services/queue/workers/message-sweeper.worker";
 import { startPaperGenerationWorker } from "./services/queue/workers/paper-generation.worker";
 import logger from "./utils/logger";
 
@@ -26,6 +30,8 @@ async function main() {
   const deepResearchWorker = startDeepResearchWorker();
   const fileProcessWorker = createFileProcessWorker();
   const paperGenerationWorker = startPaperGenerationWorker();
+  const messageSweeperWorker = startMessageSweeperWorker();
+  await registerMessageSweeperSchedule();
 
   logger.info(
     {
@@ -49,6 +55,7 @@ async function main() {
       deepResearchWorker.close().then(() => logger.info("deep_research_worker_closed")),
       fileProcessWorker.close().then(() => logger.info("file_process_worker_closed")),
       paperGenerationWorker.close().then(() => logger.info("paper_generation_worker_closed")),
+      messageSweeperWorker.close().then(() => logger.info("message_sweeper_worker_closed")),
     ];
 
     logger.info("waiting_for_all_workers_to_finish_current_jobs");

@@ -21,6 +21,10 @@ import { cleanupDeadConnections, websocketHandler } from "./services/websocket/h
 import { startRedisSubscription, stopRedisSubscription } from "./services/websocket/subscribe";
 import logger from "./utils/logger";
 
+// Tracks the in-process sweeper timer (set when USE_JOB_QUEUE=false) so
+// graceful shutdown can clear it.
+let messageSweeperTimer: NodeJS.Timeout | null = null;
+
 // ============================================================================
 // CORS Configuration - Security Critical
 // ============================================================================
@@ -211,7 +215,7 @@ const app = new Elysia()
           enabled: true,
           redis: "connected",
         };
-      } catch {
+      } catch (_error) {
         health.jobQueue = {
           enabled: true,
           redis: "disconnected",
@@ -395,6 +399,15 @@ app.listen(
       setInterval(() => {
         cleanupDeadConnections();
       }, 30000);
+    } else {
+      // In-process deployment (USE_JOB_QUEUE=false): no worker process exists,
+      // so the BullMQ-based message sweeper would never run. Fall back to a
+      // setInterval-based sweeper here so chat-mode orphans still get cleaned
+      // up after a process death/deploy.
+      const { startInProcessMessageSweeper } = await import(
+        "./services/queue/workers/message-sweeper.worker"
+      );
+      messageSweeperTimer = startInProcessMessageSweeper();
     }
   }
 );
@@ -408,6 +421,12 @@ async function gracefulShutdown(signal: string) {
   }
 
   try {
+    // Stop the in-process message sweeper if it was started
+    if (messageSweeperTimer) {
+      clearInterval(messageSweeperTimer);
+      messageSweeperTimer = null;
+    }
+
     // Stop Redis subscription
     if (isJobQueueEnabled()) {
       await stopRedisSubscription();
