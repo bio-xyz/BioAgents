@@ -69,8 +69,7 @@ CREATE TABLE messages (
       'ensembl',
       'enrichr',
       'clinical-trials',
-      'open_targets',
-      'alphafold_model'
+      'open_targets'
     )
   ),
   files JSONB, -- stores file metadata for uploads

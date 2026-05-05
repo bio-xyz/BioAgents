@@ -38,6 +38,7 @@ import {
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
 import { mergeProteinStructures } from "../../../utils/proteinStructures";
+import { applySourceSelectionToPromotedTasks } from "../../../utils/sourceSelectionRouting";
 import { markRunFinished, touchRun } from "../../deep-research/run-guard";
 import { getBullMQConnection } from "../connection";
 import {
@@ -417,16 +418,22 @@ async function processDeepResearchJob(
           level: newLevel,
           objective: task.objective,
           output: undefined,
+          sources: task.sources,
           start: undefined,
           type: task.type,
         } as PlanTask;
+      });
+      const tasksWithSourceSelection = applySourceSelectionToPromotedTasks({
+        sourceSelectionId: conversationState.values.sourceSelectionId,
+        tasks: newTasks,
+        userMessage: message,
       });
 
       // Use refined objective from clarification
       currentObjective = clarCtx.refinedObjective;
 
       // Append to plan and update state
-      conversationState.values.plan = [...currentPlan, ...newTasks];
+      conversationState.values.plan = [...currentPlan, ...tasksWithSourceSelection];
       conversationState.values.currentObjective = currentObjective;
       conversationState.values.currentLevel = newLevel;
 
@@ -462,7 +469,7 @@ async function processDeepResearchJob(
           currentObjective,
           jobId: job.id,
           newLevel,
-          taskCount: newTasks.length,
+          taskCount: tasksWithSourceSelection.length,
         },
         "clarification_tasks_promoted_to_plan"
       );
@@ -1073,8 +1080,9 @@ async function processDeepResearchJob(
       const nextLevel = currentMaxLevel + 1;
 
       // Promote suggested steps to plan with new level and IDs
-      const promotedTasks = (conversationState.values.suggestedNextSteps || []).map(
-        (task: PlanTask) => {
+      const promotedTasks = applySourceSelectionToPromotedTasks({
+        sourceSelectionId: conversationState.values.sourceSelectionId,
+        tasks: (conversationState.values.suggestedNextSteps || []).map((task: PlanTask) => {
           const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
           return {
             ...task,
@@ -1084,8 +1092,9 @@ async function processDeepResearchJob(
             output: undefined,
             start: undefined,
           };
-        }
-      );
+        }),
+        userMessage: message,
+      });
 
       // Add to plan and clear suggestions
       conversationState.values.plan = [...currentPlan, ...promotedTasks];

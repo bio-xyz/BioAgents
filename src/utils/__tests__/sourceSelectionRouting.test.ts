@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applySourceSelectionPlanningOverrides,
+  applySourceSelectionToPromotedTasks,
   extractExplicitProteinSequence,
   resolveSourceSelectionLiteratureOverride,
 } from "../sourceSelectionRouting";
@@ -13,6 +14,31 @@ describe("sourceSelectionRouting", () => {
     expect(extractExplicitProteinSequence(message)).toBe(
       "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP"
     );
+  });
+
+  test("rejects prose after a labeled AlphaFold sequence", () => {
+    const message =
+      "Sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP please search AlphaFold";
+
+    expect(extractExplicitProteinSequence(message)).toBeUndefined();
+  });
+
+  test("rejects decorated or invalid AlphaFold sequence candidates", () => {
+    expect(
+      extractExplicitProteinSequence(
+        "Sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP*"
+      )
+    ).toBeUndefined();
+    expect(
+      extractExplicitProteinSequence(
+        "Sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP!"
+      )
+    ).toBeUndefined();
+    expect(
+      extractExplicitProteinSequence(
+        "Sequence: MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP1"
+      )
+    ).toBeUndefined();
   });
 
   test("rewrites AlphaFold planning to a single sequence-only literature task", () => {
@@ -130,5 +156,64 @@ describe("sourceSelectionRouting", () => {
       type: "LITERATURE",
     });
     expect(plan[1]?.sources).toBeUndefined();
+  });
+
+  test("promoted tasks receive source selection overrides after clarification planning", () => {
+    const tasks = applySourceSelectionToPromotedTasks({
+      sourceSelectionId: "uniprot",
+      tasks: [
+        {
+          datasets: [],
+          objective: "Find TP53 protein annotations",
+          type: "LITERATURE",
+        },
+        {
+          datasets: [],
+          objective: "Analyze uploaded table",
+          type: "ANALYSIS",
+        },
+      ],
+      userMessage: "Find TP53 protein annotations",
+    });
+
+    expect(tasks[0]).toMatchObject({
+      objective: "Find TP53 protein annotations",
+      sources: ["uniprot"],
+      type: "LITERATURE",
+    });
+    expect(tasks[1]?.sources).toBeUndefined();
+  });
+
+  test("promoted AlphaFold tasks collapse to a sequence-only literature lookup", () => {
+    const sequence = "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP";
+    const tasks = applySourceSelectionToPromotedTasks({
+      sourceSelectionId: "alphafold_db",
+      tasks: [
+        {
+          datasets: [],
+          objective: "Find AlphaFold structure information for this protein",
+          type: "LITERATURE",
+        },
+        {
+          datasets: [],
+          objective: "Summarize the sequence hit",
+          type: "LITERATURE",
+        },
+        {
+          datasets: [],
+          objective: "Analyze uploaded table",
+          type: "ANALYSIS",
+        },
+      ],
+      userMessage: `Protein sequence: ${sequence}`,
+    });
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]).toMatchObject({
+      objective: sequence,
+      sources: ["alphafold_db"],
+      type: "LITERATURE",
+    });
+    expect(tasks[1]?.type).toBe("ANALYSIS");
   });
 });

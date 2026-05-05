@@ -11,7 +11,10 @@ import type { ConversationState, PlanTask, ProteinStructure, State } from "../..
 import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
-import { mergeProteinStructures } from "../../../utils/proteinStructures";
+import {
+  mergeProteinStructures,
+  withNormalChatProteinStructures,
+} from "../../../utils/proteinStructures";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -377,6 +380,24 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       "chat_worker_legacy_complete_skipped_row_not_pending"
     );
 
+    if (proteinStructures.length > 0 && conversationState.id) {
+      try {
+        const { updateConversationState } = await import("../../../db/operations");
+        const nextValues = withNormalChatProteinStructures(
+          conversationState.values,
+          messageId,
+          proteinStructures
+        );
+        await updateConversationState(conversationState.id, nextValues);
+        conversationState.values = nextValues;
+      } catch (err) {
+        logger.warn(
+          { error: err, jobId: job.id, messageId },
+          "chat_worker_legacy_protein_structures_state_persist_failed"
+        );
+      }
+    }
+
     // Best-effort: pub/sub notifications. Reply is already durably saved with
     // status=COMPLETE, so failures here must not bubble to the outer catch
     // and downgrade the row to FAILED.
@@ -521,6 +542,24 @@ async function processWithAgentLoop(
     messageId,
     "chat_worker_agent_loop_complete_skipped_row_not_pending"
   );
+
+  if (result.proteinStructures?.length && conversationState.id) {
+    try {
+      const { updateConversationState } = await import("../../../db/operations");
+      const nextValues = withNormalChatProteinStructures(
+        conversationState.values,
+        messageId,
+        result.proteinStructures
+      );
+      await updateConversationState(conversationState.id, nextValues);
+      conversationState.values = nextValues;
+    } catch (err) {
+      logger.warn(
+        { error: err, jobId: job.id, messageId },
+        "chat_worker_agent_loop_protein_structures_state_persist_failed"
+      );
+    }
+  }
 
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.

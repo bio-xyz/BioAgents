@@ -13,6 +13,7 @@ import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
 import { buildMessageStateValues } from "../utils/messageState";
+import { withNormalChatProteinStructures } from "../utils/proteinStructures";
 import { generateUUID } from "../utils/uuid";
 import { createChatSseEventHandlers } from "./chat-sse-events";
 
@@ -710,6 +711,23 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             }
             replyPersisted = true;
 
+            if (result.proteinStructures?.length && conversationStateRecord.id) {
+              try {
+                const nextValues = withNormalChatProteinStructures(
+                  conversationStateRecord.values,
+                  createdMessage.id,
+                  result.proteinStructures
+                );
+                await updateConversationState(conversationStateRecord.id, nextValues);
+                conversationStateRecord.values = nextValues;
+              } catch (err) {
+                logger.warn(
+                  { error: err, messageId: createdMessage.id },
+                  "chat_sse_protein_structures_state_persist_failed"
+                );
+              }
+            }
+
             // === Terminal success signals (only after durable write) ===
             streamEvents.sendFinal({
               proteinStructures: result.proteinStructures,
@@ -977,6 +995,24 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       };
     }
     replyPersisted = true;
+
+    if (agentResult.proteinStructures?.length && conversationState.id) {
+      try {
+        const { updateConversationState } = await import("../db/operations");
+        const nextValues = withNormalChatProteinStructures(
+          conversationState.values,
+          createdMessage.id,
+          agentResult.proteinStructures
+        );
+        await updateConversationState(conversationState.id, nextValues);
+        conversationState.values = nextValues;
+      } catch (err) {
+        logger.warn(
+          { error: err, messageId: createdMessage.id },
+          "chat_in_process_protein_structures_state_persist_failed"
+        );
+      }
+    }
 
     logger.info(
       { contentLength: replyText.length, messageId: createdMessage.id },

@@ -61,6 +61,7 @@ import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { buildMessageStateValues } from "../../utils/messageState";
 import { mergeProteinStructures } from "../../utils/proteinStructures";
+import { applySourceSelectionToPromotedTasks } from "../../utils/sourceSelectionRouting";
 import { generateUUID } from "../../utils/uuid";
 
 type CreatedMessage = Awaited<ReturnType<typeof createMessage>>;
@@ -545,6 +546,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
             ? clarificationSession.plan.initialTasks.map((task) => ({
                 datasetFilenames: task.datasetFilenames || [],
                 objective: task.objective,
+                sources: task.sources,
                 type: task.type,
               }))
             : undefined,
@@ -1157,16 +1159,22 @@ async function runDeepResearch(params: {
             level: newLevel,
             objective: task.objective,
             output: undefined,
+            sources: task.sources,
             start: undefined,
             type: task.type,
           } as PlanTask;
+        });
+        const tasksWithSourceSelection = applySourceSelectionToPromotedTasks({
+          sourceSelectionId: conversationState.values.sourceSelectionId,
+          tasks: newTasks,
+          userMessage: currentMessage.question || createdMessage.question || "",
         });
 
         // Use refined objective from clarification
         currentObjective = clarCtx.refinedObjective;
 
         // Append to plan and update state
-        conversationState.values.plan = [...currentPlan, ...newTasks];
+        conversationState.values.plan = [...currentPlan, ...tasksWithSourceSelection];
         conversationState.values.currentObjective = currentObjective;
         conversationState.values.currentLevel = newLevel;
 
@@ -1196,7 +1204,7 @@ async function runDeepResearch(params: {
           });
 
           logger.info(
-            { currentObjective, newLevel, taskCount: newTasks.length },
+            { currentObjective, newLevel, taskCount: tasksWithSourceSelection.length },
             "clarification_tasks_promoted_to_plan"
           );
         }
@@ -1887,16 +1895,20 @@ These molecular changes align with established longevity pathways (Converging nu
         const nextLevel = currentMaxLevel + 1;
 
         // Promote suggested steps to plan with new level and IDs
-        const promotedTasks = conversationState.values.suggestedNextSteps.map((task: PlanTask) => {
-          const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
-          return {
-            ...task,
-            end: undefined,
-            id: taskId,
-            level: nextLevel,
-            output: undefined,
-            start: undefined,
-          };
+        const promotedTasks = applySourceSelectionToPromotedTasks({
+          sourceSelectionId: conversationState.values.sourceSelectionId,
+          tasks: conversationState.values.suggestedNextSteps.map((task: PlanTask) => {
+            const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
+            return {
+              ...task,
+              end: undefined,
+              id: taskId,
+              level: nextLevel,
+              output: undefined,
+              start: undefined,
+            };
+          }),
+          userMessage: currentMessage.question || createdMessage.question || "",
         });
 
         // Add to plan and clear suggestions

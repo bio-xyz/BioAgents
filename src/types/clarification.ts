@@ -48,6 +48,7 @@ export interface ClarificationAnswer {
 export interface ClarificationPlanTask {
   objective: string;
   type: "LITERATURE" | "ANALYSIS";
+  sources?: string[];
   datasetFilenames: string[]; // Filenames to match against uploadedDatasets at execution time
 }
 

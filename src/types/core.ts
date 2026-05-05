@@ -140,6 +140,7 @@ export interface ConversationStateValues extends StateValues {
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
   currentActivity?: DeepResearchActivity; // Compact top-level activity shown in the main deep research view
   objectiveTrace?: DeepResearchObjectiveTrace; // Synthetic objective breakdown shown in the main loader
+  normalChatProteinStructuresByMessageId?: Record<string, ProteinStructure[]>;
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;
@@ -161,6 +162,7 @@ export interface ConversationStateValues extends StateValues {
     initialTasks?: Array<{
       objective: string;
       type: "LITERATURE" | "ANALYSIS";
+      sources?: string[];
       datasetFilenames: string[]; // Filenames to match against uploadedDatasets
     }>; // Tasks for first iteration (used once, then cleared)
   };

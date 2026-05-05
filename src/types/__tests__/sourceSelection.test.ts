@@ -8,6 +8,7 @@ describe("source selection ids", () => {
     }
 
     expect(parseSourceSelectionId("pubmed")).toBe("pubmed");
+    expect(parseSourceSelectionId("alphafold_model")).toBeUndefined();
     expect(parseSourceSelectionId("arxiv")).toBeUndefined();
     expect(parseSourceSelectionId(null)).toBeUndefined();
   });

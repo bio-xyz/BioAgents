@@ -1,7 +1,7 @@
 import type { PlanTask } from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
 
-const AMINO_ACID_ALPHABET = "ACDEFGHIKLMNPQRSTVWYBXZJUO";
+const AMINO_ACID_ALPHABET = "ACDEFGHIKLMNPQRSTVWY";
 const MIN_EXPLICIT_PROTEIN_SEQUENCE_LENGTH = 20;
 
 type SourceSelectionRoutingRule = {
@@ -42,8 +42,12 @@ const SOURCE_SELECTION_ROUTING_RULES: Partial<
   },
 };
 
-function normalizeSequenceCandidate(candidate: string): string {
-  return candidate.toUpperCase().replace(/[^A-Z]/g, "");
+function normalizeSequenceCandidate(candidate: string): string | undefined {
+  if (!/^[A-Za-z\s-]+$/.test(candidate)) {
+    return undefined;
+  }
+
+  return candidate.toUpperCase().replace(/[\s-]/g, "");
 }
 
 function isExplicitProteinSequence(candidate: string): boolean {
@@ -54,11 +58,11 @@ function isExplicitProteinSequence(candidate: string): boolean {
 }
 
 function findSequenceInBackticks(message: string): string | undefined {
-  const matches = message.matchAll(/`([^`\n]+)`/g);
+  const matches = message.matchAll(/`([^`]+)`/g);
 
   for (const match of matches) {
     const candidate = normalizeSequenceCandidate(match[1] || "");
-    if (isExplicitProteinSequence(candidate)) {
+    if (candidate && isExplicitProteinSequence(candidate)) {
       return candidate;
     }
   }
@@ -67,11 +71,28 @@ function findSequenceInBackticks(message: string): string | undefined {
 }
 
 function findSequenceInFasta(message: string): string | undefined {
-  const fastaMatches = message.matchAll(/(?:^|\n)>\s*[^\n]*\n(([A-Za-z*-]+\s*){20,})/gm);
+  const lines = message.split(/\r?\n/);
 
-  for (const match of fastaMatches) {
-    const candidate = normalizeSequenceCandidate(match[1] || "");
-    if (isExplicitProteinSequence(candidate)) {
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index]?.trimStart().startsWith(">")) {
+      continue;
+    }
+
+    const sequenceLines: string[] = [];
+    for (let lineIndex = index + 1; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex] || "";
+      if (line.trimStart().startsWith(">") || line.trim() === "") {
+        break;
+      }
+      sequenceLines.push(line.trim());
+    }
+
+    if (sequenceLines.length === 0 || sequenceLines.some((line) => !/^[A-Za-z-]+$/.test(line))) {
+      continue;
+    }
+
+    const candidate = normalizeSequenceCandidate(sequenceLines.join(""));
+    if (candidate && isExplicitProteinSequence(candidate)) {
       return candidate;
     }
   }
@@ -80,23 +101,28 @@ function findSequenceInFasta(message: string): string | undefined {
 }
 
 function findLabeledSequence(message: string): string | undefined {
-  const sequenceBody = `[${AMINO_ACID_ALPHABET}${AMINO_ACID_ALPHABET.toLowerCase()}\\s-]{${MIN_EXPLICIT_PROTEIN_SEQUENCE_LENGTH},}`;
-  const patterns = [
-    new RegExp(
-      `\\b(?:protein|amino acid|aa|peptide)\\s+sequence\\b\\s*[:=]?\\s*(${sequenceBody})`,
-      "i"
-    ),
-    new RegExp(`\\bsequence\\b\\s*[:=]\\s*(${sequenceBody})`, "i"),
-  ];
+  const labelPattern = /\b(?:(?:protein|amino acid|aa|peptide)\s+sequence|sequence)\b\s*[:=]/gi;
 
-  for (const pattern of patterns) {
-    const match = message.match(pattern);
-    if (!match?.[1]) {
+  for (const match of message.matchAll(labelPattern)) {
+    const afterLabel = message.slice((match.index || 0) + match[0].length);
+    const block = afterLabel.split(/\n\s*\n/)[0] || "";
+    const lines = block.split(/\r?\n/);
+    const sameLineCandidate = lines[0]?.trim() || "";
+    const sequenceText =
+      sameLineCandidate.length > 0
+        ? sameLineCandidate
+        : lines
+            .slice(1)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .join("");
+
+    if (!sequenceText || !/^[A-Za-z-]+$/.test(sequenceText)) {
       continue;
     }
 
-    const candidate = normalizeSequenceCandidate(match[1]);
-    if (isExplicitProteinSequence(candidate)) {
+    const candidate = normalizeSequenceCandidate(sequenceText);
+    if (candidate && isExplicitProteinSequence(candidate)) {
       return candidate;
     }
   }
@@ -257,4 +283,16 @@ export function applySourceSelectionPlanningOverrides(input: {
         }
       : task
   );
+}
+
+export function applySourceSelectionToPromotedTasks(input: {
+  tasks: PlanTask[];
+  sourceSelectionId?: SourceSelectionId;
+  userMessage: string;
+}): PlanTask[] {
+  return applySourceSelectionPlanningOverrides({
+    plan: input.tasks,
+    sourceSelectionId: input.sourceSelectionId,
+    userMessage: input.userMessage,
+  });
 }

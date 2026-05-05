@@ -38,10 +38,25 @@ function parseEventData(data: string): JsonObject {
   return payload;
 }
 
-function eventId(payload: JsonObject, fallbackPrefix: string): string {
-  const explicit = asString(payload.toolCallId) || asString(payload.runId);
+function eventId(input: {
+  eventName: string;
+  fallbackSequence: number;
+  parentToolCallId?: string;
+  payload: JsonObject;
+  toolName: string;
+}): string {
+  const explicit = asString(input.payload.toolCallId);
   if (explicit) return explicit;
-  return `${fallbackPrefix}:${String(payload.sequence || "unknown")}`;
+
+  const parts = [
+    input.parentToolCallId || "literature",
+    asString(input.payload.runId),
+    input.eventName,
+    input.toolName,
+    String(input.payload.sequence || input.fallbackSequence),
+  ].filter(Boolean);
+
+  return parts.join(":");
 }
 
 function responseText(payload: JsonObject): string | undefined {
@@ -80,8 +95,8 @@ export async function consumeLiteratureAgentStream({
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   const pendingEmits: Promise<void>[] = [];
-  const fallbackPrefix = parentToolCallId || "literature";
   const deltaParts: string[] = [];
+  let fallbackSequence = 0;
   let finalText = "";
   let proteinStructures: ProteinStructure[] = [];
   let streamError: string | undefined;
@@ -95,16 +110,25 @@ export async function consumeLiteratureAgentStream({
   }
 
   function handleEvent(eventName: string | undefined, payload: JsonObject) {
+    fallbackSequence += 1;
+
     switch (eventName) {
       case "tool_call": {
+        const toolName = asString(payload.toolName) || "literature_tool";
         emit({
           data: {
             inputPreview: asString(payload.inputPreview) || previewValue(payload.input),
             parentToolCallId,
             scope: "literature",
             status: "started",
-            toolCallId: eventId(payload, `${fallbackPrefix}:call`),
-            toolName: asString(payload.toolName) || "literature_tool",
+            toolCallId: eventId({
+              eventName,
+              fallbackSequence,
+              parentToolCallId,
+              payload,
+              toolName,
+            }),
+            toolName,
           },
           event: "tool_call",
         });
@@ -126,6 +150,7 @@ export async function consumeLiteratureAgentStream({
       }
       case "tool_result": {
         const status = asString(payload.status) === "failed" ? "failed" : "completed";
+        const toolName = asString(payload.toolName) || "literature_tool";
         emit({
           data: {
             outputPreview: asString(payload.outputPreview),
@@ -133,8 +158,14 @@ export async function consumeLiteratureAgentStream({
             parentToolCallId,
             scope: "literature",
             status,
-            toolCallId: eventId(payload, `${fallbackPrefix}:result`),
-            toolName: asString(payload.toolName) || "literature_tool",
+            toolCallId: eventId({
+              eventName,
+              fallbackSequence,
+              parentToolCallId,
+              payload,
+              toolName,
+            }),
+            toolName,
           },
           event: "tool_result",
         });
@@ -153,7 +184,13 @@ export async function consumeLiteratureAgentStream({
             parentToolCallId,
             scope: "literature",
             status: "completed",
-            toolCallId: eventId(payload, `${fallbackPrefix}:final`),
+            toolCallId: eventId({
+              eventName,
+              fallbackSequence,
+              parentToolCallId,
+              payload,
+              toolName: "literature_agent",
+            }),
             toolName: "literature_agent",
           },
           event: "tool_result",
@@ -168,7 +205,13 @@ export async function consumeLiteratureAgentStream({
             parentToolCallId,
             scope: "literature",
             status: "failed",
-            toolCallId: eventId(payload, `${fallbackPrefix}:error`),
+            toolCallId: eventId({
+              eventName,
+              fallbackSequence,
+              parentToolCallId,
+              payload,
+              toolName: "literature_agent",
+            }),
             toolName: "literature_agent",
           },
           event: "tool_result",

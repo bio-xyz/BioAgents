@@ -1,4 +1,6 @@
-import type { ProteinStructure } from "../types/core";
+import type { ConversationStateValues, ProteinStructure } from "../types/core";
+
+export const NORMAL_CHAT_PROTEIN_STRUCTURES_KEY = "normalChatProteinStructuresByMessageId";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -88,6 +90,27 @@ export function mergeProteinStructures(
   }
 
   return merged;
+}
+
+export function withNormalChatProteinStructures(
+  values: ConversationStateValues,
+  messageId: string,
+  proteinStructures?: ProteinStructure[]
+): ConversationStateValues {
+  if (!proteinStructures?.length) {
+    return values;
+  }
+
+  const existingMap = values.normalChatProteinStructuresByMessageId || {};
+  const existingStructures = existingMap[messageId];
+
+  return {
+    ...values,
+    [NORMAL_CHAT_PROTEIN_STRUCTURES_KEY]: {
+      ...existingMap,
+      [messageId]: mergeProteinStructures(existingStructures, proteinStructures),
+    },
+  };
 }
 
 export function extractProteinStructuresFromBioLiteratureResponse(

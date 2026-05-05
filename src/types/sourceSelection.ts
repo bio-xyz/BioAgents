@@ -10,7 +10,6 @@ export const SOURCE_SELECTION_IDS = [
   "enrichr",
   "clinical-trials",
   "open_targets",
-  "alphafold_model",
 ] as const;
 
 export type SourceSelectionId = (typeof SOURCE_SELECTION_IDS)[number];
