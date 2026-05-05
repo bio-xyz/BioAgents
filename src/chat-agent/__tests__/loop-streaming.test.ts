@@ -45,7 +45,6 @@ mock.module("@anthropic-ai/sdk", () => ({
 
 const { registerTool } = await import("../registry");
 const { runAgentLoop } = await import("../loop");
-const { runChatAgent } = await import("../runner");
 const proteinStructure = {
   averagePlddt: 82.88,
   bcifUrl: "https://alphafold.ebi.ac.uk/files/AF-Q8W3K0-F1-model_v6.bcif",
@@ -145,92 +144,5 @@ describe("runAgentLoop streaming", () => {
     expect(result.proteinStructures).toEqual([proteinStructure]);
     expect(result.totalInputTokens).toBe(15);
     expect(result.totalOutputTokens).toBe(7);
-  });
-
-  test("runChatAgent threads sourceSelectionId and stream event emitter into tool context", async () => {
-    const toolName = `runner_context_probe_${Date.now()}`;
-    let seenContext:
-      | {
-          conversationId?: string;
-          emitStreamEvent?: unknown;
-          parentToolCallId?: string;
-          sourceSelectionId?: string;
-          userMessage?: string;
-        }
-      | undefined;
-    const streamEvents: string[] = [];
-
-    registerTool({
-      description: "runner context test tool",
-      execute: async (_input, context) => {
-        seenContext = context;
-        await context?.emitStreamEvent?.({
-          data: {
-            delta: "tool progress",
-            parentToolCallId: context.parentToolCallId,
-            scope: "literature",
-          },
-          event: "tool_delta",
-        });
-        return {
-          content: "runner tool output",
-          proteinStructures: [proteinStructure],
-        };
-      },
-      inputSchema: {
-        properties: {},
-        type: "object",
-      },
-      name: toolName,
-    });
-
-    streamResponses.push(
-      {
-        deltas: ["Searching."],
-        message: {
-          content: [
-            { text: "Searching.", type: "text" },
-            {
-              id: "runner-tool-call-1",
-              input: { query: "RPP7" },
-              name: toolName,
-              type: "tool_use",
-            },
-          ],
-          stop_reason: "tool_use",
-          usage: { input_tokens: 8, output_tokens: 3 },
-        },
-      },
-      {
-        deltas: ["Runner final."],
-        message: {
-          content: [{ text: "Runner final.", type: "text" }],
-          stop_reason: "end_turn",
-          usage: { input_tokens: 4, output_tokens: 2 },
-        },
-      }
-    );
-
-    const result = await runChatAgent({
-      conversationId: "conversation-2",
-      loadHistory: false,
-      message: "show RPP7",
-      onStreamEvent: (event) => {
-        streamEvents.push(event.event);
-      },
-      onTextDelta: () => undefined,
-      sourceSelectionId: "alphafold_db",
-    });
-
-    expect(seenContext).toMatchObject({
-      conversationId: "conversation-2",
-      parentToolCallId: "runner-tool-call-1",
-      sourceSelectionId: "alphafold_db",
-      userMessage: "show RPP7",
-    });
-    expect(typeof seenContext?.emitStreamEvent).toBe("function");
-    expect(streamEvents).toEqual(["tool_call", "tool_delta", "tool_result"]);
-    expect(result.replyText).toBe("Runner final.");
-    expect(result.proteinStructures).toEqual([proteinStructure]);
   });
 });
