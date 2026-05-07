@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import type { ChatStreamEnvelope } from "../../../chat-agent/streaming";
+import logger from "../../../utils/logger";
 import { consumeLiteratureAgentStream } from "../agent-stream-events";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -13,6 +14,42 @@ function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function makeOpenStream(chunks: string[]): {
+  stream: ReadableStream<Uint8Array>;
+  wasCanceled: () => boolean;
+} {
+  const encoder = new TextEncoder();
+  let canceled = false;
+
+  return {
+    stream: new ReadableStream({
+      cancel() {
+        canceled = true;
+      },
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+      },
+    }),
+    wasCanceled: () => canceled,
+  };
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms = 100): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("timed out waiting for stream")), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
 }
 
 describe("consumeLiteratureAgentStream", () => {
@@ -110,6 +147,171 @@ describe("consumeLiteratureAgentStream", () => {
         toolName: "literature_agent",
       },
       event: "tool_result",
+    });
+  });
+
+  test("converts malformed Literature SSE data into a failed tool result", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const events: ChatStreamEnvelope[] = [];
+    const rawEventData = '{"runId":"run-bad","delta":';
+    const stream = makeStream([`event: message_delta\ndata: ${rawEventData}\n\n`]);
+
+    try {
+      const result = await consumeLiteratureAgentStream({
+        emitStreamEvent: (event) => {
+          events.push(event);
+        },
+        parentToolCallId: "parent-bad",
+        stream,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("Literature stream error:");
+      expect(events).toContainEqual({
+        data: expect.objectContaining({
+          outputPreview: expect.stringContaining("Malformed Literature stream event"),
+          parentToolCallId: "parent-bad",
+          scope: "literature",
+          status: "failed",
+          toolName: "literature_agent",
+        }),
+        event: "tool_result",
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventName: "message_delta",
+          rawEventData,
+        }),
+        "literature_stream_event_failed"
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("cancels the upstream reader after a stream event failure", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const rawEventData = '{"runId":"run-bad","delta":';
+    const { stream, wasCanceled } = makeOpenStream([
+      `event: message_delta\ndata: ${rawEventData}\n\n`,
+    ]);
+
+    try {
+      const result = await withTimeout(
+        consumeLiteratureAgentStream({
+          parentToolCallId: "parent-bad",
+          stream,
+        })
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("Literature stream error:");
+      expect(wasCanceled()).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("converts stream event handler failures into a failed tool result", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const events: ChatStreamEnvelope[] = [];
+    const rawEventData = '{"runId":"run-handler","sequence":1,"delta":"partial"}';
+    const stream = makeStream([`event: message_delta\ndata: ${rawEventData}\n\n`]);
+
+    try {
+      const result = await consumeLiteratureAgentStream({
+        emitStreamEvent: (event) => {
+          if (event.event === "tool_delta") {
+            throw new Error("handler failed");
+          }
+          events.push(event);
+        },
+        parentToolCallId: "parent-handler",
+        stream,
+      });
+
+      expect(result).toEqual({
+        content: "Literature stream error: handler failed",
+        isError: true,
+      });
+      expect(events).toContainEqual({
+        data: expect.objectContaining({
+          outputPreview: "handler failed",
+          parentToolCallId: "parent-handler",
+          scope: "literature",
+          status: "failed",
+          toolName: "literature_agent",
+        }),
+        event: "tool_result",
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.any(Error),
+          eventName: "message_delta",
+          rawEventData,
+        }),
+        "literature_stream_event_failed"
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("converts async stream event handler failures into a failed tool result", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const events: ChatStreamEnvelope[] = [];
+    const rawEventData = '{"runId":"run-handler","sequence":1,"delta":"partial"}';
+    const stream = makeStream([`event: message_delta\ndata: ${rawEventData}\n\n`]);
+
+    try {
+      const result = await consumeLiteratureAgentStream({
+        emitStreamEvent: async (event) => {
+          if (event.event === "tool_delta") {
+            throw new Error("async handler failed");
+          }
+          events.push(event);
+        },
+        parentToolCallId: "parent-handler",
+        stream,
+      });
+
+      expect(result).toEqual({
+        content: "Literature stream error: async handler failed",
+        isError: true,
+      });
+      expect(events).toContainEqual({
+        data: expect.objectContaining({
+          outputPreview: "async handler failed",
+          parentToolCallId: "parent-handler",
+          scope: "literature",
+          status: "failed",
+          toolName: "literature_agent",
+        }),
+        event: "tool_result",
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.any(Error),
+          eventName: "message_delta",
+          rawEventData,
+        }),
+        "literature_stream_event_failed"
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test("treats a stream ending without final as an error even when deltas arrived", async () => {
+    const stream = makeStream([
+      'event: message_delta\ndata: {"runId":"run-partial","sequence":1,"delta":"partial answer"}\n\n',
+    ]);
+
+    const result = await consumeLiteratureAgentStream({ stream });
+
+    expect(result).toEqual({
+      content: "Literature stream ended before final response",
+      isError: true,
     });
   });
 

@@ -2,6 +2,7 @@ import { createParser } from "eventsource-parser";
 import type { ChatStreamEventEmitter } from "../../chat-agent/streaming";
 import { previewValue } from "../../chat-agent/streaming";
 import type { ProteinStructure } from "../../types/core";
+import logger from "../../utils/logger";
 import {
   extractProteinStructuresFromBioLiteratureResponse,
   mergeProteinStructures,
@@ -30,12 +31,22 @@ function asString(value: unknown): string | undefined {
 }
 
 function parseEventData(data: string): JsonObject {
-  const parsed = JSON.parse(data) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data) as unknown;
+  } catch (error) {
+    throw new Error("Malformed Literature stream event data", { cause: error });
+  }
+
   const payload = asObject(parsed);
   if (!payload) {
     throw new Error("Literature stream event data must be a JSON object");
   }
   return payload;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function eventId(input: {
@@ -99,123 +110,236 @@ export async function consumeLiteratureAgentStream({
   let fallbackSequence = 0;
   let finalText = "";
   let proteinStructures: ProteinStructure[] = [];
+  let sawFinal = false;
   let streamError: string | undefined;
 
-  function emit(event: Parameters<ChatStreamEventEmitter>[0]) {
+  function emitFailureNotification(message: string) {
     if (!emitStreamEvent) return;
-    const maybePromise = emitStreamEvent(event);
-    if (maybePromise && typeof (maybePromise as Promise<void>).then === "function") {
-      pendingEmits.push(maybePromise as Promise<void>);
+    const failedEvent: Parameters<ChatStreamEventEmitter>[0] = {
+      data: {
+        outputPreview: message,
+        parentToolCallId,
+        scope: "literature",
+        status: "failed",
+        toolCallId: eventId({
+          eventName: "error",
+          fallbackSequence,
+          parentToolCallId,
+          payload: {},
+          toolName: "literature_agent",
+        }),
+        toolName: "literature_agent",
+      },
+      event: "tool_result",
+    };
+
+    try {
+      const maybePromise = emitStreamEvent(failedEvent);
+      if (maybePromise && typeof (maybePromise as Promise<void>).then === "function") {
+        pendingEmits.push(
+          (maybePromise as Promise<void>).catch((error) => {
+            logger.warn({ error, parentToolCallId }, "literature_stream_failure_emit_failed");
+          })
+        );
+      }
+    } catch (error) {
+      logger.warn({ error, parentToolCallId }, "literature_stream_failure_emit_failed");
     }
   }
 
-  function handleEvent(eventName: string | undefined, payload: JsonObject) {
+  function markStreamEventFailed(input: {
+    error: unknown;
+    eventName: string | undefined;
+    rawEventData: string;
+  }) {
+    streamError = errorText(input.error);
+    logger.warn(
+      {
+        error: input.error,
+        eventName: input.eventName,
+        rawEventData: input.rawEventData,
+      },
+      "literature_stream_event_failed"
+    );
+    emitFailureNotification(streamError);
+  }
+
+  function handleEmitFailure(input: {
+    error: unknown;
+    eventName: string | undefined;
+    rawEventData: string;
+  }) {
+    if (streamError) {
+      logger.warn(
+        {
+          error: input.error,
+          eventName: input.eventName,
+          rawEventData: input.rawEventData,
+        },
+        "literature_stream_emit_failed_after_error"
+      );
+      return;
+    }
+    markStreamEventFailed(input);
+  }
+
+  function emit(
+    event: Parameters<ChatStreamEventEmitter>[0],
+    context: { eventName: string | undefined; rawEventData: string }
+  ) {
+    if (!emitStreamEvent) return;
+    try {
+      const maybePromise = emitStreamEvent(event);
+      if (maybePromise && typeof (maybePromise as Promise<void>).then === "function") {
+        pendingEmits.push(
+          (maybePromise as Promise<void>).catch((error) => {
+            handleEmitFailure({
+              error,
+              eventName: context.eventName,
+              rawEventData: context.rawEventData,
+            });
+          })
+        );
+      }
+    } catch (error) {
+      handleEmitFailure({
+        error,
+        eventName: context.eventName,
+        rawEventData: context.rawEventData,
+      });
+    }
+  }
+
+  async function flushPendingEmits() {
+    while (pendingEmits.length > 0) {
+      await Promise.all(pendingEmits.splice(0));
+    }
+  }
+
+  function handleEvent(eventName: string | undefined, payload: JsonObject, rawEventData: string) {
     fallbackSequence += 1;
+    const emitContext = { eventName, rawEventData };
 
     switch (eventName) {
       case "tool_call": {
         const toolName = asString(payload.toolName) || "literature_tool";
-        emit({
-          data: {
-            inputPreview: asString(payload.inputPreview) || previewValue(payload.input),
-            parentToolCallId,
-            scope: "literature",
-            status: "started",
-            toolCallId: eventId({
-              eventName,
-              fallbackSequence,
+        emit(
+          {
+            data: {
+              inputPreview: asString(payload.inputPreview) || previewValue(payload.input),
               parentToolCallId,
-              payload,
+              scope: "literature",
+              status: "started",
+              toolCallId: eventId({
+                eventName,
+                fallbackSequence,
+                parentToolCallId,
+                payload,
+                toolName,
+              }),
               toolName,
-            }),
-            toolName,
+            },
+            event: "tool_call",
           },
-          event: "tool_call",
-        });
+          emitContext
+        );
         break;
       }
       case "message_delta": {
         const delta = asString(payload.delta);
         if (!delta) break;
         deltaParts.push(delta);
-        emit({
-          data: {
-            delta,
-            parentToolCallId,
-            scope: "literature",
+        emit(
+          {
+            data: {
+              delta,
+              parentToolCallId,
+              scope: "literature",
+            },
+            event: "tool_delta",
           },
-          event: "tool_delta",
-        });
+          emitContext
+        );
         break;
       }
       case "tool_result": {
         const status = asString(payload.status) === "failed" ? "failed" : "completed";
         const toolName = asString(payload.toolName) || "literature_tool";
-        emit({
-          data: {
-            outputPreview: asString(payload.outputPreview),
-            outputRef: asString(payload.outputRef),
-            parentToolCallId,
-            scope: "literature",
-            status,
-            toolCallId: eventId({
-              eventName,
-              fallbackSequence,
+        emit(
+          {
+            data: {
+              outputPreview: asString(payload.outputPreview),
+              outputRef: asString(payload.outputRef),
               parentToolCallId,
-              payload,
+              scope: "literature",
+              status,
+              toolCallId: eventId({
+                eventName,
+                fallbackSequence,
+                parentToolCallId,
+                payload,
+                toolName,
+              }),
               toolName,
-            }),
-            toolName,
+            },
+            event: "tool_result",
           },
-          event: "tool_result",
-        });
+          emitContext
+        );
         break;
       }
       case "final": {
+        sawFinal = true;
         finalText = responseText(payload) || finalText;
         proteinStructures = mergeProteinStructures(
           proteinStructures,
           extractProteinStructuresFromBioLiteratureResponse(payload)
         );
-        emit({
-          data: {
-            outputPreview: previewValue(finalText || deltaParts.join("")),
-            outputRef: responseOutputRef(payload),
-            parentToolCallId,
-            scope: "literature",
-            status: "completed",
-            toolCallId: eventId({
-              eventName,
-              fallbackSequence,
+        emit(
+          {
+            data: {
+              outputPreview: previewValue(finalText || deltaParts.join("")),
+              outputRef: responseOutputRef(payload),
               parentToolCallId,
-              payload,
+              scope: "literature",
+              status: "completed",
+              toolCallId: eventId({
+                eventName,
+                fallbackSequence,
+                parentToolCallId,
+                payload,
+                toolName: "literature_agent",
+              }),
               toolName: "literature_agent",
-            }),
-            toolName: "literature_agent",
+            },
+            event: "tool_result",
           },
-          event: "tool_result",
-        });
+          emitContext
+        );
         break;
       }
       case "error": {
         streamError = errorMessage(payload);
-        emit({
-          data: {
-            outputPreview: streamError,
-            parentToolCallId,
-            scope: "literature",
-            status: "failed",
-            toolCallId: eventId({
-              eventName,
-              fallbackSequence,
+        emit(
+          {
+            data: {
+              outputPreview: streamError,
               parentToolCallId,
-              payload,
+              scope: "literature",
+              status: "failed",
+              toolCallId: eventId({
+                eventName,
+                fallbackSequence,
+                parentToolCallId,
+                payload,
+                toolName: "literature_agent",
+              }),
               toolName: "literature_agent",
-            }),
-            toolName: "literature_agent",
+            },
+            event: "tool_result",
           },
-          event: "tool_result",
-        });
+          emitContext
+        );
         break;
       }
       default:
@@ -225,8 +349,17 @@ export async function consumeLiteratureAgentStream({
 
   const parser = createParser({
     onEvent(event) {
-      const payload = parseEventData(event.data);
-      handleEvent(event.event, payload);
+      if (streamError) return;
+      try {
+        const payload = parseEventData(event.data);
+        handleEvent(event.event, payload, event.data);
+      } catch (error) {
+        markStreamEventFailed({
+          error,
+          eventName: event.event,
+          rawEventData: event.data,
+        });
+      }
     },
   });
 
@@ -234,23 +367,34 @@ export async function consumeLiteratureAgentStream({
     const { done, value } = await reader.read();
     if (done) break;
     parser.feed(decoder.decode(value, { stream: true }));
-    if (pendingEmits.length > 0) {
-      await Promise.all(pendingEmits.splice(0));
+    await flushPendingEmits();
+    if (streamError) {
+      await reader.cancel().catch((error) => {
+        logger.warn({ error, parentToolCallId }, "literature_stream_reader_cancel_failed");
+      });
+      break;
     }
   }
 
-  const trailing = decoder.decode();
-  if (trailing) {
-    parser.feed(trailing);
-  }
-  parser.reset({ consume: true });
-  if (pendingEmits.length > 0) {
-    await Promise.all(pendingEmits.splice(0));
+  if (!streamError) {
+    const trailing = decoder.decode();
+    if (trailing) {
+      parser.feed(trailing);
+    }
+    parser.reset({ consume: true });
+    await flushPendingEmits();
   }
 
   if (streamError) {
     return {
       content: `Literature stream error: ${streamError}`,
+      isError: true,
+    };
+  }
+
+  if (!sawFinal) {
+    return {
+      content: "Literature stream ended before final response",
       isError: true,
     };
   }

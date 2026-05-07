@@ -44,7 +44,7 @@ export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
   objective: string;
-  sources?: string[];
+  sources?: SourceSelectionId[];
   datasets: Array<{
     filename: string;
     id: string;
@@ -162,7 +162,7 @@ export interface ConversationStateValues extends StateValues {
     initialTasks?: Array<{
       objective: string;
       type: "LITERATURE" | "ANALYSIS";
-      sources?: string[];
+      sources?: SourceSelectionId[];
       datasetFilenames: string[]; // Filenames to match against uploadedDatasets
     }>; // Tasks for first iteration (used once, then cleared)
   };

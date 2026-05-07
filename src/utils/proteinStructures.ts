@@ -1,4 +1,5 @@
 import type { ConversationStateValues, ProteinStructure } from "../types/core";
+import logger from "./logger";
 
 export const NORMAL_CHAT_PROTEIN_STRUCTURES_KEY = "normalChatProteinStructuresByMessageId";
 
@@ -120,6 +121,9 @@ export function extractProteinStructuresFromBioLiteratureResponse(
   if (!response) return [];
 
   const structures: ProteinStructure[] = [];
+  let totalCandidates = 0;
+  let droppedCount = 0;
+  let firstDroppedSampleKeys: string[] | undefined;
   for (const toolResults of toolResultCandidates(response)) {
     for (const [toolName, rawToolResult] of Object.entries(toolResults)) {
       const toolResult = asRecord(rawToolResult);
@@ -134,10 +138,27 @@ export function extractProteinStructuresFromBioLiteratureResponse(
         const isAlphaFoldResult = asString(result.source) === "alphafold_db";
         if (!isAlphaFoldTool && !isAlphaFoldResult) continue;
 
+        totalCandidates += 1;
         const structure = normalizeProteinStructure(result);
-        if (structure) structures.push(structure);
+        if (structure) {
+          structures.push(structure);
+        } else {
+          droppedCount += 1;
+          firstDroppedSampleKeys ||= Object.keys(result).slice(0, 8);
+        }
       }
     }
+  }
+
+  if (totalCandidates > 0 && droppedCount === totalCandidates) {
+    logger.warn(
+      {
+        droppedCount,
+        sampleKeys: firstDroppedSampleKeys || [],
+        totalCandidates,
+      },
+      "alphafold_protein_structure_candidates_dropped"
+    );
   }
 
   return mergeProteinStructures(structures);

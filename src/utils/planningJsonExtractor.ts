@@ -1,4 +1,5 @@
 import type { PlanTask } from "../types/core";
+import { parseSourceSelectionId, type SourceSelectionId } from "../types/sourceSelection";
 import logger from "./logger";
 
 export type PlanningResult = {
@@ -6,14 +7,14 @@ export type PlanningResult = {
   plan: Array<PlanTask>;
 };
 
-function normalizeSources(value: unknown): string[] | undefined {
+function normalizeSources(value: unknown): SourceSelectionId[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
-  const sources = value.filter(
-    (source): source is string => typeof source === "string" && source.length > 0
-  );
+  const sources = value
+    .map((source) => parseSourceSelectionId(source))
+    .filter((source): source is SourceSelectionId => Boolean(source));
   return sources.length > 0 ? sources : undefined;
 }
 

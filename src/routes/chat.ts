@@ -15,6 +15,7 @@ import logger from "../utils/logger";
 import { buildMessageStateValues } from "../utils/messageState";
 import { withNormalChatProteinStructures } from "../utils/proteinStructures";
 import { generateUUID } from "../utils/uuid";
+import { notifyChatReplyCompleted } from "./chat-notifications";
 import { createChatSseEventHandlers } from "./chat-sse-events";
 
 const STREAM_HEADERS = {
@@ -491,12 +492,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           logger.info({ messageId: createdMessage.id }, "chat_sse_client_disconnected");
         },
         async start(controller) {
-          // Tracks whether the COMPLETE durable write succeeded. The catch
-          // handler below uses this to avoid downgrading a successfully-saved
-          // reply to FAILED when a post-save step (e.g. logger / safeClose)
-          // throws.
-          let replyPersisted = false;
-
           // Helper: safe enqueue (swallows errors if client disconnected)
           const send = (event: string, data: unknown) => {
             try {
@@ -727,6 +722,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 );
               }
             }
+
+            await notifyChatReplyCompleted({
+              conversationId,
+              messageId: createdMessage.id,
+              proteinStructures: result.proteinStructures,
+            });
 
             // === Terminal success signals (only after durable write) ===
             streamEvents.sendFinal({

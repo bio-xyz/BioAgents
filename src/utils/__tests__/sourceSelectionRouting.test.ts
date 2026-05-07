@@ -92,6 +92,21 @@ describe("sourceSelectionRouting", () => {
     expect(extractExplicitProteinSequence("AA sequence: MAPK")).toBeUndefined();
   });
 
+  test("does not treat bare DNA-only sequence labels as explicit protein sequences", () => {
+    const dnaRepeat = "ACGTACGTACGTACGTACGTACGTACGTACGT";
+
+    expect(extractExplicitProteinSequence(`Sequence: ${dnaRepeat}`)).toBeUndefined();
+    expect(
+      resolveSourceSelectionLiteratureOverride({
+        objective: "Find AlphaFold structure information for this sequence",
+        sourceSelectionId: "alphafold_db",
+        userMessage: `Sequence: ${dnaRepeat}`,
+      })
+    ).toEqual({
+      objective: "Find AlphaFold structure information for this sequence",
+    });
+  });
+
   test("runtime literature override rewrites AlphaFold queries to sequence-only biolit sources", () => {
     const sequence = "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP";
 

@@ -5,7 +5,7 @@ const AMINO_ACID_ALPHABET = "ACDEFGHIKLMNPQRSTVWY";
 const MIN_EXPLICIT_PROTEIN_SEQUENCE_LENGTH = 20;
 
 type SourceSelectionRoutingRule = {
-  sources: string[];
+  sources: SourceSelectionId[];
   requiresExplicitProteinSequence?: boolean;
 };
 
@@ -101,7 +101,7 @@ function findSequenceInFasta(message: string): string | undefined {
 }
 
 function findLabeledSequence(message: string): string | undefined {
-  const labelPattern = /\b(?:(?:protein|amino acid|aa|peptide)\s+sequence|sequence)\b\s*[:=]/gi;
+  const labelPattern = /\b(?:(?:protein|amino acid|aa|peptide)\s+sequence|(sequence))\b\s*[:=]/gi;
 
   for (const match of message.matchAll(labelPattern)) {
     const afterLabel = message.slice((match.index || 0) + match[0].length);
@@ -122,6 +122,9 @@ function findLabeledSequence(message: string): string | undefined {
     }
 
     const candidate = normalizeSequenceCandidate(sequenceText);
+    if (match[1] && candidate && /^[ACGT]+$/.test(candidate)) {
+      continue;
+    }
     if (candidate && isExplicitProteinSequence(candidate)) {
       return candidate;
     }
@@ -214,7 +217,7 @@ export function resolveSourceSelectionLiteratureOverride(input: {
   objective: string;
   sourceSelectionId?: SourceSelectionId;
   userMessage: string;
-}): { objective: string; sources?: string[] } {
+}): { objective: string; sources?: SourceSelectionId[] } {
   const { objective, sourceSelectionId, userMessage } = input;
   const rule = getSourceSelectionRoutingRule(sourceSelectionId);
 
