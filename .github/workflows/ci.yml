@@ -1,0 +1,112 @@
+name: CI
+on:
+  # Run on every PR regardless of base branch so stacked PRs (e.g. targeting
+  # another feature branch) still get verified before merge.
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-format:
+    name: Lint & Format
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: biomejs/setup-biome@v2
+        with:
+          version: 2.4.11
+
+      - name: Biome CI (changed files only)
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR "${{ github.event.pull_request.base.sha }}" HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.css' | tr '\n' ' ')
+          if [ -n "$FILES" ]; then
+            biome ci $FILES
+          fi
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+  integration:
+    name: Integration (Supabase + Redis)
+    needs: [test]
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install pdf-parse native deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase (applies migrations automatically)
+        run: supabase start
+
+      - name: Export Supabase env vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase status -o env \
+            | sed -n -E 's/^API_URL="?([^"]+)"?$/SUPABASE_URL=\1/p;
+                         s/^SERVICE_ROLE_KEY="?([^"]+)"?$/SUPABASE_SERVICE_KEY=\1/p;
+                         s/^ANON_KEY="?([^"]+)"?$/SUPABASE_ANON_KEY=\1/p' \
+            >> "$GITHUB_ENV"
+          # Fail fast if the `supabase status` format drifts — otherwise the
+          # integration tests would silently skip (describeIfSupabase degrades
+          # to describe.skip when env is absent) and the job would turn green.
+          for key in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_ANON_KEY; do
+            if ! grep -q "^${key}=" "$GITHUB_ENV"; then
+              echo "::error::supabase status env parse missing ${key}"
+              supabase status -o env
+              exit 1
+            fi
+          done
+
+      - name: Run integration tests
+        env:
+          REDIS_URL: redis://localhost:6379
+          BIOAGENTS_SECRET: ci-integration-secret
+          RUN_PDF_INTEGRATION: "1"
+        run: bun test --test-name-pattern '\[integration\]'
+
+      - name: Stop Supabase
+        if: always()
+        continue-on-error: true
+        run: supabase stop --no-backup

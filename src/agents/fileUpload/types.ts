@@ -9,10 +9,7 @@ export type ParsedFile = {
   metadata?: Record<string, any>;
 };
 
-export type ParserFunction = (
-  buffer: Buffer,
-  filename: string
-) => Promise<ParsedFile>;
+export type ParserFunction = (buffer: Buffer, filename: string) => Promise<ParsedFile>;
 
 export interface FileTypeConfig {
   extensions: string[];

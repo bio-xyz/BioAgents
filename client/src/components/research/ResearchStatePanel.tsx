@@ -9,14 +9,6 @@ interface Dataset {
   size?: number;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
-
 interface AnalysisArtifact {
   id: string;
   description: string;
@@ -59,21 +51,17 @@ export function ResearchStatePanel({
   onToggle,
   isLoading = false,
 }: Props) {
-  const [expandedSections, setExpandedSections] = useState<
-    Record<string, boolean>
-  >({
-    hypothesis: true,
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    datasets: false,
     discoveries: false,
+    hypothesis: true,
     insights: false,
     methodology: false,
-    datasets: false,
     plan: false,
   });
 
   // Track which step outputs are expanded
-  const [expandedStepOutputs, setExpandedStepOutputs] = useState<
-    Record<number, boolean>
-  >({});
+  const [expandedStepOutputs, setExpandedStepOutputs] = useState<Record<number, boolean>>({});
 
   const toggleStepOutput = (index: number) => {
     setExpandedStepOutputs((prev) => ({
@@ -90,17 +78,14 @@ export function ResearchStatePanel({
   };
 
   const formatStepType = (type: string) => {
-    const types: Record<
-      string,
-      { label: string; icon: string; color: string }
-    > = {
-      LITERATURE: { label: "Literature Search", icon: "📚", color: "#8b5cf6" },
-      ANALYSIS: { label: "Data Analysis", icon: "📊", color: "#06b6d4" },
-      HYPOTHESIS: { label: "Hypothesis", icon: "💡", color: "#f59e0b" },
-      REFLECTION: { label: "Reflection", icon: "🔍", color: "#10b981" },
-      PLANNING: { label: "Planning", icon: "📋", color: "#3b82f6" },
+    const types: Record<string, { label: string; icon: string; color: string }> = {
+      ANALYSIS: { color: "#06b6d4", icon: "📊", label: "Data Analysis" },
+      HYPOTHESIS: { color: "#f59e0b", icon: "💡", label: "Hypothesis" },
+      LITERATURE: { color: "#8b5cf6", icon: "📚", label: "Literature Search" },
+      PLANNING: { color: "#3b82f6", icon: "📋", label: "Planning" },
+      REFLECTION: { color: "#10b981", icon: "🔍", label: "Reflection" },
     };
-    return types[type] || { label: type, icon: "⚡", color: "#6b7280" };
+    return types[type] || { color: "#6b7280", icon: "⚡", label: type };
   };
 
   const parseCitationText = (text: string) => {
@@ -112,17 +97,29 @@ export function ResearchStatePanel({
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
+        const content = text.slice(lastIndex, match.index);
         parts.push({
+          content,
+          key: `text-${lastIndex}-${match.index}-${content}`,
           type: "text",
-          content: text.slice(lastIndex, match.index),
         });
       }
-      parts.push({ type: "link", text: match[1], url: match[2] });
+      parts.push({
+        key: `link-${match.index}-${match[0]}`,
+        text: match[1],
+        type: "link",
+        url: match[2],
+      });
       lastIndex = match.index + match[0].length;
     }
 
     if (lastIndex < text.length) {
-      parts.push({ type: "text", content: text.slice(lastIndex) });
+      const content = text.slice(lastIndex);
+      parts.push({
+        content,
+        key: `text-${lastIndex}-${text.length}-${content}`,
+        type: "text",
+      });
     }
 
     return parts;
@@ -130,10 +127,10 @@ export function ResearchStatePanel({
 
   const renderCitationText = (text: string) => {
     const parts = parseCitationText(text);
-    return parts.map((part, i) =>
+    return parts.map((part) =>
       part.type === "link" ? (
         <a
-          key={i}
+          key={part.key}
           href={part.url}
           target="_blank"
           rel="noopener noreferrer"
@@ -142,8 +139,8 @@ export function ResearchStatePanel({
           {part.text}
         </a>
       ) : (
-        <span key={i}>{part.content}</span>
-      ),
+        <span key={part.key}>{part.content}</span>
+      )
     );
   };
 
@@ -188,9 +185,7 @@ export function ResearchStatePanel({
                 <span className="research-section-icon">🎯</span>
                 Current Objective
               </div>
-              <p className="research-objective-text">
-                {state?.currentObjective}
-              </p>
+              <p className="research-objective-text">{state?.currentObjective}</p>
             </div>
           )}
 
@@ -214,17 +209,18 @@ export function ResearchStatePanel({
               {expandedSections.hypothesis && (
                 <div className="research-section-body research-hypothesis">
                   <div className="research-hypothesis-content">
-                    {state?.currentHypothesis?.split("\n").map((line, i) => {
+                    {state?.currentHypothesis?.split("\n").map((line) => {
+                      const lineKey = `hypothesis-${line}`;
                       if (line.startsWith("## ")) {
                         return (
-                          <h4 key={i} className="research-hypothesis-heading">
+                          <h4 key={lineKey} className="research-hypothesis-heading">
                             {line.replace("## ", "")}
                           </h4>
                         );
                       }
                       if (line.trim()) {
                         return (
-                          <p key={i} className="research-hypothesis-paragraph">
+                          <p key={lineKey} className="research-hypothesis-paragraph">
                             {renderCitationText(line)}
                           </p>
                         );
@@ -257,8 +253,8 @@ export function ResearchStatePanel({
               {expandedSections.discoveries && (
                 <div className="research-section-body">
                   <ul className="research-discoveries-list">
-                    {state.discoveries.map((discovery, i) => (
-                      <li key={i} className="research-discovery-item">
+                    {state.discoveries.map((discovery) => (
+                      <li key={discovery} className="research-discovery-item">
                         {renderCitationText(discovery)}
                       </li>
                     ))}
@@ -271,10 +267,7 @@ export function ResearchStatePanel({
           {/* Key Insights */}
           {state?.keyInsights && state.keyInsights.length > 0 && (
             <div className="research-section">
-              <button
-                className="research-section-toggle"
-                onClick={() => toggleSection("insights")}
-              >
+              <button className="research-section-toggle" onClick={() => toggleSection("insights")}>
                 <div className="research-section-toggle-left">
                   <span className="research-section-icon">✨</span>
                   <span>Key Insights ({state.keyInsights.length})</span>
@@ -288,8 +281,8 @@ export function ResearchStatePanel({
               {expandedSections.insights && (
                 <div className="research-section-body">
                   <ul className="research-insights-list">
-                    {state.keyInsights.map((insight, i) => (
-                      <li key={i} className="research-insight-item">
+                    {state.keyInsights.map((insight) => (
+                      <li key={insight} className="research-insight-item">
                         {renderCitationText(insight)}
                       </li>
                     ))}
@@ -318,9 +311,7 @@ export function ResearchStatePanel({
               </button>
               {expandedSections.methodology && (
                 <div className="research-section-body">
-                  <p className="research-methodology-text">
-                    {state?.methodology}
-                  </p>
+                  <p className="research-methodology-text">{state?.methodology}</p>
                 </div>
               )}
             </div>
@@ -329,10 +320,7 @@ export function ResearchStatePanel({
           {/* Uploaded Datasets */}
           {state?.uploadedDatasets && state.uploadedDatasets.length > 0 && (
             <div className="research-section">
-              <button
-                className="research-section-toggle"
-                onClick={() => toggleSection("datasets")}
-              >
+              <button className="research-section-toggle" onClick={() => toggleSection("datasets")}>
                 <div className="research-section-toggle-left">
                   <span className="research-section-icon">📁</span>
                   <span>Datasets ({state.uploadedDatasets.length})</span>
@@ -350,9 +338,7 @@ export function ResearchStatePanel({
                       <div key={dataset.id} className="research-dataset-item">
                         <Icon name="file" size={14} />
                         <div className="research-dataset-info">
-                          <span className="research-dataset-name">
-                            {dataset.filename}
-                          </span>
+                          <span className="research-dataset-name">{dataset.filename}</span>
                           <span className="research-dataset-description">
                             {dataset.description}
                           </span>
@@ -368,10 +354,7 @@ export function ResearchStatePanel({
           {/* Completed Steps */}
           {completedSteps.length > 0 && (
             <div className="research-section">
-              <button
-                className="research-section-toggle"
-                onClick={() => toggleSection("plan")}
-              >
+              <button className="research-section-toggle" onClick={() => toggleSection("plan")}>
                 <div className="research-section-toggle-left">
                   <span className="research-section-icon">✅</span>
                   <span>Completed Steps ({completedSteps.length})</span>
@@ -393,7 +376,10 @@ export function ResearchStatePanel({
                         step.output && step.output.length > outputPreviewLength;
 
                       return (
-                        <div key={i} className="research-step-item completed">
+                        <div
+                          key={`${step.type}-${step.objective}-${step.start || ""}-${step.end || ""}`}
+                          className="research-step-item completed"
+                        >
                           <div className="research-step-header">
                             <div
                               className="research-step-type"
@@ -402,24 +388,17 @@ export function ResearchStatePanel({
                                 color: stepInfo.color,
                               }}
                             >
-                              <span className="research-step-emoji">
-                                {stepInfo.icon}
-                              </span>
+                              <span className="research-step-emoji">{stepInfo.icon}</span>
                               {stepInfo.label}
                             </div>
                           </div>
-                          <p className="research-step-objective">
-                            {step.objective}
-                          </p>
+                          <p className="research-step-objective">{step.objective}</p>
 
                           {/* Step datasets */}
                           {step.datasets && step.datasets.length > 0 && (
                             <div className="research-step-datasets">
-                              {step.datasets.map((ds, di) => (
-                                <span
-                                  key={di}
-                                  className="research-step-dataset-badge"
-                                >
+                              {step.datasets.map((ds) => (
+                                <span key={ds.id} className="research-step-dataset-badge">
                                   <Icon name="file" size={12} />
                                   {ds.filename}
                                 </span>
@@ -429,21 +408,18 @@ export function ResearchStatePanel({
 
                           {/* Step artifacts */}
                           {step.artifacts && step.artifacts.length > 0 && (
-                            <div
-                              className="research-step-artifacts"
-                              style={{ marginTop: "8px" }}
-                            >
+                            <div className="research-step-artifacts" style={{ marginTop: "8px" }}>
                               <ArtifactViewer
                                 results={[
                                   {
-                                    success: true,
                                     artifacts: step.artifacts.map((a) => ({
-                                      id: a.id,
-                                      filename: a.name,
                                       content: a.content || "",
                                       description: a.description,
+                                      filename: a.name,
+                                      id: a.id,
                                       path: a.path,
                                     })),
+                                    success: true,
                                   },
                                 ]}
                                 defaultExpanded={false}
@@ -458,10 +434,7 @@ export function ResearchStatePanel({
                                 {isOutputExpanded
                                   ? step.output
                                   : needsTruncation
-                                    ? step.output.slice(
-                                        0,
-                                        outputPreviewLength,
-                                      ) + "..."
+                                    ? step.output.slice(0, outputPreviewLength) + "..."
                                     : step.output}
                               </pre>
                               {needsTruncation && (
@@ -477,8 +450,7 @@ export function ResearchStatePanel({
                                   ) : (
                                     <>
                                       <Icon name="chevronDown" size={12} />
-                                      Show full output (
-                                      {Math.round(step.output.length / 1000)}k
+                                      Show full output ({Math.round(step.output.length / 1000)}k
                                       chars)
                                     </>
                                   )}

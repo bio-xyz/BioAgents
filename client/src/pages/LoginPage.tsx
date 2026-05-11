@@ -1,7 +1,7 @@
-import { useEffect } from 'preact/hooks';
-import { route } from 'preact-router';
-import { LoginScreen } from '../components/LoginScreen';
-import { useAuth } from '../hooks';
+import { useEffect } from "preact/hooks";
+import { route } from "preact-router";
+import { LoginScreen } from "../components/LoginScreen";
+import { useAuth } from "../hooks";
 
 interface LoginPageProps {
   path?: string;
@@ -18,7 +18,7 @@ export function LoginPage(_props: LoginPageProps) {
   useEffect(() => {
     // Don't redirect while logout is in progress
     if (isAuthenticated && !isLoggingOut) {
-      route('/chat', true);
+      route("/chat", true);
     }
   }, [isAuthenticated, isLoggingOut]);
 
@@ -30,7 +30,7 @@ export function LoginPage(_props: LoginPageProps) {
   const handleLogin = async (password: string) => {
     const success = await login(password);
     if (success) {
-      route('/chat', true);
+      route("/chat", true);
     }
     return success;
   };

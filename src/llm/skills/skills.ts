@@ -24,35 +24,43 @@ interface SkillResult {
       ephemeral_5m_input_tokens: number;
     };
   };
-  modelUsage: Record<string, {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadInputTokens: number;
-    cacheCreationInputTokens: number;
-    webSearchRequests: number;
-    costUSD: number;
-    contextWindow: number;
-  }>;
-  permission_denials: any[];
+  modelUsage: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      webSearchRequests: number;
+      costUSD: number;
+      contextWindow: number;
+    }
+  >;
+  permission_denials: unknown[];
   uuid: string;
 }
 
 export async function callAnthropicWithSkills(prompt: string): Promise<SkillResult | null> {
-  let lastMessage: any = null;
+  let lastMessage: unknown = null;
 
   for await (const message of query({
-    prompt,
     options: {
-      settingSources: ["project"], // Load Skills from filesystem
       allowedTools: ["Skill", "Read", "Grep", "Bash"], // Enable Skill tool
+      settingSources: ["project"], // Load Skills from filesystem
     },
+    prompt,
   })) {
     // Store each message, the last one will be the result
     lastMessage = message;
   }
 
   // Return the final result message with all metadata
-  if (lastMessage?.type === "result") {
+  if (
+    lastMessage &&
+    typeof lastMessage === "object" &&
+    "type" in lastMessage &&
+    lastMessage.type === "result"
+  ) {
     return lastMessage as SkillResult;
   }
 

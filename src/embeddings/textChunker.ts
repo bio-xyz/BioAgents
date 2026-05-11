@@ -3,7 +3,7 @@ import { CONFIG } from "./config";
 export interface Chunk {
   title: string;
   content: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
   chunkIndex: number;
   totalChunks: number;
 }
@@ -11,13 +11,13 @@ export interface Chunk {
 export class TextChunker {
   constructor(
     private maxChunkSize: number = CONFIG.CHUNK_SIZE,
-    private overlapSize: number = CONFIG.CHUNK_OVERLAP,
+    private overlapSize: number = CONFIG.CHUNK_OVERLAP
   ) {}
 
   chunkDocument(doc: {
     title: string;
     content: string;
-    metadata: any;
+    metadata: Record<string, unknown>;
   }): Chunk[] {
     const text = doc.content;
 
@@ -25,15 +25,15 @@ export class TextChunker {
     if (text.length <= this.maxChunkSize) {
       return [
         {
-          title: doc.title,
+          chunkIndex: 0,
           content: text,
           metadata: {
             ...doc.metadata,
-            isFullDocument: true,
             chunkIndex: 0,
+            isFullDocument: true,
             totalChunks: 1,
           },
-          chunkIndex: 0,
+          title: doc.title,
           totalChunks: 1,
         },
       ];
@@ -56,9 +56,7 @@ export class TextChunker {
           text.lastIndexOf(" ", end), // Word boundary
         ];
 
-        const bestBoundary = boundaries.find(
-          (pos) => pos > start + this.maxChunkSize * 0.5,
-        );
+        const bestBoundary = boundaries.find((pos) => pos > start + this.maxChunkSize * 0.5);
         if (bestBoundary && bestBoundary > start) {
           actualEnd = bestBoundary + (text[bestBoundary] === "." ? 2 : 1);
         }
@@ -67,17 +65,17 @@ export class TextChunker {
       const chunkContent = text.slice(start, actualEnd).trim();
       if (chunkContent) {
         chunks.push({
-          title: doc.title,
+          chunkIndex,
           content: chunkContent,
           metadata: {
             ...doc.metadata,
-            chunkStart: start,
             chunkEnd: actualEnd,
-            isChunk: true,
             chunkIndex,
+            chunkStart: start,
+            isChunk: true,
             totalChunks: 0, // Will be updated after all chunks are created
           },
-          chunkIndex,
+          title: doc.title,
           totalChunks: 0, // Will be updated after all chunks are created
         });
       }

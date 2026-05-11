@@ -62,66 +62,61 @@ export interface IconProps {
 }
 
 const iconMap: Record<string, any> = {
-  user: User,
-  bot: Bot,
-  send: Send,
+  activity: Activity,
+  alertTriangle: AlertTriangle,
   attach: Paperclip,
-  copy: Copy,
+  barChart: BarChart3,
+  bookOpen: BookOpen,
+  bot: Bot,
+  brainCircuit: BrainCircuit,
   check: Check,
-  close: X,
-  trash: Trash2,
-  plus: Plus,
-  search: Search,
-  logout: LogOut,
+  chevronDown: ChevronDown,
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
-  chevronDown: ChevronDown,
+  close: X,
+  code: Code,
+  copy: Copy,
+  dna: Dna,
+  download: Download,
   file: File,
   fileCode: FileCode,
-  menu: MoreHorizontal,
-  mic: Mic,
-  image: Image,
-  globe: Globe,
-  lightbulb: Lightbulb,
-  thumbsUp: ThumbsUp,
-  thumbsDown: ThumbsDown,
-  share: Share2,
-  refresh: RefreshCw,
-  dna: Dna,
-  microscope: Microscope,
-  activity: Activity,
-  syringe: Syringe,
-  pill: Pill,
   flask: FlaskConical,
-  target: Target,
-  bookOpen: BookOpen,
-  graduationCap: GraduationCap,
-  messageSquare: MessageSquare,
-  brainCircuit: BrainCircuit,
-  settings: Settings,
-  barChart: BarChart3,
-  gitMerge: GitMerge,
-  zap: Zap,
-  download: Download,
-  terminal: Terminal,
-  alertTriangle: AlertTriangle,
-  code: Code,
-  play: Play,
-  sparkles: Sparkles,
   folder: Folder,
+  gitMerge: GitMerge,
+  globe: Globe,
+  graduationCap: GraduationCap,
+  image: Image,
+  lightbulb: Lightbulb,
+  logout: LogOut,
+  menu: MoreHorizontal,
+  messageSquare: MessageSquare,
+  mic: Mic,
+  microscope: Microscope,
+  pill: Pill,
+  play: Play,
+  plus: Plus,
+  refresh: RefreshCw,
+  search: Search,
+  send: Send,
+  settings: Settings,
+  share: Share2,
+  sparkles: Sparkles,
+  syringe: Syringe,
+  target: Target,
+  terminal: Terminal,
+  thumbsDown: ThumbsDown,
+  thumbsUp: ThumbsUp,
+  trash: Trash2,
   upload: Upload,
+  user: User,
+  zap: Zap,
 };
 
 /**
  * Icon component wrapper for Lucide icons
  * Provides consistent sizing and styling
  */
-export function Icon({
-  name,
-  size = 16,
-  className = "",
-  strokeWidth = 2,
-}: IconProps) {
+export function Icon({ name, size = 16, className = "", strokeWidth = 2 }: IconProps) {
   const IconComponent = iconMap[name];
 
   if (!IconComponent) {
@@ -129,11 +124,5 @@ export function Icon({
     return null;
   }
 
-  return (
-    <IconComponent
-      size={size}
-      strokeWidth={strokeWidth}
-      className={className}
-    />
-  );
+  return <IconComponent size={size} strokeWidth={strokeWidth} className={className} />;
 }

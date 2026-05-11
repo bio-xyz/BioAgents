@@ -44,10 +44,9 @@ function getBioConfig(): BioAnalysisConfig {
   }
 
   const supportsSharedStorage =
-    process.env.DATA_ANALYSIS_SUPPORTS_STORAGE !== "false" &&
-    isStorageProviderAvailable();
+    process.env.DATA_ANALYSIS_SUPPORTS_STORAGE !== "false" && isStorageProviderAvailable();
 
-  return { apiUrl, apiKey, supportsSharedStorage };
+  return { apiKey, apiUrl, supportsSharedStorage };
 }
 
 /**
@@ -58,7 +57,7 @@ export async function analyzeWithBio(
   datasets: Dataset[],
   userId: string,
   conversationStateId: string,
-  onPollUpdate?: OnPollUpdate,
+  onPollUpdate?: OnPollUpdate
 ): Promise<{
   output: string;
   artifacts: Array<AnalysisArtifact>;
@@ -71,7 +70,7 @@ export async function analyzeWithBio(
   }
 
   const config = getBioConfig();
-  const context: BioTaskContext = { userId, conversationStateId, datasets };
+  const context: BioTaskContext = { conversationStateId, datasets, userId };
 
   // Only download dataset content if shared storage is not available
   if (!config.supportsSharedStorage) {
@@ -80,10 +79,7 @@ export async function analyzeWithBio(
 
   const query = await formatQueryWithDatasets(objective, datasets);
 
-  logger.info(
-    { query, datasetCount: datasets.length },
-    "starting_bio_analysis",
-  );
+  logger.info({ datasetCount: datasets.length, query }, "starting_bio_analysis");
 
   let taskResult: BioDataAnalysisResult;
   let taskId: string | undefined;
@@ -93,23 +89,20 @@ export async function analyzeWithBio(
     logger.info({ taskId }, "bio_analysis_task_started");
     taskResult = await awaitBioTask(config, taskId, onPollUpdate);
   } catch (err) {
-    logger.error(
-      { err, objective, datasetCount: datasets.length },
-      "bio_analysis_task_failed",
-    );
+    logger.error({ datasetCount: datasets.length, err, objective }, "bio_analysis_task_failed");
     return {
+      artifacts: [],
+      jobId: taskId || "unknown",
       output: `Error performing Bio data analysis: ${
         err instanceof Error ? err.message : "Unknown error"
       }`,
-      artifacts: [],
-      jobId: taskId || "unknown",
     };
   }
 
   return {
-    output: taskResult.answer,
     artifacts: taskResult.artifacts || [],
     jobId: taskId!,
+    output: taskResult.answer,
     reasoning: taskResult.reasoning,
   };
 }
@@ -120,10 +113,7 @@ export async function analyzeWithBio(
  * @param datasets - The datasets to include
  * @returns
  */
-async function formatQueryWithDatasets(
-  objective: string,
-  datasets: Dataset[],
-): Promise<string> {
+async function formatQueryWithDatasets(objective: string, datasets: Dataset[]): Promise<string> {
   let datasetInfo = "";
   for (const dataset of datasets) {
     datasetInfo += `Dataset: ${dataset.filename}\nDescription: ${dataset.description}\nDataset ID: ${dataset.id}\n\n`;
@@ -151,7 +141,7 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
       if (!dataset.path) {
         logger.warn(
           { datasetId: dataset.id, filename: dataset.filename },
-          "skipping_dataset_no_artifact_path",
+          "skipping_dataset_no_artifact_path"
         );
         return;
       }
@@ -159,16 +149,16 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
         const fileBuffer = await storageProvider.fetchFileByRelativePath(
           userId,
           conversationStateId,
-          dataset.path,
+          dataset.path
         );
         dataset.content = fileBuffer;
       } catch (err) {
         logger.error(
-          { err, datasetId: dataset.id, filename: dataset.filename },
-          "failed_to_fetch_dataset_content",
+          { datasetId: dataset.id, err, filename: dataset.filename },
+          "failed_to_fetch_dataset_content"
         );
       }
-    }),
+    })
   );
 }
 
@@ -178,7 +168,7 @@ async function downloadDatasetContent(context: BioTaskContext): Promise<void> {
 function buildTaskFormData(
   config: BioAnalysisConfig,
   context: BioTaskContext,
-  query: string,
+  query: string
 ): FormData {
   const formData = new FormData();
   formData.append("task_description", query);
@@ -211,7 +201,7 @@ function buildTaskFormData(
 async function startBioTask(
   config: BioAnalysisConfig,
   context: BioTaskContext,
-  query: string,
+  query: string
 ): Promise<BioDataAnalysisResult> {
   const endpoint = `${config.apiUrl}/api/task/run/async`;
   const formData = buildTaskFormData(config, context, query);
@@ -219,24 +209,24 @@ async function startBioTask(
   const { response } = await fetchWithRetry(
     endpoint,
     {
-      method: "POST",
-      headers: { "X-API-Key": config.apiKey },
       body: formData,
+      headers: { "X-API-Key": config.apiKey },
+      method: "POST",
     },
     {
       onRetry: (attempt, error) =>
         logger.warn({ attempt, error: error.message }, "bio_task_start_retry"),
-    },
+    }
   );
 
   if (!response.ok) {
     const errorText = await response.text();
     logger.error(
-      { status: response.status, statusText: response.statusText, errorText },
-      "bio_task_start_failed",
+      { errorText, status: response.status, statusText: response.statusText },
+      "bio_task_start_failed"
     );
     throw new Error(
-      `Failed to start Bio data analysis task: ${response.status} ${response.statusText}`,
+      `Failed to start Bio data analysis task: ${response.status} ${response.statusText}`
     );
   }
 
@@ -249,12 +239,9 @@ async function startBioTask(
 async function awaitBioTask(
   config: BioAnalysisConfig,
   taskId: string,
-  onPollUpdate?: OnPollUpdate,
+  onPollUpdate?: OnPollUpdate
 ): Promise<BioDataAnalysisResult> {
-  const timeoutMinutes = parseInt(
-    process.env.BIO_ANALYSIS_TASK_TIMEOUT_MINUTES || "60",
-    10,
-  );
+  const timeoutMinutes = parseInt(process.env.BIO_ANALYSIS_TASK_TIMEOUT_MINUTES || "60", 10);
   const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 10000; // Poll every 10 seconds
   const startTime = Date.now();
@@ -265,24 +252,22 @@ async function awaitBioTask(
     const { response } = await fetchWithRetry(
       endpoint,
       {
-        method: "GET",
         headers: { "X-API-Key": config.apiKey },
+        method: "GET",
       },
       {
         onRetry: (attempt, error) =>
-          logger.warn({ attempt, taskId, error: error.message }, "bio_task_poll_retry"),
-      },
+          logger.warn({ attempt, error: error.message, taskId }, "bio_task_poll_retry"),
+      }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
       logger.error(
-        { status: response.status, errorText, taskId },
-        "failed_to_fetch_bio_task_status",
+        { errorText, status: response.status, taskId },
+        "failed_to_fetch_bio_task_status"
       );
-      throw new Error(
-        `Failed to fetch Bio task status: ${response.status} - ${errorText}`,
-      );
+      throw new Error(`Failed to fetch Bio task status: ${response.status} - ${errorText}`);
     }
 
     const taskResult = (await response.json()) as BioDataAnalysisResult;
@@ -308,8 +293,8 @@ async function awaitBioTask(
     }
 
     logger.debug(
-      { taskId, status: taskResult.status, hasReasoning: Boolean(reasoning) },
-      "bio_analysis_task_still_running",
+      { hasReasoning: Boolean(reasoning), status: taskResult.status, taskId },
+      "bio_analysis_task_still_running"
     );
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
@@ -317,7 +302,5 @@ async function awaitBioTask(
 
   // Timeout reached
   logger.error({ taskId }, "bio_analysis_task_timeout");
-  throw new Error(
-    `Bio data analysis task timed out after ${MAX_WAIT_TIME / 60000} minutes`,
-  );
+  throw new Error(`Bio data analysis task timed out after ${MAX_WAIT_TIME / 60000} minutes`);
 }

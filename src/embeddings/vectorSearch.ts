@@ -1,8 +1,8 @@
 // lib/vectorSearch.ts
 import { CohereClient } from "cohere-ai";
 import { getServiceClient } from "../db/client";
-import logger from "../utils/logger";
 import { SimpleCache } from "../utils/cache";
+import logger from "../utils/logger";
 import { CONFIG } from "./config";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./provider";
 
@@ -17,7 +17,7 @@ export interface Document {
   id: string;
   title: string;
   content: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   similarity?: number;
   relevanceScore?: number;
 }
@@ -30,29 +30,23 @@ export class VectorSearchWithReranker {
     this.embeddingProvider = createEmbeddingProvider();
     this.cache = new SimpleCache<Document[]>();
     logger.info(
-      `🚀 Initialized with ${CONFIG.EMBEDDING_PROVIDER} provider using ${CONFIG.TEXT_EMBEDDING_MODEL}`,
+      `🚀 Initialized with ${CONFIG.EMBEDDING_PROVIDER} provider using ${CONFIG.TEXT_EMBEDDING_MODEL}`
     );
   }
 
   // Add document to vector store
-  async addDocument(
-    title: string,
-    content: string,
-    metadata = {},
-  ): Promise<Document> {
+  async addDocument(title: string, content: string, metadata = {}): Promise<Document> {
     logger.info(`📝 Adding document: ${title}`);
 
-    const embedding = await this.embeddingProvider.generateEmbedding(
-      `${title}\n${content}`,
-    );
+    const embedding = await this.embeddingProvider.generateEmbedding(`${title}\n${content}`);
 
     const { data, error } = await supabase
       .from("documents")
       .insert({
-        title,
         content,
-        metadata,
         embedding,
+        metadata,
+        title,
       })
       .select()
       .single();
@@ -67,23 +61,30 @@ export class VectorSearchWithReranker {
   async vectorSearch(query: string, limit = 20): Promise<Document[]> {
     logger.info(`🔍 Vector search for: "${query}" (limit: ${limit})`);
 
-    const queryEmbedding =
-      await this.embeddingProvider.generateEmbedding(query);
+    const queryEmbedding = await this.embeddingProvider.generateEmbedding(query);
 
     const { data, error } = await supabase.rpc("match_documents", {
-      query_embedding: queryEmbedding,
-      match_threshold: CONFIG.SIMILARITY_THRESHOLD,
       match_count: limit,
+      match_threshold: CONFIG.SIMILARITY_THRESHOLD,
+      query_embedding: queryEmbedding,
     });
 
     if (error) throw error;
 
-    const results = data.map((doc: any) => ({
-      id: doc.id,
-      title: doc.title,
+    type VectorSearchRow = {
+      id: string;
+      title: string;
+      content: string;
+      metadata?: Record<string, unknown>;
+      similarity?: number;
+    };
+    const rows: VectorSearchRow[] = data ?? [];
+    const results: Document[] = rows.map((doc) => ({
       content: doc.content,
+      id: doc.id,
       metadata: doc.metadata,
       similarity: doc.similarity,
+      title: doc.title,
     }));
 
     logger.info(`📊 Vector search returned ${results.length} results`);
@@ -91,25 +92,19 @@ export class VectorSearchWithReranker {
   }
 
   // Rerank results using Cohere (second stage)
-  async rerank(
-    query: string,
-    documents: Document[],
-    topN = 5,
-  ): Promise<Document[]> {
+  async rerank(query: string, documents: Document[], topN = 5): Promise<Document[]> {
     if (documents.length === 0) return [];
 
-    logger.info(
-      `🎯 Reranking ${documents.length} documents, returning top ${topN}`,
-    );
+    logger.info(`🎯 Reranking ${documents.length} documents, returning top ${topN}`);
 
     const response = await cohere.rerank({
-      model: "rerank-english-v3.0",
-      query: query,
       documents: documents.map((doc) => ({
         text: `${doc.title}\n${doc.content}`,
       })),
-      topN: Math.min(topN, documents.length),
+      model: "rerank-english-v3.0",
+      query: query,
       returnDocuments: true,
+      topN: Math.min(topN, documents.length),
     });
 
     const rerankedResults = response.results
@@ -120,7 +115,7 @@ export class VectorSearchWithReranker {
       .filter((doc) => doc.relevanceScore >= CONFIG.RERANKER_SCORE_THRESHOLD);
 
     logger.info(
-      `✨ Reranking complete, top score: ${rerankedResults[0]?.relevanceScore?.toFixed(3)}, filtered to ${rerankedResults.length} results (threshold: ${CONFIG.RERANKER_SCORE_THRESHOLD})`,
+      `✨ Reranking complete, top score: ${rerankedResults[0]?.relevanceScore?.toFixed(3)}, filtered to ${rerankedResults.length} results (threshold: ${CONFIG.RERANKER_SCORE_THRESHOLD})`
     );
 
     return rerankedResults as Document[];
@@ -133,7 +128,7 @@ export class VectorSearchWithReranker {
       vectorLimit?: number;
       finalLimit?: number;
       useReranking?: boolean;
-    } = {},
+    } = {}
   ): Promise<Document[]> {
     const {
       vectorLimit = CONFIG.VECTOR_SEARCH_LIMIT,
@@ -163,15 +158,11 @@ export class VectorSearchWithReranker {
       finalResults = await this.rerank(query, vectorResults, finalLimit);
     } else {
       finalResults = vectorResults.slice(0, finalLimit);
-      logger.info(
-        `⚡ Skipping reranking, returning top ${finalResults.length} vector results`,
-      );
+      logger.info(`⚡ Skipping reranking, returning top ${finalResults.length} vector results`);
     }
 
     const totalTime = Date.now() - startTime;
-    logger.info(
-      `🏁 Search completed in ${totalTime}ms, returned ${finalResults.length} results`,
-    );
+    logger.info(`🏁 Search completed in ${totalTime}ms, returned ${finalResults.length} results`);
 
     this.cache.set(cacheKey, finalResults, 300000); // 5min cache
     return finalResults;
@@ -182,33 +173,29 @@ export class VectorSearchWithReranker {
     documents: Array<{
       title: string;
       content: string;
-      metadata?: any;
-    }>,
+      metadata?: Record<string, unknown>;
+    }>
   ): Promise<Document[]> {
     logger.info(`📚 Adding ${documents.length} documents in batch`);
 
     const documentsWithEmbeddings = await Promise.all(
       documents.map(async (doc, index) => {
-        logger.info(
-          `🔄 Processing document ${index + 1}/${documents.length}: ${doc.title}`,
-        );
+        logger.info(`🔄 Processing document ${index + 1}/${documents.length}: ${doc.title}`);
         try {
           const embedding = await this.embeddingProvider.generateEmbedding(
-            `${doc.title}\n${doc.content}`,
+            `${doc.title}\n${doc.content}`
           );
           return {
             ...doc,
             embedding,
           };
-        } catch (embeddingError: any) {
-          logger.error(
-            `Failed to generate embedding for ${doc.title}: ${embeddingError.message}`,
-          );
-          throw new Error(
-            `Embedding generation failed for ${doc.title}: ${embeddingError.message}`,
-          );
+        } catch (embeddingError: unknown) {
+          const message =
+            embeddingError instanceof Error ? embeddingError.message : String(embeddingError);
+          logger.error(`Failed to generate embedding for ${doc.title}: ${message}`);
+          throw new Error(`Embedding generation failed for ${doc.title}: ${message}`);
         }
-      }),
+      })
     );
 
     const { data, error } = await supabase
@@ -231,10 +218,10 @@ export class VectorSearchWithReranker {
     if (error) throw error;
 
     return {
-      totalDocuments: count,
-      embeddingProvider: CONFIG.EMBEDDING_PROVIDER,
-      embeddingModel: CONFIG.TEXT_EMBEDDING_MODEL,
       embeddingDimensions: CONFIG.EMBEDDING_DIMENSIONS,
+      embeddingModel: CONFIG.TEXT_EMBEDDING_MODEL,
+      embeddingProvider: CONFIG.EMBEDDING_PROVIDER,
+      totalDocuments: count,
     };
   }
 }

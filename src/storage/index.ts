@@ -12,7 +12,7 @@ function createStorageProvider(): StorageProvider | null {
   if (!provider) {
     if (logger) {
       logger.warn(
-        "STORAGE_PROVIDER not configured. File uploads will not be persisted to cloud storage.",
+        "STORAGE_PROVIDER not configured. File uploads will not be persisted to cloud storage."
       );
     }
     return null;
@@ -22,23 +22,21 @@ function createStorageProvider(): StorageProvider | null {
     case "s3": {
       if (!s3.accessKeyId || !s3.secretAccessKey || !s3.bucket) {
         throw new Error(
-          "S3 storage provider requires AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET environment variables",
+          "S3 storage provider requires AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET environment variables"
         );
       }
 
       return new S3StorageProvider({
         accessKeyId: s3.accessKeyId,
-        secretAccessKey: s3.secretAccessKey,
-        region: s3.region,
         bucket: s3.bucket,
         endpoint: s3.endpoint,
+        region: s3.region,
+        secretAccessKey: s3.secretAccessKey,
       });
     }
 
     default:
-      throw new Error(
-        `Unknown storage provider: ${provider}. Supported providers: s3`,
-      );
+      throw new Error(`Unknown storage provider: ${provider}. Supported providers: s3`);
   }
 }
 
@@ -70,16 +68,13 @@ export function isStorageProviderAvailable(): boolean {
 /**
  * Default base storage path for a conversation
  */
-export const getConversationBasePath = (
-  userId: string,
-  conversationId: string,
-): string => `user/${userId}/conversation/${conversationId}`;
+export const getConversationBasePath = (userId: string, conversationId: string): string =>
+  `user/${userId}/conversation/${conversationId}`;
 
 /**
  * Default storage path template for uploaded files
  */
-export const getUploadPath = (filename: string): string =>
-  `uploads/${filename}`;
+export const getUploadPath = (filename: string): string => `uploads/${filename}`;
 
 /**
  * Full storage path for a file upload
@@ -90,7 +85,7 @@ export const getFileUploadPath = (
   userId: string,
   conversationId: string,
   _fileId: string, // Kept for API compatibility but not used in path
-  filename: string,
+  filename: string
 ): string => `user/${userId}/conversation/${conversationId}/uploads/${filename}`;
 
 /**
@@ -99,13 +94,13 @@ export const getFileUploadPath = (
 export function getMimeTypeFromFilename(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
   const mimeTypes: Record<string, string> = {
-    pdf: "application/pdf",
     csv: "text/csv",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    xls: "application/vnd.ms-excel",
-    txt: "text/plain",
     json: "application/json",
     md: "text/markdown",
+    pdf: "application/pdf",
+    txt: "text/plain",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
   return mimeTypes[ext || ""] || "application/octet-stream";
 }

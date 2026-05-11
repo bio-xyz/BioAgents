@@ -28,20 +28,13 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
       .limit(10000);
 
     if (error) {
-      logger.error(
-        "DB Error: Could not fetch existing document titles.",
-        error as any,
-      );
+      logger.error({ err: error }, "DB Error: Could not fetch existing document titles.");
       return;
     }
 
     // Create Set from titles (handles any remaining duplicates)
-    const existingTitles = new Set(
-      existingDocs?.map((doc) => doc.title) || [],
-    );
-    logger.info(
-      `🔍 Found ${existingTitles.size} unique titles in the database.`,
-    );
+    const existingTitles = new Set(existingDocs?.map((doc) => doc.title) || []);
+    logger.info(`🔍 Found ${existingTitles.size} unique titles in the database.`);
 
     // 2. Process all local files to get their titles and content.
     const localDocs = await this.documentProcessor.processDirectory(dirPath);
@@ -66,9 +59,7 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     });
 
     if (newDocuments.length === 0) {
-      logger.info(
-        "✅ All local documents are already in the database. No action needed.",
-      );
+      logger.info("✅ All local documents are already in the database. No action needed.");
       return;
     }
 
@@ -78,7 +69,7 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     const allChunks: Array<{
       title: string;
       content: string;
-      metadata: any;
+      metadata: Record<string, unknown>;
     }> = [];
 
     // First, collect all chunks from all documents
@@ -88,25 +79,23 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
         if (chunks.length === 0) {
           logger.warn(`⚠️  Document "${doc.title}" produced 0 chunks!`);
         } else {
-          logger.info(
-            `   - Chunked "${doc.title}": ${chunks.length} chunk(s)`,
-          );
+          logger.info(`   - Chunked "${doc.title}": ${chunks.length} chunk(s)`);
         }
         allChunks.push(
           ...chunks.map((chunk) => ({
-            title: chunk.title,
             content: chunk.content,
             metadata: chunk.metadata,
-          })),
+            title: chunk.title,
+          }))
         );
         addedCount++;
       } catch (e) {
-        logger.error(`  - Failed to chunk document "${doc.title}":`, e as any);
+        logger.error({ err: e }, `  - Failed to chunk document "${doc.title}"`);
       }
     }
 
     logger.info(
-      `📦 Total: ${allChunks.length} chunks from ${addedCount} documents (expected at least ${newDocuments.length} chunks)`,
+      `📦 Total: ${allChunks.length} chunks from ${addedCount} documents (expected at least ${newDocuments.length} chunks)`
     );
 
     // Add chunks in batches of 100 for optimal performance
@@ -114,19 +103,16 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
       const batch = allChunks.slice(i, i + BATCH_SIZE);
       logger.info(
-        `   - Adding batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(allChunks.length / BATCH_SIZE)} (${batch.length} chunks)`,
+        `   - Adding batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(allChunks.length / BATCH_SIZE)} (${batch.length} chunks)`
       );
       try {
         await this.addDocuments(batch);
-      } catch (e: any) {
-        logger.error(
-          `  - Failed to add batch starting at index ${i}: ${e.message}`,
-        );
-        logger.error(`  - Error details:`, e);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.error(`  - Failed to add batch starting at index ${i}: ${message}`);
+        logger.error({ err: e }, `  - Error details`);
         // Log which documents were in this batch
-        logger.error(
-          `  - Documents in failed batch: ${batch.map((d) => d.title).join(", ")}`,
-        );
+        logger.error(`  - Documents in failed batch: ${batch.map((d) => d.title).join(", ")}`);
       }
     }
 
@@ -135,7 +121,7 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
     const duration = Date.now() - startTime;
     logger.info(`✅ Document loading complete in ${duration}ms.`);
     logger.info(
-      `   Summary: Added ${addedCount} new documents. Skipped ${skippedCount} existing documents.`,
+      `   Summary: Added ${addedCount} new documents. Skipped ${skippedCount} existing documents.`
     );
   }
 
@@ -157,16 +143,16 @@ export class VectorSearchWithDocuments extends VectorSearchWithReranker {
 
     // Use batch insert for better performance
     const chunksToAdd = chunks.map((chunk) => ({
-      title: chunk.title,
       content: chunk.content,
       metadata: chunk.metadata,
+      title: chunk.title,
     }));
 
     await this.addDocuments(chunksToAdd);
 
     return {
-      title: doc.title,
       chunkCount: chunks.length,
+      title: doc.title,
     };
   }
 }

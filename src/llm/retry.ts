@@ -1,14 +1,28 @@
 import logger from "../utils/logger";
+import type { LLMProviderName } from "./types";
+
+export class FallbackError extends Error {
+  constructor(
+    message: string,
+    public readonly originalError: Error,
+    public readonly fallbackProvider: LLMProviderName,
+    public readonly fallbackModel: string,
+    public readonly requiresFallback = true
+  ) {
+    super(message);
+    this.name = "FallbackError";
+  }
+}
 
 /**
  * Retry configuration for LLM calls
  */
 export const RETRY_CONFIG = {
-  maxRetries: 3,
+  backoffMultiplier: 2,
   fallbackRetries: 1,
   initialDelayMs: 1000,
   maxDelayMs: 10000,
-  backoffMultiplier: 2,
+  maxRetries: 3,
 } as const;
 
 /**
@@ -18,14 +32,11 @@ export const RETRY_CONFIG = {
  * - google → anthropic (claude-sonnet-4-5-20250514)
  * - openai → google (gemini-2.5-pro)
  */
-export const FALLBACK_CONFIG: Record<
-  string,
-  { provider: string; model: string }
-> = {
-  anthropic: { provider: "google", model: "gemini-2.5-pro" },
-  google: { provider: "anthropic", model: "claude-sonnet-4-5-20250514" },
-  openai: { provider: "google", model: "gemini-2.5-pro" },
-  openrouter: { provider: "google", model: "gemini-2.5-pro" },
+export const FALLBACK_CONFIG: Record<string, { provider: LLMProviderName; model: string }> = {
+  anthropic: { model: "gemini-2.5-pro", provider: "google" },
+  google: { model: "claude-sonnet-4-5-20250514", provider: "anthropic" },
+  openai: { model: "gemini-2.5-pro", provider: "google" },
+  openrouter: { model: "gemini-2.5-pro", provider: "google" },
 };
 
 /**
@@ -33,7 +44,7 @@ export const FALLBACK_CONFIG: Record<
  */
 export function getFallbackConfig(
   provider: string
-): { provider: string; model: string } | null {
+): { provider: LLMProviderName; model: string } | null {
   return FALLBACK_CONFIG[provider] || null;
 }
 
@@ -127,19 +138,16 @@ export async function withRetry<T>(
       lastError = error instanceof Error ? error : new Error(String(error));
 
       if (!isRetryableError(error)) {
-        logger.error(
-          { err: lastError, provider, attempt },
-          "llm_non_retryable_error"
-        );
+        logger.error({ attempt, err: lastError, provider }, "llm_non_retryable_error");
         throw lastError;
       }
 
       logger.warn(
         {
-          provider,
           attempt: attempt + 1,
-          maxRetries,
           error: lastError.message,
+          maxRetries,
+          provider,
         },
         "llm_retry_attempt"
       );
@@ -162,10 +170,10 @@ export async function withRetry<T>(
     if (fallbackConfig) {
       logger.warn(
         {
-          originalProvider: provider,
-          fallbackProvider: fallbackConfig.provider,
           fallbackModel: fallbackConfig.model,
+          fallbackProvider: fallbackConfig.provider,
           originalError: lastError.message,
+          originalProvider: provider,
         },
         "llm_fallback_triggered"
       );
@@ -174,15 +182,12 @@ export async function withRetry<T>(
         options.onFallback(provider, fallbackConfig.provider);
       }
 
-      // Return a special error that indicates fallback should be attempted
-      const fallbackError = new Error(
-        `PRIMARY_PROVIDER_FAILED:${fallbackConfig.provider}`
+      throw new FallbackError(
+        `PRIMARY_PROVIDER_FAILED:${fallbackConfig.provider}`,
+        lastError,
+        fallbackConfig.provider,
+        fallbackConfig.model
       );
-      (fallbackError as any).originalError = lastError;
-      (fallbackError as any).fallbackProvider = fallbackConfig.provider;
-      (fallbackError as any).fallbackModel = fallbackConfig.model;
-      (fallbackError as any).requiresFallback = true;
-      throw fallbackError;
     }
   }
 

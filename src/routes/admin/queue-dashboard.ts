@@ -17,12 +17,17 @@
  * - Clean queues
  */
 
-import { Elysia } from "elysia";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ElysiaAdapter } from "@bull-board/elysia";
+import { Elysia } from "elysia";
 import { isJobQueueEnabled } from "../../services/queue/connection";
-import { getChatQueue, getDeepResearchQueue, getFileProcessQueue, getPaperGenerationQueue } from "../../services/queue/queues";
+import {
+  getChatQueue,
+  getDeepResearchQueue,
+  getFileProcessQueue,
+  getPaperGenerationQueue,
+} from "../../services/queue/queues";
 import logger from "../../utils/logger";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -75,7 +80,7 @@ export function createQueueDashboard(): Elysia | null {
     });
 
     logger.info(
-      { path: "/admin/queues", authEnabled: !!ADMIN_PASSWORD },
+      { authEnabled: !!ADMIN_PASSWORD, path: "/admin/queues" },
       "queue_dashboard_initialized"
     );
 

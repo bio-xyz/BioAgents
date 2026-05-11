@@ -3,6 +3,8 @@ import {
   createConversationState,
   createState,
   createUser,
+  type DbConversationState,
+  type DbState,
   getConversation,
   getConversationState,
   updateConversation,
@@ -15,59 +17,53 @@ export interface SetupResult {
 }
 
 export interface ConversationSetup {
-  conversationStateRecord: any;
-  stateRecord: any;
+  conversationStateRecord: DbConversationState & { id: string };
+  stateRecord: DbState & { id: string };
 }
 
 /**
  * Ensures user and conversation exist with ownership validation
  * @param userId - The user's UUID
  * @param conversationId - The conversation UUID
- * @param options.skipUserCreation - Skip user creation (for x402 users who already exist)
  */
 export async function ensureUserAndConversation(
   userId: string,
-  conversationId: string,
-  options?: { skipUserCreation?: boolean },
+  conversationId: string
 ): Promise<SetupResult> {
-  // Create user if not exists (skip for x402 users who are already created)
-  if (!options?.skipUserCreation) {
-    try {
-      const user = await createUser({
-        id: userId,
-        username: `user_${userId.slice(0, 8)}`,
-        email: `${userId}@temp.local`,
-      });
-      if (user) {
-        if (logger) logger.info({ userId }, "user_created");
-      } else {
-        // User already exists (createUser returns null for duplicates)
-        if (logger) logger.debug({ userId }, "user_already_exists");
-      }
-    } catch (err: any) {
-      if (logger) logger.error({ err, userId }, "create_user_failed");
-      return { success: false, error: "Failed to create user" };
+  // Create user if not exists
+  try {
+    const user = await createUser({
+      email: `${userId}@temp.local`,
+      id: userId,
+      username: `user_${userId.slice(0, 8)}`,
+    });
+    if (user) {
+      if (logger) logger.info({ userId }, "user_created");
+    } else {
+      // User already exists (createUser returns null for duplicates)
+      if (logger) logger.debug({ userId }, "user_already_exists");
     }
-  } else {
-    if (logger) logger.info({ userId }, "user_creation_skipped_x402");
+  } catch (err: unknown) {
+    if (logger) logger.error({ err, userId }, "create_user_failed");
+    return { error: "Failed to create user", success: false };
   }
 
   // Check if conversation exists and validate ownership
   try {
     const existingConversation = await getConversation(conversationId);
-    
+
     if (existingConversation) {
       // Conversation exists - validate ownership
       if (existingConversation.user_id !== userId) {
         if (logger) {
           logger.warn(
-            { conversationId, requestedBy: userId, ownedBy: existingConversation.user_id },
+            { conversationId, ownedBy: existingConversation.user_id, requestedBy: userId },
             "conversation_ownership_mismatch"
           );
         }
-        return { 
-          success: false, 
-          error: "Access denied: conversation belongs to another user" 
+        return {
+          error: "Access denied: conversation belongs to another user",
+          success: false,
         };
       }
       // Ownership validated, conversation exists
@@ -76,7 +72,7 @@ export async function ensureUserAndConversation(
       }
       return { success: true };
     }
-  } catch (err: any) {
+  } catch (_err: unknown) {
     // Conversation doesn't exist - that's fine, we'll create it
     if (logger) {
       logger.info({ conversationId }, "conversation_not_found_will_create");
@@ -90,16 +86,25 @@ export async function ensureUserAndConversation(
       user_id: userId,
     });
     if (logger) logger.info({ conversationId, userId }, "conversation_created");
-  } catch (err: any) {
-    // Handle race condition: conversation was created between check and create
-    if (err.code === "23505") {
+  } catch (err: unknown) {
+    // Handle race condition: conversation was created between check and create.
+    // Spreading an Error produces {} because message/code are often non-enumerable;
+    // use an `in` check instead to reliably detect Supabase's 23505 unique-violation code.
+    const errCode =
+      err && typeof err === "object" && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+    if (errCode === "23505") {
+      if (logger) {
+        logger.warn({ conversationId, userId }, "conversation_create_race_23505");
+      }
       // Re-check ownership for the race condition case
       try {
         const racedConversation = await getConversation(conversationId);
         if (racedConversation && racedConversation.user_id !== userId) {
-          return { 
-            success: false, 
-            error: "Access denied: conversation belongs to another user" 
+          return {
+            error: "Access denied: conversation belongs to another user",
+            success: false,
           };
         }
       } catch {
@@ -107,9 +112,9 @@ export async function ensureUserAndConversation(
       }
     } else {
       if (logger) {
-        logger.error({ err, conversationId }, "create_conversation_failed");
+        logger.error({ conversationId, err }, "create_conversation_failed");
       }
-      return { success: false, error: "Failed to create conversation" };
+      return { error: "Failed to create conversation", success: false };
     }
   }
 
@@ -126,23 +131,21 @@ export async function setupConversationData(
   isExternal: boolean,
   message: string,
   fileCount: number,
-  agentId?: string,
+  agentId?: string
 ): Promise<{ success: boolean; data?: ConversationSetup; error?: string }> {
-  let conversationStateRecord: any;
-  let stateRecord: any;
+  let conversationStateRecord: DbConversationState & { id: string };
+  let stateRecord: DbState & { id: string };
 
   // Get or create conversation state
   try {
     const conversation = await getConversation(conversationId);
 
     if (conversation.conversation_state_id) {
-      conversationStateRecord = await getConversationState(
-        conversation.conversation_state_id,
-      );
+      conversationStateRecord = await getConversationState(conversation.conversation_state_id);
       if (logger) {
         logger.info(
           { conversationStateId: conversationStateRecord.id },
-          "conversation_state_fetched",
+          "conversation_state_fetched"
         );
       }
     } else {
@@ -157,7 +160,7 @@ export async function setupConversationData(
       if (logger) {
         logger.info(
           { conversationStateId: conversationStateRecord.id },
-          "conversation_state_created",
+          "conversation_state_created"
         );
       }
     }
@@ -166,8 +169,8 @@ export async function setupConversationData(
       logger.error({ err }, "get_or_create_conversation_state_failed");
     }
     return {
-      success: false,
       error: "Failed to get or create conversation state",
+      success: false,
     };
   }
 
@@ -176,24 +179,23 @@ export async function setupConversationData(
     stateRecord = await createState({
       values: {
         conversationId,
-        userId,
         source,
+        userId,
       },
     });
-    console.log('[setup] Created state with id:', stateRecord.id, 'for conversation:', conversationId, 'user:', userId);
     if (logger) {
       logger.info({ stateId: stateRecord.id }, "state_created");
     }
   } catch (err) {
     if (logger) logger.error({ err }, "create_state_failed");
-    return { success: false, error: "Failed to create state" };
+    return { error: "Failed to create state", success: false };
   }
 
   return {
-    success: true,
     data: {
       conversationStateRecord,
       stateRecord,
     },
+    success: true,
   };
 }

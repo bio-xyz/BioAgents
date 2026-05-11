@@ -3,14 +3,18 @@
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "lib": ["ESNext", "DOM"],
-    "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "skipLibCheck": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
     "paths": {
       "react": ["./node_modules/preact/compat"],
       "react-dom": ["./node_modules/preact/compat"],
       "react/jsx-runtime": ["./node_modules/preact/jsx-runtime"]
-    }
-  }
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext"
+  },
+  "include": ["src", "build.ts"]
 }

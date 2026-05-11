@@ -1,5 +1,5 @@
-import logger from "../../utils/logger";
 import type { LiteratureResult } from "../../utils/literature";
+import logger from "../../utils/logger";
 
 interface OpenScholarChunk {
   reranker_score: number;
@@ -12,9 +12,7 @@ interface OpenScholarChunk {
 /**
  * Search OpenScholar for relevant literature
  */
-export async function searchOpenScholar(
-  objective: string,
-): Promise<LiteratureResult> {
+export async function searchOpenScholar(objective: string): Promise<LiteratureResult> {
   const endpoint = process.env.OPENSCHOLAR_API_URL || "";
   const apiKey = process.env.OPENSCHOLAR_API_KEY;
 
@@ -27,9 +25,9 @@ export async function searchOpenScholar(
 
   // Format output
   const papers = chunks.map((chunk) => ({
-    title: chunk.title,
     doi: `https://doi.org/${chunk.paper_id}`,
     text: chunk.text,
+    title: chunk.title,
   }));
 
   const output =
@@ -38,15 +36,15 @@ export async function searchOpenScholar(
       : `Found ${papers.length} relevant papers from OpenScholar:\n\n${papers
           .map(
             (p, idx) =>
-              `${idx + 1}. ${p.title}\n   DOI: ${p.doi}\n   Excerpt: ${p.text.substring(0, 200)}...`,
+              `${idx + 1}. ${p.title}\n   DOI: ${p.doi}\n   Excerpt: ${p.text.substring(0, 200)}...`
           )
           .join("\n\n")}`;
 
   logger.info({ paperCount: papers.length }, "openscholar_search_completed");
 
   return {
-    output,
     count: papers.length,
+    output,
   };
 }
 
@@ -57,26 +55,26 @@ async function fetchOpenScholarChunks(
   question: string,
   endpoint: string,
   apiKey: string,
-  finalTopk: number = 10,
+  finalTopk: number = 10
 ): Promise<OpenScholarChunk[]> {
   const body = {
-    query: question,
+    boost_lambda: 0.1,
+    boost_mode: "mul",
+    final_topk: finalTopk,
     initial_topk: 400,
     keep_for_rerank: 80,
-    final_topk: finalTopk,
-    per_paper_cap: 3,
-    boost_mode: "mul",
-    boost_lambda: 0.1,
     max_length: 512,
+    per_paper_cap: 3,
+    query: question,
   };
 
   const res = await fetch(endpoint, {
-    method: "POST",
+    body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
     },
-    body: JSON.stringify(body),
+    method: "POST",
   });
 
   if (!res.ok) {

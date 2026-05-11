@@ -13,7 +13,7 @@ export interface ProcessedDocument {
     type: string;
     size: number;
     lastModified: Date;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -24,14 +24,15 @@ export class DocumentProcessor {
     const fileName = path.basename(filePath); // Keep extension in filename
 
     let content: string;
-    let frontMatterData: any = {};
+    let frontMatterData: Record<string, unknown> = {};
 
     try {
       switch (ext) {
         case ".md":
           const rawContent = await fs.readFile(filePath, "utf-8");
-          const parsed = matter(rawContent);
-          frontMatterData = parsed.attributes;
+          const parsed = matter<Record<string, unknown>>(rawContent);
+          frontMatterData =
+            parsed.attributes && typeof parsed.attributes === "object" ? parsed.attributes : {};
           content = parsed.body;
           break;
 
@@ -47,13 +48,10 @@ export class DocumentProcessor {
             const pdfResult = await parser.getText();
             await parser.destroy();
             content = pdfResult.text;
-          } catch (pdfError: any) {
-            logger.error(
-              `PDF parsing error for ${fileName}: ${pdfError.message}`,
-            );
-            throw new Error(
-              `Failed to parse PDF ${fileName}: ${pdfError.message}`,
-            );
+          } catch (pdfError: unknown) {
+            const message = pdfError instanceof Error ? pdfError.message : String(pdfError);
+            logger.error(`PDF parsing error for ${fileName}: ${message}`);
+            throw new Error(`Failed to parse PDF ${fileName}: ${message}`);
           }
           break;
 
@@ -63,18 +61,18 @@ export class DocumentProcessor {
       }
 
       return {
-        title: fileName,
         content: content.trim(),
         metadata: {
           filePath,
-          type: ext.slice(1),
-          size: stats.size,
           lastModified: stats.mtime,
+          size: stats.size,
+          type: ext.slice(1),
           ...frontMatterData,
         },
+        title: fileName,
       };
     } catch (error) {
-      logger.error(`Error processing ${filePath}:`, error as any);
+      logger.error({ err: error }, `Error processing ${filePath}`);
       return null;
     }
   }
@@ -101,7 +99,7 @@ export class DocumentProcessor {
         }
       }
     } catch (error) {
-      logger.error(`Error reading directory ${dirPath}:`, error as any);
+      logger.error({ err: error }, `Error reading directory ${dirPath}`);
     }
 
     return documents;

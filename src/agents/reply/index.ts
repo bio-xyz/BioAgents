@@ -45,25 +45,23 @@ export async function replyAgent(input: {
   logger.info(
     {
       completedTaskCount: completedMaxTasks.length,
-      hasHypothesis: !!hypothesis,
-      nextPlanCount: nextPlan.length,
-      hasInsights: (conversationState.values.keyInsights?.length || 0) > 0,
       hasDiscoveries: (conversationState.values.discoveries?.length || 0) > 0,
+      hasHypothesis: !!hypothesis,
+      hasInsights: (conversationState.values.keyInsights?.length || 0) > 0,
+      nextPlanCount: nextPlan.length,
     },
-    "reply_agent_started",
+    "reply_agent_started"
   );
 
   // Fetch conversation history for classifier context (handles "continue", "yes", etc.)
-  const conversationHistory = await fetchConversationHistory(
-    message.conversation_id,
-  );
+  const conversationHistory = await fetchConversationHistory(message.conversation_id);
 
   // Resolve question for classification and reply
   // Priority: current message question > first question from history > objective
   const questionForReply = resolveQuestionForReply(
     message.question,
     conversationHistory,
-    conversationState.values.objective,
+    conversationState.values.objective
   );
 
   logger.info(
@@ -76,7 +74,7 @@ export async function replyAgent(input: {
           ? "history"
           : "objective",
     },
-    "reply_agent_question_resolved",
+    "reply_agent_question_resolved"
   );
 
   try {
@@ -87,48 +85,46 @@ export async function replyAgent(input: {
       questionForReply,
       {
         completedTasks: completedMaxTasks,
-        hypothesis,
-        nextPlan,
-        keyInsights: conversationState.values.keyInsights || [],
-        discoveries: conversationState.values.discoveries || [],
-        methodology: conversationState.values.methodology,
-        currentObjective: conversationState.values.currentObjective,
-        evolvingObjective: conversationState.values.evolvingObjective,
         conversationHistory,
+        currentObjective: conversationState.values.currentObjective,
+        discoveries: conversationState.values.discoveries || [],
+        evolvingObjective: conversationState.values.evolvingObjective,
+        hypothesis,
+        keyInsights: conversationState.values.keyInsights || [],
+        methodology: conversationState.values.methodology,
+        nextPlan,
       },
       {
+        isFinal,
         maxTokens: 4500,
+        messageId: message.id,
         thinking: true,
         thinkingBudget: 1024,
-        messageId: message.id,
         usageType: "deep-research",
-        isFinal,
-      },
+      }
     );
 
     const end = new Date().toISOString();
 
     // Extract summary section for conversation history
     const summaryMatch = reply.match(/## Summary\s+([\s\S]+?)(?:\n---|\n##|$)/);
-    const summary = summaryMatch
-      ? summaryMatch[1]!.trim()
-      : reply.substring(0, 300) + "..."; // Fallback to first 300 chars
+    const summary = summaryMatch ? summaryMatch[1]!.trim() : reply.substring(0, 300) + "..."; // Fallback to first 300 chars
 
     logger.info(
       {
-        replyLength: reply.length,
-        summaryLength: summary.length,
         completedTaskCount: completedMaxTasks.length,
         nextPlanCount: nextPlan.length,
+        replyLength: reply.length,
+        summaryLength: summary.length,
       },
-      "reply_agent_completed",
+      "reply_agent_completed"
     );
 
     return {
-      reply,
-      summary,
-      start,
       end,
+      reply,
+      start,
+      summary,
     };
   } catch (err) {
     logger.error({ err }, "reply_agent_failed");

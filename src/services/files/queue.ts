@@ -21,9 +21,7 @@ export interface FileProcessJobData {
  * Enqueue a file processing job
  * @returns Job ID
  */
-export async function enqueueFileProcess(
-  status: FileStatusRecord,
-): Promise<string> {
+export async function enqueueFileProcess(status: FileStatusRecord): Promise<string> {
   const { getFileProcessQueue } = await import("../queue/queues");
   const queue = getFileProcessQueue();
 
@@ -32,24 +30,21 @@ export async function enqueueFileProcess(
   }
 
   const jobData: FileProcessJobData = {
-    fileId: status.fileId,
-    userId: status.userId,
+    contentType: status.contentType,
     conversationId: status.conversationId,
     conversationStateId: status.conversationStateId,
-    s3Key: status.s3Key,
+    fileId: status.fileId,
     filename: status.filename,
-    contentType: status.contentType,
+    s3Key: status.s3Key,
     size: status.size,
+    userId: status.userId,
   };
 
   const job = await queue.add(`process-${status.fileId}`, jobData, {
     jobId: status.fileId,
   });
 
-  logger.info(
-    { fileId: status.fileId, jobId: job.id },
-    "file_process_job_added",
-  );
+  logger.info({ fileId: status.fileId, jobId: job.id }, "file_process_job_added");
 
   return job.id || status.fileId;
 }

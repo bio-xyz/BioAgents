@@ -1,5 +1,5 @@
-import logger from "./logger";
 import type { PlanTask } from "../types/core";
+import logger from "./logger";
 
 export type PlanningResult = {
   currentObjective: string;
@@ -63,16 +63,15 @@ export function extractPlanningResult(
   // Strategy 5: Return minimal default with fallback objective
   method = "default";
   const defaultResult: PlanningResult = {
-    currentObjective:
-      fallbackObjective || "Continue research based on user query",
+    currentObjective: fallbackObjective || "Continue research based on user query",
     plan: fallbackObjective
       ? [
           {
-            type: "LITERATURE" as const,
-            objective: fallbackObjective,
             datasets: [],
             level: 1,
+            objective: fallbackObjective,
             output: "",
+            type: "LITERATURE" as const,
           },
         ]
       : [],
@@ -97,9 +96,7 @@ function extractFieldsWithRegex(content: string): PlanningResult {
   };
 
   // Extract currentObjective
-  const objectiveMatch = content.match(
-    /"currentObjective"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/
-  );
+  const objectiveMatch = content.match(/"currentObjective"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
   if (objectiveMatch?.[1]) {
     result.currentObjective = objectiveMatch[1].replace(/\\"/g, '"');
   }
@@ -110,11 +107,11 @@ function extractFieldsWithRegex(content: string): PlanningResult {
   let match;
   while ((match = taskPattern.exec(content)) !== null) {
     const task: PlanTask = {
-      type: match[1] as "LITERATURE" | "ANALYSIS",
-      objective: match[2]?.replace(/\\"/g, '"') || "",
       datasets: [],
       level: result.plan.length + 1,
+      objective: match[2]?.replace(/\\"/g, '"') || "",
       output: "",
+      type: match[1] as "LITERATURE" | "ANALYSIS",
     };
     result.plan.push(task);
   }
@@ -130,11 +127,11 @@ function normalizeResult(result: Partial<PlanningResult>): PlanningResult {
     currentObjective: result.currentObjective || "",
     plan: (result.plan || []).map((task, index) => ({
       ...task,
-      type: task.type || "LITERATURE",
-      objective: task.objective || "",
       datasets: task.datasets || [],
       level: task.level ?? index + 1,
+      objective: task.objective || "",
       output: task.output || "",
+      type: task.type || "LITERATURE",
     })),
   };
 }
@@ -142,13 +139,6 @@ function normalizeResult(result: Partial<PlanningResult>): PlanningResult {
 /**
  * Log extraction result for monitoring
  */
-function logExtractionResult(
-  method: string,
-  success: boolean,
-  planTaskCount: number
-): void {
-  logger.info(
-    { method, success, planTaskCount },
-    "planning_json_extraction_result"
-  );
+function logExtractionResult(method: string, success: boolean, planTaskCount: number): void {
+  logger.info({ method, planTaskCount, success }, "planning_json_extraction_result");
 }

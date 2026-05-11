@@ -1,13 +1,14 @@
-import { Icon } from '../icons';
+import type { JSX } from "preact";
+import { Icon } from "../icons";
 
 export interface IconButtonProps {
   icon: string;
   size?: number;
-  onClick?: (e?: any) => void;
+  onClick?: (e: JSX.TargetedMouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   className?: string;
   title?: string;
-  variant?: 'default' | 'ghost' | 'danger';
+  variant?: "default" | "ghost" | "danger";
 }
 
 /**
@@ -19,21 +20,15 @@ export function IconButton({
   size = 16,
   onClick,
   disabled = false,
-  className = '',
+  className = "",
   title,
-  variant = 'default',
+  variant = "default",
 }: IconButtonProps) {
   const variantClass = `icon-btn-${variant}`;
-  const classes = ['icon-btn', variantClass, className].filter(Boolean).join(' ');
+  const classes = ["icon-btn", variantClass, className].filter(Boolean).join(" ");
 
   return (
-    <button
-      type="button"
-      className={classes}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
+    <button type="button" className={classes} onClick={onClick} disabled={disabled} title={title}>
       <Icon name={icon} size={size} />
     </button>
   );

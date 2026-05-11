@@ -72,9 +72,7 @@ export function assembleMarkdown(opts: AssembleMarkdownOptions): string {
   // Key Insights
   if (keyInsights.length > 0) {
     sections.push("\n# Key Insights\n");
-    sections.push(
-      keyInsights.map((insight) => `- ${insight}`).join("\n"),
-    );
+    sections.push(keyInsights.map((insight) => `- ${insight}`).join("\n"));
   }
 
   // Summary of Discoveries
@@ -93,10 +91,7 @@ export function assembleMarkdown(opts: AssembleMarkdownOptions): string {
   const outputPath = path.join(outputDir, "paper.md");
   fs.writeFileSync(outputPath, fullDocument, "utf-8");
 
-  logger.info(
-    { outputPath, length: fullDocument.length },
-    "markdown_document_assembled",
-  );
+  logger.info({ length: fullDocument.length, outputPath }, "markdown_document_assembled");
 
   return outputPath;
 }

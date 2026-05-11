@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
-import * as path from "path";
 import * as fs from "fs";
+import * as path from "path";
 import logger from "../../../utils/logger";
 
 const LATEXMK_TIMEOUT_MS = 120_000; // 120 seconds for full latexmk run
@@ -8,7 +8,7 @@ const XELATEX_PASS_TIMEOUT_MS = 60_000; // 60 seconds per xelatex/bibtex pass
 
 export async function compileLatexToPDF(
   workDir: string,
-  mainTexFile: string = "main.tex",
+  mainTexFile: string = "main.tex"
 ): Promise<{ success: boolean; pdfPath?: string; logs: string }> {
   const latexDir = path.join(workDir, "latex");
   const mainTexPath = path.join(latexDir, mainTexFile);
@@ -22,7 +22,7 @@ export async function compileLatexToPDF(
   try {
     const result = await tryLatexmk(latexDir, mainTexFile);
     if (result.success) return result;
-  } catch (error) {
+  } catch {
     logger.warn("latexmk_failed_trying_manual");
   }
 
@@ -31,7 +31,7 @@ export async function compileLatexToPDF(
 
 async function tryLatexmk(
   latexDir: string,
-  mainTexFile: string,
+  mainTexFile: string
 ): Promise<{ success: boolean; pdfPath?: string; logs: string }> {
   return new Promise((resolve) => {
     const args = [
@@ -74,25 +74,28 @@ async function tryLatexmk(
       const pdfPath = path.join(latexDir, mainTexFile.replace(".tex", ".pdf"));
 
       if (killed) {
-        resolve({ success: false, logs: `latexmk timed out after ${LATEXMK_TIMEOUT_MS / 1000}s\n${logs}` });
+        resolve({
+          logs: `latexmk timed out after ${LATEXMK_TIMEOUT_MS / 1000}s\n${logs}`,
+          success: false,
+        });
       } else if (code === 0 && fs.existsSync(pdfPath)) {
         logger.info("latexmk_succeeded");
-        resolve({ success: true, pdfPath, logs });
+        resolve({ logs, pdfPath, success: true });
       } else {
-        resolve({ success: false, logs });
+        resolve({ logs, success: false });
       }
     });
 
     proc.on("error", (error) => {
       clearTimeout(timer);
-      resolve({ success: false, logs: error.message });
+      resolve({ logs: error.message, success: false });
     });
   });
 }
 
 async function tryManualCompilation(
   latexDir: string,
-  mainTexFile: string,
+  mainTexFile: string
 ): Promise<{ success: boolean; pdfPath?: string; logs: string }> {
   const baseFilename = mainTexFile.replace(".tex", "");
   let allLogs = "";
@@ -100,15 +103,14 @@ async function tryManualCompilation(
   logger.info("running_manual_compilation");
 
   // Using XeLaTeX for native Unicode support (handles β, ′, accented chars, etc.)
-  const pass1 = await runCommand("xelatex", [
-    "-interaction=nonstopmode",
-    "-halt-on-error",
-    "-file-line-error",
-    mainTexFile,
-  ], latexDir);
+  const pass1 = await runCommand(
+    "xelatex",
+    ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", mainTexFile],
+    latexDir
+  );
   allLogs += "=== XELATEX PASS 1 ===\n" + pass1.logs + "\n\n";
 
-  if (!pass1.success) return { success: false, logs: allLogs };
+  if (!pass1.success) return { logs: allLogs, success: false };
 
   const auxPath = path.join(latexDir, `${baseFilename}.aux`);
   if (fs.existsSync(auxPath)) {
@@ -116,39 +118,37 @@ async function tryManualCompilation(
     allLogs += "=== BIBTEX ===\n" + bibtexResult.logs + "\n\n";
   }
 
-  const pass2 = await runCommand("xelatex", [
-    "-interaction=nonstopmode",
-    "-halt-on-error",
-    "-file-line-error",
-    mainTexFile,
-  ], latexDir);
+  const pass2 = await runCommand(
+    "xelatex",
+    ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", mainTexFile],
+    latexDir
+  );
   allLogs += "=== XELATEX PASS 2 ===\n" + pass2.logs + "\n\n";
 
-  if (!pass2.success) return { success: false, logs: allLogs };
+  if (!pass2.success) return { logs: allLogs, success: false };
 
-  const pass3 = await runCommand("xelatex", [
-    "-interaction=nonstopmode",
-    "-halt-on-error",
-    "-file-line-error",
-    mainTexFile,
-  ], latexDir);
+  const pass3 = await runCommand(
+    "xelatex",
+    ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", mainTexFile],
+    latexDir
+  );
   allLogs += "=== XELATEX PASS 3 ===\n" + pass3.logs + "\n\n";
 
   const pdfPath = path.join(latexDir, `${baseFilename}.pdf`);
 
   if (pass3.success && fs.existsSync(pdfPath)) {
     logger.info("manual_compilation_succeeded");
-    return { success: true, pdfPath, logs: allLogs };
+    return { logs: allLogs, pdfPath, success: true };
   }
 
-  return { success: false, logs: allLogs };
+  return { logs: allLogs, success: false };
 }
 
 async function runCommand(
   command: string,
   args: string[],
   cwd: string,
-  timeoutMs: number = XELATEX_PASS_TIMEOUT_MS,
+  timeoutMs: number = XELATEX_PASS_TIMEOUT_MS
 ): Promise<{ success: boolean; logs: string }> {
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
@@ -180,15 +180,18 @@ async function runCommand(
       clearTimeout(timer);
       const logs = stdout + "\n" + stderr;
       if (killed) {
-        resolve({ success: false, logs: `${command} timed out after ${timeoutMs / 1000}s\n${logs}` });
+        resolve({
+          logs: `${command} timed out after ${timeoutMs / 1000}s\n${logs}`,
+          success: false,
+        });
       } else {
-        resolve({ success: code === 0, logs });
+        resolve({ logs, success: code === 0 });
       }
     });
 
     proc.on("error", (error) => {
       clearTimeout(timer);
-      resolve({ success: false, logs: error.message });
+      resolve({ logs: error.message, success: false });
     });
   });
 }
@@ -200,7 +203,8 @@ export function extractLastLines(logs: string, lines: number = 200): string {
 
 export function checkForUndefinedCitations(logs: string): string[] {
   const undefinedCitations: string[] = [];
-  const citationWarningRegex = /(?:LaTeX Warning: Citation [`']([^'`]+)['`] undefined|Warning--I didn't find a database entry for "([^"]+)")/g;
+  const citationWarningRegex =
+    /(?:LaTeX Warning: Citation [`']([^'`]+)['`] undefined|Warning--I didn't find a database entry for "([^"]+)")/g;
 
   let match;
   while ((match = citationWarningRegex.exec(logs)) !== null) {

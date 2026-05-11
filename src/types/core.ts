@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 export const MessageSchema = z.object({
-  id: z.string().uuid().optional(),
-  conversation_id: z.string().min(1),
-  user_id: z.string().min(1),
-  question: z.string(),
   content: z.string(),
-  state: z.any().optional(),
+  conversation_id: z.string().min(1),
+  created_at: z.string().datetime().optional(),
+  id: z.string().uuid().optional(),
+  question: z.string(),
   response_time: z.number().optional(),
   source: z.string().optional(),
-  created_at: z.string().datetime().optional(),
+  state: z.any().optional(),
+  user_id: z.string().min(1),
 });
 
 export type Message = z.infer<typeof MessageSchema>;
@@ -29,6 +29,10 @@ export interface StateValues {
 
   // Step tracking
   steps?: Record<string, { start: number; end?: number }>;
+
+  // Error state
+  error?: string;
+  status?: string;
 }
 
 export type PlanTaskType = "LITERATURE" | "ANALYSIS";
@@ -71,10 +75,7 @@ export interface DeepResearchActivity {
   updatedAt: string;
 }
 
-export type DeepResearchObjectiveTraceStatus =
-  | "active"
-  | "completed"
-  | "stale";
+export type DeepResearchObjectiveTraceStatus = "active" | "completed" | "stale";
 
 export interface DeepResearchObjectiveTrace {
   objective: string;
@@ -172,16 +173,10 @@ export type Tool = {
   execute: (input: {
     state: State;
     conversationState?: ConversationState;
-    message: any;
-    [key: string]: any;
-  }) => Promise<any>;
+    message: Message;
+  }) => Promise<unknown>;
   enabled?: boolean; // Tools are enabled by default
   deepResearchEnabled?: boolean; // Tools are enabled for deep research by default
-  payment?: {
-    required: boolean;
-    priceUSD: string;
-    tier: "free" | "basic" | "premium";
-  };
 };
 
 export type LLMProvider = "google" | "openai" | "anthropic" | "openrouter";
@@ -198,7 +193,7 @@ export type UploadedFile = {
   filename: string;
   mimeType?: string;
   path?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 };
 
 export type AnalysisArtifact = {

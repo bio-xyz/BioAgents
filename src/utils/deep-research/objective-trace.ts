@@ -2,10 +2,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { LLM } from "../../llm/provider";
 import type { LLMProvider as LLMProviderConfig } from "../../llm/types";
-import type {
-  ConversationStateValues,
-  DeepResearchObjectiveTrace,
-} from "../../types/core";
+import type { ConversationStateValues, DeepResearchObjectiveTrace } from "../../types/core";
 import logger from "../logger";
 
 export const OBJECTIVE_TRACE_REVEAL_INTERVAL_MS = 60_000;
@@ -38,16 +35,12 @@ const ObjectiveTraceSchema = z.object({
   steps: z.array(z.string()),
 });
 
-export function normalizeDeepResearchObjective(
-  objective?: string,
-): string | undefined {
+export function normalizeDeepResearchObjective(objective?: string): string | undefined {
   const trimmed = objective?.replace(/\s+/g, " ").trim();
   return trimmed ? trimmed : undefined;
 }
 
-function normalizeRunRootMessageId(
-  runRootMessageId?: string,
-): string | undefined {
+function normalizeRunRootMessageId(runRootMessageId?: string): string | undefined {
   const trimmed = runRootMessageId?.trim();
   return trimmed ? trimmed : undefined;
 }
@@ -99,10 +92,7 @@ function validateTracePayload(payload: unknown): string[] | null {
   }
 
   const cleanedSteps = sanitizeSteps(parsed.data.steps);
-  if (
-    cleanedSteps.length < MIN_TRACE_STEPS ||
-    cleanedSteps.length > MAX_TRACE_STEPS
-  ) {
+  if (cleanedSteps.length < MIN_TRACE_STEPS || cleanedSteps.length > MAX_TRACE_STEPS) {
     return null;
   }
 
@@ -167,9 +157,7 @@ function buildTracePrompt(objective: string, retry = false): string {
 
 function getProviderCandidates(): Array<LLMProviderConfig["name"]> {
   const candidates: Array<LLMProviderConfig["name"] | undefined> = [
-    process.env.OBJECTIVE_TRACE_LLM_PROVIDER as
-      | LLMProviderConfig["name"]
-      | undefined,
+    process.env.OBJECTIVE_TRACE_LLM_PROVIDER as LLMProviderConfig["name"] | undefined,
     process.env.OPENAI_API_KEY ? "openai" : undefined,
     process.env.PLANNING_LLM_PROVIDER as LLMProviderConfig["name"] | undefined,
     "google",
@@ -199,7 +187,7 @@ function getProviderConfig(): {
 } {
   const providerName =
     getProviderCandidates().find(
-      (candidate) => process.env[`${candidate.toUpperCase()}_API_KEY`],
+      (candidate) => process.env[`${candidate.toUpperCase()}_API_KEY`]
     ) || "openai";
 
   const apiKey = process.env[`${providerName.toUpperCase()}_API_KEY`];
@@ -210,39 +198,38 @@ function getProviderConfig(): {
       : process.env.PLANNING_LLM_MODEL || DEFAULT_NON_OPENAI_MODEL);
 
   return {
-    providerName,
     apiKey,
     model,
+    providerName,
     supportsStructuredOutput: providerName === "openai",
   };
 }
 
 async function requestObjectiveTraceSteps(
   objective: string,
-  retry = false,
+  retry = false
 ): Promise<string[] | null> {
-  const { providerName, apiKey, model, supportsStructuredOutput } =
-    getProviderConfig();
+  const { providerName, apiKey, model, supportsStructuredOutput } = getProviderConfig();
 
   if (!apiKey) {
     throw new Error(`${providerName.toUpperCase()}_API_KEY is not configured`);
   }
 
   const llmProvider = new LLM({
-    name: providerName,
     apiKey,
+    name: providerName,
   });
 
   const response = await llmProvider.createChatCompletion({
-    model,
+    maxTokens: 1600,
     messages: [
       {
-        role: "user",
         content: buildTracePrompt(objective, retry),
+        role: "user",
       },
     ],
+    model,
     systemInstruction: OBJECTIVE_TRACE_SYSTEM_PROMPT,
-    maxTokens: 1600,
     ...(supportsStructuredOutput
       ? {
           format: zodTextFormat(ObjectiveTraceSchema, "objective_trace"),
@@ -265,10 +252,7 @@ async function generateTraceSteps(objective: string): Promise<string[]> {
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const steps = await requestObjectiveTraceSteps(
-        normalizedObjective,
-        attempt === 1,
-      );
+      const steps = await requestObjectiveTraceSteps(normalizedObjective, attempt === 1);
 
       if (steps) {
         return steps;
@@ -276,19 +260,19 @@ async function generateTraceSteps(objective: string): Promise<string[]> {
 
       logger.warn(
         {
-          objectivePreview: normalizedObjective.slice(0, 200),
           attempt: attempt + 1,
+          objectivePreview: normalizedObjective.slice(0, 200),
         },
-        "objective_trace_invalid_payload",
+        "objective_trace_invalid_payload"
       );
     } catch (error) {
       logger.warn(
         {
+          attempt: attempt + 1,
           error,
           objectivePreview: normalizedObjective.slice(0, 200),
-          attempt: attempt + 1,
         },
-        "objective_trace_generation_failed",
+        "objective_trace_generation_failed"
       );
     }
   }
@@ -298,20 +282,17 @@ async function generateTraceSteps(objective: string): Promise<string[]> {
 
 export function getObjectiveTraceObjective(
   values: ConversationStateValues,
-  fallbackObjective?: string,
+  fallbackObjective?: string
 ): string | undefined {
   return normalizeDeepResearchObjective(
-    values.currentObjective ||
-      values.evolvingObjective ||
-      values.objective ||
-      fallbackObjective,
+    values.currentObjective || values.evolvingObjective || values.objective || fallbackObjective
   );
 }
 
 export async function ensureObjectiveTrace(
   values: ConversationStateValues,
   objective?: string,
-  options?: { runRootMessageId?: string },
+  options?: { runRootMessageId?: string }
 ): Promise<DeepResearchObjectiveTrace | undefined> {
   const normalizedObjective = normalizeDeepResearchObjective(objective);
   if (!normalizedObjective) {
@@ -319,30 +300,24 @@ export async function ensureObjectiveTrace(
   }
 
   const currentRunRootMessageId = normalizeRunRootMessageId(
-    options?.runRootMessageId || values.deepResearchRun?.rootMessageId,
+    options?.runRootMessageId || values.deepResearchRun?.rootMessageId
   );
   const existingTrace = values.objectiveTrace;
-  const existingRunRootMessageId = normalizeRunRootMessageId(
-    existingTrace?.runRootMessageId,
-  );
+  const existingRunRootMessageId = normalizeRunRootMessageId(existingTrace?.runRootMessageId);
   const isSameRun =
     !currentRunRootMessageId ||
-    (!!existingRunRootMessageId &&
-      existingRunRootMessageId === currentRunRootMessageId);
+    (!!existingRunRootMessageId && existingRunRootMessageId === currentRunRootMessageId);
 
   if (
     existingTrace &&
-    normalizeDeepResearchObjective(existingTrace.objective) ===
-      normalizedObjective &&
+    normalizeDeepResearchObjective(existingTrace.objective) === normalizedObjective &&
     isSameRun &&
     existingTrace.steps?.length
   ) {
     existingTrace.status = "active";
     existingTrace.visibleCount = clampVisibleCount(existingTrace);
     existingTrace.lastAdvancedAt =
-      existingTrace.lastAdvancedAt ||
-      existingTrace.generatedAt ||
-      new Date().toISOString();
+      existingTrace.lastAdvancedAt || existingTrace.generatedAt || new Date().toISOString();
     return existingTrace;
   }
 
@@ -350,13 +325,13 @@ export async function ensureObjectiveTrace(
   const timestamp = new Date().toISOString();
 
   values.objectiveTrace = {
-    objective: normalizedObjective,
-    steps,
-    visibleCount: 1,
     generatedAt: timestamp,
     lastAdvancedAt: timestamp,
-    status: "active",
+    objective: normalizedObjective,
     runRootMessageId: currentRunRootMessageId,
+    status: "active",
+    steps,
+    visibleCount: 1,
   };
 
   return values.objectiveTrace;
@@ -364,7 +339,7 @@ export async function ensureObjectiveTrace(
 
 export function syncObjectiveTraceProgress(
   values: ConversationStateValues,
-  now = new Date(),
+  now = new Date()
 ): DeepResearchObjectiveTrace | undefined {
   const trace = values.objectiveTrace;
   if (!trace || trace.status !== "active" || !trace.steps?.length) {
@@ -374,9 +349,7 @@ export function syncObjectiveTraceProgress(
   const currentVisibleCount = clampVisibleCount(trace);
   trace.visibleCount = currentVisibleCount;
 
-  const baseTimestamp = Date.parse(
-    trace.lastAdvancedAt || trace.generatedAt || now.toISOString(),
-  );
+  const baseTimestamp = Date.parse(trace.lastAdvancedAt || trace.generatedAt || now.toISOString());
 
   if (!Number.isFinite(baseTimestamp)) {
     trace.lastAdvancedAt = now.toISOString();
@@ -384,26 +357,23 @@ export function syncObjectiveTraceProgress(
   }
 
   const increments = Math.floor(
-    (now.getTime() - baseTimestamp) / OBJECTIVE_TRACE_REVEAL_INTERVAL_MS,
+    (now.getTime() - baseTimestamp) / OBJECTIVE_TRACE_REVEAL_INTERVAL_MS
   );
 
   if (increments <= 0) {
     return trace;
   }
 
-  trace.visibleCount = Math.min(
-    trace.steps.length,
-    currentVisibleCount + increments,
-  );
+  trace.visibleCount = Math.min(trace.steps.length, currentVisibleCount + increments);
   trace.lastAdvancedAt = new Date(
-    baseTimestamp + increments * OBJECTIVE_TRACE_REVEAL_INTERVAL_MS,
+    baseTimestamp + increments * OBJECTIVE_TRACE_REVEAL_INTERVAL_MS
   ).toISOString();
 
   return trace;
 }
 
 export function completeObjectiveTrace(
-  values: ConversationStateValues,
+  values: ConversationStateValues
 ): DeepResearchObjectiveTrace | undefined {
   const trace = values.objectiveTrace;
   if (!trace) {
@@ -417,7 +387,7 @@ export function completeObjectiveTrace(
 }
 
 export function markObjectiveTraceStale(
-  values: ConversationStateValues,
+  values: ConversationStateValues
 ): DeepResearchObjectiveTrace | undefined {
   const trace = values.objectiveTrace;
   if (!trace) {

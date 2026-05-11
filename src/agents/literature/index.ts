@@ -5,12 +5,7 @@ import { searchEdison } from "./edison";
 import { searchKnowledge } from "./knowledge";
 import { searchOpenScholar } from "./openscholar";
 
-type LiteratureType =
-  | "OPENSCHOLAR"
-  | "KNOWLEDGE"
-  | "EDISON"
-  | "BIOLIT"
-  | "BIOLITDEEP";
+type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON" | "BIOLIT" | "BIOLITDEEP";
 
 export type BioLiteratureMode = "fast" | "deep";
 
@@ -83,7 +78,7 @@ export async function literatureAgent(input: {
       case "EDISON": {
         const result = await searchEdison(
           objective +
-            "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY FORMAT: Each claim should be in the following format: (claim goes in the parentheses)[DOI] or (claim goes in the parentheses)[URL]. If there are general statements, it is alright to not include citations for them. DOI URL is totally enough, you don't need to include formats like [pelaezvico2025integrativeanalysisof pages 1-4].\n\nMANDATORY CITATION COUNT: Do your absolute best to cite at least 5 sources in your answer.",
+            "/n/nMANDATORY: Make sure that the final literature search result is returned along with inline citations for each claim made in the result. MANDATORY FORMAT: Each claim should be in the following format: (claim goes in the parentheses)[DOI] or (claim goes in the parentheses)[URL]. If there are general statements, it is alright to not include citations for them. DOI URL is totally enough, you don't need to include formats like [pelaezvico2025integrativeanalysisof pages 1-4].\n\nMANDATORY CITATION COUNT: Do your absolute best to cite at least 5 sources in your answer."
         );
         output = result.output;
         jobId = result.jobId;
@@ -100,17 +95,17 @@ export async function literatureAgent(input: {
   const end = new Date().toISOString();
 
   logger.info(
-    { objective, type, outputLength: output.length, count },
-    "literature_agent_completed",
+    { count, objective, outputLength: output.length, type },
+    "literature_agent_completed"
   );
 
   return {
+    count,
+    end,
+    jobId,
     objective,
     output,
-    count,
-    jobId,
     reasoning,
     start,
-    end,
   };
 }

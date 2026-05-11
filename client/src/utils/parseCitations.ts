@@ -25,17 +25,22 @@ export function parseCitationsFromText(text: string): {
   let index = 1;
 
   while ((match = citationRegex.exec(text)) !== null) {
-    const citedText = match[1];
+    const citedText = match[1] ?? "";
     const urlsString = match[2];
-    const urls = urlsString ? urlsString.split(',').map(url => url.trim()).filter(url => url) : [];
+    const urls = urlsString
+      ? urlsString
+          .split(",")
+          .map((url) => url.trim())
+          .filter((url) => url)
+      : [];
 
     // Only add citations that have URLs
     if (urls.length > 0) {
       citations.push({
+        index,
+        originalMatch: match[0],
         text: citedText,
         urls,
-        index,
-        originalMatch: match[0]
       });
       index++;
     }
@@ -45,12 +50,12 @@ export function parseCitationsFromText(text: string): {
   // Replace [text]{urls} with just 'text' (keeping the cited text)
   // Replace [text]{} or []{} with just 'text' or nothing (removing empty citations)
   const textWithoutCitations = text.replace(citationRegex, (match, citedText) => {
-    return citedText || ''; // Return the cited text, or empty string if no text
+    return citedText || ""; // Return the cited text, or empty string if no text
   });
 
   return {
     citations,
-    textWithoutCitations
+    textWithoutCitations,
   };
 }
 
@@ -63,8 +68,8 @@ export function extractUniqueCitations(citations: Citation[]): Array<{
 }> {
   const urlMap = new Map<string, number[]>();
 
-  citations.forEach(citation => {
-    citation.urls.forEach(url => {
+  citations.forEach((citation) => {
+    citation.urls.forEach((url) => {
       if (!urlMap.has(url)) {
         urlMap.set(url, []);
       }
@@ -73,8 +78,8 @@ export function extractUniqueCitations(citations: Citation[]): Array<{
   });
 
   return Array.from(urlMap.entries()).map(([url, indices]) => ({
+    indices,
     url,
-    indices
   }));
 }
 
@@ -83,21 +88,21 @@ export function extractUniqueCitations(citations: Citation[]): Array<{
  */
 export function extractDomainName(hostname: string): string {
   // Remove 'www.' prefix if present
-  const withoutWww = hostname.replace(/^www\./, '');
+  const withoutWww = hostname.replace(/^www\./, "");
 
   // Split by dots and get the main domain name
-  const parts = withoutWww.split('.');
+  const parts = withoutWww.split(".");
 
   // Handle common cases
   if (parts.length >= 2) {
-    const twoPartTlds = ['co', 'com', 'gov', 'edu', 'ac', 'org', 'net'];
+    const twoPartTlds = ["co", "com", "gov", "edu", "ac", "org", "net"];
     const secondLastPart = parts[parts.length - 2];
 
-    if (parts.length >= 3 && twoPartTlds.includes(secondLastPart)) {
-      return parts[parts.length - 3];
+    if (parts.length >= 3 && secondLastPart !== undefined && twoPartTlds.includes(secondLastPart)) {
+      return parts[parts.length - 3] ?? withoutWww;
     }
 
-    return parts[parts.length - 2];
+    return secondLastPart ?? withoutWww;
   }
 
   return withoutWww;

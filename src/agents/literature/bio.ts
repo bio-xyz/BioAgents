@@ -1,7 +1,7 @@
-import type { BioLiteratureMode } from ".";
 import type { OnPollUpdate } from "../../types/core";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
+import type { BioLiteratureMode } from ".";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
 const BIO_LIT_AGENT_API_KEY = process.env.BIO_LIT_AGENT_API_KEY || "";
@@ -59,21 +59,15 @@ function extractAnswer(data: BioLiteratureResponse): string {
       ? directResponse.formatted_answer.trim()
       : "";
   const directAnswer =
-    typeof directResponse?.answer === "string"
-      ? directResponse.answer.trim()
-      : "";
+    typeof directResponse?.answer === "string" ? directResponse.answer.trim() : "";
   const nestedFormatted =
     typeof nestedResponse?.formatted_answer === "string"
       ? nestedResponse.formatted_answer.trim()
       : "";
   const nestedAnswer =
-    typeof nestedResponse?.answer === "string"
-      ? nestedResponse.answer.trim()
-      : "";
+    typeof nestedResponse?.answer === "string" ? nestedResponse.answer.trim() : "";
   const dataFormatted =
-    typeof data.formatted_answer === "string"
-      ? data.formatted_answer.trim()
-      : "";
+    typeof data.formatted_answer === "string" ? data.formatted_answer.trim() : "";
   const dataAnswer = typeof data.answer === "string" ? data.answer.trim() : "";
 
   const answer =
@@ -88,17 +82,17 @@ function extractAnswer(data: BioLiteratureResponse): string {
   // this is debugging purposes
   logger.debug(
     {
-      directFormattedLength: directFormatted.length,
-      directAnswerLength: directAnswer.length,
-      nestedFormattedLength: nestedFormatted.length,
-      nestedAnswerLength: nestedAnswer.length,
-      dataFormattedLength: dataFormatted.length,
-      dataAnswerLength: dataAnswer.length,
       chosenAnswerLength: answer.length,
-      hasResponse: Boolean(directResponse),
+      dataAnswerLength: dataAnswer.length,
+      dataFormattedLength: dataFormatted.length,
+      directAnswerLength: directAnswer.length,
+      directFormattedLength: directFormatted.length,
       hasNestedResponse: Boolean(nestedResponse),
+      hasResponse: Boolean(directResponse),
+      nestedAnswerLength: nestedAnswer.length,
+      nestedFormattedLength: nestedFormatted.length,
     },
-    "bioliterature_extract_answer_debug",
+    "bioliterature_extract_answer_debug"
   );
 
   return answer;
@@ -113,9 +107,7 @@ function extractReferences(data: BioLiteratureResponse): BioReference[] {
   return [];
 }
 
-function extractContextPassages(
-  data: BioLiteratureResponse,
-): BioContextPassage[] {
+function extractContextPassages(data: BioLiteratureResponse): BioContextPassage[] {
   if (Array.isArray(data.context_passages)) return data.context_passages;
   const directPassages = data.response?.context_passages;
   if (Array.isArray(directPassages)) return directPassages;
@@ -128,43 +120,36 @@ async function pollBioLiteratureJob(
   baseUrl: string,
   apiKey: string,
   jobId: string,
-  onPollUpdate?: OnPollUpdate,
+  onPollUpdate?: OnPollUpdate
 ): Promise<BioLiteratureResponse> {
-  const timeoutMinutes = parseInt(
-    process.env.BIO_LITERATURE_TASK_TIMEOUT_MINUTES || "60",
-    10,
-  );
+  const timeoutMinutes = parseInt(process.env.BIO_LITERATURE_TASK_TIMEOUT_MINUTES || "60", 10);
   const MAX_WAIT_TIME = timeoutMinutes * 60 * 1000;
   const POLL_INTERVAL = 10000; // 10 seconds
   const startTime = Date.now();
 
   while (true) {
     if (Date.now() - startTime > MAX_WAIT_TIME) {
-      throw new Error(
-        `BioLiterature job ${jobId} timed out after ${timeoutMinutes} minutes`,
-      );
+      throw new Error(`BioLiterature job ${jobId} timed out after ${timeoutMinutes} minutes`);
     }
 
     const { response } = await fetchWithRetry(
       `${baseUrl}/query/jobs/${jobId}`,
       {
-        method: "GET",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": apiKey,
         },
+        method: "GET",
       },
       {
         onRetry: (attempt, error) =>
-          logger.warn({ attempt, jobId, error: error.message }, "bioliterature_poll_retry"),
-      },
+          logger.warn({ attempt, error: error.message, jobId }, "bioliterature_poll_retry"),
+      }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
-        `BioLiterature job polling error: ${response.status} - ${errorText}`,
-      );
+      throw new Error(`BioLiterature job polling error: ${response.status} - ${errorText}`);
     }
 
     const jobData = (await response.json()) as BioLiteratureResponse;
@@ -172,7 +157,7 @@ async function pollBioLiteratureJob(
       jobData.status ||
         (jobData as { job_status?: string }).job_status ||
         (jobData as { state?: string }).state ||
-        "",
+        ""
     ).toLowerCase();
 
     const answer = extractAnswer(jobData);
@@ -188,8 +173,8 @@ async function pollBioLiteratureJob(
     }
 
     logger.debug(
-      { jobId, status, hasAnswer: Boolean(answer), hasReasoning: Boolean(reasoning) },
-      "bioliterature_deep_poll",
+      { hasAnswer: Boolean(answer), hasReasoning: Boolean(reasoning), jobId, status },
+      "bioliterature_deep_poll"
     );
 
     if (status === "failed" || status === "error") {
@@ -216,7 +201,7 @@ async function pollBioLiteratureJob(
 export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
-  onPollUpdate?: OnPollUpdate,
+  onPollUpdate?: OnPollUpdate
 ): Promise<{ output: string; jobId?: string; reasoning?: string[] }> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
@@ -231,30 +216,28 @@ export async function searchBioLiterature(
   const { response } = await fetchWithRetry(
     endpoint,
     {
-      method: "POST",
+      body: JSON.stringify({
+        max_results: 20,
+        mode,
+        per_source_limit: 5,
+        question: objective,
+        sources: ["arxiv", "pubmed", "clinical-trials"],
+      }),
       headers: {
         "Content-Type": "application/json",
         "X-API-Key": BIO_LIT_AGENT_API_KEY,
       },
-      body: JSON.stringify({
-        question: objective,
-        max_results: 20,
-        per_source_limit: 5,
-        sources: ["arxiv", "pubmed", "clinical-trials"],
-        mode,
-      }),
+      method: "POST",
     },
     {
       onRetry: (attempt, error) =>
-        logger.warn({ attempt, objective, error: error.message }, "bioliterature_search_retry"),
-    },
+        logger.warn({ attempt, error: error.message, objective }, "bioliterature_search_retry"),
+    }
   );
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `BioLiterature API error: ${response.status} - ${errorText}`,
-    );
+    throw new Error(`BioLiterature API error: ${response.status} - ${errorText}`);
   }
 
   const initialData = (await response.json()) as BioLiteratureResponse;
@@ -268,17 +251,9 @@ export async function searchBioLiterature(
 
     if (jobId) {
       logger.info({ jobId }, "bioliterature_deep_job_created");
-      finalData = await pollBioLiteratureJob(
-        baseUrl,
-        BIO_LIT_AGENT_API_KEY,
-        jobId,
-        onPollUpdate,
-      );
+      finalData = await pollBioLiteratureJob(baseUrl, BIO_LIT_AGENT_API_KEY, jobId, onPollUpdate);
     } else {
-      logger.warn(
-        { mode },
-        "bioliterature_deep_missing_job_id_using_direct_response",
-      );
+      logger.warn({ mode }, "bioliterature_deep_missing_job_id_using_direct_response");
     }
   }
 
@@ -289,26 +264,26 @@ export async function searchBioLiterature(
 
   logger.info(
     {
-      hasAnswer: Boolean(answer),
-      referencesCount: references.length,
       contextPassagesCount: contextPassages.length,
-      mode,
+      hasAnswer: Boolean(answer),
       jobId,
+      mode,
+      referencesCount: references.length,
     },
-    "bioliterature_search_completed",
+    "bioliterature_search_completed"
   );
 
   if (!answer) {
     return {
-      output: "No answer received from BioLiterature API",
       jobId,
+      output: "No answer received from BioLiterature API",
       reasoning: finalReasoning,
     };
   }
 
   return {
-    output: answer,
     jobId,
+    output: answer,
     reasoning: finalReasoning,
   };
 }
