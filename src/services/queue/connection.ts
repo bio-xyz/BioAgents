@@ -47,13 +47,13 @@ export function getBullMQConnection(): Redis {
 
     bullmqConnection = new Redis(redisUrl, {
       maxRetriesPerRequest: null, // Required for BullMQ
-      retryStrategy: (times) => {
-        if (times > 10) return null; // Stop after 10 retries
-        return Math.min(times * 200, 5000); // Exponential backoff, max 5s
-      },
       reconnectOnError: (err) => {
         const targetErrors = ["READONLY", "ECONNRESET", "ETIMEDOUT"];
         return targetErrors.some((e) => err.message.includes(e));
+      },
+      retryStrategy: (times) => {
+        if (times > 10) return null; // Stop after 10 retries
+        return Math.min(times * 200, 5000); // Exponential backoff, max 5s
       },
     });
 
@@ -138,9 +138,7 @@ export async function closeConnections(): Promise<void> {
   const connections = [bullmqConnection, publisher, subscriber];
 
   await Promise.all(
-    connections
-      .filter((conn): conn is Redis => conn !== null)
-      .map((conn) => conn.quit()),
+    connections.filter((conn): conn is Redis => conn !== null).map((conn) => conn.quit())
   );
 
   bullmqConnection = null;

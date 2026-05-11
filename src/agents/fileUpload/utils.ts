@@ -21,8 +21,8 @@ export function matchesMimeType(mimeType: string, patterns: string[]): boolean {
  * Extracts file extension from filename
  */
 export function getFileExtension(filename: string): string {
-  const lastDot = filename.lastIndexOf('.');
-  return lastDot === -1 ? '' : filename.substring(lastDot).toLowerCase();
+  const lastDot = filename.lastIndexOf(".");
+  return lastDot === -1 ? "" : filename.substring(lastDot).toLowerCase();
 }
 
 /**
@@ -37,10 +37,10 @@ export function matchesExtension(filename: string, extensions: string[]): boolea
  * Formats file size in human-readable format
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
+  if (bytes === 0) return "0 Bytes";
 
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
@@ -64,7 +64,7 @@ export function mbToBytes(mb: number): number {
  * Sanitizes filename by removing unsafe characters
  */
 export function sanitizeFilename(filename: string): string {
-  return filename.replace(/[^a-zA-Z0-9.-_]/g, '_');
+  return filename.replace(/[^a-zA-Z0-9.-_]/g, "_");
 }
 
 /**

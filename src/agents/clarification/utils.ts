@@ -31,7 +31,7 @@ export type GenerateQuestionsResult = {
  */
 export async function generateQuestions(
   query: string,
-  options: GenerateQuestionsOptions = {},
+  options: GenerateQuestionsOptions = {}
 ): Promise<GenerateQuestionsResult> {
   // Use planning LLM provider for clarification (same tier of reasoning needed)
   const CLARIFICATION_LLM_PROVIDER: LLMProvider =
@@ -39,13 +39,10 @@ export async function generateQuestions(
     (process.env.PLANNING_LLM_PROVIDER as LLMProvider) ||
     "google";
 
-  const llmApiKey =
-    process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${CLARIFICATION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const model =
@@ -55,28 +52,33 @@ export async function generateQuestions(
     "gemini-2.5-pro";
 
   const llmProvider = new LLM({
-    name: CLARIFICATION_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: CLARIFICATION_LLM_PROVIDER,
   });
 
   // Build dataset context if provided
   let datasetContext = "";
   if (options.datasets && options.datasets.length > 0) {
     const datasetList = options.datasets
-      .map((d) => `- ${d.filename}${d.description ? `: ${d.description}` : " (no description provided)"}`)
+      .map(
+        (d) =>
+          `- ${d.filename}${d.description ? `: ${d.description}` : " (no description provided)"}`
+      )
       .join("\n");
 
     const datasetsWithoutDescription = options.datasets.filter((d) => !d.description);
     const hasMultipleDatasets = options.datasets.length > 1;
 
-    let dataGuidance = "Since the user has data, adjust data_requirements questions to focus on how they want to use this data rather than asking if they have data.";
+    let dataGuidance =
+      "Since the user has data, adjust data_requirements questions to focus on how they want to use this data rather than asking if they have data.";
 
     if (datasetsWithoutDescription.length > 0) {
       dataGuidance += `\n- Some datasets lack descriptions (${datasetsWithoutDescription.map((d) => d.filename).join(", ")}). Consider asking what these files contain.`;
     }
 
     if (hasMultipleDatasets) {
-      dataGuidance += "\n- User has multiple datasets. Consider asking which dataset to use for which purpose, or how they relate to each other.";
+      dataGuidance +=
+        "\n- User has multiple datasets. Consider asking which dataset to use for which purpose, or how they relate to each other.";
     }
 
     datasetContext = `\n\nUSER'S AVAILABLE DATA\nThe user has the following data files available for analysis:\n${datasetList}\n\nNote: ${dataGuidance}`;
@@ -85,20 +87,20 @@ export async function generateQuestions(
   const prompt = GENERATE_QUESTIONS_PROMPT.replace("{query}", query + datasetContext);
 
   logger.info(
-    { query: query.substring(0, 100), model, datasetCount: options.datasets?.length || 0 },
-    "generating_clarification_questions",
+    { datasetCount: options.datasets?.length || 0, model, query: query.substring(0, 100) },
+    "generating_clarification_questions"
   );
 
   try {
     const response = await llmProvider.createChatCompletion({
-      model,
+      maxTokens: options.maxTokens ?? 1024,
       messages: [
         {
-          role: "user" as const,
           content: prompt,
+          role: "user" as const,
         },
       ],
-      maxTokens: options.maxTokens ?? 1024,
+      model,
       thinkingBudget: 1024,
     });
 
@@ -112,10 +114,7 @@ export async function generateQuestions(
       const jsonStr = jsonMatch && jsonMatch[1] ? jsonMatch[1].trim() : content;
       parsed = JSON.parse(jsonStr);
     } catch (parseError) {
-      logger.error(
-        { content, parseError },
-        "failed_to_parse_questions_response",
-      );
+      logger.error({ content, parseError }, "failed_to_parse_questions_response");
       // Return empty questions if parsing fails
       return {
         questions: [],
@@ -129,16 +128,18 @@ export async function generateQuestions(
         q.category &&
         q.question &&
         q.priority &&
-        ["ambiguity", "data_requirements", "scope_constraints", "methodology", "output"].includes(q.category) &&
-        ["high", "medium", "low"].includes(q.priority),
+        ["ambiguity", "data_requirements", "scope_constraints", "methodology", "output"].includes(
+          q.category
+        ) &&
+        ["high", "medium", "low"].includes(q.priority)
     );
 
     logger.info(
       {
-        questionCount: validQuestions.length,
         categories: validQuestions.map((q) => q.category),
+        questionCount: validQuestions.length,
       },
-      "clarification_questions_generated",
+      "clarification_questions_generated"
     );
 
     return {

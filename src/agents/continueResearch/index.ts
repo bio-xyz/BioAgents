@@ -1,11 +1,7 @@
-import type { ConversationState, Message, PlanTask } from "../../types/core";
 import { getMessagesByConversation } from "../../db/operations";
+import type { ConversationState, Message, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import {
-  decideContinuation,
-  type ContinueResearchDoc,
-  type DatasetInfo,
-} from "./utils";
+import { type ContinueResearchDoc, type DatasetInfo, decideContinuation } from "./utils";
 
 export type ContinueResearchResult = {
   shouldContinue: boolean;
@@ -47,12 +43,10 @@ export async function continueResearchAgent(input: {
   const start = new Date().toISOString();
 
   // Extract datasets from conversation state
-  const datasets: DatasetInfo[] = (
-    conversationState.values.uploadedDatasets || []
-  ).map((d) => ({
+  const datasets: DatasetInfo[] = (conversationState.values.uploadedDatasets || []).map((d) => ({
+    description: d.description || "",
     filename: d.filename,
     id: d.id,
-    description: d.description || "",
     size: d.size,
   }));
 
@@ -61,7 +55,7 @@ export async function continueResearchAgent(input: {
   try {
     const messages = await getMessagesByConversation(
       message.conversation_id,
-      20, // Check last 20 messages
+      20 // Check last 20 messages
     );
     // Messages are newest-first; find the most recent with a non-empty question.
     // Continuation messages have question="" so they are skipped.
@@ -73,16 +67,16 @@ export async function continueResearchAgent(input: {
 
   logger.info(
     {
-      iterationCount,
-      completedTaskCount: completedTasks.length,
       allTaskCount: conversationState.values.plan?.length || 0,
-      suggestedNextStepsCount: suggestedNextSteps.length,
-      hasHypothesis: !!hypothesis,
+      completedTaskCount: completedTasks.length,
       datasetCount: datasets.length,
+      hasHypothesis: !!hypothesis,
       hasUserMessage: !!userLastMessage,
+      iterationCount,
       researchMode,
+      suggestedNextStepsCount: suggestedNextSteps.length,
     },
-    "continue_research_agent_started",
+    "continue_research_agent_started"
   );
 
   try {
@@ -91,13 +85,13 @@ export async function continueResearchAgent(input: {
       logger.info("no_suggested_next_steps_research_complete");
       const end = new Date().toISOString();
       return {
-        shouldContinue: false,
+        confidence: "high",
+        end,
         reasoning:
           "No further research steps suggested. The research objective appears to be addressed.",
-        confidence: "high",
-        triggerReason: "research_convergence",
+        shouldContinue: false,
         start,
-        end,
+        triggerReason: "research_convergence",
       };
     }
 
@@ -106,13 +100,12 @@ export async function continueResearchAgent(input: {
       logger.info({ iterationCount }, "steering_mode_asking_user");
       const end = new Date().toISOString();
       return {
-        shouldContinue: false,
-        reasoning:
-          "Steering mode - pausing for user feedback after each iteration.",
         confidence: "high",
-        triggerReason: "steering_mode",
-        start,
         end,
+        reasoning: "Steering mode - pausing for user feedback after each iteration.",
+        shouldContinue: false,
+        start,
+        triggerReason: "steering_mode",
       };
     }
 
@@ -121,16 +114,16 @@ export async function continueResearchAgent(input: {
     if (researchMode === "fully-autonomous") {
       logger.info(
         { iterationCount, suggestedNextStepsCount: suggestedNextSteps.length },
-        "fully_autonomous_auto_continue",
+        "fully_autonomous_auto_continue"
       );
       const end = new Date().toISOString();
       return {
-        shouldContinue: true,
+        confidence: "high",
+        end,
         reasoning:
           "Fully autonomous mode - continuing research as there are still steps to explore.",
-        confidence: "high",
+        shouldContinue: true,
         start,
-        end,
       };
     }
 
@@ -141,12 +134,12 @@ export async function continueResearchAgent(input: {
       logger.info({ iterationCount }, "first_iteration_auto_continue");
       const end = new Date().toISOString();
       return {
-        shouldContinue: true,
+        confidence: "high",
+        end,
         reasoning:
           "First iteration completed. Continuing to build foundational understanding before seeking user feedback.",
-        confidence: "high",
+        shouldContinue: true,
         start,
-        end,
       };
     }
 
@@ -161,9 +154,9 @@ export async function continueResearchAgent(input: {
     latestIterationTasks.forEach((task) => {
       if (task.output && task.output.trim()) {
         docs.push({
-          title: `${task.type} Task`,
-          text: `Objective: ${task.objective}\n\nOutput:\n${task.output}`,
           context: `Current iteration - ${task.type} task`,
+          text: `Objective: ${task.objective}\n\nOutput:\n${task.output}`,
+          title: `${task.type} Task`,
         });
       }
     });
@@ -171,9 +164,9 @@ export async function continueResearchAgent(input: {
     // Add hypothesis if available
     if (hypothesis) {
       docs.push({
-        title: "Current Hypothesis",
-        text: hypothesis,
         context: "Working hypothesis synthesized from all iterations",
+        text: hypothesis,
+        title: "Current Hypothesis",
       });
     }
 
@@ -191,7 +184,10 @@ export async function continueResearchAgent(input: {
     // Call LLM for decision
     const result = await decideContinuation(
       conversationState.values.objective || message.question || "",
-      conversationState.values.evolvingObjective || conversationState.values.objective || message.question || "",
+      conversationState.values.evolvingObjective ||
+        conversationState.values.objective ||
+        message.question ||
+        "",
       conversationState.values.currentObjective || "",
       iterationCount,
       hypothesis,
@@ -203,43 +199,43 @@ export async function continueResearchAgent(input: {
       datasets,
       {
         maxTokens: 1024,
-        thinkingBudget: 2048,
         messageId: message.id,
+        thinkingBudget: 2048,
         usageType: "deep-research",
-      },
+      }
     );
 
     const end = new Date().toISOString();
 
     logger.info(
       {
-        shouldContinue: result.shouldContinue,
         confidence: result.confidence,
-        triggerReason: result.triggerReason,
+        iterationCount,
         reasoning: result.reasoning,
         researchMode,
-        iterationCount,
+        shouldContinue: result.shouldContinue,
+        triggerReason: result.triggerReason,
         userLastMessagePreview: userLastMessage?.substring(0, 100),
       },
-      "continue_research_decision",
+      "continue_research_decision"
     );
 
     return {
       ...result,
-      start,
       end,
+      start,
     };
   } catch (err) {
     logger.error({ err }, "continue_research_agent_failed");
     // On error, default to asking user (safer)
     const end = new Date().toISOString();
     return {
-      shouldContinue: false,
-      reasoning: "Error during decision making. Defaulting to user feedback.",
       confidence: "low",
-      triggerReason: "error",
-      start,
       end,
+      reasoning: "Error during decision making. Defaulting to user feedback.",
+      shouldContinue: false,
+      start,
+      triggerReason: "error",
     };
   }
 }

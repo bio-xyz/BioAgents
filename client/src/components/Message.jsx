@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
-import { Icon } from "./icons";
 import { InlineCitationText } from "./InlineCitationText";
+import { Icon } from "./icons";
 
 export function Message({ message }) {
   const isUser = message.role === "user";
@@ -17,9 +17,9 @@ export function Message({ message }) {
     const isToday = date.toDateString() === now.toDateString();
 
     const timeStr = date.toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+      hour: "numeric",
+      hour12: true,
+      minute: "2-digit",
     });
 
     if (isToday) {
@@ -27,8 +27,8 @@ export function Message({ message }) {
     }
 
     const dateStr = date.toLocaleDateString([], {
-      month: 'short',
-      day: 'numeric'
+      day: "numeric",
+      month: "short",
     });
     return `${dateStr}, ${timeStr}`;
   };
@@ -73,35 +73,26 @@ export function Message({ message }) {
                 // Compact view for many files
                 <div className="message-file-badge message-file-summary">
                   <Icon name="folder" size={14} />
-                  <span className="file-name">
-                    {files.length} files attached
-                  </span>
-                  <span className="file-size">
-                    {formatFileSize(totalSize)}
-                  </span>
+                  <span className="file-name">{files.length} files attached</span>
+                  <span className="file-size">{formatFileSize(totalSize)}</span>
                 </div>
               ) : (
                 // Show individual files when 3 or fewer
-                files.map((file, index) => (
-                  <div key={index} className="message-file-badge">
+                files.map((file) => (
+                  <div
+                    key={`${file.name || file.filename}-${file.size || 0}-${file.mimeType || ""}`}
+                    className="message-file-badge"
+                  >
                     <Icon name={getFileIcon(file.mimeType)} size={14} />
-                    <span className="file-name">
-                      {file.name || file.filename}
-                    </span>
-                    {file.size && (
-                      <span className="file-size">
-                        {formatFileSize(file.size)}
-                      </span>
-                    )}
+                    <span className="file-name">{file.name || file.filename}</span>
+                    {file.size && <span className="file-size">{formatFileSize(file.size)}</span>}
                   </div>
                 ))
               )}
             </div>
           )}
           <div className="message-content">{message.content}</div>
-          {timestamp && (
-            <div className="message-timestamp">{timestamp}</div>
-          )}
+          {timestamp && <div className="message-timestamp">{timestamp}</div>}
         </div>
       );
     } else {
@@ -111,52 +102,46 @@ export function Message({ message }) {
           <InlineCitationText content={message.content} />
 
           <div className="message-footer">
-            {timestamp && (
-              <div className="message-timestamp">{timestamp}</div>
-            )}
+            {timestamp && <div className="message-timestamp">{timestamp}</div>}
             <div className="message-actions">
-            <button
-              onClick={handleCopy}
-              className="message-action-icon-btn"
-              title="Copy"
-            >
-              <Icon name={copied ? "check" : "copy"} size={18} />
-            </button>
-            <button
-              disabled
-              className="message-action-icon-btn message-action-disabled"
-              title="Like"
-            >
-              <Icon name="thumbsUp" size={18} />
-            </button>
-            <button
-              disabled
-              className="message-action-icon-btn message-action-disabled"
-              title="Dislike"
-            >
-              <Icon name="thumbsDown" size={18} />
-            </button>
-            <button
-              disabled
-              className="message-action-icon-btn message-action-disabled"
-              title="Share"
-            >
-              <Icon name="share" size={18} />
-            </button>
-            <button
-              disabled
-              className="message-action-icon-btn message-action-disabled"
-              title="Regenerate"
-            >
-              <Icon name="refresh" size={18} />
-            </button>
-            <button
-              disabled
-              className="message-action-icon-btn message-action-disabled"
-              title="More"
-            >
-              <Icon name="menu" size={18} />
-            </button>
+              <button onClick={handleCopy} className="message-action-icon-btn" title="Copy">
+                <Icon name={copied ? "check" : "copy"} size={18} />
+              </button>
+              <button
+                disabled
+                className="message-action-icon-btn message-action-disabled"
+                title="Like"
+              >
+                <Icon name="thumbsUp" size={18} />
+              </button>
+              <button
+                disabled
+                className="message-action-icon-btn message-action-disabled"
+                title="Dislike"
+              >
+                <Icon name="thumbsDown" size={18} />
+              </button>
+              <button
+                disabled
+                className="message-action-icon-btn message-action-disabled"
+                title="Share"
+              >
+                <Icon name="share" size={18} />
+              </button>
+              <button
+                disabled
+                className="message-action-icon-btn message-action-disabled"
+                title="Regenerate"
+              >
+                <Icon name="refresh" size={18} />
+              </button>
+              <button
+                disabled
+                className="message-action-icon-btn message-action-disabled"
+                title="More"
+              >
+                <Icon name="menu" size={18} />
+              </button>
             </div>
           </div>
         </div>

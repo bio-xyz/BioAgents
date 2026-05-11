@@ -1,10 +1,11 @@
 /**
  * Admin Jobs API - Query BullMQ job status directly
- * 
+ *
  * Provides REST API access to BullMQ job data for the frontend dashboard.
  * Requires admin authentication via X-Admin-Key header.
  */
 
+import type { Job, Queue } from "bullmq";
 import { Elysia } from "elysia";
 import { isJobQueueEnabled } from "../../services/queue/connection";
 import {
@@ -13,7 +14,6 @@ import {
   getFileProcessQueue,
   getPaperGenerationQueue,
 } from "../../services/queue/queues";
-import type { Queue, Job } from "bullmq";
 import logger from "../../utils/logger";
 
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || process.env.ADMIN_PASSWORD;
@@ -59,15 +59,15 @@ function getQueue(name: string): Queue | null {
 async function jobToResponse(job: Job): Promise<JobResponse> {
   const state = await job.getState();
   return {
+    attemptsMade: job.attemptsMade,
+    data: job.data as Record<string, unknown>,
+    failedReason: job.failedReason,
+    finishedOn: job.finishedOn,
     id: job.id || "",
     name: job.name,
-    data: job.data as Record<string, unknown>,
-    state,
-    progress: job.progress,
-    attemptsMade: job.attemptsMade,
     processedOn: job.processedOn,
-    finishedOn: job.finishedOn,
-    failedReason: job.failedReason,
+    progress: job.progress,
+    state,
     timestamp: job.timestamp,
   };
 }
@@ -142,22 +142,20 @@ export const adminJobsRoute = new Elysia().guard(
           }
 
           // Sort by timestamp (newest first) and limit
-          jobs = jobs
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, limit);
+          jobs = jobs.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
 
           // Convert to response format
           const jobResponses = await Promise.all(jobs.map(jobToResponse));
 
           logger.info(
-            { queue: queueName, status, jobCount: jobResponses.length },
+            { jobCount: jobResponses.length, queue: queueName, status },
             "admin_jobs_fetched"
           );
 
           return {
-            queue: queueName,
-            jobs: jobResponses,
             counts,
+            jobs: jobResponses,
+            queue: queueName,
           };
         } catch (error) {
           logger.error({ error, queue: queueName }, "admin_jobs_fetch_error");
@@ -223,6 +221,6 @@ export const adminJobsRoute = new Elysia().guard(
 
         logger.info({ jobId, queue: queueName }, "admin_job_retried");
 
-        return { success: true, jobId, message: "Job queued for retry" };
+        return { jobId, message: "Job queued for retry", success: true };
       })
 );

@@ -5,10 +5,19 @@
  * from task outputs, returning typed references for BibTeX generation.
  */
 
-import { doiToCitekey, normalizeDOI, isValidDOI } from "../utils/doi";
 import { sanitizeCitekey } from "../utils/bibtex";
+import { doiToCitekey, isValidDOI, normalizeDOI } from "../utils/doi";
 
-export type RefType = "doi" | "pmc" | "pmid" | "nct" | "arxiv" | "biorxiv" | "uniprot" | "pubchem" | "url";
+export type RefType =
+  | "doi"
+  | "pmc"
+  | "pmid"
+  | "nct"
+  | "arxiv"
+  | "biorxiv"
+  | "uniprot"
+  | "pubchem"
+  | "url";
 
 export type ExtractedRef = {
   type: RefType;
@@ -56,10 +65,10 @@ export function extractReferences(text: string): ExtractedRef[] {
       // Use raw match (not normalized doi) so indexOf finds it in the original line
       const rawMatch = doiMatch[0];
       refs.push({
-        type: "doi",
-        url: `https://doi.org/${doi}`,
         id: doi,
         title: extractTitleFromLine(line, rawMatch),
+        type: "doi",
+        url: `https://doi.org/${doi}`,
       });
     }
   }
@@ -77,10 +86,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
     const doi = normalizeDOI(doiUrlMatch[1]!);
     if (isValidDOI(doi)) {
       return {
-        type: "doi",
-        url,
         id: doi,
         title: extractTitleFromLine(line, url),
+        type: "doi",
+        url,
       };
     }
   }
@@ -89,10 +98,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const pmcMatch = url.match(/pmc\.ncbi\.nlm\.nih\.gov\/articles\/(PMC\d+)/i);
   if (pmcMatch) {
     return {
-      type: "pmc",
-      url,
       id: pmcMatch[1]!.toUpperCase(),
       title: extractTitleFromLine(line, url),
+      type: "pmc",
+      url,
     };
   }
 
@@ -100,10 +109,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const pmidMatch = url.match(/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/);
   if (pmidMatch) {
     return {
-      type: "pmid",
-      url,
       id: pmidMatch[1]!,
       title: extractTitleFromLine(line, url),
+      type: "pmid",
+      url,
     };
   }
 
@@ -111,10 +120,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const nctMatch = url.match(/clinicaltrials\.gov\/study\/(NCT\d+)/i);
   if (nctMatch) {
     return {
-      type: "nct",
-      url,
       id: nctMatch[1]!.toUpperCase(),
       title: extractTitleFromLine(line, url),
+      type: "nct",
+      url,
     };
   }
 
@@ -122,10 +131,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const arxivMatch = url.match(/arxiv\.org\/abs\/([\d.]+(?:v\d+)?)/);
   if (arxivMatch) {
     return {
-      type: "arxiv",
-      url,
       id: arxivMatch[1]!,
       title: extractTitleFromLine(line, url),
+      type: "arxiv",
+      url,
     };
   }
 
@@ -133,10 +142,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const biorxivMatch = url.match(/biorxiv\.org\/content\/(10\.1101\/[\d.]+)/);
   if (biorxivMatch) {
     return {
-      type: "biorxiv",
-      url,
       id: biorxivMatch[1]!,
       title: extractTitleFromLine(line, url),
+      type: "biorxiv",
+      url,
     };
   }
 
@@ -144,10 +153,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const uniprotMatch = url.match(/uniprot\.org\/uniprotkb\/([A-Z0-9]+)/i);
   if (uniprotMatch) {
     return {
-      type: "uniprot",
-      url,
       id: uniprotMatch[1]!.toUpperCase(),
       title: extractTitleFromLine(line, url),
+      type: "uniprot",
+      url,
     };
   }
 
@@ -155,10 +164,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   const pubchemMatch = url.match(/pubchem\.ncbi\.nlm\.nih\.gov\/compound\/(\d+)/);
   if (pubchemMatch) {
     return {
-      type: "pubchem",
-      url,
       id: pubchemMatch[1]!,
       title: extractTitleFromLine(line, url),
+      type: "pubchem",
+      url,
     };
   }
 
@@ -166,10 +175,10 @@ function classifyUrl(url: string, line: string): ExtractedRef | null {
   if (isNonReferenceUrl(url)) return null;
 
   return {
-    type: "url",
-    url,
     id: url,
     title: extractTitleFromLine(line, url),
+    type: "url",
+    url,
   };
 }
 
@@ -198,7 +207,7 @@ function isNonReferenceUrl(url: string): boolean {
 function extractTitleFromLine(line: string, urlOrDoi: string): string {
   // Pattern 1: Numbered reference — [1] Title here. Source. https://...
   const numberedRefMatch = line.match(
-    /^\s*\[?\d+\]?\s+(.+?)(?:\.\s+\w+\.\s+https?:\/\/|https?:\/\/)/,
+    /^\s*\[?\d+\]?\s+(.+?)(?:\.\s+\w+\.\s+https?:\/\/|https?:\/\/)/
   );
   if (numberedRefMatch?.[1]) {
     const title = numberedRefMatch[1].replace(/\.\s*$/, "").trim();
@@ -206,9 +215,7 @@ function extractTitleFromLine(line: string, urlOrDoi: string): string {
   }
 
   // Pattern 2: Markdown link — [Title](https://...)
-  const mdLinkPattern = new RegExp(
-    `\\[([^\\]]+)\\]\\(${escapeRegex(urlOrDoi)}\\)`,
-  );
+  const mdLinkPattern = new RegExp(`\\[([^\\]]+)\\]\\(${escapeRegex(urlOrDoi)}\\)`);
   const mdLinkMatch = line.match(mdLinkPattern);
   if (mdLinkMatch?.[1]) {
     return truncateTitle(mdLinkMatch[1].trim());
@@ -259,9 +266,7 @@ function truncateTitle(title: string): string {
  */
 function fallbackTitle(urlOrDoi: string): string {
   try {
-    const url = new URL(
-      urlOrDoi.startsWith("http") ? urlOrDoi : `https://doi.org/${urlOrDoi}`,
-    );
+    const url = new URL(urlOrDoi.startsWith("http") ? urlOrDoi : `https://doi.org/${urlOrDoi}`);
     const host = url.hostname.replace(/^www\./, "");
     const pathParts = url.pathname.split("/").filter(Boolean);
     const lastPart = pathParts[pathParts.length - 1] || "";
@@ -311,7 +316,7 @@ export function createMiscBibtexEntry(
   citekey: string,
   title: string,
   url: string,
-  note?: string,
+  note?: string
 ): string {
   // Escape BibTeX special chars in title
   const safeTitle = title.replace(/[{}]/g, "").replace(/&/g, "\\&");

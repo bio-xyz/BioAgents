@@ -1,10 +1,10 @@
-import { render } from 'preact';
-import { useEffect } from 'preact/hooks';
-import Router, { route } from 'preact-router';
-import { AuthProvider } from './contexts';
-import { LoginPage, ChatPage } from './pages';
-import { useAuth } from './hooks';
-import './styles/global.css';
+import { render } from "preact";
+import { useEffect } from "preact/hooks";
+import Router, { route } from "preact-router";
+import { AuthProvider } from "./contexts";
+import { useAuth } from "./hooks";
+import { ChatPage, LoginPage } from "./pages";
+import "./styles/global.css";
 
 /**
  * App Shell component that handles routing
@@ -21,13 +21,13 @@ function AppShell() {
     const currentPath = window.location.pathname;
 
     // If auth is required and user is not authenticated, redirect to login
-    if (isAuthRequired && !isAuthenticated && currentPath !== '/login') {
-      route('/login', true);
+    if (isAuthRequired && !isAuthenticated && currentPath !== "/login") {
+      route("/login", true);
     }
 
     // If authenticated and on login page, redirect to chat
-    if (isAuthenticated && currentPath === '/login') {
-      route('/chat', true);
+    if (isAuthenticated && currentPath === "/login") {
+      route("/chat", true);
     }
   }, [isAuthenticated, isAuthRequired, isChecking, isLoggingOut]);
 
@@ -39,27 +39,29 @@ function AppShell() {
     if (isChecking || isLoggingOut) return;
 
     // If auth is required and user is not authenticated, redirect to login
-    if (isAuthRequired && !isAuthenticated && url !== '/login') {
-      route('/login', true);
+    if (isAuthRequired && !isAuthenticated && url !== "/login") {
+      route("/login", true);
     }
 
     // If authenticated and on login page, redirect to chat
-    if (isAuthenticated && url === '/login') {
-      route('/chat', true);
+    if (isAuthenticated && url === "/login") {
+      route("/chat", true);
     }
   };
 
   // Show loading state while checking auth
   if (isChecking) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'var(--bg-primary, #0a0a0a)',
-        color: 'var(--text-secondary, #a1a1a1)',
-      }}>
+      <div
+        style={{
+          alignItems: "center",
+          background: "var(--bg-primary, #0a0a0a)",
+          color: "var(--text-secondary, #a1a1a1)",
+          display: "flex",
+          height: "100vh",
+          justifyContent: "center",
+        }}
+      >
         Loading...
       </div>
     );
@@ -90,7 +92,7 @@ function Redirect({ to }) {
  */
 function NotFound() {
   useEffect(() => {
-    route('/chat', true);
+    route("/chat", true);
   }, []);
   return null;
 }
@@ -106,9 +108,9 @@ function Root() {
   );
 }
 
-const root = document.getElementById('app');
+const root = document.getElementById("app");
 if (root) {
   render(<Root />, root);
 } else {
-  console.error('Root element #app not found');
+  console.error("Root element #app not found");
 }

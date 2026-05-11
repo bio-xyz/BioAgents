@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "child_process";
-import * as path from "path";
 import * as fs from "fs";
+import * as path from "path";
 import logger from "../../../utils/logger";
 
 /**
@@ -20,7 +20,7 @@ import logger from "../../../utils/logger";
 export async function pandocConvert(
   mdPath: string,
   bibPath: string,
-  outputDir: string,
+  outputDir: string
 ): Promise<string> {
   await checkPandocInstalled();
 
@@ -67,10 +67,7 @@ function patchForXelatex(tex: string): string {
   let result = tex;
 
   // For older Pandoc: replace inputenc with fontspec (XeLaTeX native Unicode)
-  result = result.replace(
-    /\\usepackage\[utf8\]\{inputenc\}/g,
-    "\\usepackage{fontspec}",
-  );
+  result = result.replace(/\\usepackage\[utf8\]\{inputenc\}/g, "\\usepackage{fontspec}");
 
   // Remove \usepackage[T1]{fontenc} — XeLaTeX uses fontspec instead
   result = result.replace(/\\usepackage\[T1\]\{fontenc\}\n?/g, "");
@@ -91,7 +88,7 @@ function patchForXelatex(tex: string): string {
       preambleAdditions.push(
         "\\IfFontExistsTF{Linux Libertine O}" +
           "{\\setmainfont{Linux Libertine O}\\setsansfont{Linux Biolinum O}}" +
-          "{\\setmainfont{Linux Libertine}}",
+          "{\\setmainfont{Linux Libertine}}"
       );
     }
 
@@ -101,17 +98,11 @@ function patchForXelatex(tex: string): string {
 
     if (preambleAdditions.length > 0) {
       result =
-        result.slice(0, docBegin) +
-        preambleAdditions.join("\n") +
-        "\n\n" +
-        result.slice(docBegin);
+        result.slice(0, docBegin) + preambleAdditions.join("\n") + "\n\n" + result.slice(docBegin);
     }
   }
 
-  logger.info(
-    { hasSetmainfont: result.includes("\\setmainfont") },
-    "patchForXelatex_complete",
-  );
+  logger.info({ hasSetmainfont: result.includes("\\setmainfont") }, "patchForXelatex_complete");
 
   return result;
 }
@@ -142,8 +133,8 @@ export async function checkPandocInstalled(): Promise<void> {
       } else {
         reject(
           new Error(
-            "Pandoc is not installed or not in PATH. Install with: apt-get install pandoc (Linux) or brew install pandoc (macOS)",
-          ),
+            "Pandoc is not installed or not in PATH. Install with: apt-get install pandoc (Linux) or brew install pandoc (macOS)"
+          )
         );
       }
     });
@@ -151,8 +142,8 @@ export async function checkPandocInstalled(): Promise<void> {
     proc.on("error", () => {
       reject(
         new Error(
-          "Pandoc is not installed or not in PATH. Install with: apt-get install pandoc (Linux) or brew install pandoc (macOS)",
-        ),
+          "Pandoc is not installed or not in PATH. Install with: apt-get install pandoc (Linux) or brew install pandoc (macOS)"
+        )
       );
     });
   });
@@ -165,7 +156,7 @@ const PANDOC_TIMEOUT_MS = 60_000; // 60 seconds
  */
 function runPandoc(
   args: string[],
-  cwd: string,
+  cwd: string
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const proc = spawn("pandoc", args, {
@@ -196,15 +187,19 @@ function runPandoc(
     proc.on("close", (code) => {
       clearTimeout(timer);
       if (killed) {
-        resolve({ success: false, stdout, stderr: `Pandoc timed out after ${PANDOC_TIMEOUT_MS / 1000}s\n${stderr}` });
+        resolve({
+          stderr: `Pandoc timed out after ${PANDOC_TIMEOUT_MS / 1000}s\n${stderr}`,
+          stdout,
+          success: false,
+        });
       } else {
-        resolve({ success: code === 0, stdout, stderr });
+        resolve({ stderr, stdout, success: code === 0 });
       }
     });
 
     proc.on("error", (error) => {
       clearTimeout(timer);
-      resolve({ success: false, stdout: "", stderr: error.message });
+      resolve({ stderr: error.message, stdout: "", success: false });
     });
   });
 }

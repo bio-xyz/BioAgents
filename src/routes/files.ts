@@ -12,10 +12,10 @@
 import { Elysia, t } from "elysia";
 import { resolveAuth } from "../middleware/authResolver";
 import {
-  requestUploadUrl,
   confirmUpload,
-  getFileStatusForUser,
   deleteFile,
+  getFileStatusForUser,
+  requestUploadUrl,
 } from "../services/files";
 import logger from "../utils/logger";
 
@@ -30,26 +30,26 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       // Resolve authentication (pass body for userId in dev mode)
       const authResult = await resolveAuth(request, body);
       if (!authResult.authenticated || !authResult.userId) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
       }
 
       const { filename, contentType, size, conversationId } = body;
 
       try {
         const result = await requestUploadUrl({
-          filename,
           contentType,
-          size,
           conversationId,
+          filename,
+          size,
           userId: authResult.userId,
         });
 
         logger.info(
           { fileId: result.fileId, filename, userId: authResult.userId },
-          "upload_url_requested",
+          "upload_url_requested"
         );
 
         return result;
@@ -59,19 +59,19 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
           JSON.stringify({
             error: error instanceof Error ? error.message : "Failed to generate upload URL",
           }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+          { headers: { "Content-Type": "application/json" }, status: 500 }
         );
       }
     },
     {
       body: t.Object({
-        filename: t.String({ minLength: 1 }),
         contentType: t.String(),
-        size: t.Number({ minimum: 1 }),
         conversationId: t.Optional(t.String()),
+        filename: t.String({ minLength: 1 }),
+        size: t.Number({ minimum: 1 }),
         userId: t.Optional(t.String()), // For dev mode authentication
       }),
-    },
+    }
   )
 
   /**
@@ -84,10 +84,10 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       // Resolve authentication (pass body for userId in dev mode)
       const authResult = await resolveAuth(request, body);
       if (!authResult.authenticated || !authResult.userId) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
       }
 
       const { fileId } = body;
@@ -100,26 +100,27 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
 
         logger.info(
           { fileId, status: result.status, userId: authResult.userId },
-          "upload_confirmed",
+          "upload_confirmed"
         );
 
         return result;
       } catch (error) {
         // Enhanced error logging to capture non-Error objects
         const errorInfo = {
-          fileId,
-          errorType: error?.constructor?.name || typeof error,
+          errorKeys: error && typeof error === "object" ? Object.keys(error) : [],
           errorMessage: error instanceof Error ? error.message : String(error),
-          errorKeys: error && typeof error === 'object' ? Object.keys(error) : [],
           errorString: String(error),
+          errorType: error?.constructor?.name || typeof error,
+          fileId,
         };
         logger.error(errorInfo, "upload_confirm_failed");
 
         return new Response(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error) || "Failed to confirm upload",
+            error:
+              error instanceof Error ? error.message : String(error) || "Failed to confirm upload",
           }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+          { headers: { "Content-Type": "application/json" }, status: 500 }
         );
       }
     },
@@ -128,7 +129,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
         fileId: t.String({ minLength: 1 }),
         userId: t.Optional(t.String()), // For dev mode authentication
       }),
-    },
+    }
   )
 
   /**
@@ -141,10 +142,10 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       // Resolve authentication
       const authResult = await resolveAuth(request);
       if (!authResult.authenticated || !authResult.userId) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
       }
 
       const { fileId } = params;
@@ -153,20 +154,20 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
         const status = await getFileStatusForUser(fileId, authResult.userId);
 
         if (!status) {
-          return new Response(
-            JSON.stringify({ error: "File not found" }),
-            { status: 404, headers: { "Content-Type": "application/json" } },
-          );
+          return new Response(JSON.stringify({ error: "File not found" }), {
+            headers: { "Content-Type": "application/json" },
+            status: 404,
+          });
         }
 
         return {
-          fileId: status.fileId,
-          status: status.status,
-          filename: status.filename,
-          size: status.size,
+          createdAt: status.createdAt,
           description: status.description,
           error: status.error,
-          createdAt: status.createdAt,
+          fileId: status.fileId,
+          filename: status.filename,
+          size: status.size,
+          status: status.status,
           updatedAt: status.updatedAt,
         };
       } catch (error) {
@@ -175,7 +176,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
           JSON.stringify({
             error: error instanceof Error ? error.message : "Failed to get file status",
           }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+          { headers: { "Content-Type": "application/json" }, status: 500 }
         );
       }
     },
@@ -183,7 +184,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       params: t.Object({
         fileId: t.String({ minLength: 1 }),
       }),
-    },
+    }
   )
 
   /**
@@ -196,10 +197,10 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       // Resolve authentication
       const authResult = await resolveAuth(request);
       if (!authResult.authenticated || !authResult.userId) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
       }
 
       const { fileId } = params;
@@ -216,7 +217,7 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
           JSON.stringify({
             error: error instanceof Error ? error.message : "Failed to delete file",
           }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+          { headers: { "Content-Type": "application/json" }, status: 500 }
         );
       }
     },
@@ -224,5 +225,5 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
       params: t.Object({
         fileId: t.String({ minLength: 1 }),
       }),
-    },
+    }
   );

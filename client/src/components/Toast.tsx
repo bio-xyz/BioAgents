@@ -9,25 +9,25 @@ export function Toast({ toast, onClose }: ToastProps) {
   const { id, message, type } = toast;
 
   const colors = {
-    success: {
-      bg: "rgba(34, 197, 94, 0.95)",
-      border: "#16a34a",
-      icon: "✓",
-    },
     error: {
       bg: "rgba(239, 68, 68, 0.95)",
       border: "#dc2626",
       icon: "✕",
     },
-    warning: {
-      bg: "rgba(251, 146, 60, 0.95)",
-      border: "#ea580c",
-      icon: "⚠",
-    },
     info: {
       bg: "rgba(59, 130, 246, 0.95)",
       border: "#2563eb",
       icon: "ℹ",
+    },
+    success: {
+      bg: "rgba(34, 197, 94, 0.95)",
+      border: "#16a34a",
+      icon: "✓",
+    },
+    warning: {
+      bg: "rgba(251, 146, 60, 0.95)",
+      border: "#ea580c",
+      icon: "⚠",
     },
   };
 
@@ -36,25 +36,23 @@ export function Toast({ toast, onClose }: ToastProps) {
   return (
     <div
       style={{
-        display: "flex",
         alignItems: "center",
-        gap: "0.75rem",
-        padding: "1rem 1.25rem",
-        borderRadius: "0.5rem",
+        animation: "slideIn 0.3s ease-out",
         background: style.bg,
         border: `1px solid ${style.border}`,
-        color: "#fff",
-        fontSize: "0.9rem",
+        borderRadius: "0.5rem",
         boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-        minWidth: "300px",
+        color: "#fff",
+        display: "flex",
+        fontSize: "0.9rem",
+        gap: "0.75rem",
         maxWidth: "500px",
+        minWidth: "300px",
+        padding: "1rem 1.25rem",
         wordBreak: "break-word",
-        animation: "slideIn 0.3s ease-out",
       }}
     >
-      <span style={{ fontSize: "1.2rem", fontWeight: "bold", flexShrink: 0 }}>
-        {style.icon}
-      </span>
+      <span style={{ flexShrink: 0, fontSize: "1.2rem", fontWeight: "bold" }}>{style.icon}</span>
       <span style={{ flex: 1, whiteSpace: "pre-line" }}>{message}</span>
       <button
         onClick={() => onClose(id)}
@@ -63,11 +61,11 @@ export function Toast({ toast, onClose }: ToastProps) {
           border: "none",
           color: "#fff",
           cursor: "pointer",
+          flexShrink: 0,
           fontSize: "1.2rem",
-          padding: "0",
           lineHeight: 1,
           opacity: 0.8,
-          flexShrink: 0,
+          padding: "0",
         }}
         onMouseEnter={(e) => {
           (e.target as HTMLButtonElement).style.opacity = "1";
@@ -108,14 +106,14 @@ export function ToastContainer({ toasts, onClose }: ToastContainerProps) {
       </style>
       <div
         style={{
-          position: "fixed",
-          top: "1rem",
-          right: "1rem",
           display: "flex",
           flexDirection: "column",
           gap: "0.75rem",
-          zIndex: 9999,
           pointerEvents: "none",
+          position: "fixed",
+          right: "1rem",
+          top: "1rem",
+          zIndex: 9999,
         }}
       >
         {toasts.map((toast) => (
@@ -127,4 +125,3 @@ export function ToastContainer({ toasts, onClose }: ToastContainerProps) {
     </>
   );
 }
-

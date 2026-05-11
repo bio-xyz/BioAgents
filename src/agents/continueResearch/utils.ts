@@ -48,10 +48,9 @@ export async function decideContinuation(
   suggestedNextSteps: string,
   userLastMessage: string,
   datasets: DatasetInfo[],
-  options: ContinueResearchOptions = {},
+  options: ContinueResearchOptions = {}
 ): Promise<ContinueResearchDecision> {
-  const model =
-    process.env.CONTINUE_RESEARCH_LLM_MODEL || "claude-sonnet-4-5-20250929";
+  const model = process.env.CONTINUE_RESEARCH_LLM_MODEL || "claude-sonnet-4-5-20250929";
 
   // Build document content (all task outputs)
   const allTaskOutputs = documents
@@ -96,38 +95,32 @@ export async function decideContinuation(
     .replace("{{datasetCount}}", String(datasets.length))
     .replace("{{datasets}}", datasetsText)
     .replace("{{allTaskOutputs}}", allTaskOutputs || "No task outputs yet.")
-    .replace(
-      "{{suggestedNextSteps}}",
-      suggestedNextSteps || "No suggested next steps.",
-    );
+    .replace("{{suggestedNextSteps}}", suggestedNextSteps || "No suggested next steps.");
 
   const CONTINUE_RESEARCH_LLM_PROVIDER: LLMProvider =
     (process.env.CONTINUE_RESEARCH_LLM_PROVIDER as LLMProvider) || "anthropic";
-  const llmApiKey =
-    process.env[`${CONTINUE_RESEARCH_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${CONTINUE_RESEARCH_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${CONTINUE_RESEARCH_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${CONTINUE_RESEARCH_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: CONTINUE_RESEARCH_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: CONTINUE_RESEARCH_LLM_PROVIDER,
   });
 
   const llmRequest = {
-    model,
+    maxTokens: options.maxTokens ?? 1024,
+    messageId: options.messageId,
     messages: [
       {
-        role: "user" as const,
         content: promptInstruction,
+        role: "user" as const,
       },
     ],
-    maxTokens: options.maxTokens ?? 1024,
+    model,
     thinkingBudget: options.thinkingBudget,
-    messageId: options.messageId,
     usageType: options.usageType,
   };
 
@@ -142,7 +135,7 @@ export async function decideContinuation(
         .replace(/\n?```$/, "")
         .trim();
       parsedResponse = JSON.parse(cleaned);
-    } catch (parseError) {
+    } catch {
       // Try to locate JSON between {}
       const jsonMatch = response.content.match(/\{[\s\S]*?\}/);
       const jsonString = jsonMatch ? jsonMatch[0] : "";
@@ -155,9 +148,9 @@ export async function decideContinuation(
         );
         // Default to not continuing - safe to stop and let user decide
         parsedResponse = {
-          shouldContinue: false,
-          reasoning: "Unable to parse continue decision",
           confidence: "low",
+          reasoning: "Unable to parse continue decision",
+          shouldContinue: false,
         };
       }
     }
@@ -175,13 +168,13 @@ export async function decideContinuation(
 
     logger.info(
       {
-        shouldContinue: parsedResponse.shouldContinue,
         confidence: parsedResponse.confidence,
-        triggerReason: parsedResponse.triggerReason,
-        docCount: documents.length,
         datasetCount: datasets.length,
+        docCount: documents.length,
+        shouldContinue: parsedResponse.shouldContinue,
+        triggerReason: parsedResponse.triggerReason,
       },
-      "continue_research_decision_made",
+      "continue_research_decision_made"
     );
 
     return parsedResponse;

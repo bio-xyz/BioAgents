@@ -18,7 +18,7 @@ import logger from "../../../utils/logger";
 export function validateMarkdown(
   markdown: string,
   knownKeys: Set<string>,
-  urlToCitekey?: Map<string, string>,
+  urlToCitekey?: Map<string, string>
 ): string {
   let result = markdown;
 
@@ -50,30 +50,24 @@ export function validateMarkdown(
 function replaceRawUrlCitations(
   markdown: string,
   urlToCitekey: Map<string, string>,
-  knownKeys: Set<string>,
+  knownKeys: Set<string>
 ): string {
   let result = markdown;
   let replacementCount = 0;
 
   // Pattern 1: [https://...] — URL used as a bracketed citation
-  result = result.replace(
-    /\[?(https?:\/\/[^\s\])<>]+)\]?/g,
-    (fullMatch, url: string) => {
-      const cleanUrl = url.replace(/[.,;:)>\]]+$/, "");
-      const citekey = urlToCitekey.get(cleanUrl);
-      if (citekey && knownKeys.has(citekey)) {
-        replacementCount++;
-        return `[@${citekey}]`;
-      }
-      return fullMatch;
-    },
-  );
+  result = result.replace(/\[?(https?:\/\/[^\s\])<>]+)\]?/g, (fullMatch, url: string) => {
+    const cleanUrl = url.replace(/[.,;:)>\]]+$/, "");
+    const citekey = urlToCitekey.get(cleanUrl);
+    if (citekey && knownKeys.has(citekey)) {
+      replacementCount++;
+      return `[@${citekey}]`;
+    }
+    return fullMatch;
+  });
 
   if (replacementCount > 0) {
-    logger.info(
-      { replacementCount },
-      "raw_url_citations_replaced_with_citekeys",
-    );
+    logger.info({ replacementCount }, "raw_url_citations_replaced_with_citekeys");
   }
 
   return result;
@@ -82,10 +76,7 @@ function replaceRawUrlCitations(
 /**
  * Extract all [@key] and @key references, remove unknown ones
  */
-function validateCitationKeys(
-  markdown: string,
-  knownKeys: Set<string>,
-): string {
+function validateCitationKeys(markdown: string, knownKeys: Set<string>): string {
   const unknownKeys: string[] = [];
 
   // Match Pandoc citation patterns: [@key], [@key1; @key2], @key
@@ -124,8 +115,8 @@ function validateCitationKeys(
 
   if (unknownKeys.length > 0) {
     logger.warn(
-      { unknownKeys: unknownKeys.slice(0, 20), total: unknownKeys.length },
-      "unknown_citation_keys_removed",
+      { total: unknownKeys.length, unknownKeys: unknownKeys.slice(0, 20) },
+      "unknown_citation_keys_removed"
     );
   }
 
@@ -144,10 +135,7 @@ function checkMathBalance(markdown: string): void {
   const dollarCount = (withoutDisplay.match(/\$/g) || []).length;
 
   if (dollarCount % 2 !== 0) {
-    logger.warn(
-      { dollarCount },
-      "unbalanced_math_delimiters_detected",
-    );
+    logger.warn({ dollarCount }, "unbalanced_math_delimiters_detected");
   }
 }
 
@@ -170,9 +158,10 @@ function checkEmptySections(markdown: string): void {
 
   for (let i = 0; i < sections.length; i++) {
     const start = sections[i]!.startIndex;
-    const end = i + 1 < sections.length
-      ? markdown.lastIndexOf("\n", markdown.indexOf(sections[i + 1]!.heading, start))
-      : markdown.length;
+    const end =
+      i + 1 < sections.length
+        ? markdown.lastIndexOf("\n", markdown.indexOf(sections[i + 1]!.heading, start))
+        : markdown.length;
 
     const content = markdown.slice(start, end).trim();
     if (content.length < 20) {
@@ -181,9 +170,6 @@ function checkEmptySections(markdown: string): void {
   }
 
   if (emptySections.length > 0) {
-    logger.warn(
-      { emptySections },
-      "empty_or_short_sections_detected",
-    );
+    logger.warn({ emptySections }, "empty_or_short_sections_detected");
   }
 }

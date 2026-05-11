@@ -16,7 +16,7 @@ import type {
 } from "../../types/clarification";
 import logger from "../../utils/logger";
 import { generatePlanFromContext, regeneratePlanFromFeedback } from "./plan";
-import { generateQuestions, type DatasetInfo } from "./utils";
+import { type DatasetInfo, generateQuestions } from "./utils";
 
 export type ClarificationQuestionsResult = {
   questions: ClarificationQuestion[];
@@ -52,8 +52,12 @@ export async function clarificationQuestionsAgent(input: {
   const start = new Date().toISOString();
 
   logger.info(
-    { queryLength: query.length, queryPreview: query.substring(0, 100), datasetCount: datasets?.length || 0 },
-    "clarification_questions_agent_started",
+    {
+      datasetCount: datasets?.length || 0,
+      queryLength: query.length,
+      queryPreview: query.substring(0, 100),
+    },
+    "clarification_questions_agent_started"
   );
 
   try {
@@ -63,18 +67,18 @@ export async function clarificationQuestionsAgent(input: {
 
     logger.info(
       {
-        questionCount: result.questions.length,
         categories: result.questions.map((q) => q.category),
+        questionCount: result.questions.length,
         reasoning: result.reasoning,
       },
-      "clarification_questions_agent_completed",
+      "clarification_questions_agent_completed"
     );
 
     return {
+      end,
       questions: result.questions,
       reasoning: result.reasoning,
       start,
-      end,
     };
   } catch (error) {
     logger.error({ error, query }, "clarification_questions_agent_failed");
@@ -104,20 +108,20 @@ export async function clarificationPlanAgent(input: {
 
   logger.info(
     {
-      queryLength: query.length,
-      questionCount: questions.length,
       answerCount: answers.length,
       datasetCount: datasets?.length || 0,
+      queryLength: query.length,
+      questionCount: questions.length,
     },
-    "clarification_plan_agent_started",
+    "clarification_plan_agent_started"
   );
 
   try {
     const plan = await generatePlanFromContext({
-      query,
-      questions,
       answers,
       datasets,
+      query,
+      questions,
     });
 
     const end = new Date().toISOString();
@@ -127,13 +131,13 @@ export async function clarificationPlanAgent(input: {
         objective: plan.objective.substring(0, 100),
         taskCount: plan.initialTasks.length,
       },
-      "clarification_plan_agent_completed",
+      "clarification_plan_agent_completed"
     );
 
     return {
+      end,
       plan,
       start,
-      end,
     };
   } catch (error) {
     logger.error({ error, query }, "clarification_plan_agent_failed");
@@ -160,22 +164,22 @@ export async function clarificationPlanRegenerateAgent(input: {
 
   logger.info(
     {
-      queryLength: query.length,
+      datasetCount: datasets?.length || 0,
       feedbackLength: feedback.length,
       previousTaskCount: previousPlan.initialTasks.length,
-      datasetCount: datasets?.length || 0,
+      queryLength: query.length,
     },
-    "clarification_plan_regenerate_agent_started",
+    "clarification_plan_regenerate_agent_started"
   );
 
   try {
     const plan = await regeneratePlanFromFeedback({
+      answers,
+      datasets,
+      feedback,
+      previousPlan,
       query,
       questions,
-      answers,
-      previousPlan,
-      feedback,
-      datasets,
     });
 
     const end = new Date().toISOString();
@@ -185,23 +189,20 @@ export async function clarificationPlanRegenerateAgent(input: {
         objective: plan.objective.substring(0, 100),
         taskCount: plan.initialTasks.length,
       },
-      "clarification_plan_regenerate_agent_completed",
+      "clarification_plan_regenerate_agent_completed"
     );
 
     return {
+      end,
       plan,
       start,
-      end,
     };
   } catch (error) {
-    logger.error(
-      { error, query, feedback },
-      "clarification_plan_regenerate_agent_failed",
-    );
+    logger.error({ error, feedback, query }, "clarification_plan_regenerate_agent_failed");
     throw error;
   }
 }
 
+export { generatePlanFromContext, regeneratePlanFromFeedback } from "./plan";
 // Re-export types and utilities
 export { generateQuestions } from "./utils";
-export { generatePlanFromContext, regeneratePlanFromFeedback } from "./plan";

@@ -43,7 +43,7 @@ export type ReflectionResult = {
 export async function reflectOnWorld(
   question: string,
   documents: ReflectionDoc[],
-  options: ReflectionOptions = {},
+  options: ReflectionOptions = {}
 ): Promise<ReflectionResult> {
   const model = process.env.REFLECTION_LLM_MODEL || "gemini-2.5-pro";
 
@@ -59,33 +59,28 @@ export async function reflectOnWorld(
 
   const REFLECTION_LLM_PROVIDER: LLMProvider =
     (process.env.REFLECTION_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey =
-    process.env[`${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
+  const llmApiKey = process.env[`${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY`];
 
   if (!llmApiKey) {
-    throw new Error(
-      `${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${REFLECTION_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
   }
 
   const llmProvider = new LLM({
-    name: REFLECTION_LLM_PROVIDER,
     apiKey: llmApiKey,
+    name: REFLECTION_LLM_PROVIDER,
   });
 
   const llmRequest = {
-    model,
+    maxTokens: options.maxTokens ?? 4000,
+    messageId: options.messageId,
     messages: [
       {
-        role: "user" as const,
         content: reflectionInstruction,
+        role: "user" as const,
       },
     ],
-    maxTokens: options.maxTokens ?? 4000,
-    thinkingBudget: options.thinking
-      ? (options.thinkingBudget ?? 2048)
-      : undefined,
-    messageId: options.messageId,
+    model,
+    thinkingBudget: options.thinking ? (options.thinkingBudget ?? 2048) : undefined,
     usageType: options.usageType,
   };
 
@@ -100,11 +95,9 @@ export async function reflectOnWorld(
         .replace(/\n?```$/, "")
         .trim();
       parsedResponse = JSON.parse(cleaned);
-    } catch (parseError) {
+    } catch {
       // try to locate the json inbetween {} in the message content
-      const jsonMatch = response.content.match(
-        /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
-      );
+      const jsonMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
       const jsonString = jsonMatch ? jsonMatch[1] || "" : "";
       try {
         parsedResponse = JSON.parse(jsonString);
@@ -115,12 +108,12 @@ export async function reflectOnWorld(
         );
         // Preserve existing values from conversation state
         parsedResponse = {
+          conversationTitle: options.existingTitle || "",
           currentObjective: options.existingObjective || "",
+          discoveries: [],
           evolvingObjective: options.existingEvolvingObjective || "",
           keyInsights: options.existingInsights || [],
-          discoveries: [],
           methodology: options.existingMethodology || "",
-          conversationTitle: options.existingTitle || "",
         };
       }
     }
@@ -136,22 +129,22 @@ export async function reflectOnWorld(
     logger.info(
       {
         conversationTitle: parsedResponse.conversationTitle,
-        insightsCount: parsedResponse.keyInsights.length,
         discoveriesCount: parsedResponse.discoveries.length,
+        docCount: documents.length,
         hasCurrentObjective: !!parsedResponse.currentObjective,
         hasMethodology: !!parsedResponse.methodology,
-        docCount: documents.length,
+        insightsCount: parsedResponse.keyInsights.length,
       },
-      "reflection_completed",
+      "reflection_completed"
     );
 
     return {
       text: {
         conversationTitle: parsedResponse.conversationTitle,
-        evolvingObjective: parsedResponse.evolvingObjective,
         currentObjective: parsedResponse.currentObjective,
-        keyInsights: parsedResponse.keyInsights,
         discoveries: parsedResponse.discoveries,
+        evolvingObjective: parsedResponse.evolvingObjective,
+        keyInsights: parsedResponse.keyInsights,
         methodology: parsedResponse.methodology,
       },
       thought: undefined, // TODO: Extract thinking if available from response

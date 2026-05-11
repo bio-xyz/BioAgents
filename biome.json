@@ -21,6 +21,11 @@
     "lineWidth": 100,
     "useEditorconfig": true
   },
+  "html": {
+    "parser": {
+      "interpolation": true
+    }
+  },
   "javascript": {
     "formatter": {
       "arrowParentheses": "always",

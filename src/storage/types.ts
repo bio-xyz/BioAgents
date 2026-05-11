@@ -13,11 +13,7 @@ export abstract class StorageProvider {
    * @param mimeType - The MIME type of the file
    * @returns The URL or key of the uploaded file
    */
-  abstract upload(
-    path: string,
-    buffer: Buffer,
-    mimeType: string,
-  ): Promise<string>;
+  abstract upload(path: string, buffer: Buffer, mimeType: string): Promise<string>;
 
   /**
    * Download a file from storage
@@ -54,11 +50,7 @@ export abstract class StorageProvider {
    * @param filename - Optional filename for Content-Disposition header (forces download)
    * @returns A presigned URL for downloading the file
    */
-  abstract getPresignedUrl(
-    path: string,
-    expiresIn?: number,
-    filename?: string,
-  ): Promise<string>;
+  abstract getPresignedUrl(path: string, expiresIn?: number, filename?: string): Promise<string>;
 
   /**
    * Generate a presigned URL for uploading a file directly to storage
@@ -72,7 +64,7 @@ export abstract class StorageProvider {
     path: string,
     contentType: string,
     expiresIn?: number,
-    contentLength?: number,
+    contentLength?: number
   ): Promise<string>;
 
   /**
@@ -85,20 +77,17 @@ export abstract class StorageProvider {
   async fetchFileByRelativePath(
     userId: string,
     conversationStateId: string,
-    relativePath: string,
+    relativePath: string
   ): Promise<Buffer> {
     const basePath = getConversationBasePath(userId, conversationStateId);
     if (relativePath.startsWith(basePath)) {
-      logger.info(
-        { relativePath },
-        "fetching_file_by_relative_path_already_full_path",
-      );
+      logger.info({ relativePath }, "fetching_file_by_relative_path_already_full_path");
       return await this.download(relativePath);
     }
 
     const fullPath = `${basePath}/${relativePath}`;
 
-    logger.info({ relativePath, fullPath }, "fetching_file_by_relative_path");
+    logger.info({ fullPath, relativePath }, "fetching_file_by_relative_path");
 
     return await this.download(fullPath);
   }
@@ -115,12 +104,12 @@ export abstract class StorageProvider {
     userId: string,
     conversationStateId: string,
     relativePath: string,
-    expiresIn?: number,
+    expiresIn?: number
   ): Promise<string> {
     const basePath = getConversationBasePath(userId, conversationStateId);
     const fullPath = `${basePath}/${relativePath}`;
 
-    logger.info({ relativePath, fullPath }, "generating_presigned_url");
+    logger.info({ fullPath, relativePath }, "generating_presigned_url");
 
     return await this.getPresignedUrl(fullPath, expiresIn);
   }

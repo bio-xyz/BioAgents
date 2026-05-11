@@ -7,7 +7,7 @@
  * - Continuation message creation
  */
 
-import { getMessagesByConversation, createMessage } from "../../db/operations";
+import { createMessage, getMessagesByConversation } from "../../db/operations";
 import type { Message } from "../../types/core";
 import logger from "../logger";
 
@@ -23,7 +23,7 @@ export type ConversationHistoryEntry = {
  */
 export async function fetchConversationHistory(
   conversationId: string,
-  limit: number = 4,
+  limit: number = 4
 ): Promise<ConversationHistoryEntry[]> {
   try {
     const allMessages = await getMessagesByConversation(conversationId, limit);
@@ -34,9 +34,9 @@ export async function fetchConversationHistory(
       .slice(1, limit)
       .reverse()
       .map((msg) => ({
+        content: msg.content,
         question: msg.question,
         summary: msg.summary,
-        content: msg.content,
       }));
   } catch (err) {
     logger.warn({ err }, "failed_to_fetch_conversation_history");
@@ -53,16 +53,14 @@ export async function fetchConversationHistory(
 export function resolveQuestionForReply(
   messageQuestion: string | undefined,
   conversationHistory: ConversationHistoryEntry[],
-  objectiveFallback?: string,
+  objectiveFallback?: string
 ): string {
   // 1. Use current message question if present
   if (messageQuestion) return messageQuestion;
 
   // 2. Find original question from conversation history
   if (conversationHistory.length > 0) {
-    const originalQuestion = conversationHistory.find(
-      (h) => h.question,
-    )?.question;
+    const originalQuestion = conversationHistory.find((h) => h.question)?.question;
     if (originalQuestion) return originalQuestion;
   }
 
@@ -76,15 +74,15 @@ export function resolveQuestionForReply(
  */
 export async function createContinuationMessage(
   currentMessage: Message,
-  stateId: string,
+  stateId: string
 ): Promise<Message> {
   return createMessage({
-    conversation_id: currentMessage.conversation_id,
-    user_id: currentMessage.user_id,
-    question: "", // Empty = agent-initiated continuation
     content: "", // Filled by next iteration's reply
+    conversation_id: currentMessage.conversation_id,
+    question: "", // Empty = agent-initiated continuation
     source: currentMessage.source,
     state_id: stateId,
+    user_id: currentMessage.user_id,
   });
 }
 
@@ -92,9 +90,7 @@ export async function createContinuationMessage(
  * Calculate session start level for tracking tasks across continuations
  * Returns the current level (or 0 if undefined) - tasks at this level and above will be included
  */
-export function calculateSessionStartLevel(
-  currentLevel: number | undefined,
-): number {
+export function calculateSessionStartLevel(currentLevel: number | undefined): number {
   return currentLevel ?? 0;
 }
 
@@ -102,16 +98,12 @@ export function calculateSessionStartLevel(
  * Get completed tasks from session (last N levels)
  * Used to gather all work done across autonomous continuations for reply
  */
-export function getSessionCompletedTasks<
-  T extends { level?: number; output?: string },
->(
+export function getSessionCompletedTasks<T extends { level?: number; output?: string }>(
   plan: T[],
   sessionStartLevel: number,
   currentLevel: number,
-  maxLevels: number = 2,
+  maxLevels: number = 2
 ): T[] {
   const minLevel = Math.max(sessionStartLevel, currentLevel - (maxLevels - 1));
-  return plan.filter(
-    (t) => (t.level ?? 0) >= minLevel && t.output && t.output.length > 0,
-  );
+  return plan.filter((t) => (t.level ?? 0) >= minLevel && t.output && t.output.length > 0);
 }

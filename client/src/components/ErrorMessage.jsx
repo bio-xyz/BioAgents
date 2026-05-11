@@ -1,10 +1,10 @@
-import { AlertCircle, AlertTriangle, Info, X } from 'lucide-preact';
+import { AlertCircle, AlertTriangle, Info, X } from "lucide-preact";
 
-export function ErrorMessage({ message, onClose, type = 'error' }) {
+export function ErrorMessage({ message, onClose, type = "error" }) {
   const icons = {
     error: AlertCircle,
-    warning: AlertTriangle,
     info: Info,
+    warning: AlertTriangle,
   };
 
   const Icon = icons[type] || icons.error;

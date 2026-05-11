@@ -1,11 +1,6 @@
-import type {
-  ConversationState,
-  Discovery,
-  Message,
-  PlanTask,
-} from "../../types/core";
+import type { ConversationState, Discovery, Message, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { extractDiscoveries, fixDiscoveryArtifactPaths, type DiscoveryDoc } from "./utils";
+import { type DiscoveryDoc, extractDiscoveries, fixDiscoveryArtifactPaths } from "./utils";
 
 type DiscoveryAgentResult = {
   discoveries: Discovery[];
@@ -36,11 +31,11 @@ export async function discoveryAgent(input: {
 
   logger.info(
     {
-      tasksToConsiderCount: tasksToConsider.length,
-      hasHypothesis: !!hypothesis,
       currentDiscoveries: conversationState.values.discoveries?.length || 0,
+      hasHypothesis: !!hypothesis,
+      tasksToConsiderCount: tasksToConsider.length,
     },
-    "discovery_agent_started",
+    "discovery_agent_started"
   );
 
   try {
@@ -51,20 +46,20 @@ export async function discoveryAgent(input: {
     tasksToConsider.forEach((task, index) => {
       logger.info(
         {
-          taskIndex: index,
-          taskType: task.type,
-          taskId: task.id,
           hasOutput: !!task.output,
           outputLength: task.output?.length || 0,
+          taskId: task.id,
+          taskIndex: index,
+          taskType: task.type,
         },
-        "processing_task_for_discovery",
+        "processing_task_for_discovery"
       );
 
       if (task.output && task.output.trim()) {
         discoveryDocs.push({
-          title: task.objective,
-          text: `Task ID: ${task.id}\nJob ID: ${task.jobId || "N/A"}\nTask Type: ${task.type}\n\nOutput:\n${task.output}`,
           context: `Output from ${task.type} task (${task.id}, Job ID: ${task.jobId || "N/A"})`,
+          text: `Task ID: ${task.id}\nJob ID: ${task.jobId || "N/A"}\nTask Type: ${task.type}\n\nOutput:\n${task.output}`,
+          title: task.objective,
         });
       }
     });
@@ -72,9 +67,9 @@ export async function discoveryAgent(input: {
     // Add hypothesis if available
     if (hypothesis) {
       discoveryDocs.push({
-        title: "Current Hypothesis",
-        text: hypothesis,
         context: "Working hypothesis from completed tasks",
+        text: hypothesis,
+        title: "Current Hypothesis",
       });
     }
 
@@ -86,9 +81,7 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
     const conversationId = message.conversation_id;
     if (conversationId) {
       try {
-        const { getMessagesByConversation } = await import(
-          "../../db/operations"
-        );
+        const { getMessagesByConversation } = await import("../../db/operations");
         // Fetch 6 messages (current + 5 previous), then skip the first one (current message)
         const allMessages = await getMessagesByConversation(conversationId, 6);
 
@@ -122,29 +115,23 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
           }
         }
       } catch (error) {
-        logger.warn(
-          { error },
-          "Failed to fetch conversation history for discovery agent",
-        );
+        logger.warn({ error }, "Failed to fetch conversation history for discovery agent");
       }
     }
 
     if (discoveryDocs.length === 0) {
       logger.warn(
-        "No task outputs available for discovery extraction, returning current discoveries",
+        "No task outputs available for discovery extraction, returning current discoveries"
       );
       const end = new Date().toISOString();
       return {
         discoveries: conversationState.values.discoveries || [],
-        start,
         end,
+        start,
       };
     }
 
-    logger.info(
-      { docCount: discoveryDocs.length },
-      "extracting_discoveries_from_tasks",
-    );
+    logger.info({ docCount: discoveryDocs.length }, "extracting_discoveries_from_tasks");
 
     // Extract discoveries
     const { discoveries } = await extractDiscoveries(
@@ -156,7 +143,7 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
         maxTokens: 8000,
         messageId: message.id,
         usageType: "deep-research",
-      },
+      }
     );
 
     // Fix artifact paths by matching against task artifacts
@@ -167,16 +154,16 @@ Current Objective: ${conversationState.values.currentObjective || "Not set"}`;
 
     logger.info(
       {
-        discoveryCount: fixedDiscoveries.length,
         discoveries: fixedDiscoveries,
+        discoveryCount: fixedDiscoveries.length,
       },
-      "discovery_agent_completed",
+      "discovery_agent_completed"
     );
 
     return {
       discoveries: fixedDiscoveries,
-      start,
       end,
+      start,
     };
   } catch (err) {
     logger.error({ err }, "discovery_agent_failed");

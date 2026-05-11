@@ -1,8 +1,8 @@
-import { ComponentChildren } from 'preact';
-import { Icon } from '../icons';
+import { ComponentChildren } from "preact";
+import { Icon } from "../icons";
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps {
   children?: ComponentChildren;
@@ -15,7 +15,7 @@ export interface ButtonProps {
   onClick?: () => void;
   className?: string;
   title?: string;
-  type?: 'button' | 'submit' | 'reset';
+  type?: "button" | "submit" | "reset";
 }
 
 /**
@@ -24,34 +24,27 @@ export interface ButtonProps {
  */
 export function Button({
   children,
-  variant = 'secondary',
-  size = 'md',
+  variant = "secondary",
+  size = "md",
   icon,
   iconSize,
   disabled = false,
   loading = false,
   onClick,
-  className = '',
+  className = "",
   title,
-  type = 'button',
+  type = "button",
 }: ButtonProps) {
   const variantClass = `btn-${variant}`;
   const sizeClass = `btn-${size}`;
-  const loadingClass = loading ? 'btn-loading' : '';
-  const iconOnlyClass = icon && !children ? 'btn-icon-only' : '';
+  const loadingClass = loading ? "btn-loading" : "";
+  const iconOnlyClass = icon && !children ? "btn-icon-only" : "";
 
-  const classes = [
-    'btn',
-    variantClass,
-    sizeClass,
-    loadingClass,
-    iconOnlyClass,
-    className,
-  ]
+  const classes = ["btn", variantClass, sizeClass, loadingClass, iconOnlyClass, className]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
-  const actualIconSize = iconSize || (size === 'sm' ? 14 : size === 'lg' ? 20 : 16);
+  const actualIconSize = iconSize || (size === "sm" ? 14 : size === "lg" ? 20 : 16);
 
   return (
     <button

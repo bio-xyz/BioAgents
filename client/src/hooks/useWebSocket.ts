@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 export interface WebSocketMessage {
   type: string;
@@ -29,7 +29,7 @@ export interface UseWebSocketReturn {
 export function useWebSocket(
   userId: string | null,
   onMessageUpdated?: (messageId: string, conversationId: string) => void,
-  onStateUpdated?: (stateId: string, conversationId: string) => void,
+  onStateUpdated?: (stateId: string, conversationId: string) => void
 ): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);

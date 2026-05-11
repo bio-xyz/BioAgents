@@ -9,9 +9,9 @@
  * - UI fetches actual data via HTTP after notification
  */
 
+import logger from "../../utils/logger";
 import { getPublisher } from "./connection";
 import type { Notification, NotificationType } from "./types";
-import logger from "../../utils/logger";
 
 /**
  * Publish a notification to Redis Pub/Sub
@@ -30,12 +30,12 @@ export async function notify(notification: Notification): Promise<void> {
 
     logger.info(
       {
-        type: notification.type,
-        jobId: notification.jobId,
-        conversationId: notification.conversationId,
         channel,
+        conversationId: notification.conversationId,
+        jobId: notification.jobId,
+        type: notification.type,
       },
-      "notification_published",
+      "notification_published"
     );
   } catch (error) {
     // Log but don't throw - notification failure shouldn't fail the job
@@ -44,7 +44,7 @@ export async function notify(notification: Notification): Promise<void> {
         err: error,
         notification,
       },
-      "notification_publish_failed",
+      "notification_publish_failed"
     );
   }
 }
@@ -56,14 +56,14 @@ export async function notifyJobStarted(
   jobId: string,
   conversationId: string,
   messageId?: string,
-  stateId?: string,
+  stateId?: string
 ): Promise<void> {
   await notify({
-    type: "job:started",
-    jobId,
     conversationId,
+    jobId,
     messageId,
     stateId,
+    type: "job:started",
   });
 }
 
@@ -74,13 +74,13 @@ export async function notifyJobProgress(
   jobId: string,
   conversationId: string,
   stage: string,
-  percent: number,
+  percent: number
 ): Promise<void> {
   await notify({
-    type: "job:progress",
-    jobId,
     conversationId,
-    progress: { stage, percent },
+    jobId,
+    progress: { percent, stage },
+    type: "job:progress",
   });
 }
 
@@ -91,14 +91,14 @@ export async function notifyJobCompleted(
   jobId: string,
   conversationId: string,
   messageId?: string,
-  stateId?: string,
+  stateId?: string
 ): Promise<void> {
   await notify({
-    type: "job:completed",
-    jobId,
     conversationId,
+    jobId,
     messageId,
     stateId,
+    type: "job:completed",
   });
 }
 
@@ -109,14 +109,14 @@ export async function notifyJobFailed(
   jobId: string,
   conversationId: string,
   messageId?: string,
-  stateId?: string,
+  stateId?: string
 ): Promise<void> {
   await notify({
-    type: "job:failed",
-    jobId,
     conversationId,
+    jobId,
     messageId,
     stateId,
+    type: "job:failed",
   });
 }
 
@@ -127,13 +127,13 @@ export async function notifyJobFailed(
 export async function notifyMessageUpdated(
   jobId: string,
   conversationId: string,
-  messageId: string,
+  messageId: string
 ): Promise<void> {
   await notify({
-    type: "message:updated",
-    jobId,
     conversationId,
+    jobId,
     messageId,
+    type: "message:updated",
   });
 }
 
@@ -144,13 +144,13 @@ export async function notifyMessageUpdated(
 export async function notifyStateUpdated(
   jobId: string,
   conversationId: string,
-  stateId: string,
+  stateId: string
 ): Promise<void> {
   await notify({
-    type: "state:updated",
-    jobId,
     conversationId,
+    jobId,
     stateId,
+    type: "state:updated",
   });
 }
 
@@ -162,14 +162,14 @@ export async function notifyFileReady(
   jobId: string,
   conversationId: string,
   fileId: string,
-  description: string,
+  description: string
 ): Promise<void> {
   await notify({
-    type: "file:ready",
-    jobId,
     conversationId,
-    fileId,
     description,
+    fileId,
+    jobId,
+    type: "file:ready",
   });
 }
 
@@ -181,14 +181,14 @@ export async function notifyFileError(
   jobId: string,
   conversationId: string,
   fileId: string,
-  error: string,
+  error: string
 ): Promise<void> {
   await notify({
-    type: "file:error",
-    jobId,
     conversationId,
-    fileId,
     error,
+    fileId,
+    jobId,
+    type: "file:error",
   });
 }
 
@@ -198,13 +198,13 @@ export async function notifyFileError(
 export async function notifyPaperStarted(
   jobId: string,
   conversationId: string,
-  paperId: string,
+  paperId: string
 ): Promise<void> {
   await notify({
-    type: "paper:started",
-    jobId,
     conversationId,
+    jobId,
     paperId,
+    type: "paper:started",
   });
 }
 
@@ -216,14 +216,14 @@ export async function notifyPaperProgress(
   conversationId: string,
   paperId: string,
   stage: string,
-  percent: number,
+  percent: number
 ): Promise<void> {
   await notify({
-    type: "paper:progress",
-    jobId,
     conversationId,
+    jobId,
     paperId,
-    progress: { stage, percent },
+    progress: { percent, stage },
+    type: "paper:progress",
   });
 }
 
@@ -233,13 +233,13 @@ export async function notifyPaperProgress(
 export async function notifyPaperCompleted(
   jobId: string,
   conversationId: string,
-  paperId: string,
+  paperId: string
 ): Promise<void> {
   await notify({
-    type: "paper:completed",
-    jobId,
     conversationId,
+    jobId,
     paperId,
+    type: "paper:completed",
   });
 }
 
@@ -250,14 +250,14 @@ export async function notifyPaperFailed(
   jobId: string,
   conversationId: string,
   paperId: string,
-  error: string,
+  error: string
 ): Promise<void> {
   await notify({
-    type: "paper:failed",
-    jobId,
     conversationId,
-    paperId,
     error,
+    jobId,
+    paperId,
+    type: "paper:failed",
   });
 }
 
