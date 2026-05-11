@@ -64,13 +64,14 @@ spec:
                 name: worker-config
             - secretRef:
                 name: worker-secrets
+          # Memory limit intentionally omitted (see other workers). The sweeper
+          # is light so the request is the operative number for scheduling.
           resources:
             requests:
               cpu: "50m"
               memory: "128Mi"
             limits:
               cpu: "200m"
-              memory: "256Mi"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -93,7 +94,8 @@ spec:
               path: /health/live
               port: health
             periodSeconds: 30
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 10
           volumeMounts:
             - name: tmp
               mountPath: /tmp

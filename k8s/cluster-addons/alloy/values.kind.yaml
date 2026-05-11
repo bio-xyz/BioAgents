@@ -1,0 +1,5 @@
+# kind override: point at single-binary Loki on port 3100.
+alloy:
+  extraEnv:
+    - name: LOKI_URL
+      value: http://loki.logging.svc:3100/loki/api/v1/push

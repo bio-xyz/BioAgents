@@ -1,0 +1,44 @@
+# Base values for grafana/loki chart, simple-scalable mode.
+# Env overrides set storage backend (S3 vs filesystem).
+# Chart docs: https://grafana.com/docs/loki/latest/setup/install/helm/
+
+deploymentMode: SimpleScalable
+
+loki:
+  auth_enabled: false
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  limits_config:
+    retention_period: 720h   # 30 days
+    max_query_lookback: 720h
+    ingestion_rate_mb: 16
+    ingestion_burst_size_mb: 32
+
+# Replicas — env overrides may bring these down for kind.
+backend:
+  replicas: 2
+read:
+  replicas: 2
+write:
+  replicas: 3
+
+# Disable bundled MinIO; env overrides supply S3 or filesystem.
+minio:
+  enabled: false
+
+# Sidecars / chunks cache fine at defaults.
+chunksCache:
+  enabled: true
+resultsCache:
+  enabled: true
+
+gateway:
+  enabled: true
+  replicas: 2

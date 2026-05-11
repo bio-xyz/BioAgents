@@ -83,12 +83,7 @@ jobs:
           {"auths":{"ghcr.io":{"auth":"$AUTH"}}}
           EOF
 
-      - name: Install kustomize
-        run: |
-          set -eu
-          curl -fsSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
-
+      # kustomize is preinstalled on ubuntu-latest GitHub-hosted runners.
       - name: Pin image tag to SHA
         working-directory: k8s/overlays/${{ steps.env.outputs.overlay }}
         run: |

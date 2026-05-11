@@ -64,15 +64,16 @@ spec:
                 name: worker-config
             - secretRef:
                 name: worker-secrets
-          # Guaranteed QoS: requests == limits for both CPU and memory.
-          # Deep-research must never be evicted under node pressure mid-job.
+          # Burstable QoS: no memory limit so an OOMKill can't break the
+          # in-flight-job drain guarantee. CPU limit stays (throttles, not kills).
+          # `safe-to-evict: false` annotation prevents autoscaler scale-down
+          # mid-job; eviction under genuine node pressure is graceful (SIGTERM).
           resources:
             requests:
               cpu: "1000m"
               memory: "2Gi"
             limits:
               cpu: "1000m"
-              memory: "2Gi"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -90,13 +91,17 @@ spec:
               port: health
             periodSeconds: 10
             failureThreshold: 3
-          # Lenient liveness so a Redis blip doesn't restart a worker mid-job.
+          # Lenient liveness: Bun.serve shares the event loop with BullMQ.
+          # 5s timeout + 10 failures × 30s = 300s budget tolerates legitimate
+          # event-loop pressure (large LLM responses, OCR bursts) without
+          # restarting mid-job. BullMQ's own stall detection handles deadlock.
           livenessProbe:
             httpGet:
               path: /health/live
               port: health
             periodSeconds: 30
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 10
           volumeMounts:
             - name: tmp
               mountPath: /tmp

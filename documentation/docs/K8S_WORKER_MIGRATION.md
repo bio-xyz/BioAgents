@@ -39,7 +39,7 @@ A single Deployment forces all queues to inherit the worst-case grace period —
 | Autoscaling | KEDA + Redis list scaler | only signal that reflects actual backlog |
 | Nodes | MNG + Cluster Autoscaler | predictable; Karpenter when scope grows |
 | Spot | deferred (on-demand only at launch) | de-risk cutover; cost optimisation later |
-| Logging | stdout → Fluent Bit → CloudWatch Logs | EKS default; no app change needed |
+| Logging | stdout → Grafana Alloy DaemonSet → in-cluster Loki (S3 chunks) | Better query UX than CloudWatch; pairs with the metrics stack we'll add later |
 | Metrics | deferred | Bull Board on API side covers v1 visibility |
 | Pod security | Restricted PSS | Dockerfile already runs as `bun`; no image change |
 | NetworkPolicy | deferred to v1.1 | de-risk cutover; add `default-deny` + allowlist after stable |
@@ -66,7 +66,7 @@ Trade-off accepted: shared control plane upgrades, shared node-pool noisy-neighb
 
 | Deployment | Queues | Grace | Rationale | Nodes | QoS | KEDA trigger |
 |---|---|---|---|---|---|---|
-| `worker-deep-research` | `deep-research` | 28800 (8h) | matches current Swarm `stop_grace_period`; already vetted | on-demand; `safe-to-evict: false`; PDB `maxUnavailable: 0`; `progressDeadlineSeconds: 28800` | Guaranteed | `bull:deep-research:wait` |
+| `worker-deep-research` | `deep-research` | 28800 (8h) | matches current Swarm `stop_grace_period`; already vetted | on-demand; `safe-to-evict: false`; PDB `maxUnavailable: 0`; `progressDeadlineSeconds: 28800` | Burstable (no memory limit) | `bull:deep-research:wait` |
 | `worker-chat` | `chat` | 600 (10min) | upper bound of `CHAT_TOOL_TIMEOUT_MS × CHAT_AGENT_MAX_TOOL_CALLS` + LLM latency | on-demand (spot later) | Burstable | `bull:chat:wait` |
 | `worker-heavy` | `paper-generation`, `file-process` | 3600 (1h) | generous ceiling over Pandoc/LaTeX and OCR/PDF parse | on-demand; `/tmp` `emptyDir` 5Gi for LaTeX intermediates | Burstable | max of `bull:paper-generation:wait`, `bull:file-process:wait` |
 | `worker-scheduled` | `message-sweeper` | 120 | sweeper jobs are trivial | anywhere; static `replicas: 1`; never scaled to zero so the schedule survives | Burstable | none |
@@ -138,6 +138,30 @@ Cluster Autoscaler scale-down: `worker-deep-research` Deployment annotated `clus
 - `worker-deep-research`: `maxUnavailable: 0` — voluntary disruption (node drain, cluster upgrade) is gated until safer
 - Others: `minAvailable: 1`
 
+### Resource limits — no memory ceiling
+
+All worker containers ship with CPU limits but **no memory limit**. Reason: an OOMKill is a hard, signal-less termination — `worker.close()` does not run, the in-flight BullMQ job dies without a graceful exit, and the drain guarantee is broken. CPU limits throttle rather than kill, so they're safe to keep.
+
+Consequences:
+- Every worker Deployment is Burstable QoS (not Guaranteed). Under node memory pressure, eviction can target worker pods — but eviction is graceful (SIGTERM + grace), unlike OOMKill.
+- Node-pressure eviction is now the failure mode for runaway memory, not OOMKill. Cluster Autoscaler/Karpenter should size nodes with comfortable memory headroom relative to total worker requests.
+- `safe-to-evict: false` on `worker-deep-research` still protects against autoscaler scale-down compaction.
+
+### Liveness probe & event-loop assumption
+
+The `/health/live` endpoint is served by `Bun.serve` on the same event loop as the BullMQ worker. The liveness probe is tuned generously to tolerate legitimate event-loop pressure (large LLM responses, OCR/PDF parses, GC pauses):
+
+```yaml
+livenessProbe:
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 10   # 10 × 30s = 300s budget before restart
+```
+
+This assumes job code stays **mostly I/O-bound** — `await`-yielding to the event loop so the HTTP handler can respond between operations. CPU-bound work that monopolises the loop for more than ~5 minutes will trigger a restart and kill the in-flight job. Pandoc/LaTeX in `worker-heavy` runs as a subprocess via `Bun.spawn`, so it doesn't block the parent loop; if we add new CPU-bound work, it must do the same.
+
+BullMQ's own stall detection (lock extension via `stalledInterval`) is the primary recovery path for deadlocked workers; the k8s liveness probe is the long-tail fallback for cases BullMQ can't catch.
+
 ### Node strategy
 
 Single managed node group (`workers-ondemand`, m6i.large baseline) tainted `workload=worker:NoSchedule`. All four worker Deployments tolerate. Cluster Autoscaler manages scale.
@@ -148,8 +172,8 @@ Spot node group + `worker-chat` toleration deferred to v1.1.
 
 ### Observability
 
-- **Logs**: stdout (pino) → Fluent Bit DaemonSet → CloudWatch Logs. Per-namespace log groups.
-- **Metrics**: deferred. Bull Board on the API side (still on Coolify) shows queue depth and job state. CloudWatch container metrics give pod CPU/memory.
+- **Logs**: stdout (pino) → Grafana Alloy DaemonSet → in-cluster Loki (simple-scalable mode, S3-backed chunks via IRSA). Per-namespace labels. Query via LogQL in Grafana. CloudWatch was the obvious EKS default but its query UX gets painful at any volume; Loki is the standard answer when we expect to grep logs regularly.
+- **Metrics**: deferred. Bull Board on the API side (still on Coolify) shows queue depth and job state. CloudWatch container metrics give pod CPU/memory. Prometheus/Grafana stack arrives with the API migration.
 - **Traces**: not in scope.
 
 ## Repository layout
@@ -206,9 +230,10 @@ Promotion: open PR `dev → main`; merge triggers prod deploy referencing the sa
 4. Local: kind cluster, `overlays/kind` against external Upstash dev. Verify each Deployment processes only its enabled queue(s).
 5. KEDA install on kind; synthetic queue depth → scaling verified.
 6. EKS infra (Terraform — separate workstream): cluster, namespaces, MNG, IRSA, OIDC trust.
-7. EKS staging: apply `overlays/eks-staging`. Soak ≥1 week; tune KEDA min/max.
-8. EKS prod: apply `overlays/eks-prod`. Run parallel to Swarm; throughput additive on shared Redis.
-9. Cutover prod: drop Swarm replicas to 0 once EKS prod steady (48h shadow).
+7. Cluster addons (logging): Loki + Alloy via Helm; S3 bucket for chunks via IRSA. Verify pod stdout reaches Loki.
+8. EKS staging: apply `overlays/eks-staging`. Soak ≥1 week; tune KEDA min/max.
+9. EKS prod: apply `overlays/eks-prod`. Run parallel to Swarm; throughput additive on shared Redis.
+10. Cutover prod: drop Swarm replicas to 0 once EKS prod steady (48h shadow).
 10. Decommission Swarm worker stack.
 
 ## Risks

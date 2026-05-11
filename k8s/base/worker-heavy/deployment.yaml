@@ -62,13 +62,15 @@ spec:
                 name: worker-config
             - secretRef:
                 name: worker-secrets
+          # Memory limit intentionally omitted: OOMKill would break the
+          # in-flight-job drain guarantee. Pandoc/LaTeX can spike memory hard
+          # so a fixed limit is also hard to size safely. CPU limit throttles.
           resources:
             requests:
               cpu: "500m"
               memory: "1Gi"
             limits:
               cpu: "2000m"
-              memory: "4Gi"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -86,12 +88,16 @@ spec:
               port: health
             periodSeconds: 10
             failureThreshold: 3
+          # See worker-deep-research/deployment.yaml for rationale. OCR and
+          # PDF parse can briefly block the event loop, so the lenient budget
+          # matters most here.
           livenessProbe:
             httpGet:
               path: /health/live
               port: health
             periodSeconds: 30
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 10
           volumeMounts:
             - name: tmp
               mountPath: /tmp

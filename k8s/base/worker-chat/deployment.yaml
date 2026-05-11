@@ -65,13 +65,14 @@ spec:
                 name: worker-config
             - secretRef:
                 name: worker-secrets
+          # Memory limit intentionally omitted: OOMKill would break the
+          # in-flight-job drain guarantee. CPU limit throttles, doesn't kill.
           resources:
             requests:
               cpu: "200m"
               memory: "256Mi"
             limits:
               cpu: "1000m"
-              memory: "1Gi"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -89,12 +90,14 @@ spec:
               port: health
             periodSeconds: 10
             failureThreshold: 3
+          # See worker-deep-research/deployment.yaml for rationale.
           livenessProbe:
             httpGet:
               path: /health/live
               port: health
             periodSeconds: 30
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 10
           volumeMounts:
             - name: tmp
               mountPath: /tmp
