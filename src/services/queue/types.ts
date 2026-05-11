@@ -94,7 +94,7 @@ export interface ChatJobResult {
  */
 export interface DeepResearchJobResult {
   messageId: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "cancelled";
   responseTime: number;
 }
 

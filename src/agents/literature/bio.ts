@@ -206,6 +206,10 @@ async function pollBioLiteratureJob(
       "bioliterature_deep_poll"
     );
 
+    if (status === "cancelled" || status === "canceled") {
+      throw new Error(`BioLiterature job ${jobId} cancelled`);
+    }
+
     if (status === "failed" || status === "error") {
       throw new Error(`BioLiterature job ${jobId} failed`);
     }
@@ -231,7 +235,8 @@ export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
   onPollUpdate?: OnPollUpdate,
-  sources?: string[]
+  sources?: string[],
+  onJobCreated?: (jobId: string) => void | Promise<void>
 ): Promise<{
   output: string;
   jobId?: string;
@@ -282,6 +287,7 @@ export async function searchBioLiterature(
 
     if (jobId) {
       logger.info({ jobId }, "bioliterature_deep_job_created");
+      await onJobCreated?.(jobId);
       finalData = await pollBioLiteratureJob(baseUrl, BIO_LIT_AGENT_API_KEY, jobId, onPollUpdate);
     } else {
       logger.warn({ mode }, "bioliterature_deep_missing_job_id_using_direct_response");
@@ -321,4 +327,39 @@ export async function searchBioLiterature(
     proteinStructures,
     reasoning: finalReasoning,
   };
+}
+
+export async function cancelBioLiteratureJob(jobId: string): Promise<boolean> {
+  if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
+    logger.warn({ jobId }, "bioliterature_cancel_skipped_not_configured");
+    return false;
+  }
+
+  const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
+  const { response } = await fetchWithRetry(
+    `${baseUrl}/query/jobs/${jobId}/cancel`,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": BIO_LIT_AGENT_API_KEY,
+      },
+      method: "POST",
+    },
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, error: error.message, jobId }, "bioliterature_cancel_retry"),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger.warn(
+      { errorText, jobId, status: response.status },
+      "bioliterature_cancel_request_failed"
+    );
+    return false;
+  }
+
+  logger.info({ jobId }, "bioliterature_cancel_requested");
+  return true;
 }

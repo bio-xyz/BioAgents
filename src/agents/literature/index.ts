@@ -37,9 +37,10 @@ export async function literatureAgent(input: {
   objective: string;
   type: LiteratureType;
   onPollUpdate?: OnPollUpdate;
+  onJobCreated?: (jobId: string) => void | Promise<void>;
   sources?: string[];
 }): Promise<LiteratureResult> {
-  const { objective, type, onPollUpdate, sources } = input;
+  const { objective, type, onPollUpdate, onJobCreated, sources } = input;
   const start = new Date().toISOString();
 
   logger.info({ objective, type }, "literature_agent_started");
@@ -65,7 +66,13 @@ export async function literatureAgent(input: {
         break;
       }
       case "BIOLIT": {
-        const result = await searchBioLiterature(objective, "fast", onPollUpdate, sources);
+        const result = await searchBioLiterature(
+          objective,
+          "fast",
+          onPollUpdate,
+          sources,
+          onJobCreated
+        );
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;
@@ -73,7 +80,13 @@ export async function literatureAgent(input: {
         break;
       }
       case "BIOLITDEEP": {
-        const result = await searchBioLiterature(objective, "deep", onPollUpdate, sources);
+        const result = await searchBioLiterature(
+          objective,
+          "deep",
+          onPollUpdate,
+          sources,
+          onJobCreated
+        );
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;

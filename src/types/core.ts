@@ -43,6 +43,10 @@ export type PlanTaskType = "LITERATURE" | "ANALYSIS";
 export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
+  bioLiteratureJobId?: string; // Downstream BioLiterature Celery job id, persisted as soon as created
+  downstreamJobIds?: {
+    bioLiterature?: string[];
+  };
   objective: string;
   sources?: SourceSelectionId[];
   datasets: Array<{
@@ -121,7 +125,8 @@ export interface ConversationStateValues extends StateValues {
     startedAt: string;
     lastHeartbeatAt: string;
     expiresAt: string;
-    lastResult?: "completed" | "failed" | "stale_recovered";
+    lastResult?: "completed" | "failed" | "stale_recovered" | "cancelled";
+    cancelRequestedAt?: string;
     lastError?: string;
     endedAt?: string;
   };

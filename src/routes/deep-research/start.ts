@@ -25,6 +25,11 @@ import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../../services/chat/setup";
 import { createMessageRecord } from "../../services/chat/tools";
 import {
+  DeepResearchCancelledError,
+  isDeepResearchCancellationRequested,
+  throwIfDeepResearchCancelled,
+} from "../../services/deep-research/cancellation";
+import {
   acquireStartMutex,
   getActiveRunForDedupFromValues,
   isStaleRun,
@@ -894,6 +899,7 @@ async function runDeepResearch(params: {
     conversationStateId,
   } = params;
   let activeConversationState: ConversationState | null = null;
+  let readCancellationRequested: () => Promise<boolean> = async () => false;
 
   try {
     // Initialize state
@@ -913,8 +919,27 @@ async function runDeepResearch(params: {
     };
     activeConversationState = conversationState;
 
+    readCancellationRequested = async (): Promise<boolean> => {
+      const latest = conversationState.id ? await getConversationState(conversationState.id) : null;
+      return isDeepResearchCancellationRequested(latest?.values || conversationState.values, {
+        rootMessageId,
+        stateId: stateRecord.id,
+      });
+    };
+
+    const assertNotCancelled = async () => {
+      const latest = conversationState.id ? await getConversationState(conversationState.id) : null;
+      throwIfDeepResearchCancelled(latest?.values || conversationState.values, {
+        rootMessageId,
+        stateId: stateRecord.id,
+      });
+    };
+
+    await assertNotCancelled();
+
     // Step 1: Process files if any
     if (files.length > 0) {
+      await assertNotCancelled();
       const fileResult = await fileUploadAgent({
         conversationState,
         files,
@@ -1049,6 +1074,7 @@ async function runDeepResearch(params: {
     logger.info({ maxAutoIterations, researchMode }, "starting_autonomous_research_loop");
 
     while (shouldContinueLoop && iterationCount < maxAutoIterations) {
+      await assertNotCancelled();
       try {
         await touchRun({
           conversationStateId,
@@ -1067,6 +1093,7 @@ async function runDeepResearch(params: {
       logger.info({ iterationCount, maxAutoIterations }, "starting_iteration");
 
       if (!skipPlanning) {
+        await assertNotCancelled();
         await persistConversationActivity(
           {
             level: conversationState.values.currentLevel,
@@ -1210,6 +1237,7 @@ async function runDeepResearch(params: {
         }
       } else {
         // INITIAL: Execute planning agent
+        await assertNotCancelled();
         logger.info(
           { suggestedNextSteps: conversationState.values.suggestedNextSteps },
           "current_suggested_next_steps"
@@ -1287,6 +1315,7 @@ async function runDeepResearch(params: {
       }
 
       // Execute only tasks from the current level
+      await assertNotCancelled();
       tasksToExecute = (conversationState.values.plan || []).filter((t) => t.level === newLevel);
 
       // Serialize DB writes to prevent concurrent updateConversationState calls
@@ -1328,6 +1357,7 @@ async function runDeepResearch(params: {
         };
 
         if (task.type === "LITERATURE") {
+          await assertNotCancelled();
           // Set start timestamp
           task.start = new Date().toISOString();
           task.output = "";
@@ -1379,6 +1409,23 @@ async function runDeepResearch(params: {
           // Primary literature (Edison or BioLit) - always enabled
           const primaryLiteraturePromise = literatureAgent({
             objective: task.objective,
+            onJobCreated: async (jobId) => {
+              task.bioLiteratureJobId = jobId;
+              task.downstreamJobIds = {
+                ...(task.downstreamJobIds || {}),
+                bioLiterature: [
+                  ...new Set([...(task.downstreamJobIds?.bioLiterature || []), jobId]),
+                ],
+              };
+              if (conversationState.id) {
+                await writeStateSerialized();
+                await notifyStateUpdated(
+                  `in-process-${currentMessage.id}`,
+                  currentMessage.conversation_id,
+                  conversationState.id
+                );
+              }
+            },
             onPollUpdate,
             sources: task.sources,
             type: primaryLiteratureType,
@@ -1388,6 +1435,9 @@ async function runDeepResearch(params: {
             // Capture jobId from primary literature (Edison or BioLit)
             if (result.jobId) {
               task.jobId = result.jobId;
+              if (primaryLiteratureType === "BIOLITDEEP") {
+                task.bioLiteratureJobId = result.jobId;
+              }
             }
             task.proteinStructures = mergeProteinStructures(
               task.proteinStructures,
@@ -1434,6 +1484,7 @@ async function runDeepResearch(params: {
             logger.info("task_completed");
           }
         } else if (task.type === "ANALYSIS") {
+          await assertNotCancelled();
           // Set start timestamp
           task.start = new Date().toISOString();
           task.output = "";
@@ -1581,6 +1632,7 @@ These molecular changes align with established longevity pathways (Converging nu
 
       // Wait for all tasks to complete
       await Promise.all(taskPromises);
+      await assertNotCancelled();
 
       await persistConversationActivity({
         level: newLevel,
@@ -1589,6 +1641,7 @@ These molecular changes align with established longevity pathways (Converging nu
       });
 
       // Step 3: Generate/update hypothesis based on completed tasks
+      await assertNotCancelled();
       logger.info("generating_hypothesis_from_completed_tasks");
 
       hypothesisResult = await hypothesisAgent({
@@ -1612,6 +1665,7 @@ These molecular changes align with established longevity pathways (Converging nu
       }
 
       // Step 4: Run reflection and discovery agents in parallel
+      await assertNotCancelled();
       logger.info("running_reflection_and_discovery_agents");
 
       // Determine if we should run discovery and which tasks to consider
@@ -1688,6 +1742,7 @@ These molecular changes align with established longevity pathways (Converging nu
       }
 
       // Step 5: Run planning agent in "next" mode to plan next iteration
+      await assertNotCancelled();
       logger.info("running_next_planning_for_future_iteration");
 
       // Clear old suggestions before generating new ones (ensures fresh planning)
@@ -1754,6 +1809,7 @@ These molecular changes align with established longevity pathways (Converging nu
         conversationState.values.suggestedNextSteps?.length &&
         iterationCount < maxAutoIterations
       ) {
+        await assertNotCancelled();
         const continueResult = await continueResearchAgent({
           completedTasks: tasksToExecute,
           conversationState,
@@ -1799,6 +1855,7 @@ These molecular changes align with established longevity pathways (Converging nu
         "generating_reply_for_iteration"
       );
 
+      await assertNotCancelled();
       await persistConversationActivity({
         level: newLevel,
         objective: conversationState.values.currentObjective || currentObjective,
@@ -1831,6 +1888,7 @@ These molecular changes align with established longevity pathways (Converging nu
         message: currentMessage,
         nextPlan: conversationState.values.suggestedNextSteps || [],
       });
+      await assertNotCancelled();
 
       // Update the current message with the reply. Sweeper exempts
       // deep-research rows via the isDeepResearch flag so this is normally
@@ -1883,6 +1941,7 @@ These molecular changes align with established longevity pathways (Converging nu
       // PREPARE FOR NEXT ITERATION (if continuing)
       // =========================================================================
       if (willContinue) {
+        await assertNotCancelled();
         // CONTINUE: Promote suggestedNextSteps to plan for next iteration
         skipPlanning = true; // Skip planning in next iteration - use promoted tasks
 
@@ -1994,6 +2053,18 @@ These molecular changes align with established longevity pathways (Converging nu
       );
     }
   } catch (err) {
+    if (err instanceof DeepResearchCancelledError || (await readCancellationRequested())) {
+      logger.info({ messageId: createdMessage.id }, "deep_research_in_process_cancelled");
+      if (activeConversationState?.id) {
+        await notifyStateUpdated(
+          `in-process-${createdMessage.id || stateRecord.id}`,
+          createdMessage.conversation_id,
+          activeConversationState.id
+        );
+      }
+      return;
+    }
+
     logger.error({ err, messageId: createdMessage.id }, "deep_research_execution_failed");
 
     await handleDeepResearchStartFailure({
