@@ -1,0 +1,24 @@
+# Prod KEDA caps — initial defensive values; tune from telemetry.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-deep-research
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 5
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-chat
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 10
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-heavy
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 3

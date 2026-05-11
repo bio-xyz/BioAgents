@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-heavy
+  labels:
+    app.kubernetes.io/name: worker-heavy
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 3600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-heavy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-heavy
+        app.kubernetes.io/component: worker
+    spec:
+      terminationGracePeriodSeconds: 3600
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: worker
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: ghcr.io/bio-xyz/bioagents:placeholder
+          command: ["bun", "run", "src/worker.ts"]
+          ports:
+            - name: health
+              containerPort: 9000
+          env:
+            - name: ENABLE_PAPER_GENERATION_WORKER
+              value: "true"
+            - name: ENABLE_FILE_PROCESS_WORKER
+              value: "true"
+            - name: ENABLE_CHAT_WORKER
+              value: "false"
+            - name: ENABLE_DEEP_RESEARCH_WORKER
+              value: "false"
+            - name: ENABLE_MESSAGE_SWEEPER_WORKER
+              value: "false"
+            - name: WORKER_HEALTH_PORT
+              value: "9000"
+          envFrom:
+            - configMapRef:
+                name: worker-config
+            - secretRef:
+                name: worker-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: health
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Pandoc/LaTeX intermediates and OCR temp output need real space here.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 5Gi

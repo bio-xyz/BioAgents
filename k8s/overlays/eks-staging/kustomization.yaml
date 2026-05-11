@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: bioagents-staging
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: ghcr.io/bio-xyz/bioagents
+    newTag: dev
+
+configMapGenerator:
+  - name: worker-config
+    envs:
+      - config.env
+
+secretGenerator:
+  - name: worker-secrets
+    envs:
+      - secret.env
+    # KEDA's TriggerAuthentication references this Secret by name; Kustomize
+    # doesn't rewrite CRD field refs, so we keep the name stable.
+    options:
+      disableNameSuffixHash: true
+  - name: ghcr-pull
+    type: kubernetes.io/dockerconfigjson
+    files:
+      - .dockerconfigjson=pull-secret.dockerconfigjson
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - path: scaledobject-patches.yaml

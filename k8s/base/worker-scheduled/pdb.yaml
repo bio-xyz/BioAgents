@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-scheduled
+spec:
+  # Single replica; voluntary disruption is fine — the scheduler re-registers
+  # on the next pod start and missed sweeps are caught by the next interval.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-scheduled

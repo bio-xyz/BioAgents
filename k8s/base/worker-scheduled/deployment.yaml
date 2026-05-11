@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-scheduled
+  labels:
+    app.kubernetes.io/name: worker-scheduled
+    app.kubernetes.io/component: worker
+spec:
+  # Static 1 replica. The BullMQ scheduler registration would be lost on
+  # scale-to-zero, so this Deployment is intentionally not under KEDA.
+  replicas: 1
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-scheduled
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-scheduled
+        app.kubernetes.io/component: worker
+    spec:
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: worker
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: ghcr.io/bio-xyz/bioagents:placeholder
+          command: ["bun", "run", "src/worker.ts"]
+          ports:
+            - name: health
+              containerPort: 9000
+          env:
+            - name: ENABLE_MESSAGE_SWEEPER_WORKER
+              value: "true"
+            - name: ENABLE_CHAT_WORKER
+              value: "false"
+            - name: ENABLE_DEEP_RESEARCH_WORKER
+              value: "false"
+            - name: ENABLE_FILE_PROCESS_WORKER
+              value: "false"
+            - name: ENABLE_PAPER_GENERATION_WORKER
+              value: "false"
+            - name: WORKER_HEALTH_PORT
+              value: "9000"
+          envFrom:
+            - configMapRef:
+                name: worker-config
+            - secretRef:
+                name: worker-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: health
+            periodSeconds: 30
+            failureThreshold: 6
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
