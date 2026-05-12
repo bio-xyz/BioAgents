@@ -1828,6 +1828,13 @@ These molecular changes align with established longevity pathways (Converging nu
         "iteration_reply_saved"
       );
 
+      if (isFinal) {
+        conversationState.values.finalResponse = replyResult.reply;
+        if (conversationState.id) {
+          await persistConversationState();
+        }
+      }
+
       // Notify client that message is ready
       await notifyMessageUpdated(
         `in-process-${currentMessage.id}`,
