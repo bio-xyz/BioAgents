@@ -10,10 +10,12 @@ import { authRoute } from "./routes/auth";
 import { chatRoute } from "./routes/chat";
 import { clarificationRoute } from "./routes/clarification";
 import { deepResearchBranchRoute } from "./routes/deep-research/branch";
+import { deepResearchCancelRoute } from "./routes/deep-research/cancel";
 import { deepResearchPaperRoute } from "./routes/deep-research/paper";
 import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { filesRoute } from "./routes/files";
+import { literatureAgentStreamRoute } from "./routes/literature-agent-stream";
 // BullMQ Queue imports (conditional)
 import { closeConnections, isJobQueueEnabled } from "./services/queue/connection";
 import { cleanupDeadConnections, websocketHandler } from "./services/websocket/handler";
@@ -242,10 +244,12 @@ const app = new Elysia()
   .use(chatRoute) // GET and POST /api/chat for agent-based chat
   .use(clarificationRoute) // GET and POST /api/clarification/* for pre-research clarification
   .use(deepResearchStartRoute) // GET and POST /api/deep-research/start for deep research
+  .use(deepResearchCancelRoute) // POST /api/deep-research/cancel/:messageId to stop deep research
   .use(deepResearchStatusRoute) // GET /api/deep-research/status/:messageId to check status
   .use(deepResearchBranchRoute) // POST /api/deep-research/branch to fork a conversation with copied state
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
+  .use(literatureAgentStreamRoute) // POST /api/literature/agent/stream for Literature SSE bridge
   .use(filesRoute); // POST /api/files/* for direct S3 file uploads
 
 // Mount Bull Board dashboard (only when job queue is enabled)

@@ -3,6 +3,19 @@
  * Independent from src/llm/types.ts to avoid modifying shared interfaces.
  */
 
+import type { ProteinStructure } from "../types/core";
+import type { SourceSelectionId } from "../types/sourceSelection";
+import type { ChatStreamEventEmitter } from "./streaming";
+
+export interface AgentToolExecutionContext {
+  conversationId: string;
+  userMessage: string;
+  sourceSelectionId?: SourceSelectionId;
+  signal?: AbortSignal;
+  emitStreamEvent?: ChatStreamEventEmitter;
+  parentToolCallId?: string;
+}
+
 /**
  * A registered tool with its JSON Schema and executor.
  */
@@ -10,7 +23,10 @@ export interface AgentTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>; // JSON Schema for Anthropic API
-  execute: (input: Record<string, unknown>) => Promise<AgentToolResult>;
+  execute: (
+    input: Record<string, unknown>,
+    context?: AgentToolExecutionContext
+  ) => Promise<AgentToolResult>;
 }
 
 /**
@@ -19,6 +35,7 @@ export interface AgentTool {
 export interface AgentToolResult {
   content: string; // Stringified result for the LLM
   isError?: boolean; // If true, sent as is_error to the model
+  proteinStructures?: ProteinStructure[];
 }
 
 /**
@@ -42,8 +59,12 @@ export interface AgentLoopConfig {
   maxTokens: number;
   temperature?: number;
   apiKey: string;
+  signal?: AbortSignal;
+  toolExecutionContext?: AgentToolExecutionContext;
   /** Called after each tool execution. Use for DB state updates, progress notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called as streamable progress events occur inside the agent loop. */
+  onStreamEvent?: ChatStreamEventEmitter;
   /** Called on each text chunk during streaming. Synchronous to avoid backpressure on the Anthropic stream. */
   onTextDelta?: (delta: string) => void;
   /** Called after LLM response with tool_use blocks, BEFORE tools execute. Use to flush stream buffer and notify frontend. */
@@ -55,6 +76,7 @@ export interface AgentLoopConfig {
  */
 export interface AgentLoopResult {
   finalText: string;
+  proteinStructures?: ProteinStructure[];
   toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;

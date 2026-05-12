@@ -1,10 +1,22 @@
 import type { PlanTask } from "../types/core";
+import { parseSourceSelectionId, type SourceSelectionId } from "../types/sourceSelection";
 import logger from "./logger";
 
 export type PlanningResult = {
   currentObjective: string;
   plan: Array<PlanTask>;
 };
+
+function normalizeSources(value: unknown): SourceSelectionId[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sources = value
+    .map((source) => parseSourceSelectionId(source))
+    .filter((source): source is SourceSelectionId => Boolean(source));
+  return sources.length > 0 ? sources : undefined;
+}
 
 /**
  * Extract planning result from LLM response using multiple strategies.
@@ -131,6 +143,7 @@ function normalizeResult(result: Partial<PlanningResult>): PlanningResult {
       level: task.level ?? index + 1,
       objective: task.objective || "",
       output: task.output || "",
+      sources: normalizeSources(task.sources),
       type: task.type || "LITERATURE",
     })),
   };

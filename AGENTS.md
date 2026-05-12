@@ -31,7 +31,7 @@ Other commands:
 
 ### Integration tests
 
-Integration tests (describe blocks tagged `[integration]`) need a local Supabase stack and/or `RUN_PDF_INTEGRATION=1`. They skip when env is missing, so `bun test` on its own is always safe.
+Integration tests (describe blocks tagged `[integration]`) need a local Supabase stack plus `RUN_SUPABASE_INTEGRATION=1` and/or `RUN_PDF_INTEGRATION=1`. They skip when env is missing, so `bun test` on its own is always safe.
 
 ```bash
 supabase start                                                      # pulls images on first run
@@ -40,6 +40,7 @@ eval "$(supabase status -o env \
                s/^SERVICE_ROLE_KEY="?([^"]+)"?$/export SUPABASE_SERVICE_KEY=\1/p;
                s/^ANON_KEY="?([^"]+)"?$/export SUPABASE_ANON_KEY=\1/p')"
 export RUN_PDF_INTEGRATION=1
+export RUN_SUPABASE_INTEGRATION=1
 bun test --test-name-pattern '\[integration\]'                      # just integration suites
 bun test                                                            # full suite (unit + integration)
 supabase stop

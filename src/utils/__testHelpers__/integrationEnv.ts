@@ -20,7 +20,9 @@ const present = (v: string | undefined): boolean =>
   !!v && v.trim() !== "" && v !== "undefined" && v !== "null";
 
 export const hasSupabaseEnv =
-  present(process.env.SUPABASE_URL) && present(process.env.SUPABASE_SERVICE_KEY);
+  present(process.env.RUN_SUPABASE_INTEGRATION) &&
+  present(process.env.SUPABASE_URL) &&
+  present(process.env.SUPABASE_SERVICE_KEY);
 
 export const hasPdfEnv = present(process.env.RUN_PDF_INTEGRATION);
 

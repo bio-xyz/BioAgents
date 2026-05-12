@@ -19,6 +19,7 @@ interface AnalysisArtifact {
 }
 
 interface PlanStep {
+  id?: string;
   type: string;
   objective: string;
   output?: string;
@@ -61,12 +62,12 @@ export function ResearchStatePanel({
   });
 
   // Track which step outputs are expanded
-  const [expandedStepOutputs, setExpandedStepOutputs] = useState<Record<number, boolean>>({});
+  const [expandedStepOutputs, setExpandedStepOutputs] = useState<Record<string, boolean>>({});
 
-  const toggleStepOutput = (index: number) => {
+  const toggleStepOutput = (stepKey: string) => {
     setExpandedStepOutputs((prev) => ({
       ...prev,
-      [index]: !prev[index],
+      [stepKey]: !prev[stepKey],
     }));
   };
 
@@ -147,6 +148,19 @@ export function ResearchStatePanel({
   const completedSteps = state?.plan?.filter((step) => step.end) || [];
   const currentStep = state?.plan?.find((step) => step.start && !step.end);
 
+  const getStepKey = (step: PlanStep) =>
+    step.id || `${step.type}-${step.objective}-${step.start || ""}-${step.end || ""}`;
+
+  const hypothesisLines = (() => {
+    const lines = state?.currentHypothesis?.split("\n") || [];
+    let offset = 0;
+    return lines.map((line) => {
+      const key = `${offset}-${line}`;
+      offset += line.length + 1;
+      return { key, line };
+    });
+  })();
+
   // Show loading state when deep research is starting but no state yet
   const showLoadingState = isLoading && (!state || !state.currentObjective);
 
@@ -209,18 +223,17 @@ export function ResearchStatePanel({
               {expandedSections.hypothesis && (
                 <div className="research-section-body research-hypothesis">
                   <div className="research-hypothesis-content">
-                    {state?.currentHypothesis?.split("\n").map((line) => {
-                      const lineKey = `hypothesis-${line}`;
+                    {hypothesisLines.map(({ key, line }) => {
                       if (line.startsWith("## ")) {
                         return (
-                          <h4 key={lineKey} className="research-hypothesis-heading">
+                          <h4 key={key} className="research-hypothesis-heading">
                             {line.replace("## ", "")}
                           </h4>
                         );
                       }
                       if (line.trim()) {
                         return (
-                          <p key={lineKey} className="research-hypothesis-paragraph">
+                          <p key={key} className="research-hypothesis-paragraph">
                             {renderCitationText(line)}
                           </p>
                         );
@@ -368,18 +381,16 @@ export function ResearchStatePanel({
               {expandedSections.plan && (
                 <div className="research-section-body">
                   <div className="research-steps-list">
-                    {completedSteps.map((step, i) => {
+                    {completedSteps.map((step) => {
                       const stepInfo = formatStepType(step.type);
-                      const isOutputExpanded = expandedStepOutputs[i] || false;
+                      const stepKey = getStepKey(step);
+                      const isOutputExpanded = expandedStepOutputs[stepKey] || false;
                       const outputPreviewLength = 300;
                       const needsTruncation =
                         step.output && step.output.length > outputPreviewLength;
 
                       return (
-                        <div
-                          key={`${step.type}-${step.objective}-${step.start || ""}-${step.end || ""}`}
-                          className="research-step-item completed"
-                        >
+                        <div key={stepKey} className="research-step-item completed">
                           <div className="research-step-header">
                             <div
                               className="research-step-type"
@@ -398,7 +409,10 @@ export function ResearchStatePanel({
                           {step.datasets && step.datasets.length > 0 && (
                             <div className="research-step-datasets">
                               {step.datasets.map((ds) => (
-                                <span key={ds.id} className="research-step-dataset-badge">
+                                <span
+                                  key={ds.id || ds.filename}
+                                  className="research-step-dataset-badge"
+                                >
                                   <Icon name="file" size={12} />
                                   {ds.filename}
                                 </span>
@@ -440,7 +454,7 @@ export function ResearchStatePanel({
                               {needsTruncation && (
                                 <button
                                   className="research-step-output-toggle"
-                                  onClick={() => toggleStepOutput(i)}
+                                  onClick={() => toggleStepOutput(stepKey)}
                                 >
                                   {isOutputExpanded ? (
                                     <>

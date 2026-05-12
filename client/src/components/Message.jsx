@@ -57,6 +57,9 @@ export function Message({ message }) {
     return "file";
   };
 
+  const getFileKey = (file) =>
+    file.id || `${file.name || file.filename || "file"}-${file.size || 0}-${file.mimeType || ""}`;
+
   const timestamp = formatTimestamp(message.timestamp);
 
   const renderContent = () => {
@@ -79,10 +82,7 @@ export function Message({ message }) {
               ) : (
                 // Show individual files when 3 or fewer
                 files.map((file) => (
-                  <div
-                    key={`${file.name || file.filename}-${file.size || 0}-${file.mimeType || ""}`}
-                    className="message-file-badge"
-                  >
+                  <div key={getFileKey(file)} className="message-file-badge">
                     <Icon name={getFileIcon(file.mimeType)} size={14} />
                     <span className="file-name">{file.name || file.filename}</span>
                     {file.size && <span className="file-size">{formatFileSize(file.size)}</span>}

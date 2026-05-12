@@ -6,6 +6,7 @@
  */
 
 import type { PlanTask } from "./core";
+import type { SourceSelectionId } from "./sourceSelection";
 
 /**
  * Categories of clarification questions
@@ -48,6 +49,7 @@ export interface ClarificationAnswer {
 export interface ClarificationPlanTask {
   objective: string;
   type: "LITERATURE" | "ANALYSIS";
+  sources?: SourceSelectionId[];
   datasetFilenames: string[]; // Filenames to match against uploadedDatasets at execution time
 }
 

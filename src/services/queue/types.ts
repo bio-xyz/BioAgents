@@ -6,6 +6,8 @@
  */
 
 import type { AuthMethod } from "../../types/auth";
+import type { ProteinStructure } from "../../types/core";
+import type { SourceSelectionId } from "../../types/sourceSelection";
 
 /**
  * Job data for chat queue
@@ -23,6 +25,7 @@ export interface ChatJobData {
 
   // File references (files uploaded before enqueue, stored in conversationState)
   fileIds?: string[];
+  sourceSelectionId?: SourceSelectionId;
 
   // Metadata
   requestedAt: string;
@@ -83,6 +86,7 @@ export interface ChatJobResult {
   text: string;
   userId: string;
   responseTime: number;
+  proteinStructures?: ProteinStructure[];
 }
 
 /**
@@ -90,7 +94,7 @@ export interface ChatJobResult {
  */
 export interface DeepResearchJobResult {
   messageId: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "cancelled";
   responseTime: number;
 }
 
@@ -202,6 +206,7 @@ export interface Notification {
   fileId?: string;
   paperId?: string;
   progress?: { stage: string; percent: number };
+  data?: unknown;
   description?: string;
   error?: string;
 }

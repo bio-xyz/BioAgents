@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import logger from "../../utils/logger";
+import { resolveSourceSelectionLiteratureOverride } from "../../utils/sourceSelectionRouting";
 import { registerTool } from "../registry";
 
 // Only fast sources — Edison and BIOLITDEEP are excluded because they use
@@ -20,12 +21,29 @@ const InputSchema = z.object({
 
 registerTool({
   description:
-    "Search bioscience literature from a specific academic source. Available sources: 'openscholar' (academic papers via OpenScholar), 'biolit' (BioLiterature agent — arxiv, pubmed, clinical trials), 'knowledge' (local knowledge base). Call this tool multiple times with different sources or queries to cross-reference findings.",
-  execute: async (input) => {
+    "Search bioscience literature from a specific academic source. Available sources: 'openscholar' (academic papers via OpenScholar), 'biolit' (BioLiterature agent, including selected official-source overrides such as PubMed, UniProt, PDB, ChEMBL, Ensembl, Enrichr, ClinicalTrials.gov, Open Targets, and AlphaFold DB), 'knowledge' (local knowledge base). Call this tool multiple times with different sources or queries to cross-reference findings.",
+  execute: async (input, context) => {
     const parsed = InputSchema.parse(input);
     const { query, source } = parsed;
+    const override = resolveSourceSelectionLiteratureOverride({
+      objective: query,
+      sourceSelectionId: context?.sourceSelectionId,
+      userMessage: context?.userMessage || query,
+    });
+    const effectiveSource = override.sources ? "biolit" : source;
+    const effectiveQuery = override.objective;
 
-    logger.info({ query, source }, "literature_search_tool_started");
+    logger.info(
+      {
+        effectiveQuery,
+        effectiveSource,
+        query,
+        source,
+        sourceSelectionId: context?.sourceSelectionId,
+        sourcesOverride: override.sources,
+      },
+      "literature_search_tool_started"
+    );
 
     // Map source to literatureAgent type
     const sourceToType = {
@@ -41,10 +59,10 @@ registerTool({
       openscholar: "OPENSCHOLAR_API_URL",
     } as const;
 
-    const envVar = sourceEnvCheck[source];
+    const envVar = sourceEnvCheck[effectiveSource];
     if (!process.env[envVar]) {
       return {
-        content: `Source "${source}" is not configured (missing ${envVar} environment variable). Try a different source.`,
+        content: `Source "${effectiveSource}" is not configured (missing ${envVar} environment variable). Try a different source.`,
         isError: true,
       };
     }
@@ -52,6 +70,61 @@ registerTool({
     const TOOL_TIMEOUT_MS = parseInt(process.env.CHAT_TOOL_TIMEOUT_MS || "30000", 10);
 
     try {
+      if (effectiveSource === "biolit") {
+        const { openLiteratureAgentStream } = await import(
+          "../../services/literature/agent-stream"
+        );
+        const { consumeLiteratureAgentStream } = await import(
+          "../../services/literature/agent-stream-events"
+        );
+        const abortController = new AbortController();
+        const abortFromParent = () => abortController.abort(context?.signal?.reason);
+        const timeout = setTimeout(
+          () => abortController.abort(`Timed out after ${TOOL_TIMEOUT_MS / 1000}s`),
+          TOOL_TIMEOUT_MS
+        );
+
+        if (context?.signal) {
+          if (context.signal.aborted) {
+            abortFromParent();
+          } else {
+            context.signal.addEventListener("abort", abortFromParent, { once: true });
+          }
+        }
+
+        try {
+          const stream = await openLiteratureAgentStream({
+            question: effectiveQuery,
+            signal: abortController.signal,
+            sources: override.sources,
+          });
+          const streamResult = await consumeLiteratureAgentStream({
+            emitStreamEvent: context?.emitStreamEvent,
+            parentToolCallId: context?.parentToolCallId,
+            stream,
+          });
+
+          logger.info(
+            {
+              effectiveQuery,
+              outputLength: streamResult.content.length,
+              query,
+              source,
+            },
+            "literature_search_biolit_stream_completed"
+          );
+
+          return {
+            content: streamResult.content,
+            isError: streamResult.isError,
+            proteinStructures: streamResult.proteinStructures,
+          };
+        } finally {
+          clearTimeout(timeout);
+          context?.signal?.removeEventListener("abort", abortFromParent);
+        }
+      }
+
       const { literatureAgent } = await import("../../agents/literature");
 
       // Note: Promise.race does not cancel the losing promise. On timeout,
@@ -60,8 +133,9 @@ registerTool({
       // to literatureAgent, which is shared across multiple consumers.
       const result = await Promise.race([
         literatureAgent({
-          objective: query,
-          type: sourceToType[source],
+          objective: effectiveQuery,
+          sources: override.sources,
+          type: sourceToType[effectiveSource],
         }),
         new Promise<never>((_, reject) =>
           setTimeout(
@@ -72,19 +146,35 @@ registerTool({
       ]);
 
       logger.info(
-        { count: result.count, outputLength: result.output.length, query, source },
+        {
+          count: result.count,
+          effectiveQuery,
+          effectiveSource,
+          outputLength: result.output.length,
+          query,
+          source,
+        },
         "literature_search_tool_completed"
       );
 
       if (!result.output.trim()) {
-        return { content: `No relevant literature found for: "${query}" (source: ${source})` };
+        return {
+          content: `No relevant literature found for: "${effectiveQuery}" (source: ${effectiveSource})`,
+          proteinStructures: result.proteinStructures,
+        };
       }
 
-      return { content: result.output };
+      return { content: result.output, proteinStructures: result.proteinStructures };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logger.error({ err, query, source }, "literature_search_tool_error");
-      return { content: `Literature search error (${source}): ${message}`, isError: true };
+      logger.error(
+        { effectiveQuery, effectiveSource, err, query, source },
+        "literature_search_tool_error"
+      );
+      return {
+        content: `Literature search error (${effectiveSource}): ${message}`,
+        isError: true,
+      };
     }
   },
   inputSchema: {
@@ -95,7 +185,7 @@ registerTool({
       },
       source: {
         description:
-          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for broad search (arxiv, pubmed, clinical trials), 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
+          "Which literature source to search. 'openscholar' for academic papers, 'biolit' for BioLiterature/official source requests, 'knowledge' for local knowledge base. Defaults to 'openscholar'.",
         enum: VALID_SOURCES,
         type: "string",
       },

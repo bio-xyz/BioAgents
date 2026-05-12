@@ -1,45 +1,45 @@
 export const SENS_DAMAGE_CLASSES = [
   {
-    name: "Cell loss, tissue atrophy",
     description:
       "User mentions lost/reduced cell numbers or organ atrophy and goals to restore function or regeneration. Keywords: stem cells, progenitors, satellite cells, neurogenesis, engraftment, tissue engineering, organoids, cell replacement, niche rejuvenation. Query papers on stem-cell therapies, delivery/scaffolds, safety/engraftment, and functional recovery endpoints.",
     index: 1,
+    name: "Cell loss, tissue atrophy",
   },
   {
-    name: "Accumulation of senescent cells",
     description:
       "User mentions senescence, SASP-driven inflammation, fibrosis, or clearing 'zombie' cells to rejuvenate tissue. Keywords: senolytics (D+Q, fisetin, navitoclax), senomorphics, p16/p21, SA-β-gal, uPAR/DPP4, CAR-T/NK for senescence. Query senescent-cell burden, clearance strategies, SASP modulation, and effects on function.",
     index: 2,
+    name: "Accumulation of senescent cells",
   },
   {
-    name: "Mitochondrial DNA mutations/dysfunction",
     description:
       "User focuses on mitochondrial defects, heteroplasmy, ETC failure, ROS, or mitophagy. Mentions allotopic expression, mtDNA editing/replacement, NAD+ boosters, urolithin A, PINK1–Parkin. Query mitochondrial gene therapy, allotopic expression of mtDNA-encoded proteins, mitophagy enhancers, and muscle/neuronal outcomes.",
     index: 3,
+    name: "Mitochondrial DNA mutations/dysfunction",
   },
   {
-    name: "Nuclear DNA mutations / cancerous cells",
     description:
       "User discusses oncogenesis prevention/ablation, clonal expansions (CHIP), or tumor surveillance in aging. Mentions telomerase/ALT inhibition, targeted ablation, suicide genes, immune vaccines, CAR-T, checkpoint therapy. Query telomere maintenance blockers, minimal residual disease, aging immune context, and safety in older adults.",
     index: 4,
+    name: "Nuclear DNA mutations / cancerous cells",
   },
   {
-    name: "Intracellular aggregates (intracellular junk)",
     description:
       "User mentions build-up of undegraded material inside cells (lipofuscin, misfolded proteins) and boosting lysosomal/autophagic clearance. Keywords: lysosomal hydrolase/enzyme delivery, TFEB activation, chaperone-mediated autophagy, substrate reduction, LC3/p62 flux. Query strategies that restore intracellular proteostasis.",
     index: 5,
+    name: "Intracellular aggregates (intracellular junk)",
   },
   {
-    name: "Extracellular aggregates (extracellular waste)",
     description:
       "User refers to amyloid/transthyretin/other extracellular deposits and antibody/vaccine approaches to clear them. Keywords: immunotherapy, monoclonal antibodies, catalytic antibodies, apheresis, PET amyloid, CSF biomarkers. Query trials of aggregate clearance and functional outcomes.",
     index: 6,
+    name: "Extracellular aggregates (extracellular waste)",
   },
   {
-    name: "Extracellular matrix stiffening (cross-links)",
     description:
       "User targets tissue or vascular stiffness, AGEs, fibrosis, or cross-link breaking/repair. Keywords: AGE breakers, crosslink breakers (e.g., alagebrium-like), RAGE antagonists, MR elastography, pulse wave velocity, ECM remodeling, tissue engineering. Query interventions that reduce ECM stiffness and improve biomechanics.",
     index: 7,
+    name: "Extracellular matrix stiffening (cross-links)",
   },
 ];
 

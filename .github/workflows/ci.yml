@@ -103,6 +103,7 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379
           BIOAGENTS_SECRET: ci-integration-secret
+          RUN_SUPABASE_INTEGRATION: "1"
           RUN_PDF_INTEGRATION: "1"
         run: bun test --test-name-pattern '\[integration\]'
 

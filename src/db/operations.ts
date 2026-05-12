@@ -1,4 +1,6 @@
+import { preserveDeepResearchCancellationForWrite } from "../services/deep-research/cancellation";
 import type { ConversationStateValues, StateValues } from "../types/core";
+import type { SourceSelectionId } from "../types/sourceSelection";
 import logger from "../utils/logger";
 import { cleanValues } from "./cleanValues";
 import { getServiceClient } from "./client";
@@ -48,6 +50,7 @@ export interface Message {
   state_id?: string;
   response_time?: number;
   source?: string;
+  source_selection_id?: SourceSelectionId;
   files?: Array<{ name: string; size: number; type: string }>;
   status?: MessageStatus;
 }
@@ -257,18 +260,20 @@ export async function updateConversationState(
 ) {
   const { preserveUploadedDatasets = true } = options || {};
 
-  const finalValues = { ...values };
+  const currentState = await getConversationState(id);
+  let finalValues = { ...values };
 
   // IMPORTANT: By default, always preserve uploadedDatasets from the database
   // This prevents race conditions where chat/deep-research workers
   // overwrite files added by file-process workers running concurrently
   if (preserveUploadedDatasets) {
-    const currentState = await getConversationState(id);
     const currentUploadedDatasets = currentState?.values?.uploadedDatasets;
     if (currentUploadedDatasets !== undefined) {
       finalValues.uploadedDatasets = currentUploadedDatasets;
     }
   }
+
+  finalValues = preserveDeepResearchCancellationForWrite(finalValues, currentState?.values);
 
   const cleanedValues = cleanValues(finalValues);
   const { data, error } = await supabase

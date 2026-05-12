@@ -1,5 +1,4 @@
 import { Elysia } from "elysia";
-
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
@@ -8,17 +7,32 @@ import {
   markMessageComplete,
   markMessageFailed,
 } from "../services/chat/tools";
-import type { ConversationState, State } from "../types/core";
+import type { ConversationState, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
+import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
+import { buildMessageStateValues } from "../utils/messageState";
+import { withNormalChatProteinStructures } from "../utils/proteinStructures";
 import { generateUUID } from "../utils/uuid";
+import { notifyChatReplyCompleted } from "./chat-notifications";
+import { createChatSseEventHandlers } from "./chat-sse-events";
+
+const STREAM_HEADERS = {
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "Content-Encoding": "identity",
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "X-Accel-Buffering": "no",
+};
 
 /**
  * Response type for synchronous chat (in-process mode)
  */
 type ChatV2Response = {
+  conversationId?: string;
   messageId: string;
+  proteinStructures?: ProteinStructure[];
   text: string;
   userId?: string;
 };
@@ -327,6 +341,14 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     const auth = request.auth;
     const userId = auth?.userId || generateUUID();
     const source = "api";
+    const sourceSelectionId = parseSourceSelectionId(asString(parsedBody.sourceSelectionId));
+    if (parsedBody.sourceSelectionId !== undefined && !sourceSelectionId) {
+      set.status = 400;
+      return {
+        error: "Invalid sourceSelectionId",
+        ok: false,
+      };
+    }
 
     logger.info(
       {
@@ -357,6 +379,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         messageLength: message.length,
         routeType: "chat-v2",
         source,
+        sourceSelectionId,
         userId,
       },
       "chat_request_received"
@@ -408,6 +431,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       isExternal: false,
       message,
       source,
+      sourceSelectionId,
       stateId: stateRecord.id,
       userId,
     });
@@ -454,8 +478,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
       const encoder = new TextEncoder();
       const sseStartTime = Date.now();
-      let turnIndex = 0;
-      let streamStarted = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
       const stream = new ReadableStream({
@@ -470,12 +492,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           logger.info({ messageId: createdMessage.id }, "chat_sse_client_disconnected");
         },
         async start(controller) {
-          // Tracks whether the COMPLETE durable write succeeded. The catch
-          // handler below uses this to avoid downgrading a successfully-saved
-          // reply to FAILED when a post-save step (e.g. logger / safeClose)
-          // throws.
-          let replyPersisted = false;
-
           // Helper: safe enqueue (swallows errors if client disconnected)
           const send = (event: string, data: unknown) => {
             try {
@@ -486,6 +502,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               // Controller closed (client disconnected). Keep running so DB save happens.
             }
           };
+          const streamEvents = createChatSseEventHandlers({
+            conversationId,
+            messageId: createdMessage.id,
+            send,
+            userId,
+          });
 
           // SSE comment frame - ignored by the client parser but keeps the
           // connection alive through proxies (nginx default idle timeout 60s,
@@ -613,25 +635,9 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               conversationId,
               loadHistory: true,
               message,
-              onStreamPause: async () => {
-                // Called by loop.ts AFTER finalMessage, BEFORE tool execution
-                if (streamStarted) {
-                  send("stream_end", {
-                    isFinal: false,
-                    reason: "paused",
-                    turnIndex,
-                  });
-                  streamStarted = false;
-                }
-              },
-              onTextDelta: (delta) => {
-                if (!streamStarted) {
-                  streamStarted = true;
-                  turnIndex++;
-                  send("stream_start", { turnIndex });
-                }
-                send("delta", { text: delta, turnIndex });
-              },
+              onStreamEvent: (envelope) => streamEvents.emitStreamEvent(envelope),
+              onStreamPause: async () => streamEvents.onStreamPause(),
+              onTextDelta: (delta) => streamEvents.onTextDelta(delta),
               onToolResult: async (info) => {
                 // Mirror existing in-process path: update conversation state
                 if (!conversationStateRecord.id) return;
@@ -652,6 +658,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                   );
                 }
               },
+              sourceSelectionId,
               uploadedDatasets: conversationStateRecord.values.uploadedDatasets,
             });
 
@@ -659,17 +666,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             // Matches existing non-SSE path at chat.ts:568.
             // Never persist a partial answer as success.
             if (result.hitMaxTokens) {
-              if (streamStarted) {
-                send("stream_end", {
-                  isFinal: false,
-                  reason: "truncated",
-                  turnIndex,
-                });
-              }
-              send("error", {
-                message: "Response was truncated. Please try a shorter question.",
-                reason: "truncated",
-              });
+              streamEvents.sendTruncated("Response was truncated. Please try a shorter question.");
               await markMessageFailed(createdMessage.id);
               safeClose();
               logger.warn({ messageId: createdMessage.id }, "chat_sse_truncated");
@@ -677,7 +674,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             }
             if (!result.replyText) {
               send("error", {
-                message: "No response generated. Please try again.",
+                error: "No response generated. Please try again.",
                 reason: "empty_reply",
               });
               await markMessageFailed(createdMessage.id);
@@ -697,7 +694,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             });
             if (!updated) {
               send("error", {
-                message: "Response failed to save. Please retry.",
+                error: "Response failed to save. Please retry.",
                 reason: "agent_error",
               });
               safeClose();
@@ -709,15 +706,34 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             }
             replyPersisted = true;
 
-            // === Terminal success signals (only after durable write) ===
-            if (streamStarted) {
-              send("stream_end", {
-                isFinal: true,
-                reason: "complete",
-                turnIndex,
-              });
+            if (result.proteinStructures?.length && conversationStateRecord.id) {
+              try {
+                const nextValues = withNormalChatProteinStructures(
+                  conversationStateRecord.values,
+                  createdMessage.id,
+                  result.proteinStructures
+                );
+                await updateConversationState(conversationStateRecord.id, nextValues);
+                conversationStateRecord.values = nextValues;
+              } catch (err) {
+                logger.warn(
+                  { error: err, messageId: createdMessage.id },
+                  "chat_sse_protein_structures_state_persist_failed"
+                );
+              }
             }
-            send("done", { messageId: createdMessage.id });
+
+            await notifyChatReplyCompleted({
+              conversationId,
+              messageId: createdMessage.id,
+              proteinStructures: result.proteinStructures,
+            });
+
+            // === Terminal success signals (only after durable write) ===
+            streamEvents.sendFinal({
+              proteinStructures: result.proteinStructures,
+              text: result.replyText,
+            });
             safeClose();
 
             logger.info(
@@ -739,7 +755,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
             // internal detail (Anthropic SDK errors, DB errors, etc.). Full
             // error is already captured in the logger.error above.
             send("error", {
-              message: "Something went wrong while generating the response. Please try again.",
+              error: "Something went wrong while generating the response. Please try again.",
               reason: "agent_error",
             });
             // Only mark FAILED if the reply hasn't already been durably saved.
@@ -754,13 +770,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       });
 
       return new Response(stream, {
-        headers: {
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-          "Content-Type": "text/event-stream",
-          // Disable nginx buffering - critical for real-time streaming
-          "X-Accel-Buffering": "no",
-        },
+        headers: STREAM_HEADERS,
         status: 200,
       });
     }
@@ -805,6 +815,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           message,
           messageId: createdMessage.id,
           requestedAt: new Date().toISOString(),
+          sourceSelectionId,
           userId,
         },
         {
@@ -848,12 +859,10 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Initialize state
     const state: State = {
       id: stateRecord.id,
-      values: {
-        conversationId,
-        messageId: createdMessage.id,
-        source: createdMessage.source,
-        userId,
-      },
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
+        message: createdMessage,
+      }),
     };
 
     // Initialize conversation state
@@ -929,6 +938,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           logger.warn({ error: err, toolName: info.toolName }, "conversation_state_update_failed");
         }
       },
+      sourceSelectionId: state.values.sourceSelectionId,
       uploadedDatasets: conversationState.values.uploadedDatasets,
     });
 
@@ -958,7 +968,9 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     );
 
     const response: ChatV2Response = {
+      conversationId,
       messageId: createdMessage.id,
+      proteinStructures: agentResult.proteinStructures,
       text: replyText,
       userId,
     };
@@ -984,6 +996,24 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       };
     }
     replyPersisted = true;
+
+    if (agentResult.proteinStructures?.length && conversationState.id) {
+      try {
+        const { updateConversationState } = await import("../db/operations");
+        const nextValues = withNormalChatProteinStructures(
+          conversationState.values,
+          createdMessage.id,
+          agentResult.proteinStructures
+        );
+        await updateConversationState(conversationState.id, nextValues);
+        conversationState.values = nextValues;
+      } catch (err) {
+        logger.warn(
+          { error: err, messageId: createdMessage.id },
+          "chat_in_process_protein_structures_state_persist_failed"
+        );
+      }
+    }
 
     logger.info(
       { contentLength: replyText.length, messageId: createdMessage.id },

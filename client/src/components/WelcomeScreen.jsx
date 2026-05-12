@@ -68,7 +68,7 @@ export function WelcomeScreen({ onExampleClick }) {
         <div className="example-prompts">
           {examples.map((example) => (
             <div
-              key={example.text}
+              key={example.title}
               className="example-prompt"
               onClick={() => onExampleClick && onExampleClick(example.text)}
             >

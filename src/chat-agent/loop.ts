@@ -11,7 +11,9 @@ import type {
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import logger from "../utils/logger";
+import { mergeProteinStructures } from "../utils/proteinStructures";
 import { executeTool, getToolDefinitions } from "./registry";
+import { previewValue } from "./streaming";
 import type { AgentLoopConfig, AgentLoopResult } from "./types";
 
 const DEFAULT_TEMPERATURE = 0.3;
@@ -37,8 +39,10 @@ export async function runAgentLoop(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalText = "";
+  let proteinStructures = mergeProteinStructures();
 
   while (true) {
+    config.signal?.throwIfAborted();
     const isAtCap = toolCallCount >= config.maxToolCalls;
 
     logger.info(
@@ -61,14 +65,14 @@ export async function runAgentLoop(
 
     if (config.onTextDelta) {
       // Streaming path: tokens delivered via callback as they arrive
-      const stream = client.messages.stream(requestParams);
+      const stream = client.messages.stream(requestParams, { signal: config.signal });
       stream.on("text", (text) => {
         config.onTextDelta!(text);
       });
       response = await stream.finalMessage();
     } else {
       // Non-streaming path: unchanged behavior for callers without callback
-      response = await client.messages.create(requestParams);
+      response = await client.messages.create(requestParams, { signal: config.signal });
     }
 
     // Track token usage
@@ -93,7 +97,14 @@ export async function runAgentLoop(
         { hasText: finalText.length > 0, toolCallCount },
         "agent_loop_max_tokens_reached"
       );
-      return { finalText, hitMaxTokens: true, toolCallCount, totalInputTokens, totalOutputTokens };
+      return {
+        finalText,
+        hitMaxTokens: true,
+        proteinStructures,
+        toolCallCount,
+        totalInputTokens,
+        totalOutputTokens,
+      };
     }
 
     // If no tool calls — we're done
@@ -132,7 +143,41 @@ export async function runAgentLoop(
         "agent_tool_call_executing"
       );
 
-      const result = await executeTool(toolBlock.name, toolBlock.input as Record<string, unknown>);
+      await config.onStreamEvent?.({
+        data: {
+          inputPreview: previewValue(toolBlock.input),
+          scope: "orchestrator",
+          status: "started",
+          toolCallId: toolBlock.id,
+          toolName: toolBlock.name,
+        },
+        event: "tool_call",
+      });
+
+      const toolExecutionContext = config.toolExecutionContext
+        ? {
+            ...config.toolExecutionContext,
+            parentToolCallId: toolBlock.id,
+          }
+        : undefined;
+
+      const result = await executeTool(
+        toolBlock.name,
+        toolBlock.input as Record<string, unknown>,
+        toolExecutionContext
+      );
+      proteinStructures = mergeProteinStructures(proteinStructures, result.proteinStructures);
+
+      await config.onStreamEvent?.({
+        data: {
+          outputPreview: previewValue(result.content),
+          scope: "orchestrator",
+          status: result.isError ? "failed" : "completed",
+          toolCallId: toolBlock.id,
+          toolName: toolBlock.name,
+        },
+        event: "tool_result",
+      });
 
       // Notify caller (e.g. for DB state updates)
       if (config.onToolResult) {
@@ -171,5 +216,11 @@ export async function runAgentLoop(
     }
   }
 
-  return { finalText, toolCallCount, totalInputTokens, totalOutputTokens };
+  return {
+    finalText,
+    proteinStructures,
+    toolCallCount,
+    totalInputTokens,
+    totalOutputTokens,
+  };
 }

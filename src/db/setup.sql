@@ -58,6 +58,20 @@ CREATE TABLE messages (
   state_id UUID REFERENCES states(id) ON DELETE SET NULL,
   response_time INTEGER, -- in milliseconds
   source TEXT DEFAULT 'ui', -- 'ui', 'twitter', etc.
+  source_selection_id TEXT CHECK (
+    source_selection_id IS NULL
+    OR source_selection_id IN (
+      'alphafold_db',
+      'uniprot',
+      'pdb',
+      'pubmed',
+      'chembl',
+      'ensembl',
+      'enrichr',
+      'clinical-trials',
+      'open_targets'
+    )
+  ),
   files JSONB, -- stores file metadata for uploads
   status TEXT NOT NULL DEFAULT 'PENDING'
     CHECK (status IN ('PENDING', 'COMPLETE', 'FAILED')),
@@ -73,6 +87,7 @@ CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
 CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
 CREATE INDEX idx_messages_state_id ON messages(state_id);
+CREATE INDEX idx_messages_source_selection_id ON messages(source_selection_id);
 -- Partial index for the periodic sweeper to find stuck-pending rows fast
 CREATE INDEX idx_messages_status_pending ON messages(created_at) WHERE status = 'PENDING';
 

@@ -1,4 +1,5 @@
 import { createMessage, updateMessage } from "../../db/operations";
+import type { SourceSelectionId } from "../../types/sourceSelection";
 import logger from "../../utils/logger";
 
 export interface MessageCreationParams {
@@ -6,6 +7,7 @@ export interface MessageCreationParams {
   userId: string;
   message: string;
   source: string;
+  sourceSelectionId?: SourceSelectionId;
   stateId: string;
   files: File[];
   isExternal?: boolean; // Deprecated, kept for compatibility
@@ -19,7 +21,7 @@ export async function createMessageRecord(params: MessageCreationParams): Promis
   message?: Awaited<ReturnType<typeof createMessage>>;
   error?: string;
 }> {
-  const { conversationId, userId, message, source, stateId, files } = params;
+  const { conversationId, userId, message, source, sourceSelectionId, stateId, files } = params;
 
   try {
     const fileMetadata =
@@ -37,6 +39,7 @@ export async function createMessageRecord(params: MessageCreationParams): Promis
       files: fileMetadata,
       question: message,
       source,
+      source_selection_id: sourceSelectionId,
       state_id: stateId,
       user_id: userId,
     });

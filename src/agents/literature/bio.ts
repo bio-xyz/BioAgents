@@ -1,6 +1,7 @@
-import type { OnPollUpdate } from "../../types/core";
+import type { OnPollUpdate, ProteinStructure } from "../../types/core";
 import { fetchWithRetry } from "../../utils/fetchWithRetry";
 import logger from "../../utils/logger";
+import { extractProteinStructuresFromBioLiteratureResponse } from "../../utils/proteinStructures";
 import type { BioLiteratureMode } from ".";
 
 const BIO_LIT_AGENT_API_URL = process.env.BIO_LIT_AGENT_API_URL;
@@ -26,6 +27,7 @@ type BioLiteratureResponse = {
   formatted_answer?: string;
   references?: BioReference[];
   context_passages?: BioContextPassage[];
+  tool_results?: unknown;
   results?: unknown;
   job_id?: string;
   status?: string;
@@ -35,6 +37,7 @@ type BioLiteratureResponse = {
     answer?: string;
     references?: BioReference[];
     context_passages?: BioContextPassage[];
+    tool_results?: unknown;
     [key: string]: unknown;
   };
   output?: {
@@ -43,12 +46,38 @@ type BioLiteratureResponse = {
       answer?: string;
       references?: BioReference[];
       context_passages?: BioContextPassage[];
+      tool_results?: unknown;
       [key: string]: unknown;
     };
     [key: string]: unknown;
   };
   [key: string]: unknown;
 };
+
+export const DEFAULT_BIO_LITERATURE_SOURCES = ["arxiv", "pubmed", "clinical-trials"] as const;
+
+export function resolveBioLiteratureSources(sources?: string[]): string[] {
+  const normalizedSources =
+    sources
+      ?.map((source) => source.trim())
+      .filter((source): source is string => source.length > 0) || [];
+
+  return normalizedSources.length > 0 ? normalizedSources : [...DEFAULT_BIO_LITERATURE_SOURCES];
+}
+
+export function buildBioLiteratureQueryPayload(
+  objective: string,
+  mode: BioLiteratureMode,
+  sources?: string[]
+) {
+  return {
+    max_results: 20,
+    mode,
+    per_source_limit: 5,
+    question: objective,
+    sources: resolveBioLiteratureSources(sources),
+  };
+}
 
 function extractAnswer(data: BioLiteratureResponse): string {
   const directResponse = data.response;
@@ -177,6 +206,10 @@ async function pollBioLiteratureJob(
       "bioliterature_deep_poll"
     );
 
+    if (status === "cancelled" || status === "canceled") {
+      throw new Error(`BioLiterature job ${jobId} cancelled`);
+    }
+
     if (status === "failed" || status === "error") {
       throw new Error(`BioLiterature job ${jobId} failed`);
     }
@@ -201,14 +234,23 @@ async function pollBioLiteratureJob(
 export async function searchBioLiterature(
   objective: string,
   mode: BioLiteratureMode = "deep",
-  onPollUpdate?: OnPollUpdate
-): Promise<{ output: string; jobId?: string; reasoning?: string[] }> {
+  onPollUpdate?: OnPollUpdate,
+  sources?: string[],
+  onJobCreated?: (jobId: string) => void | Promise<void>
+): Promise<{
+  output: string;
+  jobId?: string;
+  reasoning?: string[];
+  proteinStructures?: ProteinStructure[];
+}> {
   logger.info({ BIO_LIT_AGENT_API_KEY, BIO_LIT_AGENT_API_URL });
   if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
     throw new Error("BioLiterature API URL or API key not configured");
   }
 
-  logger.info({ objective }, "starting_bioliterature_search");
+  const payload = buildBioLiteratureQueryPayload(objective, mode, sources);
+
+  logger.info({ objective, sources: payload.sources }, "starting_bioliterature_search");
 
   const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
   const endpoint = `${baseUrl}/query`;
@@ -216,13 +258,7 @@ export async function searchBioLiterature(
   const { response } = await fetchWithRetry(
     endpoint,
     {
-      body: JSON.stringify({
-        max_results: 20,
-        mode,
-        per_source_limit: 5,
-        question: objective,
-        sources: ["arxiv", "pubmed", "clinical-trials"],
-      }),
+      body: JSON.stringify(payload),
       headers: {
         "Content-Type": "application/json",
         "X-API-Key": BIO_LIT_AGENT_API_KEY,
@@ -251,6 +287,7 @@ export async function searchBioLiterature(
 
     if (jobId) {
       logger.info({ jobId }, "bioliterature_deep_job_created");
+      await onJobCreated?.(jobId);
       finalData = await pollBioLiteratureJob(baseUrl, BIO_LIT_AGENT_API_KEY, jobId, onPollUpdate);
     } else {
       logger.warn({ mode }, "bioliterature_deep_missing_job_id_using_direct_response");
@@ -261,6 +298,7 @@ export async function searchBioLiterature(
   const references = extractReferences(finalData);
   const contextPassages = extractContextPassages(finalData);
   const finalReasoning = Array.isArray(finalData.reasoning) ? finalData.reasoning : undefined;
+  const proteinStructures = extractProteinStructuresFromBioLiteratureResponse(finalData);
 
   logger.info(
     {
@@ -268,6 +306,7 @@ export async function searchBioLiterature(
       hasAnswer: Boolean(answer),
       jobId,
       mode,
+      proteinStructuresCount: proteinStructures.length,
       referencesCount: references.length,
     },
     "bioliterature_search_completed"
@@ -277,6 +316,7 @@ export async function searchBioLiterature(
     return {
       jobId,
       output: "No answer received from BioLiterature API",
+      proteinStructures,
       reasoning: finalReasoning,
     };
   }
@@ -284,6 +324,42 @@ export async function searchBioLiterature(
   return {
     jobId,
     output: answer,
+    proteinStructures,
     reasoning: finalReasoning,
   };
+}
+
+export async function cancelBioLiteratureJob(jobId: string): Promise<boolean> {
+  if (!BIO_LIT_AGENT_API_URL || !BIO_LIT_AGENT_API_KEY) {
+    logger.warn({ jobId }, "bioliterature_cancel_skipped_not_configured");
+    return false;
+  }
+
+  const baseUrl = BIO_LIT_AGENT_API_URL.replace(/\/$/, "");
+  const { response } = await fetchWithRetry(
+    `${baseUrl}/query/jobs/${jobId}/cancel`,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": BIO_LIT_AGENT_API_KEY,
+      },
+      method: "POST",
+    },
+    {
+      onRetry: (attempt, error) =>
+        logger.warn({ attempt, error: error.message, jobId }, "bioliterature_cancel_retry"),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger.warn(
+      { errorText, jobId, status: response.status },
+      "bioliterature_cancel_request_failed"
+    );
+    return false;
+  }
+
+  logger.info({ jobId }, "bioliterature_cancel_requested");
+  return true;
 }

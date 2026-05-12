@@ -1,9 +1,9 @@
 {
-  "label": "Guides",
-  "position": 2,
   "collapsed": false,
+  "label": "Guides",
   "link": {
-    "type": "generated-index",
-    "description": "In-depth guides for authentication, file uploads, job queues, and more."
-  }
+    "description": "In-depth guides for authentication, file uploads, job queues, and more.",
+    "type": "generated-index"
+  },
+  "position": 2
 }

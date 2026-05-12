@@ -5,6 +5,10 @@ import { getUploadPath } from "../../storage";
 import type { ConversationState, Message, PlanTask, State } from "../../types/core";
 import logger from "../../utils/logger";
 import { extractPlanningResult } from "../../utils/planningJsonExtractor";
+import {
+  applySourceSelectionPlanningOverrides,
+  getPlanningSourceSelectionGuidance,
+} from "../../utils/sourceSelectionRouting";
 import { formatFileSize } from "../fileUpload/utils";
 import {
   INITIAL_PLANNING_NO_PLAN_PROMPT,
@@ -86,7 +90,7 @@ export async function planningAgent(input: {
   // If no existing plan and initial mode, use LLM with no-plan prompt
   if (!hasPlan && mode === "initial") {
     logger.info("No existing plan found, using LLM for initial planning");
-    result = await generateInitialPlan(message, conversationState, usageType, researchMode);
+    result = await generateInitialPlan(state, message, conversationState, usageType, researchMode);
   } else {
     // Otherwise, use LLM to plan based on current state
     result = await generatePlan(state, conversationState, message, mode, usageType, researchMode);
@@ -122,6 +126,7 @@ function getResearchModeGuidance(researchMode: ResearchMode): string {
  * Uses LLM with special prompt that suggests 1 LITERATURE task
  */
 async function generateInitialPlan(
+  state: State,
   message: Message,
   conversationState: ConversationState,
   usageType?: TokenUsageType,
@@ -142,9 +147,14 @@ async function generateInitialPlan(
   // Build context (may include uploaded datasets even if no plan exists)
   const conversationId = conversationState.values.conversationId || message.conversation_id;
   const context = await buildContextFromState(conversationState, conversationId);
+  const sourceSelectionGuidance = getPlanningSourceSelectionGuidance(
+    state.values.sourceSelectionId,
+    message.question
+  );
 
   const planningPrompt = INITIAL_PLANNING_NO_PLAN_PROMPT.replace("{context}", context)
     .replace("{userMessage}", message.question)
+    .replace("{sourceSelectionGuidance}", sourceSelectionGuidance)
     .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
@@ -165,7 +175,15 @@ async function generateInitialPlan(
   const rawContent = response.content.trim();
 
   // Extract planning result with multi-strategy fallback
-  const result = extractPlanningResult(rawContent, message.question);
+  const extractedResult = extractPlanningResult(rawContent, message.question);
+  const result = {
+    ...extractedResult,
+    plan: applySourceSelectionPlanningOverrides({
+      plan: extractedResult.plan,
+      sourceSelectionId: state.values.sourceSelectionId,
+      userMessage: message.question,
+    }),
+  };
 
   logger.info(
     {
@@ -213,9 +231,14 @@ async function generatePlan(
   const promptTemplate = mode === "initial" ? INITIAL_PLANNING_PROMPT : NEXT_PLANNING_PROMPT;
 
   // Replace placeholders
+  const sourceSelectionGuidance = getPlanningSourceSelectionGuidance(
+    state.values.sourceSelectionId,
+    message.question
+  );
   const planningPrompt = promptTemplate
     .replace("{context}", context)
     .replace("{userMessage}", message.question)
+    .replace("{sourceSelectionGuidance}", sourceSelectionGuidance)
     .replace("{researchModeGuidance}", getResearchModeGuidance(researchMode));
 
   const response = await llmProvider.createChatCompletion({
@@ -236,7 +259,15 @@ async function generatePlan(
   const rawContent = response.content.trim();
 
   // Extract planning result with multi-strategy fallback
-  const result = extractPlanningResult(rawContent, message.question);
+  const extractedResult = extractPlanningResult(rawContent, message.question);
+  const result = {
+    ...extractedResult,
+    plan: applySourceSelectionPlanningOverrides({
+      plan: extractedResult.plan,
+      sourceSelectionId: state.values.sourceSelectionId,
+      userMessage: message.question,
+    }),
+  };
 
   logger.info(
     {

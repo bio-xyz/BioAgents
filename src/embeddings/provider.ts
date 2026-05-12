@@ -17,9 +17,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async generateEmbedding(text: string): Promise<number[]> {
     const response = await this.client.embeddings.create({
-      model: CONFIG.TEXT_EMBEDDING_MODEL,
-      input: text,
       encoding_format: "float",
+      input: text,
+      model: CONFIG.TEXT_EMBEDDING_MODEL,
     });
 
     return response.data[0]?.embedding ?? [];

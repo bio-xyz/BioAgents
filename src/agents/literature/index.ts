@@ -1,4 +1,4 @@
-import type { OnPollUpdate } from "../../types/core";
+import type { OnPollUpdate, ProteinStructure } from "../../types/core";
 import logger from "../../utils/logger";
 import { searchBioLiterature } from "./bio";
 import { searchEdison } from "./edison";
@@ -15,6 +15,7 @@ type LiteratureResult = {
   count?: number;
   jobId?: string; // Job ID from Edison or BioLit
   reasoning?: string[]; // Real-time reasoning trace from external agent
+  proteinStructures?: ProteinStructure[];
   start: string;
   end: string;
 };
@@ -36,8 +37,10 @@ export async function literatureAgent(input: {
   objective: string;
   type: LiteratureType;
   onPollUpdate?: OnPollUpdate;
+  onJobCreated?: (jobId: string) => void | Promise<void>;
+  sources?: string[];
 }): Promise<LiteratureResult> {
-  const { objective, type, onPollUpdate } = input;
+  const { objective, type, onPollUpdate, onJobCreated, sources } = input;
   const start = new Date().toISOString();
 
   logger.info({ objective, type }, "literature_agent_started");
@@ -46,6 +49,7 @@ export async function literatureAgent(input: {
   let count: number | undefined;
   let jobId: string | undefined;
   let reasoning: string[] | undefined;
+  let proteinStructures: ProteinStructure[] | undefined;
 
   try {
     switch (type) {
@@ -62,17 +66,31 @@ export async function literatureAgent(input: {
         break;
       }
       case "BIOLIT": {
-        const result = await searchBioLiterature(objective, "fast", onPollUpdate);
+        const result = await searchBioLiterature(
+          objective,
+          "fast",
+          onPollUpdate,
+          sources,
+          onJobCreated
+        );
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;
+        proteinStructures = result.proteinStructures;
         break;
       }
       case "BIOLITDEEP": {
-        const result = await searchBioLiterature(objective, "deep", onPollUpdate);
+        const result = await searchBioLiterature(
+          objective,
+          "deep",
+          onPollUpdate,
+          sources,
+          onJobCreated
+        );
         output = result.output;
         jobId = result.jobId;
         reasoning = result.reasoning;
+        proteinStructures = result.proteinStructures;
         break;
       }
       case "EDISON": {
@@ -105,6 +123,7 @@ export async function literatureAgent(input: {
     jobId,
     objective,
     output,
+    proteinStructures,
     reasoning,
     start,
   };

@@ -1,9 +1,9 @@
 {
-  "label": "Deployment",
-  "position": 5,
   "collapsed": false,
+  "label": "Deployment",
   "link": {
-    "type": "generated-index",
-    "description": "Deploy BioAgents with Docker, Kubernetes, or cloud providers."
-  }
+    "description": "Deploy BioAgents with Docker, Kubernetes, or cloud providers.",
+    "type": "generated-index"
+  },
+  "position": 5
 }

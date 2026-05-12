@@ -7,8 +7,14 @@
  */
 
 import { Job, Worker } from "bullmq";
-import type { ConversationState, PlanTask, State } from "../../../types/core";
+import type { ConversationState, PlanTask, ProteinStructure, State } from "../../../types/core";
+import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
+import { buildMessageStateValues } from "../../../utils/messageState";
+import {
+  mergeProteinStructures,
+  withNormalChatProteinStructures,
+} from "../../../utils/proteinStructures";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -90,8 +96,12 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Initialize state objects
     const state: State = {
       id: stateRecord.id,
-      values: stateRecord.values,
+      values: buildMessageStateValues({
+        baseValues: stateRecord.values,
+        message: messageRecord,
+      }),
     };
+    state.values.sourceSelectionId = job.data.sourceSelectionId ?? state.values.sourceSelectionId;
 
     const conversationState: ConversationState = {
       id: conversationStateRecord.id,
@@ -147,7 +157,8 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
         messageId,
         message,
         conversationState,
-        startTime
+        startTime,
+        job.data.sourceSelectionId ?? state.values.sourceSelectionId
       );
     }
 
@@ -194,6 +205,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     // Step 2: Execute literature tasks
     const { literatureAgent } = await import("../../../agents/literature");
     const completedTasks: PlanTask[] = [];
+    let proteinStructures: ProteinStructure[] = [];
 
     for (const task of literatureTasks) {
       task.start = new Date().toISOString();
@@ -219,9 +231,15 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       if (useBioLiterature) {
         const bioLiteraturePromise = literatureAgent({
           objective: task.objective,
+          sources: task.sources,
           type: "BIOLIT",
         }).then((result) => {
           task.output += `${result.output}\n\n`;
+          task.proteinStructures = mergeProteinStructures(
+            task.proteinStructures,
+            result.proteinStructures
+          );
+          proteinStructures = mergeProteinStructures(proteinStructures, result.proteinStructures);
         });
         literaturePromises.push(bioLiteraturePromise);
       }
@@ -362,6 +380,24 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       "chat_worker_legacy_complete_skipped_row_not_pending"
     );
 
+    if (proteinStructures.length > 0 && conversationState.id) {
+      try {
+        const { updateConversationState } = await import("../../../db/operations");
+        const nextValues = withNormalChatProteinStructures(
+          conversationState.values,
+          messageId,
+          proteinStructures
+        );
+        await updateConversationState(conversationState.id, nextValues);
+        conversationState.values = nextValues;
+      } catch (err) {
+        logger.warn(
+          { error: err, jobId: job.id, messageId },
+          "chat_worker_legacy_protein_structures_state_persist_failed"
+        );
+      }
+    }
+
     // Best-effort: pub/sub notifications. Reply is already durably saved with
     // status=COMPLETE, so failures here must not bubble to the outer catch
     // and downgrade the row to FAILED.
@@ -376,7 +412,9 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
         },
         "chat_job_completed"
       );
-      await notifyJobCompleted(job.id!, conversationId, messageId);
+      await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+        proteinStructures,
+      });
     } catch (notifyErr) {
       logger.warn(
         { error: notifyErr, jobId: job.id, messageId },
@@ -385,6 +423,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     }
 
     return {
+      proteinStructures,
       responseTime,
       text: replyText,
       userId,
@@ -425,7 +464,8 @@ async function processWithAgentLoop(
   messageId: string,
   message: string,
   conversationState: ConversationState,
-  startTime: number
+  startTime: number,
+  sourceSelectionId?: SourceSelectionId
 ): Promise<ChatJobResult> {
   const { userId } = job.data;
 
@@ -477,6 +517,7 @@ async function processWithAgentLoop(
         await notifyJobProgress(job.id!, conversationId, "literature", 40);
       }
     },
+    sourceSelectionId,
     uploadedDatasets: conversationState.values.uploadedDatasets,
   });
 
@@ -502,13 +543,33 @@ async function processWithAgentLoop(
     "chat_worker_agent_loop_complete_skipped_row_not_pending"
   );
 
+  if (result.proteinStructures?.length && conversationState.id) {
+    try {
+      const { updateConversationState } = await import("../../../db/operations");
+      const nextValues = withNormalChatProteinStructures(
+        conversationState.values,
+        messageId,
+        result.proteinStructures
+      );
+      await updateConversationState(conversationState.id, nextValues);
+      conversationState.values = nextValues;
+    } catch (err) {
+      logger.warn(
+        { error: err, jobId: job.id, messageId },
+        "chat_worker_agent_loop_protein_structures_state_persist_failed"
+      );
+    }
+  }
+
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.
   try {
     await job.updateProgress({ percent: 90, stage: "reply" } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 90);
     await notifyMessageUpdated(job.id!, conversationId, messageId);
-    await notifyJobCompleted(job.id!, conversationId, messageId);
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      proteinStructures: result.proteinStructures,
+    });
   } catch (notifyErr) {
     logger.warn(
       { error: notifyErr, jobId: job.id, messageId },
@@ -527,7 +588,12 @@ async function processWithAgentLoop(
     "chat_job_agent_loop_completed"
   );
 
-  return { responseTime, text: result.replyText, userId };
+  return {
+    proteinStructures: result.proteinStructures,
+    responseTime,
+    text: result.replyText,
+    userId,
+  };
 }
 
 /**

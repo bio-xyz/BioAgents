@@ -6,6 +6,10 @@
  */
 
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
+import type { ProteinStructure } from "../types/core";
+import type { SourceSelectionId } from "../types/sourceSelection";
+import { getChatAgentSourceSelectionGuidance } from "../utils/sourceSelectionRouting";
+import type { ChatStreamEventEmitter } from "./streaming";
 import type { ToolCallInfo } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -15,6 +19,7 @@ import type { ToolCallInfo } from "./types";
 export interface RunChatAgentParams {
   conversationId: string;
   message: string;
+  sourceSelectionId?: SourceSelectionId;
   /** Uploaded datasets to inject into user message context (not system prompt, to avoid prompt injection) */
   uploadedDatasets?: Array<{
     filename: string;
@@ -25,14 +30,18 @@ export interface RunChatAgentParams {
   loadHistory?: boolean;
   /** Called after each tool execution. Callers customise for DB updates, notifications, etc. */
   onToolResult?: (info: ToolCallInfo) => Promise<void>;
+  /** Called as streamable progress events occur inside the chat agent. */
+  onStreamEvent?: ChatStreamEventEmitter;
   /** Called on each text chunk during streaming. Synchronous to avoid backpressure. */
   onTextDelta?: (delta: string) => void;
   /** Called after LLM response with tool_use blocks, BEFORE tools execute. */
   onStreamPause?: () => Promise<void>;
+  signal?: AbortSignal;
 }
 
 export interface RunChatAgentResult {
   replyText: string;
+  proteinStructures?: ProteinStructure[];
   toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -93,7 +102,16 @@ export async function runChatAgent(params: RunChatAgentParams): Promise<RunChatA
   const maxTokens = parseInt(process.env.CHAT_AGENT_MAX_TOKENS || "") || 4096;
 
   // --- 3. Build system prompt + dataset context for user message ---
-  const systemPrompt = AGENT_SYSTEM_PROMPT;
+  const sourceSelectionGuidance = getChatAgentSourceSelectionGuidance(
+    params.sourceSelectionId,
+    params.message
+  );
+  const systemPrompt = sourceSelectionGuidance
+    ? `${AGENT_SYSTEM_PROMPT}
+
+SOURCE SELECTION
+${sourceSelectionGuidance}`
+    : AGENT_SYSTEM_PROMPT;
 
   // Dataset content goes in the user message, NOT the system prompt,
   // to avoid elevating untrusted file contents to system-level authority.
@@ -170,10 +188,19 @@ export async function runChatAgent(params: RunChatAgentParams): Promise<RunChatA
       maxTokens,
       maxToolCalls,
       model,
+      onStreamEvent: params.onStreamEvent,
       onStreamPause: params.onStreamPause,
       onTextDelta: params.onTextDelta,
       onToolResult: params.onToolResult,
+      signal: params.signal,
       systemPrompt,
+      toolExecutionContext: {
+        conversationId: params.conversationId,
+        emitStreamEvent: params.onStreamEvent,
+        signal: params.signal,
+        sourceSelectionId: params.sourceSelectionId,
+        userMessage: params.message,
+      },
     },
     conversationHistory.length > 0 ? conversationHistory : undefined
   );
@@ -181,6 +208,7 @@ export async function runChatAgent(params: RunChatAgentParams): Promise<RunChatA
   // --- 6. Return unified result ---
   return {
     hitMaxTokens: agentResult.hitMaxTokens ?? false,
+    proteinStructures: agentResult.proteinStructures,
     replyText: agentResult.finalText,
     toolCallCount: agentResult.toolCallCount,
     totalInputTokens: agentResult.totalInputTokens,

@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { getMessage, getState } from "../../db/operations";
 import { authResolver } from "../../middleware/authResolver";
+import { isDeepResearchCancellationRequested } from "../../services/deep-research/cancellation";
 import {
   acquireStartMutex,
   getActiveRunForDedup,
@@ -8,11 +9,13 @@ import {
   markRunStarted,
   releaseStartMutex,
 } from "../../services/deep-research/run-guard";
+import type { ProteinStructure } from "../../types/core";
 import type { ElysiaRouteContext } from "../../types/elysia";
 import logger from "../../utils/logger";
+import { mergeProteinStructures } from "../../utils/proteinStructures";
 
 type DeepResearchStatusResponse = {
-  status: "processing" | "completed" | "failed";
+  status: "processing" | "completed" | "failed" | "cancelled";
   messageId: string;
   conversationId: string;
   result?: {
@@ -23,6 +26,7 @@ type DeepResearchStatusResponse = {
       size?: number;
     }>;
     papers?: unknown[];
+    proteinStructures?: ProteinStructure[];
     webSearchResults?: unknown[];
   };
   error?: string;
@@ -141,6 +145,16 @@ export async function deepResearchStatusHandler(ctx: ElysiaRouteContext<{ messag
     const steps: Record<string, { start?: number; end?: number }> = stateValues.steps || {};
 
     // Check if there's an error
+    if (isDeepResearchCancellationRequested(stateValues, { rootMessageId: messageId, stateId })) {
+      const response: DeepResearchStatusResponse = {
+        conversationId: message.conversation_id,
+        messageId,
+        status: "cancelled",
+      };
+      return response;
+    }
+
+    // Check if there's an error
     if (stateValues.status === "failed" || stateValues.error) {
       const response: DeepResearchStatusResponse = {
         conversationId: message.conversation_id,
@@ -181,6 +195,11 @@ export async function deepResearchStatusHandler(ctx: ElysiaRouteContext<{ messag
         ...(stateValues.semanticScholarPapers || []),
         ...(stateValues.kgPapers || []),
       ];
+      const proteinStructures = mergeProteinStructures(
+        ...((stateValues.plan || []) as Array<{ proteinStructures?: ProteinStructure[] }>).map(
+          (task) => task.proteinStructures
+        )
+      );
 
       const response: DeepResearchStatusResponse = {
         conversationId: message.conversation_id,
@@ -188,6 +207,7 @@ export async function deepResearchStatusHandler(ctx: ElysiaRouteContext<{ messag
         result: {
           files: fileMetadata,
           papers: papers.length > 0 ? papers : undefined,
+          proteinStructures: proteinStructures.length > 0 ? proteinStructures : undefined,
           text: stateValues.finalResponse,
           webSearchResults: stateValues.webSearchResults,
         },

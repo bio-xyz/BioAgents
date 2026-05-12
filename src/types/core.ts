@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type SourceSelectionId, SourceSelectionIdSchema } from "./sourceSelection";
 
 export const MessageSchema = z.object({
   content: z.string(),
@@ -8,6 +9,7 @@ export const MessageSchema = z.object({
   question: z.string(),
   response_time: z.number().optional(),
   source: z.string().optional(),
+  source_selection_id: SourceSelectionIdSchema.optional(),
   state: z.any().optional(),
   user_id: z.string().min(1),
 });
@@ -21,6 +23,7 @@ export interface StateValues {
   conversationId?: string;
   userId?: string;
   source?: string;
+  sourceSelectionId?: SourceSelectionId;
   isDeepResearch?: boolean;
 
   // Action responses
@@ -40,7 +43,12 @@ export type PlanTaskType = "LITERATURE" | "ANALYSIS";
 export type PlanTask = {
   id?: string; // Format: "ana-1" or "lit-1" where 1 is the level number
   jobId?: string; // Actual job run id (edison id or bio id)
+  bioLiteratureJobId?: string; // Downstream BioLiterature Celery job id, persisted as soon as created
+  downstreamJobIds?: {
+    bioLiterature?: string[];
+  };
   objective: string;
+  sources?: SourceSelectionId[];
   datasets: Array<{
     filename: string;
     id: string;
@@ -53,10 +61,29 @@ export type PlanTask = {
   end?: string;
   output?: string;
   reasoning?: string[]; // Real-time reasoning trace from external agent (updated during polling)
+  proteinStructures?: ProteinStructure[];
   artifacts?: Array<AnalysisArtifact>;
 };
 
 export type OnPollUpdate = (update: { reasoning?: string[] }) => void | Promise<void>;
+
+export type ProteinStructure = {
+  entryId: string;
+  title?: string;
+  entryUrl?: string;
+  bcifUrl?: string;
+  cifUrl?: string;
+  pdbUrl?: string;
+  paeImageUrl?: string;
+  paeDocUrl?: string;
+  plddtDocUrl?: string;
+  uniprotAccession?: string;
+  uniprotId?: string;
+  uniprotDescription?: string;
+  gene?: string;
+  organismScientificName?: string;
+  averagePlddt?: number;
+};
 
 export type DeepResearchActivityPhase =
   | "planning"
@@ -98,7 +125,8 @@ export interface ConversationStateValues extends StateValues {
     startedAt: string;
     lastHeartbeatAt: string;
     expiresAt: string;
-    lastResult?: "completed" | "failed" | "stale_recovered";
+    lastResult?: "completed" | "failed" | "stale_recovered" | "cancelled";
+    cancelRequestedAt?: string;
     lastError?: string;
     endedAt?: string;
   };
@@ -117,6 +145,7 @@ export interface ConversationStateValues extends StateValues {
   suggestedNextSteps?: Array<PlanTask>; // Suggestions for next iteration (from "next" planning mode)
   currentActivity?: DeepResearchActivity; // Compact top-level activity shown in the main deep research view
   objectiveTrace?: DeepResearchObjectiveTrace; // Synthetic objective breakdown shown in the main loader
+  normalChatProteinStructuresByMessageId?: Record<string, ProteinStructure[]>;
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;
@@ -138,6 +167,7 @@ export interface ConversationStateValues extends StateValues {
     initialTasks?: Array<{
       objective: string;
       type: "LITERATURE" | "ANALYSIS";
+      sources?: SourceSelectionId[];
       datasetFilenames: string[]; // Filenames to match against uploadedDatasets
     }>; // Tasks for first iteration (used once, then cleared)
   };
