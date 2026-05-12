@@ -1,6 +1,6 @@
 -- Add updated_at column
 ALTER TABLE public.credit_topups
-  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- Update status constraint
 ALTER TABLE public.credit_topups
