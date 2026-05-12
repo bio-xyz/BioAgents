@@ -1,26 +1,13 @@
-# EKS prod override: S3 chunks via IRSA. Tune retention/replicas vs staging.
-# Fill PLACEHOLDER values from the Terraform output.
-
-serviceAccount:
-  create: true
-  name: loki
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::PLACEHOLDER_ACCOUNT:role/bioagents-loki-prod
+# EKS prod override.
+#
+# Terraform injects the dynamic bits (serviceAccount IRSA annotation,
+# loki.storage.bucketNames, loki.storage.s3.region) via the helm_release
+# values layering in infra/terraform/modules/observability/main.tf.
 
 loki:
-  storage:
-    type: s3
-    bucketNames:
-      chunks: bioagents-loki-prod
-      ruler: bioagents-loki-prod
-      admin: bioagents-loki-prod
-    s3:
-      region: us-east-1
-      s3ForcePathStyle: false
-      insecure: false
   limits_config:
     # Retain prod logs longer than staging.
-    retention_period: 2160h   # 90 days
+    retention_period: 2160h # 90 days
     max_query_lookback: 2160h
     ingestion_rate_mb: 32
     ingestion_burst_size_mb: 64

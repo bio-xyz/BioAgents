@@ -1,23 +1,9 @@
-# EKS staging override: S3 chunks via IRSA.
-# Fill PLACEHOLDER values from the Terraform output (bucket name + role ARN).
-
-serviceAccount:
-  create: true
-  name: loki
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::PLACEHOLDER_ACCOUNT:role/bioagents-loki-staging
-
-loki:
-  storage:
-    type: s3
-    bucketNames:
-      chunks: bioagents-loki-staging
-      ruler: bioagents-loki-staging
-      admin: bioagents-loki-staging
-    s3:
-      region: us-east-1
-      s3ForcePathStyle: false
-      insecure: false
+# EKS staging override.
+#
+# Terraform injects the dynamic bits (serviceAccount IRSA annotation,
+# loki.storage.bucketNames, loki.storage.s3.region) via the helm_release
+# `values = [..., yamlencode({...})]` layering in
+# infra/terraform/modules/observability/main.tf. Everything else lives here.
 
 # Smaller replicas than prod.
 backend:

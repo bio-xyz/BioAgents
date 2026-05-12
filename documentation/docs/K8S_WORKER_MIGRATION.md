@@ -33,7 +33,7 @@ A single Deployment forces all queues to inherit the worst-case grace period —
 | Branch → env | `dev` → staging, `main` → prod | standard GitHub-flow promotion |
 | Image tagging | `:sha-<short>` immutable + branch tag | immutable for GitOps; branch tag for convenience |
 | Registry | GHCR (`ghcr.io/bio-xyz/bioagents`) | already on GitHub; auth via PAT-backed `imagePullSecret` |
-| IaC (EKS) | Terraform | community-mature; separate workstream from app manifests |
+| IaC (EKS) | Terraform — `infra/terraform/` | community-mature; covers VPC + EKS + IAM + S3 + Helm releases for Loki/Alloy |
 | Deploy | `kubectl apply -k` from GitHub Actions | simplest path; ArgoCD when second app joins the cluster |
 | Secrets | plain k8s `Secret` from CI store | ESO + AWS Secrets Manager deferred to v1.1 |
 | Autoscaling | KEDA + Redis list scaler | only signal that reflects actual backlog |

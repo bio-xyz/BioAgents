@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (gitignored). Defaults are tuned for prod.
+
+# region              = "us-west-2"
+# env_name            = "prod"
+# github_repo         = "BioAgents"
+# github_branch       = "main"
+# vpc_cidr            = "10.20.0.0/16"
+# kubernetes_version  = "1.31"
+# node_instance_types = ["m6i.large"]
+# node_min_size       = 2
+# node_desired_size   = 3
+# node_max_size       = 10
+# loki_retention_days = 365
