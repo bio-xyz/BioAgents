@@ -1048,6 +1048,11 @@ async function processDeepResearchJob(
       "iteration_reply_saved"
     );
 
+    if (isFinal) {
+      conversationState.values.finalResponse = replyResult.reply;
+      await persistConversationState();
+    }
+
     // Notify message updated
     await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
 
