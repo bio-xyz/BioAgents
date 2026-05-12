@@ -227,6 +227,25 @@ COMMENT ON TABLE "public"."conversations" IS 'Conversation threads between users
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."credit_topups" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "user_id" "text" NOT NULL,
+    "credits_amount" integer NOT NULL,
+    "price_cents" integer NOT NULL,
+    "stripe_payment_intent_id" "text",
+    "stripe_checkout_session_id" "text",
+    "status" "text" DEFAULT 'pending'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "completed_at" timestamp with time zone,
+    "stripe_event_id" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."credit_topups" OWNER TO "postgres";
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."documents" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "title" "text" NOT NULL,
@@ -523,6 +542,11 @@ ALTER TABLE ONLY "public"."conversations"
 
 
 
+ALTER TABLE ONLY "public"."credit_topups"
+    ADD CONSTRAINT "credit_topups_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."documents"
     ADD CONSTRAINT "documents_pkey" PRIMARY KEY ("id");
 
@@ -760,6 +784,10 @@ CREATE OR REPLACE TRIGGER "update_conversation_states_updated_at" BEFORE UPDATE 
 
 
 CREATE OR REPLACE TRIGGER "update_conversations_updated_at" BEFORE UPDATE ON "public"."conversations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_credit_topups_updated_at" BEFORE UPDATE ON "public"."credit_topups" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
@@ -1938,6 +1966,12 @@ GRANT ALL ON TABLE "public"."conversations" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."credit_topups" TO "anon";
+GRANT ALL ON TABLE "public"."credit_topups" TO "authenticated";
+GRANT ALL ON TABLE "public"."credit_topups" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."documents" TO "anon";
 GRANT ALL ON TABLE "public"."documents" TO "authenticated";
 GRANT ALL ON TABLE "public"."documents" TO "service_role";
@@ -2060,5 +2094,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 drop extension if exists "pg_net";
-
 
