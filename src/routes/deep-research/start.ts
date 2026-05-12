@@ -1830,9 +1830,7 @@ These molecular changes align with established longevity pathways (Converging nu
 
       if (isFinal) {
         conversationState.values.finalResponse = replyResult.reply;
-        if (conversationState.id) {
-          await persistConversationState();
-        }
+        await persistConversationState();
       }
 
       // Notify client that message is ready
