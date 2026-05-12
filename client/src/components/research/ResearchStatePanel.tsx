@@ -98,14 +98,15 @@ export function ResearchStatePanel({
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
+        const content = text.slice(lastIndex, match.index);
         parts.push({
-          content: text.slice(lastIndex, match.index),
-          key: `text-${lastIndex}`,
+          content,
+          key: `text-${lastIndex}-${match.index}-${content}`,
           type: "text",
         });
       }
       parts.push({
-        key: `link-${match.index}-${match[2]}`,
+        key: `link-${match.index}-${match[0]}`,
         text: match[1],
         type: "link",
         url: match[2],
@@ -114,9 +115,10 @@ export function ResearchStatePanel({
     }
 
     if (lastIndex < text.length) {
+      const content = text.slice(lastIndex);
       parts.push({
-        content: text.slice(lastIndex),
-        key: `text-${lastIndex}`,
+        content,
+        key: `text-${lastIndex}-${text.length}-${content}`,
         type: "text",
       });
     }
