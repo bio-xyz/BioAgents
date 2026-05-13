@@ -123,7 +123,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
           "chat_job_waiting_for_file_processing"
         );
 
-        const { waitForPendingFiles } = await import("./fileWait");
+        const { waitForPendingFiles } = await import("../../files/waitForPending");
         await waitForPendingFiles({
           conversationStateId,
           fileProcessQueue: getFileProcessQueue(),
