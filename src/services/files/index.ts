@@ -287,8 +287,12 @@ export async function confirmUpload(params: ConfirmUploadParams): Promise<Confir
       status: "processing",
     };
   } else {
-    // In-process mode: Process synchronously
-    const result = await processFile(status);
+    // In-process mode: Process synchronously via shared lifecycle.
+    // No hooks here — preserves the historical behavior of leaving status
+    // pinned at "uploaded" on failure. The status-transition fix is a
+    // separate follow-up commit.
+    const { runFileProcessingLifecycle } = await import("./lifecycle");
+    const result = await runFileProcessingLifecycle(status);
 
     return {
       description: result.description,
