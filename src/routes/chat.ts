@@ -474,6 +474,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       const { fileUploadAgent } = await import("../agents/fileUpload");
       const { getPendingFileIds, getFileStatus } = await import("../services/files/status");
       const { getFileProcessQueue } = await import("../services/queue/queues");
+      const { waitForPendingFiles } = await import("../services/files/waitForPending");
       const { getConversationState, updateConversationState } = await import("../db/operations");
 
       const encoder = new TextEncoder();
@@ -573,9 +574,9 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
             // Path B: presigned S3 upload flow (usePresignedUpload.ts).
             // Files uploaded directly to S3 BEFORE this request, processed
-            // async by file-process worker. Port the exact wait logic from
-            // chat.worker.ts:95-174 so SSE doesn't race with file processing.
-            // Without this, the agent runs before uploaded datasets are ready.
+            // async by file-process worker. Share the wait helper with the
+            // chat worker so both transports observe identical poll cadence
+            // and status precedence.
             if (conversationStateRecord.id) {
               const pendingFileIds = await getPendingFileIds(conversationStateRecord.id);
               if (pendingFileIds.length > 0) {
@@ -583,45 +584,13 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                   { messageId: createdMessage.id, pendingFileIds },
                   "chat_sse_waiting_for_file_processing"
                 );
-                // CRITICAL: getFileProcessQueue() returns null when
-                // USE_JOB_QUEUE=false (queues.ts:120). Must null-guard before
-                // calling .getJob() or we null-deref in in-process mode.
-                const fileProcessQueue = getFileProcessQueue();
-                const maxWaitMs = 120_000; // 2 min cap, matches worker
-                const pollIntervalMs = 500;
-                const startWait = Date.now();
-
-                for (const fileId of pendingFileIds) {
-                  while (Date.now() - startWait < maxWaitMs) {
-                    // Prefer file status check (always available, DB-backed).
-                    // Queue job state only consulted when the queue exists.
-                    const fileStatus = await getFileStatus(fileId);
-                    if (fileStatus?.status === "ready") break;
-                    if (fileStatus?.status === "error") {
-                      logger.warn(
-                        { fileId, messageId: createdMessage.id },
-                        "chat_sse_file_failed_continuing"
-                      );
-                      break;
-                    }
-
-                    // Secondary signal from BullMQ job state when queue exists
-                    if (fileProcessQueue) {
-                      const fileJob = await fileProcessQueue.getJob(fileId);
-                      const fileJobState = fileJob ? await fileJob.getState() : null;
-                      if (fileJobState === "completed" || !fileJob) break;
-                      if (fileJobState === "failed") {
-                        logger.warn(
-                          { fileId, messageId: createdMessage.id },
-                          "chat_sse_file_job_failed_continuing"
-                        );
-                        break;
-                      }
-                    }
-
-                    await new Promise((r) => setTimeout(r, pollIntervalMs));
-                  }
-                }
+                await waitForPendingFiles({
+                  conversationStateId: conversationStateRecord.id,
+                  fileProcessQueue: getFileProcessQueue(),
+                  getFileStatus,
+                  jobId: createdMessage.id,
+                  pendingFileIds,
+                });
 
                 // Refresh conversation state to pick up uploadedDatasets
                 const fresh = await getConversationState(conversationStateRecord.id);
