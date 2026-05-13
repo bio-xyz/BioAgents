@@ -288,11 +288,19 @@ export async function confirmUpload(params: ConfirmUploadParams): Promise<Confir
     };
   } else {
     // In-process mode: Process synchronously via shared lifecycle.
-    // No hooks here — preserves the historical behavior of leaving status
-    // pinned at "uploaded" on failure. The status-transition fix is a
-    // separate follow-up commit.
+    // onError matches queue-mode behavior: transition status to "error" so
+    // callers observing getFileStatus see a terminal failure state instead
+    // of an indefinitely-pinned "uploaded".
     const { runFileProcessingLifecycle } = await import("./lifecycle");
-    const result = await runFileProcessingLifecycle(status);
+    const result = await runFileProcessingLifecycle(status, {
+      onError: async ({ errorMessage }) => {
+        try {
+          await updateFileStatus(fileId, { error: errorMessage, status: "error" });
+        } catch (updateError) {
+          logger.error({ fileId, updateError }, "failed_to_update_file_status_on_error");
+        }
+      },
+    });
 
     return {
       description: result.description,
