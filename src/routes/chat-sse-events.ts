@@ -1,5 +1,5 @@
 import type { ChatStreamEnvelope } from "../chat-agent/streaming";
-import type { ProteinStructure } from "../types/core";
+import type { DataArtifact, ProteinStructure } from "../types/core";
 
 type SendChatSseEvent = (
   event: ChatStreamEnvelope["event"],
@@ -36,7 +36,11 @@ export function createChatSseEventHandlers(params: {
       }
       send("delta", { text: delta, turnIndex });
     },
-    sendFinal(result: { proteinStructures?: ProteinStructure[]; text: string }) {
+    sendFinal(result: {
+      artifacts?: DataArtifact[];
+      proteinStructures?: ProteinStructure[];
+      text: string;
+    }) {
       if (streamStarted) {
         send("stream_end", {
           reason: "complete",
@@ -44,9 +48,12 @@ export function createChatSseEventHandlers(params: {
         });
       }
       send("final", {
+        ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
         conversationId,
         messageId,
-        proteinStructures: result.proteinStructures,
+        ...(result.proteinStructures?.length
+          ? { proteinStructures: result.proteinStructures }
+          : {}),
         text: result.text,
         userId,
       });

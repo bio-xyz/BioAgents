@@ -109,4 +109,44 @@ describe("createChatSseEventHandlers", () => {
       event: "error",
     });
   });
+
+  test("includes artifacts in the final event when present", () => {
+    const events: Array<{ event: string; data: unknown }> = [];
+    const stream = createChatSseEventHandlers({
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      send: (event, data) => events.push({ data, event }),
+      userId: "user-1",
+    });
+
+    stream.sendFinal({
+      artifacts: [
+        {
+          id: "artifact-1",
+          name: "Annotated image",
+          path: "artifacts/message-1/annotated.png",
+          type: "image",
+        },
+      ],
+      text: "Segmented 1 object.",
+    });
+
+    expect(events[0]).toEqual({
+      data: {
+        artifacts: [
+          {
+            id: "artifact-1",
+            name: "Annotated image",
+            path: "artifacts/message-1/annotated.png",
+            type: "image",
+          },
+        ],
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        text: "Segmented 1 object.",
+        userId: "user-1",
+      },
+      event: "final",
+    });
+  });
 });
