@@ -750,8 +750,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     const { isJobQueueEnabled } = await import("../services/queue/connection");
 
     if (isJobQueueEnabled()) {
-      // QUEUE MODE: Enqueue job and return immediately
-      // Worker runs agent loop (CHAT_AGENT_QUEUE_ENABLED=true) or legacy pipeline (default).
+      // QUEUE MODE: Enqueue job and return immediately. Worker runs the
+      // shared chat-agent loop — same executor as the in-process path below.
       logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_queue_mode");
 
       // Process files synchronously before enqueuing (files can't be serialized)
