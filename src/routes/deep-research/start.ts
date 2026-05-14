@@ -1,6 +1,5 @@
 import { Elysia } from "elysia";
 import { analysisAgent } from "../../agents/analysis";
-import { continueResearchAgent } from "../../agents/continueResearch";
 import { fileUploadAgent } from "../../agents/fileUpload";
 import { literatureAgent } from "../../agents/literature";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
@@ -24,6 +23,7 @@ import {
   isDeepResearchCancellationRequested,
   throwIfDeepResearchCancelled,
 } from "../../services/deep-research/cancellation";
+import { runContinueDecisionPhase } from "../../services/deep-research/phases/continue-decision";
 import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
 import { runNextStepsPhase } from "../../services/deep-research/phases/next-steps";
 import { runReflectionDiscoveryPhase } from "../../services/deep-research/phases/reflection-discovery";
@@ -1686,54 +1686,22 @@ These molecular changes align with established longevity pathways (Converging nu
         shouldContinueLoop = false;
       }
 
-      // =========================================================================
-      // CONTINUE RESEARCH DECISION (before reply so we know if it's final)
-      // Decide whether to continue autonomously or ask user for feedback
-      // =========================================================================
-      let isFinal = true;
-      let willContinue = false;
-
-      if (
-        shouldContinueLoop &&
-        conversationState.values.suggestedNextSteps?.length &&
-        iterationCount < maxAutoIterations
-      ) {
-        await assertNotCancelled();
-        const continueResult = await continueResearchAgent({
+      // Continue-research decision (shared phase)
+      const continueDecision = await runContinueDecisionPhase(
+        {
           completedTasks: tasksToExecute,
           conversationState,
           hypothesis: hypothesisResult.hypothesis,
           iterationCount,
+          loopAlive: shouldContinueLoop,
+          maxAutoIterations,
           message: currentMessage,
           researchMode,
-          suggestedNextSteps: conversationState.values.suggestedNextSteps,
-        });
-
-        logger.info(
-          {
-            confidence: continueResult.confidence,
-            iterationCount,
-            reasoning: continueResult.reasoning,
-            shouldContinue: continueResult.shouldContinue,
-            triggerReason: continueResult.triggerReason,
-          },
-          "continue_research_decision"
-        );
-
-        if (continueResult.shouldContinue) {
-          isFinal = false;
-          willContinue = true;
-        } else {
-          shouldContinueLoop = false;
-          logger.info(
-            { iterationCount, triggerReason: continueResult.triggerReason },
-            "stopping_for_user_feedback"
-          );
-        }
-      } else {
-        // No suggested next steps - research complete, exit loop
-        shouldContinueLoop = false;
-      }
+        },
+        { assertNotCancelled }
+      );
+      const { isFinal, willContinue } = continueDecision;
+      shouldContinueLoop = continueDecision.shouldContinueLoop;
 
       // =========================================================================
       // GENERATE REPLY FOR THIS ITERATION

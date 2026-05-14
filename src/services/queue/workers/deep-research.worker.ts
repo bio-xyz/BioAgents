@@ -895,57 +895,24 @@ async function processDeepResearchJob(
 
     const shouldContinue = nextStepsResult.hasSuggestions;
 
-    // =========================================================================
-    // CONTINUE RESEARCH DECISION (before reply so we know if it's final)
-    // Decide whether to continue autonomously or ask user for feedback
-    // =========================================================================
-    let isFinal = true;
-    let willContinue = false;
-
-    if (
-      shouldContinue &&
-      conversationState.values.suggestedNextSteps?.length &&
-      iterationNumber < maxAutoIterations
-    ) {
-      const { continueResearchAgent } = await import("../../../agents/continueResearch");
-
-      await assertNotCancelled();
-      const continueResult = await continueResearchAgent({
+    // Continue-research decision (shared phase)
+    const { runContinueDecisionPhase } = await import(
+      "../../deep-research/phases/continue-decision"
+    );
+    const continueDecision = await runContinueDecisionPhase(
+      {
         completedTasks: tasksToExecute,
         conversationState,
         hypothesis: hypothesisResult.hypothesis,
         iterationCount: iterationNumber,
+        loopAlive: shouldContinue,
+        maxAutoIterations,
         message: currentMessage,
         researchMode,
-        suggestedNextSteps: conversationState.values.suggestedNextSteps,
-      });
-
-      logger.info(
-        {
-          confidence: continueResult.confidence,
-          iterationNumber,
-          jobId: job.id,
-          reasoning: continueResult.reasoning,
-          shouldContinue: continueResult.shouldContinue,
-          triggerReason: continueResult.triggerReason,
-        },
-        "continue_research_decision"
-      );
-
-      if (continueResult.shouldContinue) {
-        isFinal = false;
-        willContinue = true;
-      } else {
-        logger.info(
-          {
-            iterationNumber,
-            jobId: job.id,
-            triggerReason: continueResult.triggerReason,
-          },
-          "stopping_for_user_feedback"
-        );
-      }
-    }
+      },
+      { assertNotCancelled }
+    );
+    const { isFinal, willContinue } = continueDecision;
 
     // =========================================================================
     // GENERATE REPLY FOR THIS ITERATION
