@@ -3,7 +3,6 @@ import { analysisAgent } from "../../agents/analysis";
 import { continueResearchAgent } from "../../agents/continueResearch";
 import { discoveryAgent } from "../../agents/discovery";
 import { fileUploadAgent } from "../../agents/fileUpload";
-import { hypothesisAgent } from "../../agents/hypothesis";
 import { literatureAgent } from "../../agents/literature";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { planningAgent } from "../../agents/planning";
@@ -19,7 +18,6 @@ import {
   updateConversationState,
   updateState,
 } from "../../db/operations";
-
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../../services/chat/setup";
@@ -29,6 +27,7 @@ import {
   isDeepResearchCancellationRequested,
   throwIfDeepResearchCancelled,
 } from "../../services/deep-research/cancellation";
+import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
 import {
   acquireStartMutex,
   getActiveRunForDedupFromValues,
@@ -229,6 +228,7 @@ async function handleDeepResearchStartFailure(
 
 export const __deepResearchStartTestables = {
   handleDeepResearchStartFailure,
+  runDeepResearch,
 };
 
 function buildDeepResearchPollUrl(messageId: string): string {
@@ -1641,28 +1641,15 @@ These molecular changes align with established longevity pathways (Converging nu
       });
 
       // Step 3: Generate/update hypothesis based on completed tasks
-      await assertNotCancelled();
-      logger.info("generating_hypothesis_from_completed_tasks");
-
-      hypothesisResult = await hypothesisAgent({
-        completedTasks: tasksToExecute, // All tasks from current level
-        conversationState,
-        message: createdMessage,
-        objective: currentObjective,
-      });
-
-      // Update conversation state with new hypothesis
-      conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
-      if (conversationState.id) {
-        await persistConversationState();
-        logger.info(
-          {
-            hypothesis: hypothesisResult.hypothesis,
-            mode: hypothesisResult.mode,
-          },
-          "hypothesis_updated_in_state"
-        );
-      }
+      hypothesisResult = await runHypothesisPhase(
+        {
+          completedTasks: tasksToExecute, // All tasks from current level
+          conversationState,
+          message: createdMessage,
+          objective: currentObjective,
+        },
+        { assertNotCancelled, persistConversationState }
+      );
 
       // Step 4: Run reflection and discovery agents in parallel
       await assertNotCancelled();

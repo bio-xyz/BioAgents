@@ -837,23 +837,17 @@ async function processDeepResearchJob(
       phase: "reflection",
     });
 
-    // Step 3: Generate hypothesis
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_generating_hypothesis");
-
-    const { hypothesisAgent } = await import("../../../agents/hypothesis");
-
-    hypothesisResult = await hypothesisAgent({
-      completedTasks: tasksToExecute,
-      conversationState,
-      message: messageRecord,
-      objective: currentObjective,
-    });
-
-    conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
-    if (conversationState.id) {
-      await persistConversationState();
-    }
+    // Step 3: Generate hypothesis (shared phase)
+    const { runHypothesisPhase } = await import("../../deep-research/phases/hypothesis");
+    hypothesisResult = await runHypothesisPhase(
+      {
+        completedTasks: tasksToExecute,
+        conversationState,
+        message: messageRecord,
+        objective: currentObjective,
+      },
+      { assertNotCancelled, persistConversationState }
+    );
 
     // Update progress: Reflection
     await job.updateProgress({
