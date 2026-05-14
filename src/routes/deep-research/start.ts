@@ -4,7 +4,6 @@ import { fileUploadAgent } from "../../agents/fileUpload";
 import { literatureAgent } from "../../agents/literature";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { planningAgent } from "../../agents/planning";
-import { replyAgent } from "../../agents/reply";
 import { getClarificationSessionForUser, linkSessionToConversation } from "../../db/clarification";
 import {
   createMessage,
@@ -27,6 +26,7 @@ import { runContinueDecisionPhase } from "../../services/deep-research/phases/co
 import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
 import { runNextStepsPhase } from "../../services/deep-research/phases/next-steps";
 import { runReflectionDiscoveryPhase } from "../../services/deep-research/phases/reflection-discovery";
+import { runReplyPhase } from "../../services/deep-research/phases/reply";
 import {
   acquireStartMutex,
   getActiveRunForDedupFromValues,
@@ -51,7 +51,6 @@ import {
 import {
   calculateSessionStartLevel,
   createContinuationMessage,
-  getSessionCompletedTasks,
 } from "../../utils/deep-research/continuation-utils";
 import {
   completeObjectiveTrace,
@@ -1703,87 +1702,38 @@ These molecular changes align with established longevity pathways (Converging nu
       const { isFinal, willContinue } = continueDecision;
       shouldContinueLoop = continueDecision.shouldContinueLoop;
 
-      // =========================================================================
-      // GENERATE REPLY FOR THIS ITERATION
-      // Each iteration gets its own reply, saved to the current message
-      // =========================================================================
+      // Reply (shared phase)
       logger.info(
         { isFinal, iterationCount, messageId: currentMessage.id },
         "generating_reply_for_iteration"
       );
-
-      await assertNotCancelled();
-      await persistConversationActivity({
-        level: newLevel,
-        objective: conversationState.values.currentObjective || currentObjective,
-        phase: "reply",
-      });
-
-      // Get completed tasks from this session, limited to last 3 levels max
-      // This ensures reply covers work across continuations without overwhelming context
-      const sessionCompletedTasks = getSessionCompletedTasks(
-        conversationState.values.plan || [],
-        sessionStartLevel,
-        newLevel
-      );
-
-      logger.info(
-        {
-          newLevel,
-          sessionCompletedTasksCount: sessionCompletedTasks.length,
-          sessionStartLevel,
-          totalPlanTasks: (conversationState.values.plan || []).length,
-        },
-        "reply_tasks_filtered"
-      );
-
-      const replyResult = await replyAgent({
-        completedMaxTasks: sessionCompletedTasks,
-        conversationState,
-        hypothesis: hypothesisResult.hypothesis,
-        isFinal,
-        message: currentMessage,
-        nextPlan: conversationState.values.suggestedNextSteps || [],
-      });
-      await assertNotCancelled();
-
-      // Update the current message with the reply. Sweeper exempts
-      // deep-research rows via the isDeepResearch flag so this is normally
-      // unguarded ground; the precondition (see markMessageComplete) is
-      // defensive against manual SQL flips or future callers.
-      const iterationResponseTime = Date.now() - iterationStartTime;
       const { markMessageComplete } = await import("../../services/chat/tools");
-      const { updated } = await markMessageComplete(currentMessage.id, {
-        content: replyResult.reply,
-        response_time: iterationResponseTime,
-        summary: replyResult.summary,
-      });
-      if (!updated) {
-        logger.warn(
-          { iterationCount, messageId: currentMessage.id },
-          "deep_research_in_process_complete_skipped_row_not_pending"
-        );
-      }
-
-      logger.info(
+      await runReplyPhase(
         {
-          contentLength: replyResult.reply.length,
+          conversationState,
+          currentMessage,
+          currentObjective,
+          hypothesis: hypothesisResult.hypothesis,
+          isFinal,
           iterationCount,
-          messageId: currentMessage.id,
+          iterationStartTime,
+          newLevel,
+          sessionStartLevel,
+          state,
         },
-        "iteration_reply_saved"
-      );
-
-      if (isFinal) {
-        conversationState.values.finalResponse = replyResult.reply;
-        await persistConversationState();
-      }
-
-      // Notify client that message is ready
-      await notifyMessageUpdated(
-        `in-process-${currentMessage.id}`,
-        currentMessage.conversation_id,
-        currentMessage.id
+        {
+          assertNotCancelled,
+          markMessageComplete,
+          notifyMessageUpdated: async () => {
+            await notifyMessageUpdated(
+              `in-process-${currentMessage.id}`,
+              currentMessage.conversation_id,
+              currentMessage.id
+            );
+          },
+          persistConversationActivity,
+          persistConversationState,
+        }
       );
 
       try {

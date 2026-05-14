@@ -26,7 +26,6 @@ import {
 import {
   calculateSessionStartLevel,
   createContinuationMessage,
-  getSessionCompletedTasks,
 } from "../../../utils/deep-research/continuation-utils";
 import {
   completeObjectiveTrace,
@@ -920,97 +919,32 @@ async function processDeepResearchJob(
     await job.updateProgress({ percent: 95, stage: "reply" } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
 
-    await assertNotCancelled();
-    await persistConversationActivity({
-      level: newLevel,
-      objective: conversationState.values.currentObjective || currentObjective,
-      phase: "reply",
-    });
-
-    logger.info(
-      { isFinal, iterationNumber, jobId: job.id, messageId: currentMessage.id },
-      "generating_reply_for_iteration"
-    );
-
-    const { replyAgent } = await import("../../../agents/reply");
-
-    // Get completed tasks from this session, limited to last 3 levels max
-    // This ensures reply covers work across continuations without overwhelming context
-    const sessionCompletedTasks = getSessionCompletedTasks(
-      conversationState.values.plan || [],
-      sessionStartLevel,
-      newLevel
-    );
-
-    logger.info(
-      {
-        jobId: job.id,
-        newLevel,
-        sessionCompletedTasksCount: sessionCompletedTasks.length,
-        sessionStartLevel,
-        totalPlanTasks: (conversationState.values.plan || []).length,
-      },
-      "reply_tasks_filtered"
-    );
-
-    const replyResult = await replyAgent({
-      completedMaxTasks: sessionCompletedTasks,
-      conversationState,
-      hypothesis: hypothesisResult.hypothesis,
-      isFinal,
-      message: currentMessage,
-      nextPlan: conversationState.values.suggestedNextSteps || [],
-    });
-    await assertNotCancelled();
-
-    // Warn if reply is empty
-    if (!replyResult.reply || replyResult.reply.trim().length === 0) {
-      logger.warn(
-        {
-          iterationNumber,
-          jobId: job.id,
-          messageId: currentMessage.id,
-          replyResult,
-        },
-        "reply_agent_returned_empty_response"
-      );
-    }
-
-    // Update the current message with the reply. Sweeper exempts
-    // deep-research rows via the isDeepResearch flag so this is normally
-    // unguarded ground; the precondition (see markMessageComplete) is
-    // defensive against manual SQL flips or future callers.
-    const iterationResponseTime = Date.now() - startTime;
+    // Reply (shared phase)
     const { markMessageComplete } = await import("../../chat/tools");
-    const { updated } = await markMessageComplete(currentMessage.id, {
-      content: replyResult.reply,
-      response_time: iterationResponseTime,
-      summary: replyResult.summary,
-    });
-    if (!updated) {
-      logger.warn(
-        { iterationNumber, jobId: job.id, messageId: currentMessage.id },
-        "deep_research_iteration_complete_skipped_row_not_pending"
-      );
-    }
-
-    logger.info(
+    const { runReplyPhase } = await import("../../deep-research/phases/reply");
+    await runReplyPhase(
       {
-        contentLength: replyResult.reply?.length || 0,
-        iterationNumber,
-        jobId: job.id,
-        messageId: currentMessage.id,
+        conversationState,
+        currentMessage,
+        currentObjective,
+        hypothesis: hypothesisResult.hypothesis,
+        isFinal,
+        iterationCount: iterationNumber,
+        iterationStartTime: startTime,
+        newLevel,
+        sessionStartLevel,
+        state,
       },
-      "iteration_reply_saved"
+      {
+        assertNotCancelled,
+        markMessageComplete,
+        notifyMessageUpdated: async () => {
+          await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
+        },
+        persistConversationActivity,
+        persistConversationState,
+      }
     );
-
-    if (isFinal) {
-      conversationState.values.finalResponse = replyResult.reply;
-      await persistConversationState();
-    }
-
-    // Notify message updated
-    await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
 
     // =========================================================================
     // ENQUEUE NEXT ITERATION (if continuing)
