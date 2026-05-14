@@ -23,10 +23,7 @@ import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
 } from "../../../utils/deep-research/activity";
-import {
-  calculateSessionStartLevel,
-  createContinuationMessage,
-} from "../../../utils/deep-research/continuation-utils";
+import { calculateSessionStartLevel } from "../../../utils/deep-research/continuation-utils";
 import {
   completeObjectiveTrace,
   ensureObjectiveTrace,
@@ -946,82 +943,30 @@ async function processDeepResearchJob(
       }
     );
 
-    // =========================================================================
-    // ENQUEUE NEXT ITERATION (if continuing)
-    // This is the key change: instead of looping, we enqueue a new job
-    // =========================================================================
+    // Enqueue next iteration (if continuing). Continuation-prep is shared
+    // with the route; this branch only diverges in how the new message is
+    // scheduled — the worker enqueues a fresh BullMQ job instead of looping.
     if (willContinue) {
-      await assertNotCancelled();
       logger.info({ iterationNumber, jobId: job.id }, "preparing_next_iteration_job");
 
-      // Promote suggestedNextSteps to plan for next iteration
-      const currentPlan = conversationState.values.plan || [];
-      const currentMaxLevel =
-        currentPlan.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-      const nextLevel = currentMaxLevel + 1;
-
-      // Promote suggested steps to plan with new level and IDs
-      const promotedTasks = applySourceSelectionToPromotedTasks({
-        sourceSelectionId: conversationState.values.sourceSelectionId,
-        tasks: (conversationState.values.suggestedNextSteps || []).map((task: PlanTask) => {
-          const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
-          return {
-            ...task,
-            end: undefined,
-            id: taskId,
-            level: nextLevel,
-            output: undefined,
-            start: undefined,
-          };
-        }),
-        userMessage: message,
-      });
-
-      // Add to plan and clear suggestions
-      conversationState.values.plan = [...currentPlan, ...promotedTasks];
-      conversationState.values.suggestedNextSteps = [];
-      conversationState.values.currentLevel = nextLevel;
-
-      if (conversationState.id) {
-        await persistConversationActivity(
-          {
-            level: nextLevel,
-            objective:
-              promotedTasks[0]?.objective ||
-              conversationState.values.currentObjective ||
-              currentObjective,
-            phase: "planning",
-          },
-          {
-            ensureTraceObjective: getObjectiveTraceObjective(
-              conversationState.values,
-              conversationState.values.currentObjective || currentObjective
-            ),
-            notify: true,
-          }
-        );
-        logger.info(
-          {
-            jobId: job.id,
-            nextLevel,
-            promotedTaskCount: promotedTasks.length,
-          },
-          "suggested_steps_promoted_to_plan"
-        );
-      }
-
-      // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
-      const agentMessage = await createContinuationMessage(currentMessage, stateId);
-
-      logger.info(
-        {
-          jobId: job.id,
-          newMessageId: agentMessage.id,
-          nextIterationNumber: iterationNumber + 1,
-          previousMessageId: currentMessage.id,
-        },
-        "created_agent_continuation_message"
+      const { runContinuationPrepPhase } = await import(
+        "../../deep-research/phases/continuation-prep"
       );
+      const continuation = await runContinuationPrepPhase(
+        {
+          conversationState,
+          currentMessage,
+          currentObjective,
+          stateId,
+          userMessage: message,
+        },
+        {
+          assertNotCancelled,
+          getObjectiveTraceObjective,
+          persistConversationActivity,
+        }
+      );
+      const agentMessage = continuation.newMessage;
 
       // ENQUEUE NEXT ITERATION JOB
       const queue = getDeepResearchQueue();

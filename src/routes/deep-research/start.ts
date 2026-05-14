@@ -22,6 +22,7 @@ import {
   isDeepResearchCancellationRequested,
   throwIfDeepResearchCancelled,
 } from "../../services/deep-research/cancellation";
+import { runContinuationPrepPhase } from "../../services/deep-research/phases/continuation-prep";
 import { runContinueDecisionPhase } from "../../services/deep-research/phases/continue-decision";
 import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
 import { runNextStepsPhase } from "../../services/deep-research/phases/next-steps";
@@ -48,10 +49,7 @@ import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
 } from "../../utils/deep-research/activity";
-import {
-  calculateSessionStartLevel,
-  createContinuationMessage,
-} from "../../utils/deep-research/continuation-utils";
+import { calculateSessionStartLevel } from "../../utils/deep-research/continuation-utils";
 import {
   completeObjectiveTrace,
   ensureObjectiveTrace,
@@ -1749,85 +1747,29 @@ These molecular changes align with established longevity pathways (Converging nu
         );
       }
 
-      // =========================================================================
-      // PREPARE FOR NEXT ITERATION (if continuing)
-      // =========================================================================
+      // Prepare next iteration (shared phase) — only when continuing
       if (willContinue) {
-        await assertNotCancelled();
-        // CONTINUE: Promote suggestedNextSteps to plan for next iteration
-        skipPlanning = true; // Skip planning in next iteration - use promoted tasks
-
+        skipPlanning = true; // Next iteration uses promoted tasks
         logger.info({ iterationCount }, "auto_continuing_to_next_iteration");
 
-        // Get current max level
-        const currentPlan = conversationState.values.plan || [];
-        const currentMaxLevel =
-          currentPlan.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-        const nextLevel = currentMaxLevel + 1;
-
-        // Promote suggested steps to plan with new level and IDs
-        const promotedTasks = applySourceSelectionToPromotedTasks({
-          sourceSelectionId: conversationState.values.sourceSelectionId,
-          tasks: (conversationState.values.suggestedNextSteps ?? []).map((task: PlanTask) => {
-            const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
-            return {
-              ...task,
-              end: undefined,
-              id: taskId,
-              level: nextLevel,
-              output: undefined,
-              start: undefined,
-            };
-          }),
-          userMessage: currentMessage.question || createdMessage.question || "",
-        });
-
-        // Add to plan and clear suggestions
-        conversationState.values.plan = [...currentPlan, ...promotedTasks];
-        conversationState.values.suggestedNextSteps = [];
-        conversationState.values.currentLevel = nextLevel;
-
-        if (conversationState.id) {
-          await persistConversationActivity(
-            {
-              level: nextLevel,
-              objective:
-                promotedTasks[0]?.objective ||
-                conversationState.values.currentObjective ||
-                currentObjective,
-              phase: "planning",
-            },
-            {
-              ensureTraceObjective: getObjectiveTraceObjective(
-                conversationState.values,
-                conversationState.values.currentObjective || currentObjective
-              ),
-            }
-          );
-          logger.info(
-            {
-              nextLevel,
-              promotedTaskCount: promotedTasks.length,
-            },
-            "suggested_steps_promoted_to_plan"
-          );
-        }
-
-        // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
-        // This allows each autonomous iteration to have its own message in the conversation
-        const agentMessage = await createContinuationMessage(currentMessage, stateRecord.id);
-
-        logger.info(
+        const continuation = await runContinuationPrepPhase(
           {
-            iterationCount: iterationCount + 1,
-            newMessageId: agentMessage.id,
-            previousMessageId: currentMessage.id,
+            conversationState,
+            currentMessage,
+            currentObjective,
+            stateId: stateRecord.id,
+            userMessage: currentMessage.question || createdMessage.question || "",
           },
-          "created_agent_continuation_message"
+          {
+            assertNotCancelled,
+            getObjectiveTraceObjective,
+            persistConversationActivity,
+          }
         );
 
-        // Update currentMessage to point to the new message for next iteration
-        currentMessage = agentMessage;
+        // In-process mode loops in memory; advance currentMessage so the
+        // next iteration writes to the freshly created agent message.
+        currentMessage = continuation.newMessage;
       }
     } // END OF WHILE LOOP
 
