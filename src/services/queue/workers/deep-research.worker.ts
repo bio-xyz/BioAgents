@@ -34,7 +34,6 @@ import {
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
 import { mergeProteinStructures } from "../../../utils/proteinStructures";
-import { applySourceSelectionToPromotedTasks } from "../../../utils/sourceSelectionRouting";
 import {
   DeepResearchCancelledError,
   isDeepResearchCancellationRequested,
@@ -359,221 +358,27 @@ async function processDeepResearchJob(
       );
     }
 
-    // Get current level - if continuation, use existing; otherwise run planning agent
-    let newLevel: number;
-    let currentObjective: string;
-
-    if (!isInitialIteration) {
-      // CONTINUATION: Tasks already promoted, just get current level
-      const currentPlan = conversationState.values.plan || [];
-      newLevel = currentPlan.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : 0;
-      currentObjective = conversationState.values.currentObjective || "";
-
-      logger.info(
-        { currentObjective, jobId: job.id, newLevel },
-        "continuation_using_promoted_tasks"
-      );
-    } else if (
-      isInitialIteration &&
-      conversationState.values.clarificationContext?.initialTasks?.length
-    ) {
-      // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
-      const clarCtx = conversationState.values.clarificationContext;
-      const initialTasks = clarCtx.initialTasks!;
-      const uploadedDatasets = conversationState.values.uploadedDatasets || [];
-
-      // Log what filenames are expected vs what's available
-      const allRequestedFilenames = initialTasks
-        .filter((t) => t.type === "ANALYSIS")
-        .flatMap((t) => t.datasetFilenames || []);
-
-      logger.info(
-        {
-          availableFilenames: uploadedDatasets.map((d) => d.filename),
-          jobId: job.id,
-          requestedFilenames: allRequestedFilenames,
-          taskCount: initialTasks.length,
-          uploadedDatasetCount: uploadedDatasets.length,
-        },
-        "using_clarification_initial_tasks"
-      );
-
-      // Get current plan or initialize empty
-      const currentPlan = conversationState.values.plan || [];
-
-      // Find max level in current plan
-      const maxLevel =
-        currentPlan?.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-
-      // Add tasks from clarification with appropriate level and IDs
-      // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
-      newLevel = maxLevel + 1;
-      const newTasks = initialTasks.map((task) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-
-        // Resolve datasetFilenames to full dataset objects
-        const resolvedDatasets = (task.datasetFilenames || [])
-          .map((filename) => {
-            const dataset = uploadedDatasets.find((d) => d.filename === filename);
-            if (!dataset) {
-              logger.warn(
-                {
-                  availableDatasets: uploadedDatasets.map((d) => d.filename),
-                  filename,
-                  jobId: job.id,
-                },
-                "clarification_dataset_not_found"
-              );
-              return null;
-            }
-            return {
-              description: dataset.description,
-              filename: dataset.filename,
-              id: dataset.id,
-              path: dataset.path,
-            };
-          })
-          .filter((d): d is NonNullable<typeof d> => d !== null);
-
-        return {
-          datasets: resolvedDatasets,
-          end: undefined,
-          id: taskId,
-          level: newLevel,
-          objective: task.objective,
-          output: undefined,
-          sources: task.sources,
-          start: undefined,
-          type: task.type,
-        } as PlanTask;
-      });
-      const tasksWithSourceSelection = applySourceSelectionToPromotedTasks({
-        sourceSelectionId: conversationState.values.sourceSelectionId,
-        tasks: newTasks,
-        userMessage: message,
-      });
-
-      // Use refined objective from clarification
-      currentObjective = clarCtx.refinedObjective;
-
-      // Append to plan and update state
-      conversationState.values.plan = [...currentPlan, ...tasksWithSourceSelection];
-      conversationState.values.currentObjective = currentObjective;
-      conversationState.values.currentLevel = newLevel;
-
-      // Initialize main objective from clarification (only if not already set)
-      if (!conversationState.values.objective) {
-        conversationState.values.objective = clarCtx.refinedObjective;
-      }
-
-      // Initialize evolving objective (only if not already set)
-      if (!conversationState.values.evolvingObjective) {
-        conversationState.values.evolvingObjective = clarCtx.refinedObjective;
-      }
-
-      // Clear initialTasks after use (one-time use)
-      conversationState.values.clarificationContext = {
-        ...clarCtx,
-        initialTasks: undefined,
-      };
-
-      // Update state in DB
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            currentObjective
-          ),
-        });
-        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
-      }
-
-      logger.info(
-        {
-          currentObjective,
-          jobId: job.id,
-          newLevel,
-          taskCount: tasksWithSourceSelection.length,
-        },
-        "clarification_tasks_promoted_to_plan"
-      );
-    } else {
-      // INITIAL: Execute planning agent
-      await assertNotCancelled();
-      logger.info({ jobId: job.id }, "deep_research_job_planning");
-
-      const { planningAgent } = await import("../../../agents/planning");
-
-      const planningResult = await planningAgent({
+    // Planning (shared phase). Worker uses isInitialIteration; the phase
+    // takes the inverse skipPlanning. Worker explicitly notifies after to
+    // mirror the existing pub/sub cadence (route doesn't because its
+    // persistConversationActivity has already fired for this iteration).
+    const { runPlanningPhase } = await import("../../deep-research/phases/planning");
+    const planning = await runPlanningPhase(
+      {
         conversationState,
-        message: messageRecord,
-        mode: "initial",
+        currentMessage: messageRecord,
+        iterationCount: isInitialIteration ? 1 : 2,
         researchMode,
+        rootMessage: messageRecord,
+        skipPlanning: !isInitialIteration,
         state,
-        usageType: "deep-research",
-      });
-
-      const plan = planningResult.plan;
-      currentObjective = planningResult.currentObjective;
-
-      if (!plan || !currentObjective) {
-        throw new Error("Plan or current objective not found");
-      }
-
-      // Clear previous suggestions
-      conversationState.values.suggestedNextSteps = [];
-
-      // Get current plan or initialize empty
-      const currentPlan = conversationState.values.plan || [];
-
-      // Find max level in current plan
-      const maxLevel =
-        currentPlan?.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-
-      // Add new tasks with appropriate level and assign IDs
-      newLevel = maxLevel + 1;
-      const newTasks = plan.map((task: PlanTask) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-        return {
-          ...task,
-          end: undefined,
-          id: taskId,
-          level: newLevel,
-          output: undefined,
-          start: undefined,
-        };
-      });
-
-      // Append to existing plan and update objective
-      conversationState.values.plan = [...currentPlan, ...newTasks];
-      conversationState.values.currentObjective = currentObjective;
-      conversationState.values.currentLevel = newLevel;
-
-      // Initialize main objective from first message (only if not already set)
-      if (!conversationState.values.objective && messageRecord.question) {
-        conversationState.values.objective = messageRecord.question;
-      }
-
-      // Initialize evolving objective (only if not already set)
-      if (!conversationState.values.evolvingObjective && messageRecord.question) {
-        conversationState.values.evolvingObjective = messageRecord.question;
-      }
-
-      // Update state in DB
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            currentObjective
-          ),
-        });
-        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
-      }
-
-      logger.info(
-        { jobId: job.id, newLevel, taskCount: newTasks.length },
-        "deep_research_job_planning_completed"
-      );
+      },
+      { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
+    );
+    const newLevel: number = planning.newLevel;
+    const currentObjective: string = planning.currentObjective;
+    if (conversationState.id) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
     // Update progress: Literature/Analysis
