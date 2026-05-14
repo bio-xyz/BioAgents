@@ -1,12 +1,10 @@
 import { Elysia } from "elysia";
 import { analysisAgent } from "../../agents/analysis";
 import { continueResearchAgent } from "../../agents/continueResearch";
-import { discoveryAgent } from "../../agents/discovery";
 import { fileUploadAgent } from "../../agents/fileUpload";
 import { literatureAgent } from "../../agents/literature";
 import { initKnowledgeBase } from "../../agents/literature/knowledge";
 import { planningAgent } from "../../agents/planning";
-import { reflectionAgent } from "../../agents/reflection";
 import { replyAgent } from "../../agents/reply";
 import { getClarificationSessionForUser, linkSessionToConversation } from "../../db/clarification";
 import {
@@ -14,7 +12,6 @@ import {
   type DbConversationState,
   type DbState,
   getConversationState,
-  getMessagesByConversation,
   updateConversationState,
   updateState,
 } from "../../db/operations";
@@ -28,6 +25,7 @@ import {
   throwIfDeepResearchCancelled,
 } from "../../services/deep-research/cancellation";
 import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
+import { runReflectionDiscoveryPhase } from "../../services/deep-research/phases/reflection-discovery";
 import {
   acquireStartMutex,
   getActiveRunForDedupFromValues,
@@ -61,7 +59,6 @@ import {
   markObjectiveTraceStale,
   syncObjectiveTraceProgress,
 } from "../../utils/deep-research/objective-trace";
-import { getDiscoveryRunConfig } from "../../utils/discovery";
 import logger from "../../utils/logger";
 import { buildMessageStateValues } from "../../utils/messageState";
 import { mergeProteinStructures } from "../../utils/proteinStructures";
@@ -1651,82 +1648,16 @@ These molecular changes align with established longevity pathways (Converging nu
         { assertNotCancelled, persistConversationState }
       );
 
-      // Step 4: Run reflection and discovery agents in parallel
-      await assertNotCancelled();
-      logger.info("running_reflection_and_discovery_agents");
-
-      // Determine if we should run discovery and which tasks to consider
-      let shouldRunDiscovery = false;
-      let tasksToConsider: PlanTask[] = [];
-
-      if (createdMessage.conversation_id) {
-        const allMessages = await getMessagesByConversation(createdMessage.conversation_id, 100);
-        const messageCount = allMessages?.length || 1;
-
-        const discoveryConfig = getDiscoveryRunConfig(
-          messageCount,
-          conversationState.values.plan || [],
-          tasksToExecute
-        );
-
-        shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
-        tasksToConsider = discoveryConfig.tasksToConsider;
-      }
-
-      // Run reflection and discovery in parallel
-      const [reflectionResult, discoveryResult] = await Promise.all([
-        reflectionAgent({
-          completedMaxTasks: tasksToExecute, // MAX level tasks (current level)
+      // Step 4: Run reflection + discovery (shared phase)
+      await runReflectionDiscoveryPhase(
+        {
+          completedTasks: tasksToExecute,
           conversationState,
           hypothesis: hypothesisResult.hypothesis,
           message: createdMessage,
-        }),
-        shouldRunDiscovery
-          ? discoveryAgent({
-              conversationState,
-              hypothesis: hypothesisResult.hypothesis,
-              message: createdMessage,
-              tasksToConsider,
-            })
-          : Promise.resolve(null),
-      ]);
-
-      // Update conversation state with reflection results
-      conversationState.values.conversationTitle = reflectionResult.conversationTitle;
-      if (reflectionResult.evolvingObjective) {
-        conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
-      }
-      conversationState.values.currentObjective = reflectionResult.currentObjective;
-      conversationState.values.keyInsights = reflectionResult.keyInsights;
-      conversationState.values.methodology = reflectionResult.methodology;
-
-      // Update conversation state with discovery results if discovery ran
-      if (discoveryResult) {
-        conversationState.values.discoveries = discoveryResult.discoveries;
-        logger.info(
-          {
-            discoveryCount: discoveryResult.discoveries.length,
-          },
-          "discoveries_updated"
-        );
-      }
-
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            reflectionResult.currentObjective
-          ),
-        });
-        logger.info(
-          {
-            currentObjective: reflectionResult.currentObjective,
-            discoveries: conversationState.values.discoveries?.length || 0,
-            insights: reflectionResult.keyInsights,
-          },
-          "world_state_updated_via_reflection_and_discovery"
-        );
-      }
+        },
+        { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
+      );
 
       // Step 5: Run planning agent in "next" mode to plan next iteration
       await assertNotCancelled();

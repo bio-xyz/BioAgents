@@ -856,76 +856,21 @@ async function processDeepResearchJob(
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reflection", 85);
 
-    // Step 4: Run reflection and discovery agents in parallel
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_reflection_and_discovery");
-
-    const { reflectionAgent } = await import("../../../agents/reflection");
-    const { discoveryAgent } = await import("../../../agents/discovery");
-    const { getMessagesByConversation } = await import("../../../db/operations");
-    const { getDiscoveryRunConfig } = await import("../../../utils/discovery");
-
-    // Determine if we should run discovery and which tasks to consider
-    let shouldRunDiscovery = false;
-    let tasksToConsider: PlanTask[] = [];
-
-    if (messageRecord.conversation_id) {
-      const allMessages = await getMessagesByConversation(messageRecord.conversation_id, 100);
-      const messageCount = allMessages?.length || 1;
-
-      const discoveryConfig = getDiscoveryRunConfig(
-        messageCount,
-        conversationState.values.plan || [],
-        tasksToExecute
-      );
-
-      shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
-      tasksToConsider = discoveryConfig.tasksToConsider;
-    }
-
-    // Run reflection and discovery in parallel
-    const [reflectionResult, discoveryResult] = await Promise.all([
-      reflectionAgent({
-        completedMaxTasks: tasksToExecute,
+    // Step 4: Reflection + discovery (shared phase)
+    const { runReflectionDiscoveryPhase } = await import(
+      "../../deep-research/phases/reflection-discovery"
+    );
+    await runReflectionDiscoveryPhase(
+      {
+        completedTasks: tasksToExecute,
         conversationState,
         hypothesis: hypothesisResult.hypothesis,
         message: messageRecord,
-      }),
-      shouldRunDiscovery
-        ? discoveryAgent({
-            conversationState,
-            hypothesis: hypothesisResult.hypothesis,
-            message: messageRecord,
-            tasksToConsider,
-          })
-        : Promise.resolve(null),
-    ]);
-
-    // Update conversation state with reflection results
-    conversationState.values.conversationTitle = reflectionResult.conversationTitle;
-    if (reflectionResult.evolvingObjective) {
-      conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
-    }
-    conversationState.values.currentObjective = reflectionResult.currentObjective;
-    conversationState.values.keyInsights = reflectionResult.keyInsights;
-    conversationState.values.methodology = reflectionResult.methodology;
-
-    // Update conversation state with discovery results if discovery ran
-    if (discoveryResult) {
-      conversationState.values.discoveries = discoveryResult.discoveries;
-      logger.info(
-        { discoveryCount: discoveryResult.discoveries.length, jobId: job.id },
-        "discoveries_updated"
-      );
-    }
+      },
+      { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
+    );
 
     if (conversationState.id) {
-      await persistConversationState({
-        ensureTraceObjective: getObjectiveTraceObjective(
-          conversationState.values,
-          reflectionResult.currentObjective
-        ),
-      });
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
