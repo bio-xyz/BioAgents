@@ -15,7 +15,6 @@ import { Job, Worker } from "bullmq";
 import type {
   ConversationState,
   ConversationStateValues,
-  OnPollUpdate,
   PlanTask,
   State,
 } from "../../../types/core";
@@ -33,7 +32,6 @@ import {
 } from "../../../utils/deep-research/objective-trace";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
-import { mergeProteinStructures } from "../../../utils/proteinStructures";
 import {
   DeepResearchCancelledError,
   isDeepResearchCancellationRequested,
@@ -389,10 +387,7 @@ async function processDeepResearchJob(
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "literature", 20);
 
-    // Step 2: Execute tasks
-    const { literatureAgent } = await import("../../../agents/literature");
-    const { analysisAgent } = await import("../../../agents/analysis");
-
+    // Step 2: Execute tasks (shared phase)
     tasksToExecute = (conversationState.values.plan || []).filter(
       (t) => t.level === newLevel && !t.end // Skip already-completed tasks (for retry safety)
     );
@@ -431,198 +426,31 @@ async function processDeepResearchJob(
       return p;
     };
 
-    // Execute all tasks concurrently
-    const taskPromises = tasksToExecute.map(async (task) => {
-      // Callback to persist reasoning traces to conversation state on each poll
-      const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
-        if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
-          task.reasoning = reasoning;
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-            await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-          }
-        }
-      };
-
-      if (task.type === "LITERATURE") {
-        await assertNotCancelled();
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (activeConversationState.id) {
-          setDeepResearchActivity(activeConversationState.values, {
-            level: task.level ?? newLevel,
-            objective: task.objective,
-            phase: "literature",
-            taskType: task.type,
-          });
-          await writeStateSerialized!();
+    const { runExecutionPhase } = await import("../../deep-research/phases/execution");
+    await runExecutionPhase(
+      {
+        conversationState: activeConversationState,
+        newLevel,
+        tasksToExecute,
+        userId: messageRecord.user_id,
+      },
+      {
+        assertNotCancelled,
+        notifyStateUpdated: async () => {
+          if (!activeConversationState.id) return;
           await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-
-        logger.info(
-          { jobId: job.id, taskObjective: task.objective },
-          "deep_research_job_executing_literature_task"
-        );
-
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO" ? "BIOLITDEEP" : "EDISON";
-
-        // Build list of literature promises based on configured sources
-        const literaturePromises: Promise<void>[] = [];
-
-        // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
-        if (process.env.OPENSCHOLAR_API_URL) {
-          const openScholarPromise = literatureAgent({
-            objective: task.objective,
-            type: "OPENSCHOLAR",
-          }).then(async (result) => {
-            task.output += `${result.output}\n\n`;
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-            }
-          });
-          literaturePromises.push(openScholarPromise);
-        }
-
-        // Primary literature (Edison or BioLit) - always enabled
-        const primaryLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          onJobCreated: async (jobId) => {
-            task.bioLiteratureJobId = jobId;
-            task.downstreamJobIds = {
-              ...(task.downstreamJobIds || {}),
-              bioLiterature: [...new Set([...(task.downstreamJobIds?.bioLiterature || []), jobId])],
-            };
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-              await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-            }
-          },
-          onPollUpdate,
-          sources: task.sources,
-          type: primaryLiteratureType,
-        }).then(async (result) => {
-          task.output += `${result.output}\n\n`;
-          // Capture jobId from primary literature (Edison)
-          if (result.jobId) {
-            task.jobId = result.jobId;
-            if (primaryLiteratureType === "BIOLITDEEP") {
-              task.bioLiteratureJobId = result.jobId;
-            }
-          }
-          task.proteinStructures = mergeProteinStructures(
-            task.proteinStructures,
-            result.proteinStructures
-          );
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-          }
-        });
-        literaturePromises.push(primaryLiteraturePromise);
-
-        // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
-        if (process.env.KNOWLEDGE_DOCS_PATH) {
-          const knowledgePromise = literatureAgent({
-            objective: task.objective,
-            type: "KNOWLEDGE",
-          }).then(async (result) => {
-            task.output += `${result.output}\n\n`;
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-            }
-          });
-          literaturePromises.push(knowledgePromise);
-        }
-
-        await Promise.all(literaturePromises);
-
-        task.end = new Date().toISOString();
-        if (activeConversationState.id) {
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-      } else if (task.type === "ANALYSIS") {
-        await assertNotCancelled();
-        // Update progress for analysis
-        await job.updateProgress({
-          percent: 50,
-          stage: "analysis",
-        } as JobProgress);
-        await notifyJobProgress(job.id!, conversationId, "analysis", 50);
-
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (activeConversationState.id) {
-          setDeepResearchActivity(activeConversationState.values, {
-            level: task.level ?? newLevel,
-            objective: task.objective,
-            phase: "analysis",
-            taskType: task.type,
-          });
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-
-        logger.info(
-          {
-            datasets: task.datasets,
-            jobId: job.id,
-            taskObjective: task.objective,
-          },
-          "deep_research_job_executing_analysis_task"
-        );
-
-        try {
-          const type =
-            process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO" ? "BIO" : "EDISON";
-
-          const analysisResult = await analysisAgent({
-            conversationStateId: activeConversationState.id!,
-            datasets: task.datasets,
-            objective: task.objective,
-            onPollUpdate,
-            type,
-            userId: messageRecord.user_id,
-          });
-
-          task.output = `${analysisResult.output}\n\n`;
-          task.artifacts = analysisResult.artifacts || [];
-          task.jobId = analysisResult.jobId;
-
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-          }
-        } catch (error) {
-          const errorMsg =
-            error instanceof Error
-              ? error.message
-              : typeof error === "object" && error !== null
-                ? JSON.stringify(error)
-                : String(error);
-          task.output = `Analysis failed: ${errorMsg}`;
-          logger.error(
-            { error, jobId: job.id, taskObjective: task.objective },
-            "deep_research_job_analysis_failed"
-          );
-        }
-
-        task.end = new Date().toISOString();
-        if (activeConversationState.id) {
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
+        },
+        onAnalysisStarted: async () => {
+          await job.updateProgress({ percent: 50, stage: "analysis" } as JobProgress);
+          await notifyJobProgress(job.id!, conversationId, "analysis", 50);
+        },
+        writeStateSerialized: () => writeStateSerialized!(),
       }
-    });
-
-    // Wait for all tasks to complete
-    await Promise.all(taskPromises);
-    await assertNotCancelled();
+    );
 
     logger.info(
       { completedTasksCount: tasksToExecute.length, jobId: job.id },
-      "deep_research_job_tasks_completed"
+      "deep_research_job_tasks_completed_via_shared_phase"
     );
 
     // Update progress: Hypothesis
