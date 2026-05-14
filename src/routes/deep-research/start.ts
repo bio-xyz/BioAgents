@@ -25,6 +25,7 @@ import {
   throwIfDeepResearchCancelled,
 } from "../../services/deep-research/cancellation";
 import { runHypothesisPhase } from "../../services/deep-research/phases/hypothesis";
+import { runNextStepsPhase } from "../../services/deep-research/phases/next-steps";
 import { runReflectionDiscoveryPhase } from "../../services/deep-research/phases/reflection-discovery";
 import {
   acquireStartMutex,
@@ -1663,55 +1664,25 @@ These molecular changes align with established longevity pathways (Converging nu
       await assertNotCancelled();
       logger.info("running_next_planning_for_future_iteration");
 
-      // Clear old suggestions before generating new ones (ensures fresh planning)
-      conversationState.values.suggestedNextSteps = [];
-
-      await persistConversationActivity({
-        level: newLevel,
-        objective: conversationState.values.currentObjective || currentObjective,
-        phase: "next_steps",
-      });
-
-      const nextPlanningResult = await planningAgent({
-        conversationState,
-        message: createdMessage,
-        mode: "next",
-        researchMode,
-        state,
-        usageType: "deep-research",
-      });
-
-      // Save suggestions for next iteration (don't add to plan yet - wait for user confirmation)
-      if (nextPlanningResult.plan.length > 0) {
-        // Store as suggestions (without level - will be assigned when user confirms)
-        conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
-
-        // Update objective if provided
-        if (nextPlanningResult.currentObjective) {
-          conversationState.values.currentObjective = nextPlanningResult.currentObjective;
+      // Step 5: Plan next iteration (shared phase)
+      const nextStepsResult = await runNextStepsPhase(
+        {
+          conversationState,
+          currentObjective,
+          message: createdMessage,
+          newLevel,
+          researchMode,
+          state,
+        },
+        {
+          assertNotCancelled,
+          getObjectiveTraceObjective,
+          persistConversationActivity,
+          persistConversationState,
         }
+      );
 
-        if (conversationState.id) {
-          await persistConversationState({
-            ensureTraceObjective: getObjectiveTraceObjective(
-              conversationState.values,
-              nextPlanningResult.currentObjective || currentObjective
-            ),
-          });
-          logger.info(
-            {
-              nextObjective: nextPlanningResult.currentObjective,
-              nextPlanningSteps: nextPlanningResult.plan.map(
-                (t) =>
-                  `${t.type} task: ${t.objective} datasets: ${t.datasets.map((d) => `${d.filename} (${d.description})`).join(", ")}`
-              ),
-            },
-            "next_iteration_suggestions_saved"
-          );
-        }
-      } else {
-        logger.info("no_next_iteration_tasks_suggested_research_complete_or_awaiting_feedback");
-        // No suggested next steps means research is complete - exit loop
+      if (!nextStepsResult.hasSuggestions) {
         shouldContinueLoop = false;
       }
 
@@ -1879,7 +1850,7 @@ These molecular changes align with established longevity pathways (Converging nu
         // Promote suggested steps to plan with new level and IDs
         const promotedTasks = applySourceSelectionToPromotedTasks({
           sourceSelectionId: conversationState.values.sourceSelectionId,
-          tasks: conversationState.values.suggestedNextSteps.map((task: PlanTask) => {
+          tasks: (conversationState.values.suggestedNextSteps ?? []).map((task: PlanTask) => {
             const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
             return {
               ...task,

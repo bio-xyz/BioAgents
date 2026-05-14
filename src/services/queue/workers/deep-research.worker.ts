@@ -874,44 +874,26 @@ async function processDeepResearchJob(
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
-    // Step 5: Plan next iteration
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_planning_next");
-
-    await persistConversationActivity({
-      level: newLevel,
-      objective: conversationState.values.currentObjective || currentObjective,
-      phase: "next_steps",
-    });
-
-    const { planningAgent } = await import("../../../agents/planning");
-    const nextPlanningResult = await planningAgent({
-      conversationState,
-      message: messageRecord,
-      mode: "next",
-      researchMode,
-      state,
-      usageType: "deep-research",
-    });
-
-    // Track whether research should continue
-    let shouldContinue = false;
-
-    if (nextPlanningResult.plan.length > 0) {
-      conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
-      if (nextPlanningResult.currentObjective) {
-        conversationState.values.currentObjective = nextPlanningResult.currentObjective;
+    // Step 5: Plan next iteration (shared phase)
+    const { runNextStepsPhase } = await import("../../deep-research/phases/next-steps");
+    const nextStepsResult = await runNextStepsPhase(
+      {
+        conversationState,
+        currentObjective,
+        message: messageRecord,
+        newLevel,
+        researchMode,
+        state,
+      },
+      {
+        assertNotCancelled,
+        getObjectiveTraceObjective,
+        persistConversationActivity,
+        persistConversationState,
       }
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            nextPlanningResult.currentObjective || currentObjective
-          ),
-        });
-      }
-      shouldContinue = true;
-    }
+    );
+
+    const shouldContinue = nextStepsResult.hasSuggestions;
 
     // =========================================================================
     // CONTINUE RESEARCH DECISION (before reply so we know if it's final)
