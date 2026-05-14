@@ -220,7 +220,6 @@ async function handleDeepResearchStartFailure(
 
 export const __deepResearchStartTestables = {
   handleDeepResearchStartFailure,
-  runDeepResearch,
 };
 
 function buildDeepResearchPollUrl(messageId: string): string {

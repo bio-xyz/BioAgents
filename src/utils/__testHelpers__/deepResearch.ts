@@ -51,71 +51,108 @@ export interface SeedDeepResearchRunOptions {
 }
 
 /**
- * Insert user + conversation + conversation_state + state + message rows.
- * Returns the IDs needed to drive a DR run from a test. Cleanup MUST run in
- * afterEach via `cleanupDeepResearchRun` to keep Supabase tidy across runs.
+ * Insert user + conversation + conversation_state + state + message rows
+ * via the supabase service client DIRECTLY.
  *
- * Uses the same `createX` helpers production uses — so RLS / triggers /
- * defaults that production relies on are exercised too.
+ * We deliberately bypass `db/operations` because other test files in the
+ * suite install partial `mock.module("db/operations", …)` replacements that
+ * persist process-globally — bun:test's `mock.restore()` only restores
+ * spies, not module mocks, so any test running AFTER one of those would
+ * see a mocked db layer missing `createMessage` etc. and crash here.
+ * Going straight to the supabase client side-steps the global mock.
  */
 export async function seedDeepResearchRun(
   opts: SeedDeepResearchRunOptions = {}
 ): Promise<DeepResearchSeed> {
-  const {
-    createUser,
-    createConversation,
-    createConversationState,
-    createState,
-    createMessage,
-    updateConversation,
-  } = await import("../../db/operations");
+  const { getServiceClient } = await import("../../db/client");
+  const supabase = getServiceClient();
 
   const userId = opts.userId ?? generateUUID();
   const conversationId = opts.conversationId ?? generateUUID();
   const question = opts.question ?? "What does the literature say about rapamycin and lifespan?";
 
   // 1. User
-  await createUser({
-    email: `${userId}@temp.local`,
-    id: userId,
-    username: `user_${userId.slice(0, 8)}`,
-  });
+  {
+    const { error } = await supabase.from("users").upsert(
+      {
+        email: `${userId}@temp.local`,
+        id: userId,
+        username: `user_${userId.slice(0, 8)}`,
+      },
+      { ignoreDuplicates: true, onConflict: "id" }
+    );
+    if (error && error.code !== "23505") {
+      throw new Error(`users insert failed: ${error.message}`);
+    }
+  }
 
   // 2. Conversation
-  await createConversation({ id: conversationId, user_id: userId });
+  {
+    const { error } = await supabase
+      .from("conversations")
+      .insert({ id: conversationId, user_id: userId });
+    if (error) throw new Error(`conversations insert failed: ${error.message}`);
+  }
 
   // 3. Conversation state
-  const conversationStateRecord = await createConversationState({
-    values: {
-      objective: question,
-      ...opts.conversationStateValues,
-    } as ConversationStateValues,
-  });
-  await updateConversation(conversationId, {
-    conversation_state_id: conversationStateRecord.id,
-  });
+  const { data: csData, error: csError } = await supabase
+    .from("conversation_states")
+    .insert({
+      values: {
+        objective: question,
+        ...opts.conversationStateValues,
+      },
+    })
+    .select("id")
+    .single();
+  if (csError || !csData) {
+    throw new Error(`conversation_states insert failed: ${csError?.message}`);
+  }
+  const conversationStateId = csData.id as string;
+
+  {
+    const { error } = await supabase
+      .from("conversations")
+      .update({ conversation_state_id: conversationStateId })
+      .eq("id", conversationId);
+    if (error)
+      throw new Error(`conversations.conversation_state_id update failed: ${error.message}`);
+  }
 
   // 4. State (per-message agent state)
-  const stateRecord = await createState({ values: { userId } });
+  const { data: stateData, error: stateError } = await supabase
+    .from("states")
+    .insert({ values: { userId } })
+    .select("id")
+    .single();
+  if (stateError || !stateData) {
+    throw new Error(`states insert failed: ${stateError?.message}`);
+  }
+  const stateId = stateData.id as string;
 
-  // 5. Initial user message. The Message type in core.ts is incomplete
-  // (state_id/status are real DB columns but the Zod schema doesn't list
-  // them); production calls pass them through to Supabase verbatim.
-  const messageRecord = await createMessage({
-    content: "",
-    conversation_id: conversationId,
-    question,
-    state_id: stateRecord.id,
-    status: "PENDING",
-    user_id: userId,
-  } as unknown as Message);
+  // 5. Initial user message
+  const { data: msgData, error: msgError } = await supabase
+    .from("messages")
+    .insert({
+      content: "",
+      conversation_id: conversationId,
+      question,
+      state_id: stateId,
+      status: "PENDING",
+      user_id: userId,
+    })
+    .select("id")
+    .single();
+  if (msgError || !msgData) {
+    throw new Error(`messages insert failed: ${msgError?.message}`);
+  }
 
   return {
     conversationId,
-    conversationStateId: conversationStateRecord.id,
+    conversationStateId,
     extraMessageIds: [],
-    messageId: messageRecord.id,
-    stateId: stateRecord.id,
+    messageId: msgData.id as string,
+    stateId,
     userId,
   };
 }
@@ -167,14 +204,24 @@ export async function cleanupDeepResearchRun(seed: DeepResearchSeed): Promise<vo
 export async function readConversationStateValues(
   conversationStateId: string
 ): Promise<ConversationStateValues | null> {
-  const { getConversationState } = await import("../../db/operations");
-  const row = await getConversationState(conversationStateId);
-  return (row?.values ?? null) as ConversationStateValues | null;
+  const { getServiceClient } = await import("../../db/client");
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("conversation_states")
+    .select("values")
+    .eq("id", conversationStateId)
+    .single();
+  if (error) throw new Error(`conversation_states select failed: ${error.message}`);
+  return (data?.values ?? null) as ConversationStateValues | null;
 }
 
 export async function readMessageRow(messageId: string) {
-  const { getMessage } = await import("../../db/operations");
-  return getMessage(messageId);
+  // Bypass db/operations for the same reason as seed (see above).
+  const { getServiceClient } = await import("../../db/client");
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.from("messages").select("*").eq("id", messageId).single();
+  if (error) throw new Error(`messages select failed: ${error.message}`);
+  return data;
 }
 
 // ---------------------------------------------------------------------------
