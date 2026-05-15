@@ -85,6 +85,33 @@ export type ProteinStructure = {
   averagePlddt?: number;
 };
 
+export type DataArtifact = {
+  id: string;
+  name: string;
+  type: "table" | "chart" | "notebook" | "code" | "file" | "image" | "pdf";
+  description?: string;
+  url?: string;
+  path?: string;
+  mimeType?: string;
+  content?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type SegmentAnythingPoint = {
+  x: number;
+  y: number;
+};
+
+export type SegmentAnythingToolInput = {
+  confidence?: number;
+  imageFileId?: string;
+  imageFilename?: string;
+  point?: SegmentAnythingPoint;
+};
+
+export type ChatToolId = "segment-anything";
+export type ChatToolInput = SegmentAnythingToolInput;
+
 export type DeepResearchActivityPhase =
   | "planning"
   | "literature"
@@ -146,6 +173,7 @@ export interface ConversationStateValues extends StateValues {
   currentActivity?: DeepResearchActivity; // Compact top-level activity shown in the main deep research view
   objectiveTrace?: DeepResearchObjectiveTrace; // Synthetic objective breakdown shown in the main loader
   normalChatProteinStructuresByMessageId?: Record<string, ProteinStructure[]>;
+  normalChatArtifactsByMessageId?: Record<string, DataArtifact[]>;
   researchMode?: "semi-autonomous" | "fully-autonomous" | "steering"; // Research iteration mode (can change per request)
   uploadedDatasets?: Array<{
     filename: string;

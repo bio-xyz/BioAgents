@@ -109,4 +109,97 @@ describe("createChatSseEventHandlers", () => {
       event: "error",
     });
   });
+
+  test("includes artifacts in the final event when present", () => {
+    const events: Array<{ event: string; data: unknown }> = [];
+    const stream = createChatSseEventHandlers({
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      send: (event, data) => events.push({ data, event }),
+      userId: "user-1",
+    });
+
+    stream.sendFinal({
+      artifacts: [
+        {
+          id: "artifact-1",
+          name: "Annotated image",
+          path: "artifacts/message-1/annotated.png",
+          type: "image",
+        },
+      ],
+      text: "Segmented 1 object.",
+    });
+
+    expect(events[0]).toEqual({
+      data: {
+        artifacts: [
+          {
+            id: "artifact-1",
+            name: "Annotated image",
+            path: "artifacts/message-1/annotated.png",
+            type: "image",
+          },
+        ],
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        text: "Segmented 1 object.",
+        userId: "user-1",
+      },
+      event: "final",
+    });
+  });
+
+  test("emits Segment Anything tool progress before final", () => {
+    const events: Array<{ event: string; data: unknown }> = [];
+    const stream = createChatSseEventHandlers({
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      send: (event, data) => events.push({ data, event }),
+      userId: "user-1",
+    });
+
+    stream.emitToolCall({
+      inputPreview: "Count the marked object",
+      toolCallId: "segment-anything:message-1",
+      toolName: "segment-anything",
+    });
+    stream.emitToolResult({
+      outputPreview: "Segmented 1 object.",
+      status: "completed",
+      toolCallId: "segment-anything:message-1",
+      toolName: "segment-anything",
+    });
+    stream.sendFinal({
+      artifacts: [
+        {
+          id: "segment-anything-message-1",
+          name: "Segment Anything result for cells.png",
+          path: "artifacts/message-1/segment-anything-annotated.png",
+          type: "image",
+        },
+      ],
+      text: "Segmented 1 object.",
+    });
+
+    expect(events.map((event) => event.event)).toEqual([
+      "tool_call",
+      "tool_result",
+      "final",
+      "done",
+    ]);
+    expect(events[0]!.data).toMatchObject({
+      scope: "orchestrator",
+      status: "started",
+      toolCallId: "segment-anything:message-1",
+      toolName: "segment-anything",
+    });
+    expect(events[1]!.data).toMatchObject({
+      outputPreview: "Segmented 1 object.",
+      scope: "orchestrator",
+      status: "completed",
+      toolCallId: "segment-anything:message-1",
+      toolName: "segment-anything",
+    });
+  });
 });
