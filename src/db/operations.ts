@@ -51,7 +51,7 @@ export interface Message {
   response_time?: number;
   source?: string;
   source_selection_id?: SourceSelectionId;
-  files?: Array<{ name: string; size: number; type: string }>;
+  files?: Array<{ fileId?: string; fileKey?: string; name: string; size: number; type: string }>;
   status?: MessageStatus;
 }
 

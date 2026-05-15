@@ -1,4 +1,8 @@
-import type { ChatStreamEnvelope } from "../chat-agent/streaming";
+import type {
+  ChatStreamEnvelope,
+  ChatToolCallStreamData,
+  ChatToolResultStreamData,
+} from "../chat-agent/streaming";
 import type { DataArtifact, ProteinStructure } from "../types/core";
 
 type SendChatSseEvent = (
@@ -19,6 +23,28 @@ export function createChatSseEventHandlers(params: {
   return {
     emitStreamEvent(envelope: ChatStreamEnvelope) {
       send(envelope.event, envelope.data);
+    },
+    emitToolCall(
+      data: Omit<ChatToolCallStreamData, "scope" | "status"> & {
+        scope?: ChatToolCallStreamData["scope"];
+        status?: ChatToolCallStreamData["status"];
+      }
+    ) {
+      send("tool_call", {
+        ...data,
+        scope: data.scope ?? "orchestrator",
+        status: data.status ?? "started",
+      });
+    },
+    emitToolResult(
+      data: Omit<ChatToolResultStreamData, "scope"> & {
+        scope?: ChatToolResultStreamData["scope"];
+      }
+    ) {
+      send("tool_result", {
+        ...data,
+        scope: data.scope ?? "orchestrator",
+      });
     },
     onStreamPause() {
       if (!streamStarted) return;

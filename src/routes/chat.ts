@@ -6,6 +6,7 @@ import {
   createMessageRecord,
   markMessageComplete,
   markMessageFailed,
+  parseUploadedFileReferences,
 } from "../services/chat/tools";
 import {
   parseChatToolId,
@@ -425,12 +426,14 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     // Extract files from parsed body
     const files: File[] = extractFiles(parsedBody.files);
+    const fileReferences = parseUploadedFileReferences(parsedBody.fileReferences);
 
     // Log request details
     logger.info(
       {
         conversationId,
         fileCount: files.length,
+        fileReferenceCount: fileReferences.length,
         message,
         messageLength: message.length,
         routeType: "chat-v2",
@@ -484,6 +487,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Create message record
     const messageResult = await createMessageRecord({
       conversationId,
+      fileReferences,
       files,
       isExternal: false,
       message,
@@ -693,13 +697,34 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 id: conversationStateRecord.id,
                 values: conversationStateRecord.values,
               };
-              const segmentResult = await runSegmentAnythingChatTool({
-                conversationState,
-                message,
-                messageId: createdMessage.id,
-                toolInput,
-                userId,
+              const segmentToolCallId = `segment-anything:${createdMessage.id}`;
+              streamEvents.emitToolCall({
+                inputPreview: message,
+                toolCallId: segmentToolCallId,
+                toolName: "segment-anything",
               });
+
+              let segmentResult: Awaited<ReturnType<typeof runSegmentAnythingChatTool>>;
+              try {
+                segmentResult = await runSegmentAnythingChatTool({
+                  conversationState,
+                  message,
+                  messageId: createdMessage.id,
+                  toolInput,
+                  userId,
+                });
+              } catch (err) {
+                streamEvents.emitToolResult({
+                  outputPreview:
+                    err instanceof SegmentAnythingToolError
+                      ? err.message
+                      : "Segment Anything failed.",
+                  status: "failed",
+                  toolCallId: segmentToolCallId,
+                  toolName: "segment-anything",
+                });
+                throw err;
+              }
               conversationStateRecord.values = conversationState.values;
 
               const responseTime = Date.now() - sseStartTime;
@@ -735,6 +760,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
                 messageId: createdMessage.id,
               });
 
+              streamEvents.emitToolResult({
+                outputPreview: segmentResult.text,
+                status: "completed",
+                toolCallId: segmentToolCallId,
+                toolName: "segment-anything",
+              });
               streamEvents.sendFinal({
                 artifacts: segmentResult.artifacts,
                 text: segmentResult.text,

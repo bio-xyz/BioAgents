@@ -1,6 +1,14 @@
 import { createMessage, updateMessage } from "../../db/operations";
 import type { SourceSelectionId } from "../../types/sourceSelection";
 import logger from "../../utils/logger";
+import { normalizeMessageFileMetadata, type UploadedFileReference } from "./fileMetadata";
+
+export type { MessageFileMetadata, UploadedFileReference } from "./fileMetadata";
+export {
+  isUploadedFileReference,
+  normalizeMessageFileMetadata,
+  parseUploadedFileReferences,
+} from "./fileMetadata";
 
 export interface MessageCreationParams {
   conversationId: string;
@@ -10,6 +18,7 @@ export interface MessageCreationParams {
   sourceSelectionId?: SourceSelectionId;
   stateId: string;
   files: File[];
+  fileReferences?: UploadedFileReference[];
   isExternal?: boolean; // Deprecated, kept for compatibility
 }
 
@@ -21,17 +30,19 @@ export async function createMessageRecord(params: MessageCreationParams): Promis
   message?: Awaited<ReturnType<typeof createMessage>>;
   error?: string;
 }> {
-  const { conversationId, userId, message, source, sourceSelectionId, stateId, files } = params;
+  const {
+    conversationId,
+    userId,
+    message,
+    source,
+    sourceSelectionId,
+    stateId,
+    files,
+    fileReferences,
+  } = params;
 
   try {
-    const fileMetadata =
-      files.length > 0
-        ? files.map((f) => ({
-            name: f.name,
-            size: f.size,
-            type: f.type,
-          }))
-        : undefined;
+    const fileMetadata = normalizeMessageFileMetadata({ fileReferences, files });
 
     const createdMessage = await createMessage({
       content: "",

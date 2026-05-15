@@ -66,6 +66,15 @@ export interface ConfirmUploadResult {
   jobId?: string;
 }
 
+export interface FileDownloadUrlResult {
+  fileId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  url: string;
+  expiresAt: number;
+}
+
 // Maximum file size: 2GB
 const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -506,6 +515,35 @@ export async function getFileStatusForUser(
   }
 
   return status;
+}
+
+export async function getFileDownloadUrlForUser(
+  fileId: string,
+  userId: string
+): Promise<FileDownloadUrlResult | null> {
+  const status = await getFileStatusForUser(fileId, userId);
+  if (!status) return null;
+
+  const storageProvider = getStorageProvider();
+  if (!storageProvider) {
+    throw new Error("Storage provider is not configured");
+  }
+
+  const expiresInSeconds = 3600;
+  const url = await storageProvider.getPresignedUrl(
+    status.s3Key,
+    expiresInSeconds,
+    status.filename
+  );
+
+  return {
+    contentType: status.contentType,
+    expiresAt: Date.now() + expiresInSeconds * 1000,
+    fileId: status.fileId,
+    filename: status.filename,
+    size: status.size,
+    url,
+  };
 }
 
 /**
