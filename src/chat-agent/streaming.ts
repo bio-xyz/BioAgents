@@ -18,7 +18,7 @@ export interface ChatDeltaStreamData {
 }
 
 export interface ChatStreamEndData {
-  reason: "paused" | "complete" | "truncated";
+  reason: "paused" | "complete" | "truncated" | "refusal_fallback";
   turnIndex: number;
 }
 

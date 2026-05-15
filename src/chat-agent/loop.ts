@@ -107,6 +107,20 @@ export async function runAgentLoop(
       };
     }
 
+    // Anthropic Constitutional Classifiers can refuse biology questions.
+    // Return early with wasRefused so the runner can fallback to GPT-5.4.
+    if (response.stop_reason === "refusal") {
+      logger.warn({ contentBlocks: response.content.length, toolCallCount }, "agent_loop_refusal");
+      return {
+        finalText: "",
+        proteinStructures,
+        toolCallCount,
+        totalInputTokens,
+        totalOutputTokens,
+        wasRefused: true,
+      };
+    }
+
     // If no tool calls — we're done
     if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
       finalText = response.content

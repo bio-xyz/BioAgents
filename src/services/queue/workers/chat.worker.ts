@@ -521,6 +521,14 @@ async function processWithAgentLoop(
     uploadedDatasets: conversationState.values.uploadedDatasets,
   });
 
+  // Handle refusal where GPT-5.4 fallback also failed
+  if (result.wasRefused && !result.replyText) {
+    const { UnrecoverableError } = await import("bullmq");
+    throw new UnrecoverableError(
+      "We couldn't process this request. Please try rephrasing your question."
+    );
+  }
+
   // Handle truncation — use UnrecoverableError to skip BullMQ retries
   // (same prompt will hit same token limit, retrying wastes 3 attempts)
   if (!result.replyText || result.hitMaxTokens) {

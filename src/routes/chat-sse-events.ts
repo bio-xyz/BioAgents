@@ -52,6 +52,19 @@ export function createChatSseEventHandlers(params: {
       });
       send("done", { messageId });
     },
+    sendRefusalFallback(text: string) {
+      if (streamStarted) {
+        send("stream_end", {
+          reason: "refusal_fallback",
+          turnIndex,
+        });
+        streamStarted = false;
+      }
+      turnIndex++;
+      send("stream_start", { turnIndex });
+      send("delta", { text, turnIndex });
+      streamStarted = true;
+    },
     sendTruncated(error: string) {
       if (streamStarted) {
         send("stream_end", {

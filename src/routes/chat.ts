@@ -662,6 +662,22 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
               uploadedDatasets: conversationStateRecord.values.uploadedDatasets,
             });
 
+            // === Refusal fallback guard ===
+            if (result.wasRefused && result.replyText) {
+              streamEvents.sendRefusalFallback(result.replyText);
+              // Fall through to persist + done path (preserves durable-write contract)
+            }
+            if (result.wasRefused && !result.replyText) {
+              send("error", {
+                error: "We couldn't process this request. Please try rephrasing your question.",
+                reason: "refusal_fallback",
+              });
+              await markMessageFailed(createdMessage.id);
+              safeClose();
+              logger.warn({ messageId: createdMessage.id }, "chat_sse_refusal_fallback_failed");
+              return;
+            }
+
             // === Truncation guard ===
             // Matches existing non-SSE path at chat.ts:568.
             // Never persist a partial answer as success.
@@ -941,6 +957,17 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       sourceSelectionId: state.values.sourceSelectionId,
       uploadedDatasets: conversationState.values.uploadedDatasets,
     });
+
+    // Handle refusal where fallback also failed (before const capture)
+    if (agentResult.wasRefused && !agentResult.replyText) {
+      logger.warn({ messageId: createdMessage.id }, "chat_inprocess_refusal_fallback_failed");
+      await markMessageFailed(createdMessage.id);
+      set.status = 500;
+      return {
+        error: "We couldn't process this request. Please try rephrasing your question.",
+        ok: false,
+      };
+    }
 
     const replyText = agentResult.replyText;
 

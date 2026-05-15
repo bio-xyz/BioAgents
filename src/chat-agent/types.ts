@@ -81,4 +81,5 @@ export interface AgentLoopResult {
   totalInputTokens: number;
   totalOutputTokens: number;
   hitMaxTokens?: boolean;
+  wasRefused?: boolean;
 }
