@@ -19,12 +19,13 @@
  *   that would otherwise downgrade a successful reply to FAILED.
  */
 
-import { markMessageComplete, markMessageFailed } from "../services/chat/tools";
-import type { ConversationState } from "../types/core";
+import type { Queue } from "bullmq";
+import type { FileStatusRecord } from "../services/files/status";
+import type { WaitForPendingFilesArgs } from "../services/files/waitForPending";
+import type { FileProcessJobData, FileProcessJobResult } from "../services/queue/types";
+import type { ConversationState, ConversationStateValues, ProteinStructure } from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import logger from "../utils/logger";
-import { withNormalChatProteinStructures } from "../utils/proteinStructures";
-import { notifyChatReplyCompleted } from "./chat-notifications";
 import { createChatSseEventHandlers } from "./chat-sse-events";
 
 export interface ChatSseStreamParams {
@@ -39,7 +40,40 @@ export interface ChatSseStreamParams {
   markReplyPersisted: () => void;
 }
 
-export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream {
+/** Hooks injected primarily by tests. Production defaults dynamic-import the
+ *  real implementations to keep Supabase init lazy. */
+export interface ChatSseStreamDeps {
+  markMessageComplete?: (
+    id: string,
+    update: { content: string; response_time: number }
+  ) => Promise<{ updated: boolean }>;
+  markMessageFailed?: (id: string) => Promise<void>;
+  notifyChatReplyCompleted?: (params: {
+    conversationId: string;
+    messageId: string;
+    proteinStructures?: ProteinStructure[];
+  }) => Promise<void>;
+  runChatAgent?: (input: unknown) => Promise<{
+    replyText: string;
+    hitMaxTokens?: boolean;
+    proteinStructures?: ProteinStructure[];
+    toolCallCount?: number;
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+  }>;
+  fileUploadAgent?: (input: unknown) => Promise<unknown>;
+  getPendingFileIds?: (conversationStateId: string) => Promise<string[]>;
+  getFileStatus?: (fileId: string) => Promise<FileStatusRecord | null>;
+  getFileProcessQueue?: () => Queue<FileProcessJobData, FileProcessJobResult> | null;
+  waitForPendingFiles?: (args: WaitForPendingFilesArgs) => Promise<void>;
+  getConversationState?: (id: string) => Promise<{ values: ConversationStateValues } | null>;
+  updateConversationState?: (id: string, values: ConversationStateValues) => Promise<unknown>;
+}
+
+export function buildChatSseStream(
+  params: ChatSseStreamParams,
+  deps: ChatSseStreamDeps = {}
+): ReadableStream {
   const {
     conversationId,
     userId,
@@ -110,14 +144,32 @@ export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream 
         }
       };
 
-      // Dynamic imports preserve TDZ safety in worker-coupled modules
-      // (db/operations eagerly inits the supabase client).
-      const { runChatAgent } = await import("../chat-agent/runner");
-      const { fileUploadAgent } = await import("../agents/fileUpload");
-      const { getPendingFileIds, getFileStatus } = await import("../services/files/status");
-      const { getFileProcessQueue } = await import("../services/queue/queues");
-      const { waitForPendingFiles } = await import("../services/files/waitForPending");
-      const { getConversationState, updateConversationState } = await import("../db/operations");
+      // Dynamic imports here defer Supabase client init until first request;
+      // static imports would eagerly bind it at module load. Each is only
+      // imported when no test stub was provided.
+      const runChatAgent = deps.runChatAgent ?? (await import("../chat-agent/runner")).runChatAgent;
+      const fileUploadAgent =
+        deps.fileUploadAgent ?? (await import("../agents/fileUpload")).fileUploadAgent;
+      const getPendingFileIds =
+        deps.getPendingFileIds ?? (await import("../services/files/status")).getPendingFileIds;
+      const getFileStatus =
+        deps.getFileStatus ?? (await import("../services/files/status")).getFileStatus;
+      const getFileProcessQueue =
+        deps.getFileProcessQueue ?? (await import("../services/queue/queues")).getFileProcessQueue;
+      const waitForPendingFiles =
+        deps.waitForPendingFiles ??
+        (await import("../services/files/waitForPending")).waitForPendingFiles;
+      const getConversationState =
+        deps.getConversationState ?? (await import("../db/operations")).getConversationState;
+      const updateConversationState =
+        deps.updateConversationState ?? (await import("../db/operations")).updateConversationState;
+      const markMessageComplete =
+        deps.markMessageComplete ?? (await import("../services/chat/tools")).markMessageComplete;
+      const markMessageFailed =
+        deps.markMessageFailed ?? (await import("../services/chat/tools")).markMessageFailed;
+      const notifyChatReplyCompleted =
+        deps.notifyChatReplyCompleted ??
+        (await import("./chat-notifications")).notifyChatReplyCompleted;
 
       let replyPersisted = false;
 
@@ -197,15 +249,25 @@ export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream 
           uploadedDatasets: conversationStateRecord.values.uploadedDatasets,
         });
 
-        // Never persist a partial answer as success.
-        if (result.hitMaxTokens) {
+        const { finalizeChatReply } = await import("../services/chat/finalizeReply");
+        const outcome = await finalizeChatReply(
+          {
+            agentResult: result,
+            conversationState: conversationStateRecord,
+            messageId: createdMessage.id,
+            startTime: sseStartTime,
+          },
+          { markMessageComplete, updateConversationState }
+        );
+
+        if (outcome.kind === "truncated") {
           streamEvents.sendTruncated("Response was truncated. Please try a shorter question.");
           await markMessageFailed(createdMessage.id);
           safeClose();
           logger.warn({ messageId: createdMessage.id }, "chat_sse_truncated");
           return;
         }
-        if (!result.replyText) {
+        if (outcome.kind === "empty") {
           send("error", {
             error: "No response generated. Please try again.",
             reason: "empty_reply",
@@ -215,17 +277,7 @@ export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream 
           logger.warn({ messageId: createdMessage.id }, "chat_sse_empty_reply");
           return;
         }
-
-        // Persist to DB BEFORE sending done. Contract: "done" means the
-        // message is durably saved. The PENDING precondition (see
-        // markMessageComplete) means a row already moved to a terminal
-        // state surfaces as `error`.
-        const responseTime = Date.now() - sseStartTime;
-        const { updated } = await markMessageComplete(createdMessage.id, {
-          content: result.replyText,
-          response_time: responseTime,
-        });
-        if (!updated) {
+        if (outcome.kind === "save_skipped") {
           send("error", {
             error: "Response failed to save. Please retry.",
             reason: "agent_error",
@@ -237,36 +289,19 @@ export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream 
           );
           return;
         }
+
         replyPersisted = true;
         markReplyPersisted();
-
-        if (result.proteinStructures?.length && conversationStateRecord.id) {
-          try {
-            const nextValues = withNormalChatProteinStructures(
-              conversationStateRecord.values,
-              createdMessage.id,
-              result.proteinStructures
-            );
-            await updateConversationState(conversationStateRecord.id, nextValues);
-            conversationStateRecord.values = nextValues;
-          } catch (err) {
-            logger.warn(
-              { error: err, messageId: createdMessage.id },
-              "chat_sse_protein_structures_state_persist_failed"
-            );
-          }
-        }
 
         await notifyChatReplyCompleted({
           conversationId,
           messageId: createdMessage.id,
-          proteinStructures: result.proteinStructures,
+          proteinStructures: outcome.proteinStructures,
         });
 
-        // Terminal success signals (only after durable write)
         streamEvents.sendFinal({
-          proteinStructures: result.proteinStructures,
-          text: result.replyText,
+          proteinStructures: outcome.proteinStructures,
+          text: outcome.replyText,
         });
         safeClose();
 
@@ -274,8 +309,8 @@ export function buildChatSseStream(params: ChatSseStreamParams): ReadableStream 
           {
             conversationId,
             messageId: createdMessage.id,
-            replyLength: result.replyText.length,
-            responseTime,
+            replyLength: outcome.replyText.length,
+            responseTime: outcome.responseTime,
             streaming: true,
             toolCallCount: result.toolCallCount,
             totalInputTokens: result.totalInputTokens,

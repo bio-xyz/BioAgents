@@ -17,6 +17,26 @@ export interface FileLifecycleHooks {
 }
 
 /**
+ * Build the in-process onError handler used by `confirmUpload`. Transitions
+ * status to "error" so callers observing getFileStatus see a terminal
+ * failure instead of an indefinitely-pinned "uploaded". Wrapped in a try so
+ * a failing status write only logs — the original processFile error is
+ * still rethrown by the lifecycle.
+ */
+export function buildInProcessFileErrorHandler(
+  fileId: string,
+  updateFileStatus: (id: string, update: { error: string; status: "error" }) => Promise<unknown>
+): (event: FileLifecycleErrorEvent) => Promise<void> {
+  return async ({ errorMessage }) => {
+    try {
+      await updateFileStatus(fileId, { error: errorMessage, status: "error" });
+    } catch (updateError) {
+      logger.error({ fileId, updateError }, "failed_to_update_file_status_on_error");
+    }
+  };
+}
+
+/**
  * Shared file-processing lifecycle. Runs processFile and dispatches the
  * caller's success/error hooks. Used by both the BullMQ file-process worker
  * (queue mode) and the in-process upload-confirm path so they observe the

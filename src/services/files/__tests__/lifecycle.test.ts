@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, jest, mock, test } from "bun:test";
 import logger from "../../../utils/logger";
-import type {
-  FileLifecycleErrorEvent,
-  FileLifecycleHooks,
-  FileLifecycleSuccessEvent,
+import {
+  buildInProcessFileErrorHandler,
+  type FileLifecycleErrorEvent,
+  type FileLifecycleHooks,
+  type FileLifecycleSuccessEvent,
 } from "../lifecycle";
 import type { FileStatusRecord } from "../status";
 
@@ -153,6 +154,64 @@ describe("runFileProcessingLifecycle", () => {
     await expect(runFileProcessingLifecycle(baseStatus, { onError })).rejects.toBe(original);
     expect(
       warnSpy.mock.calls.some(([, msg]) => msg === "file_lifecycle_on_error_hook_failed")
+    ).toBe(true);
+  });
+});
+
+describe("buildInProcessFileErrorHandler", () => {
+  test("transitions status to 'error' with the error message on processFile failure", async () => {
+    const failure = new Error("S3 unreachable");
+    mock.module("../index", () => ({
+      processFile: async () => {
+        throw failure;
+      },
+    }));
+    const { runFileProcessingLifecycle } = await import("../lifecycle");
+
+    const updates: Array<{ id: string; update: { error: string; status: "error" } }> = [];
+    const updateFileStatus = async (
+      id: string,
+      update: { error: string; status: "error" }
+    ): Promise<void> => {
+      updates.push({ id, update });
+    };
+
+    await expect(
+      runFileProcessingLifecycle(baseStatus, {
+        onError: buildInProcessFileErrorHandler(baseStatus.fileId, updateFileStatus),
+      })
+    ).rejects.toBe(failure);
+
+    expect(updates).toEqual([
+      {
+        id: baseStatus.fileId,
+        update: { error: "S3 unreachable", status: "error" },
+      },
+    ]);
+  });
+
+  test("logs and continues if the status update itself fails (does not mask processFile error)", async () => {
+    const failure = new Error("processing failed");
+    mock.module("../index", () => ({
+      processFile: async () => {
+        throw failure;
+      },
+    }));
+    const { runFileProcessingLifecycle } = await import("../lifecycle");
+
+    const errorSpy = jest.spyOn(logger, "error").mockImplementation(() => undefined);
+    const updateFileStatus = async (): Promise<void> => {
+      throw new Error("DB write failed");
+    };
+
+    await expect(
+      runFileProcessingLifecycle(baseStatus, {
+        onError: buildInProcessFileErrorHandler(baseStatus.fileId, updateFileStatus),
+      })
+    ).rejects.toBe(failure);
+
+    expect(
+      errorSpy.mock.calls.some(([, msg]) => msg === "failed_to_update_file_status_on_error")
     ).toBe(true);
   });
 });
