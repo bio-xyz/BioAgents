@@ -10,6 +10,9 @@
 import { createMessage, getMessagesByConversation } from "../../db/operations";
 import type { Message } from "../../types/core";
 import logger from "../logger";
+import { getSessionCompletedTasks } from "./sessionTasks";
+
+export { getSessionCompletedTasks };
 
 export type ConversationHistoryEntry = {
   question?: string;
@@ -92,18 +95,4 @@ export async function createContinuationMessage(
  */
 export function calculateSessionStartLevel(currentLevel: number | undefined): number {
   return currentLevel ?? 0;
-}
-
-/**
- * Get completed tasks from session (last N levels)
- * Used to gather all work done across autonomous continuations for reply
- */
-export function getSessionCompletedTasks<T extends { level?: number; output?: string }>(
-  plan: T[],
-  sessionStartLevel: number,
-  currentLevel: number,
-  maxLevels: number = 2
-): T[] {
-  const minLevel = Math.max(sessionStartLevel, currentLevel - (maxLevels - 1));
-  return plan.filter((t) => (t.level ?? 0) >= minLevel && t.output && t.output.length > 0);
 }

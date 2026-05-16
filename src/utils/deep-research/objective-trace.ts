@@ -4,6 +4,9 @@ import { LLM } from "../../llm/provider";
 import type { LLMProvider as LLMProviderConfig } from "../../llm/types";
 import type { ConversationStateValues, DeepResearchObjectiveTrace } from "../../types/core";
 import logger from "../logger";
+import { normalizeDeepResearchObjective } from "./normalize";
+
+export { normalizeDeepResearchObjective };
 
 export const OBJECTIVE_TRACE_REVEAL_INTERVAL_MS = 60_000;
 
@@ -34,11 +37,6 @@ const FALLBACK_TRACE_STEPS = [
 const ObjectiveTraceSchema = z.object({
   steps: z.array(z.string()),
 });
-
-export function normalizeDeepResearchObjective(objective?: string): string | undefined {
-  const trimmed = objective?.replace(/\s+/g, " ").trim();
-  return trimmed ? trimmed : undefined;
-}
 
 function normalizeRunRootMessageId(runRootMessageId?: string): string | undefined {
   const trimmed = runRootMessageId?.trim();

@@ -2,21 +2,14 @@ import { Elysia } from "elysia";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
-import {
-  createMessageRecord,
-  markMessageComplete,
-  markMessageFailed,
-} from "../services/chat/tools";
+import { createMessageRecord, markMessageFailed } from "../services/chat/tools";
 import type { ConversationState, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
 import { buildMessageStateValues } from "../utils/messageState";
-import { withNormalChatProteinStructures } from "../utils/proteinStructures";
 import { generateUUID } from "../utils/uuid";
-import { notifyChatReplyCompleted } from "./chat-notifications";
-import { createChatSseEventHandlers } from "./chat-sse-events";
 
 const STREAM_HEADERS = {
   "Cache-Control": "no-cache, no-transform",
@@ -469,304 +462,21 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     if (acceptsSSE) {
       logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_sse_mode");
 
-      // Import SSE dependencies at function scope (dynamic for TDZ safety)
-      const { runChatAgent } = await import("../chat-agent/runner");
-      const { fileUploadAgent } = await import("../agents/fileUpload");
-      const { getPendingFileIds, getFileStatus } = await import("../services/files/status");
-      const { getFileProcessQueue } = await import("../services/queue/queues");
-      const { getConversationState, updateConversationState } = await import("../db/operations");
-
-      const encoder = new TextEncoder();
-      const sseStartTime = Date.now();
-      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
-      const stream = new ReadableStream({
-        cancel() {
-          // Client disconnected. Agent loop keeps running via the awaited
-          // runChatAgent call - DB save still happens. send() becomes no-op.
-          // Clear the heartbeat timer to prevent leak.
-          if (heartbeatTimer) {
-            clearInterval(heartbeatTimer);
-            heartbeatTimer = null;
-          }
-          logger.info({ messageId: createdMessage.id }, "chat_sse_client_disconnected");
+      const { buildChatSseStream } = await import("./chat-sse-transport");
+      const stream = buildChatSseStream({
+        conversationId,
+        conversationStateRecord: {
+          id: conversationStateRecord.id,
+          values: conversationStateRecord.values,
         },
-        async start(controller) {
-          // Helper: safe enqueue (swallows errors if client disconnected)
-          const send = (event: string, data: unknown) => {
-            try {
-              controller.enqueue(
-                encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-              );
-            } catch {
-              // Controller closed (client disconnected). Keep running so DB save happens.
-            }
-          };
-          const streamEvents = createChatSseEventHandlers({
-            conversationId,
-            messageId: createdMessage.id,
-            send,
-            userId,
-          });
-
-          // SSE comment frame - ignored by the client parser but keeps the
-          // connection alive through proxies (nginx default idle timeout 60s,
-          // Vercel edge 30s, etc.). Critical for long silent periods:
-          // tool execution (literature_search 30s timeout), file processing
-          // (up to 2 min) can easily exceed proxy idle limits.
-          const sendHeartbeat = () => {
-            try {
-              controller.enqueue(encoder.encode(`: heartbeat ${Date.now()}\n\n`));
-            } catch {
-              // Controller closed
-            }
-          };
-
-          const startHeartbeat = () => {
-            if (heartbeatTimer) return;
-            // 15s interval: well under nginx (60s), Vercel edge (30s), CDN limits
-            heartbeatTimer = setInterval(sendHeartbeat, 15_000);
-          };
-
-          const stopHeartbeat = () => {
-            if (heartbeatTimer) {
-              clearInterval(heartbeatTimer);
-              heartbeatTimer = null;
-            }
-          };
-
-          const safeClose = () => {
-            stopHeartbeat();
-            try {
-              controller.close();
-            } catch {
-              // Already closed
-            }
-          };
-
-          try {
-            // Send init FIRST so client knows the request was accepted and
-            // can render its streaming bubble immediately. Then start heartbeats
-            // to keep proxies alive during the silent file-wait period.
-            send("init", {
-              conversationId,
-              messageId: createdMessage.id,
-            });
-            startHeartbeat();
-
-            // === File handling: TWO paths, handle both ===
-            //
-            // Path A: raw files in FormData (legacy direct upload).
-            // Process synchronously, mutates conversation state with uploadedDatasets.
-            if (files.length > 0) {
-              const conversationStateForFiles: ConversationState = {
-                id: conversationStateRecord.id,
-                values: conversationStateRecord.values,
-              };
-              await fileUploadAgent({
-                conversationState: conversationStateForFiles,
-                files,
-                userId,
-              });
-              conversationStateRecord.values = conversationStateForFiles.values;
-            }
-
-            // Path B: presigned S3 upload flow (usePresignedUpload.ts).
-            // Files uploaded directly to S3 BEFORE this request, processed
-            // async by file-process worker. Port the exact wait logic from
-            // chat.worker.ts:95-174 so SSE doesn't race with file processing.
-            // Without this, the agent runs before uploaded datasets are ready.
-            if (conversationStateRecord.id) {
-              const pendingFileIds = await getPendingFileIds(conversationStateRecord.id);
-              if (pendingFileIds.length > 0) {
-                logger.info(
-                  { messageId: createdMessage.id, pendingFileIds },
-                  "chat_sse_waiting_for_file_processing"
-                );
-                // CRITICAL: getFileProcessQueue() returns null when
-                // USE_JOB_QUEUE=false (queues.ts:120). Must null-guard before
-                // calling .getJob() or we null-deref in in-process mode.
-                const fileProcessQueue = getFileProcessQueue();
-                const maxWaitMs = 120_000; // 2 min cap, matches worker
-                const pollIntervalMs = 500;
-                const startWait = Date.now();
-
-                for (const fileId of pendingFileIds) {
-                  while (Date.now() - startWait < maxWaitMs) {
-                    // Prefer file status check (always available, DB-backed).
-                    // Queue job state only consulted when the queue exists.
-                    const fileStatus = await getFileStatus(fileId);
-                    if (fileStatus?.status === "ready") break;
-                    if (fileStatus?.status === "error") {
-                      logger.warn(
-                        { fileId, messageId: createdMessage.id },
-                        "chat_sse_file_failed_continuing"
-                      );
-                      break;
-                    }
-
-                    // Secondary signal from BullMQ job state when queue exists
-                    if (fileProcessQueue) {
-                      const fileJob = await fileProcessQueue.getJob(fileId);
-                      const fileJobState = fileJob ? await fileJob.getState() : null;
-                      if (fileJobState === "completed" || !fileJob) break;
-                      if (fileJobState === "failed") {
-                        logger.warn(
-                          { fileId, messageId: createdMessage.id },
-                          "chat_sse_file_job_failed_continuing"
-                        );
-                        break;
-                      }
-                    }
-
-                    await new Promise((r) => setTimeout(r, pollIntervalMs));
-                  }
-                }
-
-                // Refresh conversation state to pick up uploadedDatasets
-                const fresh = await getConversationState(conversationStateRecord.id);
-                if (fresh) {
-                  conversationStateRecord.values = fresh.values;
-                }
-              }
-            }
-
-            const result = await runChatAgent({
-              conversationId,
-              loadHistory: true,
-              message,
-              onStreamEvent: (envelope) => streamEvents.emitStreamEvent(envelope),
-              onStreamPause: async () => streamEvents.onStreamPause(),
-              onTextDelta: (delta) => streamEvents.onTextDelta(delta),
-              onToolResult: async (info) => {
-                // Mirror existing in-process path: update conversation state
-                if (!conversationStateRecord.id) return;
-                try {
-                  await updateConversationState(conversationStateRecord.id, {
-                    ...conversationStateRecord.values,
-                    agentProgress: {
-                      isError: info.result.isError ?? false,
-                      lastToolCallId: info.toolCallId,
-                      stage: `tool:${info.toolName}`,
-                      toolCallCount: info.toolCallCount,
-                    },
-                  });
-                } catch (err) {
-                  logger.warn(
-                    { error: err, toolName: info.toolName },
-                    "conversation_state_update_failed"
-                  );
-                }
-              },
-              sourceSelectionId,
-              uploadedDatasets: conversationStateRecord.values.uploadedDatasets,
-            });
-
-            // === Truncation guard ===
-            // Matches existing non-SSE path at chat.ts:568.
-            // Never persist a partial answer as success.
-            if (result.hitMaxTokens) {
-              streamEvents.sendTruncated("Response was truncated. Please try a shorter question.");
-              await markMessageFailed(createdMessage.id);
-              safeClose();
-              logger.warn({ messageId: createdMessage.id }, "chat_sse_truncated");
-              return;
-            }
-            if (!result.replyText) {
-              send("error", {
-                error: "No response generated. Please try again.",
-                reason: "empty_reply",
-              });
-              await markMessageFailed(createdMessage.id);
-              safeClose();
-              logger.warn({ messageId: createdMessage.id }, "chat_sse_empty_reply");
-              return;
-            }
-
-            // === Persist to DB BEFORE sending done ===
-            // Contract: "done" means the message is durably saved. The
-            // PENDING precondition (see markMessageComplete) means a row
-            // already moved to a terminal state surfaces as `error`.
-            const responseTime = Date.now() - sseStartTime;
-            const { updated } = await markMessageComplete(createdMessage.id, {
-              content: result.replyText,
-              response_time: responseTime,
-            });
-            if (!updated) {
-              send("error", {
-                error: "Response failed to save. Please retry.",
-                reason: "agent_error",
-              });
-              safeClose();
-              logger.warn(
-                { messageId: createdMessage.id },
-                "chat_sse_complete_skipped_row_not_pending"
-              );
-              return;
-            }
-            replyPersisted = true;
-
-            if (result.proteinStructures?.length && conversationStateRecord.id) {
-              try {
-                const nextValues = withNormalChatProteinStructures(
-                  conversationStateRecord.values,
-                  createdMessage.id,
-                  result.proteinStructures
-                );
-                await updateConversationState(conversationStateRecord.id, nextValues);
-                conversationStateRecord.values = nextValues;
-              } catch (err) {
-                logger.warn(
-                  { error: err, messageId: createdMessage.id },
-                  "chat_sse_protein_structures_state_persist_failed"
-                );
-              }
-            }
-
-            await notifyChatReplyCompleted({
-              conversationId,
-              messageId: createdMessage.id,
-              proteinStructures: result.proteinStructures,
-            });
-
-            // === Terminal success signals (only after durable write) ===
-            streamEvents.sendFinal({
-              proteinStructures: result.proteinStructures,
-              text: result.replyText,
-            });
-            safeClose();
-
-            logger.info(
-              {
-                conversationId,
-                messageId: createdMessage.id,
-                replyLength: result.replyText.length,
-                responseTime,
-                streaming: true,
-                toolCallCount: result.toolCallCount,
-                totalInputTokens: result.totalInputTokens,
-                totalOutputTokens: result.totalOutputTokens,
-              },
-              "chat_sse_completed"
-            );
-          } catch (err) {
-            logger.error({ error: err, messageId: createdMessage.id }, "chat_sse_error");
-            // Generic client-facing message -- raw err.message can leak
-            // internal detail (Anthropic SDK errors, DB errors, etc.). Full
-            // error is already captured in the logger.error above.
-            send("error", {
-              error: "Something went wrong while generating the response. Please try again.",
-              reason: "agent_error",
-            });
-            // Only mark FAILED if the reply hasn't already been durably saved.
-            // A post-save throw (e.g. logger / safeClose / response-time write)
-            // must not downgrade a successful reply to FAILED.
-            if (!replyPersisted) {
-              await markMessageFailed(createdMessage.id);
-            }
-            safeClose();
-          }
+        createdMessage,
+        files,
+        markReplyPersisted: () => {
+          replyPersisted = true;
         },
+        message,
+        sourceSelectionId,
+        userId,
       });
 
       return new Response(stream, {
@@ -781,8 +491,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     const { isJobQueueEnabled } = await import("../services/queue/connection");
 
     if (isJobQueueEnabled()) {
-      // QUEUE MODE: Enqueue job and return immediately
-      // Worker runs agent loop (CHAT_AGENT_QUEUE_ENABLED=true) or legacy pipeline (default).
+      // QUEUE MODE: Enqueue job and return immediately. Worker runs the
+      // shared chat-agent loop — same executor as the in-process path below.
       logger.info({ conversationId, messageId: createdMessage.id }, "chat_using_queue_mode");
 
       // Process files synchronously before enqueuing (files can't be serialized)
@@ -942,11 +652,31 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       uploadedDatasets: conversationState.values.uploadedDatasets,
     });
 
-    const replyText = agentResult.replyText;
+    logger.info(
+      {
+        conversationId,
+        messageId: createdMessage.id,
+        replyLength: agentResult.replyText?.length || 0,
+        toolCallCount: agentResult.toolCallCount,
+        totalInputTokens: agentResult.totalInputTokens,
+        totalOutputTokens: agentResult.totalOutputTokens,
+      },
+      "agent_loop_completed"
+    );
 
-    // Handle empty response from max_tokens truncation
-    if (!replyText || agentResult.hitMaxTokens) {
-      logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
+    const { finalizeChatReply } = await import("../services/chat/finalizeReply");
+    const outcome = await finalizeChatReply({
+      agentResult,
+      conversationState,
+      messageId: createdMessage.id,
+      startTime,
+    });
+
+    if (outcome.kind === "truncated" || outcome.kind === "empty") {
+      logger.error(
+        { messageId: createdMessage.id, outcome: outcome.kind },
+        "agent_loop_empty_max_tokens"
+      );
       await markMessageFailed(createdMessage.id);
       set.status = 500;
       return {
@@ -955,36 +685,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       };
     }
 
-    logger.info(
-      {
-        conversationId,
-        messageId: createdMessage.id,
-        replyLength: replyText.length,
-        toolCallCount: agentResult.toolCallCount,
-        totalInputTokens: agentResult.totalInputTokens,
-        totalOutputTokens: agentResult.totalOutputTokens,
-      },
-      "agent_loop_completed"
-    );
-
-    const response: ChatV2Response = {
-      conversationId,
-      messageId: createdMessage.id,
-      proteinStructures: agentResult.proteinStructures,
-      text: replyText,
-      userId,
-    };
-
-    // Calculate response time
-    const responseTime = Date.now() - startTime;
-
-    // Save the response to the message's content field. Guarded so a
-    // sweeper-flipped FAILED row isn't silently overwritten with COMPLETE.
-    const { updated } = await markMessageComplete(createdMessage.id, {
-      content: replyText,
-      response_time: responseTime,
-    });
-    if (!updated) {
+    if (outcome.kind === "save_skipped") {
       logger.warn(
         { messageId: createdMessage.id },
         "chat_in_process_complete_skipped_row_not_pending"
@@ -995,38 +696,20 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         ok: false,
       };
     }
+
     replyPersisted = true;
-
-    if (agentResult.proteinStructures?.length && conversationState.id) {
-      try {
-        const { updateConversationState } = await import("../db/operations");
-        const nextValues = withNormalChatProteinStructures(
-          conversationState.values,
-          createdMessage.id,
-          agentResult.proteinStructures
-        );
-        await updateConversationState(conversationState.id, nextValues);
-        conversationState.values = nextValues;
-      } catch (err) {
-        logger.warn(
-          { error: err, messageId: createdMessage.id },
-          "chat_in_process_protein_structures_state_persist_failed"
-        );
-      }
-    }
+    const responseTime = outcome.responseTime;
+    const response: ChatV2Response = {
+      conversationId,
+      messageId: createdMessage.id,
+      proteinStructures: outcome.proteinStructures,
+      text: outcome.replyText,
+      userId,
+    };
 
     logger.info(
-      { contentLength: replyText.length, messageId: createdMessage.id },
+      { contentLength: outcome.replyText.length, messageId: createdMessage.id },
       "message_content_saved"
-    );
-
-    logger.info(
-      {
-        messageId: createdMessage.id,
-        responseTime,
-        responseTimeSec: (responseTime / 1000).toFixed(2),
-      },
-      "response_time_recorded"
     );
 
     logger.info(
