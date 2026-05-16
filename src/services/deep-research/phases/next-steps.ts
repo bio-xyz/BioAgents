@@ -1,13 +1,5 @@
-/**
- * Next-steps phase: plan the NEXT iteration (planningAgent in "next" mode).
- *
- * Clears any previous suggestions, marks the next_steps activity, runs the
- * planning agent in "next" mode, and stores the returned tasks as
- * conversationState.values.suggestedNextSteps. If the agent returns no
- * tasks, the orchestrator interprets that as "research complete" — the
- * outer loop reads `hasSuggestions === false` and exits.
- */
-
+// Empty plan from the agent => research complete (outer loop exits on
+// hasSuggestions === false).
 import type {
   ConversationState,
   ConversationStateValues,
@@ -45,7 +37,7 @@ export interface NextStepsPhaseDeps {
     mode: "initial" | "next";
     researchMode: "semi-autonomous" | "fully-autonomous" | "steering";
     usageType: "deep-research" | "chat" | "paper-generation";
-  }) => Promise<{ currentObjective: string; plan: PlanTask[] }>;
+  }) => Promise<{ currentObjective: string; plan: PlanTask[]; extractionFailed?: boolean }>;
 }
 
 export interface NextStepsPhaseResult {
@@ -82,6 +74,18 @@ export async function runNextStepsPhase(
     state: input.state,
     usageType: "deep-research",
   });
+
+  // A garbled LLM response triggers the planner's strategy-5 fallback, which
+  // would otherwise fabricate a continuation from the root question. In "next"
+  // mode, prefer to stop and surface the failure rather than burn credits on
+  // a hallucinated objective.
+  if (result.extractionFailed) {
+    logger.error(
+      { messageId: input.message.id },
+      "next_planning_extraction_failed_treating_as_terminal"
+    );
+    return { hasSuggestions: false, suggestedNextSteps: [] };
+  }
 
   if (result.plan.length === 0) {
     logger.info("no_next_iteration_tasks_suggested_research_complete_or_awaiting_feedback");

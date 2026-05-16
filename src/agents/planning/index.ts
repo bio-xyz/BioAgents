@@ -49,6 +49,9 @@ function resolveDatasetPaths(newTasks: PlanTask[], existingPlan: PlanTask[]): Pl
 export type PlanningResult = {
   currentObjective: string;
   plan: Array<PlanTask>;
+  /** True when every JSON-extract strategy failed and the planner returned a
+   *  synthetic fallback. Callers in "next" mode treat this as terminal. */
+  extractionFailed?: boolean;
 };
 
 export type PlanningMode = "initial" | "next";

@@ -104,10 +104,19 @@ async function processDeepResearchJob(
   };
 
   const assertNotCancelled = async () => {
-    const values =
-      getConversationStateRef && conversationStateId
-        ? (await getConversationStateRef(conversationStateId))?.values
-        : conversationState?.values;
+    let values: Partial<ConversationStateValues> | undefined;
+    if (getConversationStateRef && conversationStateId) {
+      const fresh = await getConversationStateRef(conversationStateId);
+      if (!fresh) {
+        logger.warn(
+          { conversationStateId, rootMessageId },
+          "cancellation_check_state_read_returned_null"
+        );
+      }
+      values = fresh?.values ?? conversationState?.values;
+    } else {
+      values = conversationState?.values;
+    }
     throwIfDeepResearchCancelled(values, { rootMessageId, stateId });
   };
 
@@ -356,16 +365,15 @@ async function processDeepResearchJob(
       );
     }
 
-    // Planning (shared phase). Worker uses isInitialIteration; the phase
-    // takes the inverse skipPlanning. Worker explicitly notifies after to
-    // mirror the existing pub/sub cadence (route doesn't because its
-    // persistConversationActivity has already fired for this iteration).
+    // Worker notifies after planning because, unlike the route, it doesn't
+    // call persistConversationActivity before this phase.
     const { runPlanningPhase } = await import("../../deep-research/phases/planning");
     const planning = await runPlanningPhase(
       {
         conversationState,
         currentMessage: messageRecord,
-        iterationCount: isInitialIteration ? 1 : 2,
+        isInitialIteration,
+        iterationCount: iterationNumber,
         researchMode,
         rootMessage: messageRecord,
         skipPlanning: !isInitialIteration,
@@ -387,7 +395,6 @@ async function processDeepResearchJob(
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "literature", 20);
 
-    // Step 2: Execute tasks (shared phase)
     tasksToExecute = (conversationState.values.plan || []).filter(
       (t) => t.level === newLevel && !t.end // Skip already-completed tasks (for retry safety)
     );
@@ -466,7 +473,6 @@ async function processDeepResearchJob(
       phase: "reflection",
     });
 
-    // Step 3: Generate hypothesis (shared phase)
     const { runHypothesisPhase } = await import("../../deep-research/phases/hypothesis");
     hypothesisResult = await runHypothesisPhase(
       {
@@ -485,7 +491,6 @@ async function processDeepResearchJob(
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reflection", 85);
 
-    // Step 4: Reflection + discovery (shared phase)
     const { runReflectionDiscoveryPhase } = await import(
       "../../deep-research/phases/reflection-discovery"
     );
@@ -503,7 +508,6 @@ async function processDeepResearchJob(
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
-    // Step 5: Plan next iteration (shared phase)
     const { runNextStepsPhase } = await import("../../deep-research/phases/next-steps");
     const nextStepsResult = await runNextStepsPhase(
       {
@@ -524,7 +528,6 @@ async function processDeepResearchJob(
 
     const shouldContinue = nextStepsResult.hasSuggestions;
 
-    // Continue-research decision (shared phase)
     const { runContinueDecisionPhase } = await import(
       "../../deep-research/phases/continue-decision"
     );
@@ -543,13 +546,9 @@ async function processDeepResearchJob(
     );
     const { isFinal, willContinue } = continueDecision;
 
-    // =========================================================================
-    // GENERATE REPLY FOR THIS ITERATION
-    // =========================================================================
     await job.updateProgress({ percent: 95, stage: "reply" } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
 
-    // Reply (shared phase)
     const { markMessageComplete } = await import("../../chat/tools");
     const { runReplyPhase } = await import("../../deep-research/phases/reply");
     await runReplyPhase(

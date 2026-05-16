@@ -28,6 +28,7 @@ describe("runPlanningPhase", () => {
       {
         conversationState,
         currentMessage: makeMessage(),
+        isInitialIteration: false,
         iterationCount: 2,
         researchMode: "semi-autonomous",
         rootMessage: makeMessage(),
@@ -74,6 +75,7 @@ describe("runPlanningPhase", () => {
       {
         conversationState,
         currentMessage: makeMessage(),
+        isInitialIteration: true,
         iterationCount: 1,
         researchMode: "semi-autonomous",
         rootMessage: makeMessage(),
@@ -117,6 +119,7 @@ describe("runPlanningPhase", () => {
       {
         conversationState,
         currentMessage: makeMessage(),
+        isInitialIteration: true,
         iterationCount: 1,
         researchMode: "semi-autonomous",
         rootMessage: makeMessage("root q"),
@@ -153,6 +156,7 @@ describe("runPlanningPhase", () => {
             values: { objective: "x" } as ConversationState["values"],
           },
           currentMessage: makeMessage(),
+          isInitialIteration: true,
           iterationCount: 1,
           researchMode: "semi-autonomous",
           rootMessage: makeMessage(),

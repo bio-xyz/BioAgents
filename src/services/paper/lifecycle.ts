@@ -82,8 +82,14 @@ export async function runPaperGenerationLifecycle(
   const { getServiceClient } = await import("../../db/client");
   const supabase = getServiceClient();
 
-  // pending -> processing
-  await supabase.from("paper").update({ status: "processing" }).eq("id", paperId);
+  const { error: processingErr } = await supabase
+    .from("paper")
+    .update({ status: "processing" })
+    .eq("id", paperId);
+  if (processingErr) {
+    logger.error({ error: processingErr, paperId }, "paper_lifecycle_pending_to_processing_failed");
+    throw processingErr;
+  }
 
   try {
     const result = await generatePaperFromConversation(
@@ -92,7 +98,16 @@ export async function runPaperGenerationLifecycle(
       paperId,
       async (stage) => {
         const percent = PAPER_STAGE_PROGRESS[stage] ?? 0;
-        await supabase.from("paper").update({ progress: { percent, stage } }).eq("id", paperId);
+        const { error: progressErr } = await supabase
+          .from("paper")
+          .update({ progress: { percent, stage } })
+          .eq("id", paperId);
+        if (progressErr) {
+          logger.warn(
+            { error: progressErr, paperId, stage },
+            "paper_lifecycle_progress_update_failed"
+          );
+        }
         if (hooks?.onProgress) {
           try {
             await hooks.onProgress({ conversationId, paperId, percent, stage });
@@ -103,7 +118,7 @@ export async function runPaperGenerationLifecycle(
       }
     );
 
-    await supabase
+    const { error: completedErr } = await supabase
       .from("paper")
       .update({
         pdf_path: result.pdfPath,
@@ -111,6 +126,10 @@ export async function runPaperGenerationLifecycle(
         status: "completed",
       })
       .eq("id", paperId);
+    if (completedErr) {
+      logger.error({ error: completedErr, paperId }, "paper_lifecycle_completed_update_failed");
+      throw completedErr;
+    }
 
     const responseTime = Date.now() - startTime;
     const successEvent: PaperLifecycleSuccessEvent = {
@@ -132,13 +151,15 @@ export async function runPaperGenerationLifecycle(
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
 
-    try {
-      await supabase
-        .from("paper")
-        .update({ error: errorMessage, status: "failed" })
-        .eq("id", paperId);
-    } catch (updateErr) {
-      logger.error({ paperId, updateErr }, "paper_lifecycle_failed_status_update_failed");
+    const { error: failedErr } = await supabase
+      .from("paper")
+      .update({ error: errorMessage, status: "failed" })
+      .eq("id", paperId);
+    if (failedErr) {
+      logger.error(
+        { error: failedErr, originalError: errorMessage, paperId },
+        "paper_lifecycle_failed_update_failed"
+      );
     }
 
     if (hooks?.onError) {

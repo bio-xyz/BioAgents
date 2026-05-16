@@ -1,12 +1,3 @@
-/**
- * Reply phase: generate the user-facing reply for this iteration.
- *
- * Marks the 'reply' activity, calls replyAgent with the session's completed
- * tasks (last 3 levels of plan), persists the reply via markMessageComplete,
- * writes finalResponse to conversation state on final iterations, and
- * notifies the client that the message is ready.
- */
-
 import type { ConversationState, Message, PlanTask, State } from "../../../types/core";
 import logger from "../../../utils/logger";
 
@@ -69,15 +60,11 @@ export async function runReplyPhase(
     phase: "reply",
   });
 
-  // Cap the reply context so continuation iterations don't overwhelm the
-  // LLM with all prior work. Inlined to keep the phase module independent
-  // of utils/deep-research/continuation-utils (whose static db/operations
-  // import would eagerly init Supabase during tests).
-  const MAX_LEVELS = 2;
-  const minLevel = Math.max(input.sessionStartLevel, input.newLevel - (MAX_LEVELS - 1));
-  const plan = input.conversationState.values.plan || [];
-  const sessionCompletedTasks = plan.filter(
-    (t) => (t.level ?? 0) >= minLevel && t.output && t.output.length > 0
+  const { getSessionCompletedTasks } = await import("../../../utils/deep-research/sessionTasks");
+  const sessionCompletedTasks = getSessionCompletedTasks(
+    input.conversationState.values.plan || [],
+    input.sessionStartLevel,
+    input.newLevel
   );
 
   logger.info(

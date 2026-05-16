@@ -920,6 +920,12 @@ async function runDeepResearch(params: {
 
     const assertNotCancelled = async () => {
       const latest = conversationState.id ? await getConversationState(conversationState.id) : null;
+      if (conversationState.id && !latest) {
+        logger.warn(
+          { conversationStateId: conversationState.id, rootMessageId },
+          "cancellation_check_state_read_returned_null"
+        );
+      }
       throwIfDeepResearchCancelled(latest?.values || conversationState.values, {
         rootMessageId,
         stateId: stateRecord.id,
@@ -1105,11 +1111,11 @@ async function runDeepResearch(params: {
         );
       }
 
-      // Planning (shared phase) — 3 paths: continuation / clarification / initial.
       const planning = await runPlanningPhase(
         {
           conversationState,
           currentMessage,
+          isInitialIteration: iterationCount === 1,
           iterationCount,
           researchMode,
           rootMessage: createdMessage,
@@ -1146,8 +1152,6 @@ async function runDeepResearch(params: {
         return p;
       };
 
-      // Execution (shared phase) — fans out literature + analysis tasks
-      // through the serialized write chain.
       await runExecutionPhase(
         {
           conversationState,
@@ -1169,15 +1173,12 @@ async function runDeepResearch(params: {
         }
       );
 
-      // Inline fan-out was migrated to runExecutionPhase above.
-
       await persistConversationActivity({
         level: newLevel,
         objective: currentObjective || conversationState.values.currentObjective,
         phase: "reflection",
       });
 
-      // Step 3: Generate/update hypothesis based on completed tasks
       hypothesisResult = await runHypothesisPhase(
         {
           completedTasks: tasksToExecute, // All tasks from current level
@@ -1188,7 +1189,6 @@ async function runDeepResearch(params: {
         { assertNotCancelled, persistConversationState }
       );
 
-      // Step 4: Run reflection + discovery (shared phase)
       await runReflectionDiscoveryPhase(
         {
           completedTasks: tasksToExecute,
@@ -1199,11 +1199,9 @@ async function runDeepResearch(params: {
         { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
       );
 
-      // Step 5: Run planning agent in "next" mode to plan next iteration
       await assertNotCancelled();
       logger.info("running_next_planning_for_future_iteration");
 
-      // Step 5: Plan next iteration (shared phase)
       const nextStepsResult = await runNextStepsPhase(
         {
           conversationState,
@@ -1225,7 +1223,6 @@ async function runDeepResearch(params: {
         shouldContinueLoop = false;
       }
 
-      // Continue-research decision (shared phase)
       const continueDecision = await runContinueDecisionPhase(
         {
           completedTasks: tasksToExecute,
@@ -1242,7 +1239,6 @@ async function runDeepResearch(params: {
       const { isFinal, willContinue } = continueDecision;
       shouldContinueLoop = continueDecision.shouldContinueLoop;
 
-      // Reply (shared phase)
       logger.info(
         { isFinal, iterationCount, messageId: currentMessage.id },
         "generating_reply_for_iteration"
@@ -1289,7 +1285,6 @@ async function runDeepResearch(params: {
         );
       }
 
-      // Prepare next iteration (shared phase) — only when continuing
       if (willContinue) {
         skipPlanning = true; // Next iteration uses promoted tasks
         logger.info({ iterationCount }, "auto_continuing_to_next_iteration");

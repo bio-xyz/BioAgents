@@ -12,12 +12,8 @@
  *     task's output.
  *   - ANALYSIS: calls analysisAgent and captures output + artifacts + jobId,
  *     with a try/catch that writes "Analysis failed: <err>" to the task on
- *     failure so the rest of the iteration can continue.
- *
- * Shared between route + worker. Each transport supplies its own
- * notifyStateUpdated callback and (for the worker) an optional
- * onAnalysisStarted hook so it can emit BullMQ progress before the analysis
- * agent runs.
+ *     failure so the rest of the iteration can continue (DeepResearchCancelledError
+ *     is re-thrown so cancellation halts the iteration).
  */
 
 import type {
@@ -27,8 +23,10 @@ import type {
   ProteinStructure,
 } from "../../../types/core";
 
+import { normalizeDeepResearchObjective } from "../../../utils/deep-research/normalize";
 import logger from "../../../utils/logger";
 import { mergeProteinStructures } from "../../../utils/proteinStructures";
+import { DeepResearchCancelledError } from "../cancellation";
 
 type LiteratureType = "OPENSCHOLAR" | "KNOWLEDGE" | "EDISON" | "BIOLIT" | "BIOLITDEEP";
 
@@ -121,7 +119,7 @@ export async function runExecutionPhase(
     values.currentActivity = {
       label: ACTIVITY_LABELS[params.phase],
       level: params.level,
-      objective: params.objective,
+      objective: normalizeDeepResearchObjective(params.objective),
       phase: params.phase,
       taskType: params.taskType,
       updatedAt: new Date().toISOString(),
@@ -172,9 +170,6 @@ export async function runExecutionPhase(
             async (result) => {
               if (result.count && result.count > 0) {
                 task.output += `${result.output}\n\n`;
-              } else if (!result.count) {
-                // Worker variant doesn't filter by count; preserve via append.
-                task.output += `${result.output}\n\n`;
               }
               if (conversationState.id) {
                 await deps.writeStateSerialized();
@@ -223,8 +218,6 @@ export async function runExecutionPhase(
         literaturePromises.push(
           literatureAgent({ objective: task.objective, type: "KNOWLEDGE" }).then(async (result) => {
             if (result.count && result.count > 0) {
-              task.output += `${result.output}\n\n`;
-            } else if (!result.count) {
               task.output += `${result.output}\n\n`;
             }
             if (conversationState.id) {
@@ -289,6 +282,9 @@ export async function runExecutionPhase(
           await deps.writeStateSerialized();
         }
       } catch (error) {
+        if (error instanceof DeepResearchCancelledError) {
+          throw error;
+        }
         const errorMsg =
           error instanceof Error
             ? error.message

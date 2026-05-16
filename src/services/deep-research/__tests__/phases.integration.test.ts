@@ -121,6 +121,7 @@ describeIfSupabase("[integration] deep-research phases end-to-end", () => {
       {
         conversationState,
         currentMessage: message,
+        isInitialIteration: true,
         iterationCount: 1,
         researchMode: "steering",
         rootMessage: message,

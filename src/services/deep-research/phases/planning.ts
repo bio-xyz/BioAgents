@@ -8,10 +8,6 @@
  * 2. Clarification (iteration 1 + clarificationContext.initialTasks): use
  *    pre-approved tasks from the clarification flow, skip the LLM.
  * 3. Default: call planningAgent(mode='initial') to generate tasks.
- *
- * Shared between the route and the worker. Each caller injects its own
- * cancellation checker, persist callback, and (in the worker case) a guard
- * against the clarification path running on continuation jobs.
  */
 
 import type {
@@ -34,6 +30,9 @@ export interface PlanningPhaseInput {
   rootMessage: Message;
   researchMode: "semi-autonomous" | "fully-autonomous" | "steering";
   iterationCount: number;
+  /** True only on the very first iteration of a fresh run. Gates the
+   *  clarification path. */
+  isInitialIteration: boolean;
   /** When true, the previous iteration promoted tasks via continuation-prep. */
   skipPlanning: boolean;
 }
@@ -52,7 +51,7 @@ export interface PlanningPhaseDeps {
     mode: "initial" | "next";
     researchMode: "semi-autonomous" | "fully-autonomous" | "steering";
     usageType: "deep-research" | "chat" | "paper-generation";
-  }) => Promise<{ currentObjective: string; plan: PlanTask[] }>;
+  }) => Promise<{ currentObjective: string; plan: PlanTask[]; extractionFailed?: boolean }>;
 }
 
 export interface PlanningPhaseResult {
@@ -77,7 +76,7 @@ export async function runPlanningPhase(
 
   // Path 2: clarification tasks — only valid on the very first iteration.
   const clarCtx = input.conversationState.values.clarificationContext;
-  if (input.iterationCount === 1 && clarCtx?.initialTasks?.length) {
+  if (input.isInitialIteration && clarCtx?.initialTasks?.length) {
     return runClarificationPath(input, deps, clarCtx);
   }
 

@@ -5,6 +5,10 @@ import logger from "./logger";
 export type PlanningResult = {
   currentObjective: string;
   plan: Array<PlanTask>;
+  /** True when every parse strategy failed and the result is a synthetic
+   *  fallback. Callers in "next" mode treat this as terminal so the
+   *  conversation doesn't fabricate a continuation. */
+  extractionFailed?: boolean;
 };
 
 function normalizeSources(value: unknown): SourceSelectionId[] | undefined {
@@ -76,6 +80,7 @@ export function extractPlanningResult(
   method = "default";
   const defaultResult: PlanningResult = {
     currentObjective: fallbackObjective || "Continue research based on user query",
+    extractionFailed: true,
     plan: fallbackObjective
       ? [
           {
