@@ -2,18 +2,13 @@ import { Elysia } from "elysia";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
-import {
-  createMessageRecord,
-  markMessageComplete,
-  markMessageFailed,
-} from "../services/chat/tools";
+import { createMessageRecord, markMessageFailed } from "../services/chat/tools";
 import type { ConversationState, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
 import { buildMessageStateValues } from "../utils/messageState";
-import { withNormalChatProteinStructures } from "../utils/proteinStructures";
 import { generateUUID } from "../utils/uuid";
 
 const STREAM_HEADERS = {
@@ -657,11 +652,31 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       uploadedDatasets: conversationState.values.uploadedDatasets,
     });
 
-    const replyText = agentResult.replyText;
+    logger.info(
+      {
+        conversationId,
+        messageId: createdMessage.id,
+        replyLength: agentResult.replyText?.length || 0,
+        toolCallCount: agentResult.toolCallCount,
+        totalInputTokens: agentResult.totalInputTokens,
+        totalOutputTokens: agentResult.totalOutputTokens,
+      },
+      "agent_loop_completed"
+    );
 
-    // Handle empty response from max_tokens truncation
-    if (!replyText || agentResult.hitMaxTokens) {
-      logger.error({ messageId: createdMessage.id }, "agent_loop_empty_max_tokens");
+    const { finalizeChatReply } = await import("../services/chat/finalizeReply");
+    const outcome = await finalizeChatReply({
+      agentResult,
+      conversationState,
+      messageId: createdMessage.id,
+      startTime,
+    });
+
+    if (outcome.kind === "truncated" || outcome.kind === "empty") {
+      logger.error(
+        { messageId: createdMessage.id, outcome: outcome.kind },
+        "agent_loop_empty_max_tokens"
+      );
       await markMessageFailed(createdMessage.id);
       set.status = 500;
       return {
@@ -670,36 +685,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       };
     }
 
-    logger.info(
-      {
-        conversationId,
-        messageId: createdMessage.id,
-        replyLength: replyText.length,
-        toolCallCount: agentResult.toolCallCount,
-        totalInputTokens: agentResult.totalInputTokens,
-        totalOutputTokens: agentResult.totalOutputTokens,
-      },
-      "agent_loop_completed"
-    );
-
-    const response: ChatV2Response = {
-      conversationId,
-      messageId: createdMessage.id,
-      proteinStructures: agentResult.proteinStructures,
-      text: replyText,
-      userId,
-    };
-
-    // Calculate response time
-    const responseTime = Date.now() - startTime;
-
-    // Save the response to the message's content field. Guarded so a
-    // sweeper-flipped FAILED row isn't silently overwritten with COMPLETE.
-    const { updated } = await markMessageComplete(createdMessage.id, {
-      content: replyText,
-      response_time: responseTime,
-    });
-    if (!updated) {
+    if (outcome.kind === "save_skipped") {
       logger.warn(
         { messageId: createdMessage.id },
         "chat_in_process_complete_skipped_row_not_pending"
@@ -710,38 +696,20 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         ok: false,
       };
     }
+
     replyPersisted = true;
-
-    if (agentResult.proteinStructures?.length && conversationState.id) {
-      try {
-        const { updateConversationState } = await import("../db/operations");
-        const nextValues = withNormalChatProteinStructures(
-          conversationState.values,
-          createdMessage.id,
-          agentResult.proteinStructures
-        );
-        await updateConversationState(conversationState.id, nextValues);
-        conversationState.values = nextValues;
-      } catch (err) {
-        logger.warn(
-          { error: err, messageId: createdMessage.id },
-          "chat_in_process_protein_structures_state_persist_failed"
-        );
-      }
-    }
+    const responseTime = outcome.responseTime;
+    const response: ChatV2Response = {
+      conversationId,
+      messageId: createdMessage.id,
+      proteinStructures: outcome.proteinStructures,
+      text: outcome.replyText,
+      userId,
+    };
 
     logger.info(
-      { contentLength: replyText.length, messageId: createdMessage.id },
+      { contentLength: outcome.replyText.length, messageId: createdMessage.id },
       "message_content_saved"
-    );
-
-    logger.info(
-      {
-        messageId: createdMessage.id,
-        responseTime,
-        responseTimeSec: (responseTime / 1000).toFixed(2),
-      },
-      "response_time_recorded"
     );
 
     logger.info(

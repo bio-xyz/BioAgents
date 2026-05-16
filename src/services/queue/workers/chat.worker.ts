@@ -14,7 +14,6 @@ import type { ConversationState, State } from "../../../types/core";
 import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
-import { withNormalChatProteinStructures } from "../../../utils/proteinStructures";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -229,45 +228,33 @@ async function runChatAgentForJob(
     uploadedDatasets: conversationState.values.uploadedDatasets,
   });
 
-  // Handle truncation — use UnrecoverableError to skip BullMQ retries
-  // (same prompt will hit same token limit, retrying wastes 3 attempts)
-  if (!result.replyText || result.hitMaxTokens) {
+  const { finalizeChatReply } = await import("../../chat/finalizeReply");
+  const outcome = await finalizeChatReply({
+    agentResult: result,
+    conversationState,
+    messageId,
+    startTime,
+  });
+
+  // Truncated/empty use UnrecoverableError so BullMQ skips retries — the
+  // same prompt would just hit the same token limit again.
+  if (outcome.kind === "truncated" || outcome.kind === "empty") {
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError("Agent loop response truncated (max_tokens)");
   }
 
-  // Persist the reply with markMessageComplete's PENDING precondition;
-  // see its JSDoc for the FAILED-is-terminal contract.
-  const responseTime = Date.now() - startTime;
-  const { markMessageComplete } = await import("../../chat/tools");
-  const { updated } = await markMessageComplete(messageId, {
-    content: result.replyText,
-    response_time: responseTime,
-  });
-  await failJobIfRowNoLongerPending(
-    updated,
-    job.id,
-    messageId,
-    "chat_worker_agent_loop_complete_skipped_row_not_pending"
-  );
-
-  if (result.proteinStructures?.length && conversationState.id) {
-    try {
-      const { updateConversationState } = await import("../../../db/operations");
-      const nextValues = withNormalChatProteinStructures(
-        conversationState.values,
-        messageId,
-        result.proteinStructures
-      );
-      await updateConversationState(conversationState.id, nextValues);
-      conversationState.values = nextValues;
-    } catch (err) {
-      logger.warn(
-        { error: err, jobId: job.id, messageId },
-        "chat_worker_agent_loop_protein_structures_state_persist_failed"
-      );
-    }
+  if (outcome.kind === "save_skipped") {
+    await failJobIfRowNoLongerPending(
+      false,
+      job.id,
+      messageId,
+      "chat_worker_agent_loop_complete_skipped_row_not_pending"
+    );
+    // failJobIfRowNoLongerPending always throws when updated=false.
+    throw new Error("unreachable");
   }
+
+  const responseTime = outcome.responseTime;
 
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.
