@@ -1,20 +1,5 @@
-/**
- * Continue-research decision phase.
- *
- * Decides whether the iteration should continue autonomously into another
- * one, or stop and hand control back to the user. Runs only when the
- * next-steps phase produced suggestions and we haven't hit the iteration
- * cap; otherwise short-circuits to "stop, ask user".
- *
- * Returns three boolean flags the caller threads back into its loop:
- *   - shouldContinueLoop: outer while-loop control (kept truthy only when
- *     the agent says continue and we have more iterations left).
- *   - isFinal: whether the upcoming reply should be the user-facing final
- *     answer (false when we're continuing).
- *   - willContinue: whether the caller should promote next-step suggestions
- *     and create a continuation message after the reply.
- */
-
+// Short-circuits to "stop, ask user" when no suggestions exist or the
+// iteration cap was reached; otherwise consults continueResearchAgent.
 import type { ConversationState, Message, PlanTask } from "../../../types/core";
 
 export interface ContinueDecisionPhaseInput {

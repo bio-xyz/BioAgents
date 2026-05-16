@@ -5,10 +5,6 @@
  * approves it (based on message count, plan shape, and the current
  * iteration's tasks). They fan out in parallel, then their results are
  * applied to conversation state in a single persist.
- *
- * Shared between routes/deep-research/start.ts and the worker. Each caller
- * supplies its own cancellation checker, persist callback, and message-fetch
- * helper.
  */
 
 import type {

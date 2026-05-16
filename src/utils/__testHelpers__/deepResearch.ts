@@ -7,7 +7,7 @@
  * by objective so multi-iteration tests can detect propagation) — each test
  * decides which agents to mock and where to install them.
  *
- * Real services we rely on (per the BIOS-80 testing strategy):
+ * Real services we rely on:
  * - Supabase (local container via `supabase start`) for DB writes, RPC calls.
  * - Redis (Docker) for BullMQ semantics in the queue path.
  *

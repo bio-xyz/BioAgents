@@ -30,9 +30,8 @@ reflection-discovery
 next-steps         planningAgent(mode='next') produces suggestedNextSteps.
                    Empty plan => research complete.
 
-continue-decision  Decides whether to continue autonomously or hand back to
-                   the user (gated by suggestedNextSteps + iteration cap +
-                   continueResearchAgent).
+continue-decision  Decides autonomy vs hand back to user. Must run before
+                   reply because reply reads isFinal/willContinue.
 
 reply              replyAgent writes the user-facing reply, markMessageComplete
                    persists it onto the message row, finalResponse written on
@@ -58,18 +57,11 @@ continuation-prep  Only if continue-decision said `willContinue`. Promotes
   imports or DI. This keeps the phase modules unit-testable without env
   configuration.
 - **Cancellation is per-phase-boundary** via `assertNotCancelled()`. Each phase
-  calls it at its entry; long-running phases call it again between sub-steps.
+  calls it at its entry; `planning` and `execution` re-check between sub-steps.
 - **State writes inside execution are serialised** via the
   `writeStateSerialized` callback. Both transports already maintained this
   pattern internally; the phase just expects a `() => Promise<unknown>`
   callback.
-
-## Event sink
-
-`../events.ts` defines `OrchestratorEvents` — coarse-grained lifecycle hooks
-(`onPhaseStart`, `onPhaseEnd`, `onProgress`, etc.) that BIOS-82's deep-research
-SSE transport will subscribe to. Phases don't emit events directly today;
-they're called by the transports which can call hook callbacks themselves.
 
 ## Test surfaces
 

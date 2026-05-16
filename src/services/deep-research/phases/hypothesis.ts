@@ -1,15 +1,3 @@
-/**
- * Hypothesis phase of a single deep-research iteration.
- *
- * Both the in-process route and the BullMQ worker run this same block:
- *   assertNotCancelled() -> call hypothesisAgent -> mutate currentHypothesis
- *   -> persist.
- *
- * The phase is parameterized over its cancellation checker and persistence
- * callback so the route can wire its in-memory closures and the worker can
- * wire its own equivalents — the phase itself stays mode-agnostic.
- */
-
 import type { ConversationState, Message, PlanTask } from "../../../types/core";
 import logger from "../../../utils/logger";
 
