@@ -30,11 +30,6 @@ variable "loki_base_values_path" {
   type        = string
 }
 
-variable "loki_env_values_path" {
-  description = "Path to the env-specific Loki Helm values yaml."
-  type        = string
-}
-
 variable "alloy_base_values_path" {
   description = "Path to the base Alloy Helm values yaml."
   type        = string

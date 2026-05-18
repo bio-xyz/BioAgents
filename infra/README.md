@@ -3,25 +3,28 @@
 Terraform-managed AWS foundation for the BioAgents EKS deployment. Spec:
 [`../documentation/docs/K8S_WORKER_MIGRATION.md`](../documentation/docs/K8S_WORKER_MIGRATION.md).
 
+One shared EKS cluster, two namespaces (`bioagents-staging`, `bioagents-prod`).
+Isolation comes from per-namespace ResourceQuotas, per-branch IAM deployer
+roles, and separate Redis/Supabase data planes — not from cluster boundaries.
+
 ## Layout
 
 ```
 terraform/
-├── bootstrap/    # one-time: S3 state bucket + DDB lock table (LOCAL state)
+├── bootstrap/    # one-time: S3 state bucket (LOCAL state)
 ├── shared/       # account-wide: GitHub Actions OIDC provider
 ├── modules/      # reusable: vpc, eks, deployer-role, irsa-loki, loki-bucket, observability
-└── envs/
-    ├── staging/  # composes modules for bioagents-staging
-    └── prod/     # composes modules for bioagents-prod
+└── cluster/      # the cluster: 1 VPC + 1 EKS + 1 Loki + 2 deployer roles + 2 namespaces
 ```
 
 ## Prerequisites
 
-- Terraform >= 1.6 installed locally
-- AWS CLI authenticated as an admin (or an admin-equivalent role via SSO)
+- Terraform >= 1.10 (requires `use_lockfile = true` for the S3 backend)
+- AWS CLI authenticated as an admin (or admin-equivalent SSO role)
 - Region: `us-west-2`
+- EC2 vCPU service quota raised to cover the node group (see step 3)
 
-## First-time setup (one-off)
+## First-time setup
 
 ### 1. Bootstrap the state backend
 
@@ -31,83 +34,91 @@ terraform init
 terraform apply
 ```
 
-Creates `s3://bioagents-tf-state` and DynamoDB table `bioagents-tf-state-lock`.
-State for *this* module is local — never re-applied unless we're decommissioning.
+Creates `s3://bioagents-tf-state`. State for *this* module is local — never
+re-applied unless you're decommissioning.
 
 ### 2. Shared (account-wide)
 
 ```bash
 cd ../shared
-terraform init   # uses S3 backend
+terraform init
 terraform apply
 ```
 
-Creates the GitHub Actions OIDC provider. Outputs the ARN that per-env deployer
-roles trust.
+Creates the GitHub Actions OIDC provider. The cluster config consumes its
+output via `terraform_remote_state`.
 
-### 3. Staging
+### 3. Raise the EC2 vCPU quota
+
+The default new-account quota (5 vCPU for the standard family) can't fit the
+node group. Request a bump *before* applying the cluster:
 
 ```bash
-cd ../envs/staging
-cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars if you need to override defaults
+aws service-quotas request-service-quota-increase \
+  --service-code ec2 \
+  --quota-code L-1216C47A \
+  --desired-value 32 \
+  --region us-west-2
+```
 
+Approval is usually minutes to a few hours. Poll:
+
+```bash
+aws service-quotas list-requested-service-quota-change-history \
+  --service-code ec2 --region us-west-2 \
+  --query 'RequestedQuotas[?QuotaCode==`L-1216C47A`].[QuotaName,Status,DesiredValue]' \
+  --output table
+```
+
+Wait for `Status` to flip to `CASE_CLOSED` (or check the dashboard).
+
+### 4. Apply the cluster
+
+```bash
+cd ../cluster
+cp terraform.tfvars.example terraform.tfvars   # edit overrides if needed
 terraform init
 
-# First apply: bring the cluster up before Helm tries to talk to it.
+# First apply: bring the cluster up before the Helm/k8s providers try to talk to it.
 terraform apply -target=module.eks
 
-# Second apply: brings up everything else (IRSA, S3, Helm releases for Loki + Alloy).
+# Second apply: namespaces, quotas, Loki/Alloy via Helm, IRSA wiring.
 terraform apply
 ```
 
 The two-stage first apply works around the helm-provider-needs-cluster
-chicken-and-egg. Subsequent `terraform apply` runs do not need `-target`.
+chicken-and-egg. Subsequent runs don't need `-target`.
 
-### 4. Install KEDA on the new cluster (manual, one-line)
+### 5. Install KEDA on the cluster
+
+Not in Terraform because it has no TF-output dependency:
 
 ```bash
-aws eks update-kubeconfig --name bioagents-staging --region us-west-2
-kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.18.1/keda-2.18.1-core.yaml
+aws eks update-kubeconfig --name bioagents --region us-west-2
+kubectl apply --server-side \
+  -f https://github.com/kedacore/keda/releases/download/v2.18.1/keda-2.18.1-core.yaml
 ```
 
-KEDA is not in Terraform because it has no TF-output dependency.
-
-### 5. Wire outputs into GitHub Actions
+### 6. Wire outputs into GitHub Actions
 
 ```bash
-terraform output deployer_role_arn   # → repo Secret AWS_ROLE_STAGING
-terraform output cluster_name        # → repo Variable EKS_CLUSTER_NAME (if not already set)
-terraform output aws_region          # → repo Variable AWS_REGION
-```
-
-Use the `gh` CLI:
-
-```bash
-gh secret set AWS_ROLE_STAGING --body "$(terraform output -raw deployer_role_arn)"
+gh secret set AWS_ROLE_STAGING   --body "$(terraform output -raw deployer_role_staging_arn)"
+gh secret set AWS_ROLE_PROD      --body "$(terraform output -raw deployer_role_prod_arn)"
 gh variable set EKS_CLUSTER_NAME --body "$(terraform output -raw cluster_name)"
-gh variable set AWS_REGION --body "$(terraform output -raw aws_region)"
+gh variable set AWS_REGION       --body "$(terraform output -raw aws_region)"
+
+# Per-env config and secret env files for the workers:
+gh secret set CONFIG_ENV_STAGING < /path/to/staging/config.env
+gh secret set SECRET_ENV_STAGING < /path/to/staging/secret.env
+gh secret set CONFIG_ENV_PROD    < /path/to/prod/config.env
+gh secret set SECRET_ENV_PROD    < /path/to/prod/secret.env
+
+# GHCR pull token (classic PAT with read:packages):
+gh secret set GHCR_PULL_PAT      --body "<token>"
 ```
 
-Loki's IRSA ARN and S3 bucket name are injected by Terraform — **no manual
-paste needed**.
-
-### 6. Prod — repeat steps 3-5 for `envs/prod`
-
-```bash
-cd ../prod
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform apply -target=module.eks
-terraform apply
-
-# KEDA
-aws eks update-kubeconfig --name bioagents-prod --region us-west-2
-kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.18.1/keda-2.18.1-core.yaml
-
-# GitHub Secrets
-gh secret set AWS_ROLE_PROD --body "$(terraform output -raw deployer_role_arn)"
-```
+Loki's IRSA ARN and S3 bucket name are injected directly by Terraform — no
+manual paste needed.
 
 ## Day-to-day
 
@@ -117,27 +128,41 @@ No `-target` needed after the first apply.
 `terraform plan` against a clean state shows zero diffs. Anything else is drift
 worth understanding before applying.
 
+## Migrating from the old `envs/staging` + `envs/prod` layout
+
+If you have an existing `envs/staging` state from before the consolidation:
+
+```bash
+# Restore the deleted .tf files into the working tree (state is still in S3)
+git show HEAD~:infra/terraform/envs/staging/main.tf      > infra/terraform/envs/staging/main.tf
+git show HEAD~:infra/terraform/envs/staging/variables.tf > infra/terraform/envs/staging/variables.tf
+# ...etc. for backend.tf, outputs.tf, versions.tf
+
+cd infra/terraform/envs/staging
+terraform init
+# If the failed node group is still in state, remove it so destroy proceeds:
+terraform state rm 'module.eks.module.eks.module.eks_managed_node_group["workers-ondemand"].aws_eks_node_group.this[0]' 2>/dev/null || true
+terraform destroy
+rm -rf infra/terraform/envs/
+```
+
+Then run steps 4–6 above against `cluster/`.
+
 ## Recovery
 
 ### Failed first-apply
 
 EKS bootstrap occasionally fails partway through (subnet quotas, IAM eventual
-consistency, hit Amazon-side rate limits). Common pattern:
+consistency, EC2 fleet quota). Common pattern:
 
 ```bash
-# See where it stopped
-terraform plan
-
-# If the cluster is partially up, re-run targeted at the cluster module
-terraform apply -target=module.eks
-
-# Then full apply
-terraform apply
+terraform plan                              # see where it stopped
+terraform apply -target=module.eks          # finish the cluster
+terraform apply                             # then the rest
 ```
 
-If state ends up genuinely broken: `terraform state list`, remove the
-half-created resource with `terraform state rm`, fix it in AWS console, then
-re-apply.
+If state ends up broken: `terraform state list`, remove the half-created
+resource with `terraform state rm`, fix it in AWS console, then re-apply.
 
 ### State bucket lost or corrupted
 
@@ -146,17 +171,16 @@ version via the S3 console (Versions tab) or:
 
 ```bash
 aws s3api list-object-versions --bucket bioagents-tf-state \
-  --prefix envs/staging/terraform.tfstate
+  --prefix cluster/terraform.tfstate
 aws s3api get-object --bucket bioagents-tf-state \
-  --key envs/staging/terraform.tfstate \
+  --key cluster/terraform.tfstate \
   --version-id <VERSION_ID> ./recovered.tfstate
 terraform state push ./recovered.tfstate
 ```
 
 ### Helm release stuck
 
-If `helm_release.loki` or `helm_release.alloy` get wedged (failed release,
-"another operation in progress"):
+If `helm_release.loki` or `helm_release.alloy` get wedged:
 
 ```bash
 helm -n logging list
@@ -175,6 +199,7 @@ terraform apply
 
 - Module versions pinned with `~>` in each module's `versions.tf`. Upgrade
   during quarterly maintenance.
-- Tags: every resource gets `Project=bioagents`, `Env=<env>`, `Managed=terraform`.
-- Naming: `bioagents-{env}-{component}` everywhere.
-- VPC CIDRs are non-overlapping so we can peer envs later without renumbering.
+- Tags: every resource gets `Project=bioagents`, `Managed=terraform`.
+- Naming: cluster `bioagents`, namespaces `bioagents-{staging,prod}`, deployer
+  roles `bioagents-deployer-{staging,prod}`, Loki bucket `bioagents-loki`.
+- State lock: S3 native lockfile (`use_lockfile = true`). No DynamoDB.

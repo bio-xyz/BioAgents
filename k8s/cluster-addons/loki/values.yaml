@@ -16,10 +16,20 @@ loki:
           prefix: loki_index_
           period: 24h
   limits_config:
-    retention_period: 720h   # 30 days
-    max_query_lookback: 720h
-    ingestion_rate_mb: 16
-    ingestion_burst_size_mb: 32
+    # Loki-side chunk deletion is disabled (compactor below); S3 lifecycle owns
+    # expiry. retention_period stays nominally long so any code path that reads
+    # it doesn't trip on a near-now value.
+    retention_period: 87600h         # 10y
+    max_query_lookback: 2160h        # 90d — Grafana queries blocked beyond this
+    ingestion_rate_mb: 32
+    ingestion_burst_size_mb: 64
+
+  # Compactor: keep tsdb-index compaction running (needed for query performance)
+  # but disable retention-based deletion. S3 lifecycle transitions chunks to
+  # GLACIER_IR at 90d and expires them at the retention horizon configured in
+  # the loki-bucket module.
+  compactor:
+    retention_enabled: false
 
 # Replicas — env overrides may bring these down for kind.
 backend:

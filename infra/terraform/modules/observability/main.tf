@@ -19,10 +19,9 @@ resource "helm_release" "loki" {
   create_namespace = false
   timeout          = 600
 
-  # Layered values: base + env override + TF-injected dynamic bits.
+  # Layered values: base + TF-injected dynamic bits.
   values = [
     file(var.loki_base_values_path),
-    file(var.loki_env_values_path),
     yamlencode({
       serviceAccount = {
         create = true

@@ -8,9 +8,14 @@ output "cluster_name" {
   value       = module.eks.cluster_name
 }
 
-output "deployer_role_arn" {
+output "deployer_role_staging_arn" {
+  description = "Paste into GitHub Actions repo Secret AWS_ROLE_STAGING."
+  value       = module.deployer_role_staging.role_arn
+}
+
+output "deployer_role_prod_arn" {
   description = "Paste into GitHub Actions repo Secret AWS_ROLE_PROD."
-  value       = module.deployer_role.role_arn
+  value       = module.deployer_role_prod.role_arn
 }
 
 output "loki_bucket_name" {
@@ -24,7 +29,7 @@ output "loki_irsa_role_arn" {
 }
 
 output "cluster_endpoint" {
-  description = "EKS API endpoint (sensitive)."
+  description = "EKS API endpoint (sensitive — keep out of CI logs)."
   value       = module.eks.cluster_endpoint
   sensitive   = true
 }

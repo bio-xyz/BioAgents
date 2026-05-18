@@ -64,6 +64,13 @@ resource "aws_s3_bucket_policy" "state" {
 }
 
 resource "aws_dynamodb_table" "lock" {
+  # Orphaned: state locking moved to S3 native lockfiles (use_lockfile = true)
+  # in all backend.tf files. This resource is being decommissioned in two steps:
+  #   1. (this commit) prevent_destroy → false. Run `terraform apply` in
+  #      bootstrap/ to update the lifecycle. Table stays.
+  #   2. (follow-up commit) remove this whole resource block + the
+  #      `lock_table_name` variable + the `lock_table_name` output. Apply again
+  #      to destroy the table.
   name         = var.lock_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
@@ -78,6 +85,6 @@ resource "aws_dynamodb_table" "lock" {
   }
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }

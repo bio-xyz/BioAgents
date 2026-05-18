@@ -33,16 +33,30 @@ resource "aws_s3_bucket_lifecycle_configuration" "loki" {
   bucket = aws_s3_bucket.loki.id
 
   rule {
-    id     = "expire-old-chunks"
+    id     = "cold-backup-and-expire"
     status = "Enabled"
 
     filter {}
+
+    # Hot tier (queryable through Loki/Grafana): STANDARD.
+    # After glacier_transition_days, transition to GLACIER_IR for cold backup —
+    # retrievable for incident forensics but ~85% cheaper than STANDARD.
+    transition {
+      days          = var.glacier_transition_days
+      storage_class = "GLACIER_IR"
+    }
 
     expiration {
       days = var.retention_days
     }
 
-    # Versioned bucket: also expire noncurrent versions on the same horizon.
+    # Versioned bucket: noncurrent versions follow the same schedule so
+    # accidental overwrites still get cold-tiered and eventually expire.
+    noncurrent_version_transition {
+      noncurrent_days = var.glacier_transition_days
+      storage_class   = "GLACIER_IR"
+    }
+
     noncurrent_version_expiration {
       noncurrent_days = var.retention_days
     }

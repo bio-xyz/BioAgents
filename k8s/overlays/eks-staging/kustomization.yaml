@@ -3,8 +3,10 @@ kind: Kustomization
 
 namespace: bioagents-staging
 
+# Namespace + ResourceQuota are owned by Terraform (cluster/main.tf) so the
+# namespace-scoped deployer role doesn't need cluster-scope perms to create
+# them, and the deploy actor can't raise its own quota ceiling.
 resources:
-  - namespace.yaml
   - ../../base
 
 images:
