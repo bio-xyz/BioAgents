@@ -29,6 +29,9 @@ jobs:
     # Skip if upstream build failed.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    # Bounded well under GHA's 6h hard limit so the step never gets cancelled
+    # mid-rollout with a confusing "job cancelled" failure.
+    timeout-minutes: 120
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
@@ -51,6 +54,38 @@ jobs:
           esac
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Verify required secrets for overlay
+        # The per-env ternaries below (`overlay == 'eks-prod' && X_PROD || X_STAGING`)
+        # silently fall back to the staging value when the prod secret is unset
+        # — a prod deploy could otherwise assume the staging IAM role. Fail fast
+        # here instead.
+        env:
+          OVERLAY: ${{ steps.env.outputs.overlay }}
+          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
+          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
+          CONFIG_ENV_PROD: ${{ secrets.CONFIG_ENV_PROD }}
+          CONFIG_ENV_STAGING: ${{ secrets.CONFIG_ENV_STAGING }}
+          SECRET_ENV_PROD: ${{ secrets.SECRET_ENV_PROD }}
+          SECRET_ENV_STAGING: ${{ secrets.SECRET_ENV_STAGING }}
+          GHCR_PULL_PAT: ${{ secrets.GHCR_PULL_PAT }}
+        run: |
+          set -eu
+          missing=""
+          if [ "$OVERLAY" = "eks-prod" ]; then
+            [ -z "$AWS_ROLE_PROD" ]   && missing="$missing AWS_ROLE_PROD"
+            [ -z "$CONFIG_ENV_PROD" ] && missing="$missing CONFIG_ENV_PROD"
+            [ -z "$SECRET_ENV_PROD" ] && missing="$missing SECRET_ENV_PROD"
+          else
+            [ -z "$AWS_ROLE_STAGING" ]   && missing="$missing AWS_ROLE_STAGING"
+            [ -z "$CONFIG_ENV_STAGING" ] && missing="$missing CONFIG_ENV_STAGING"
+            [ -z "$SECRET_ENV_STAGING" ] && missing="$missing SECRET_ENV_STAGING"
+          fi
+          [ -z "$GHCR_PULL_PAT" ] && missing="$missing GHCR_PULL_PAT"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required secrets for overlay $OVERLAY:$missing"
+            exit 1
+          fi
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -76,12 +111,13 @@ jobs:
         env:
           GHCR_USER: ${{ github.repository_owner }}
           GHCR_PAT: ${{ secrets.GHCR_PULL_PAT }}
+          OVERLAY: ${{ steps.env.outputs.overlay }}
         run: |
           set -eu
           AUTH=$(printf "%s:%s" "$GHCR_USER" "$GHCR_PAT" | base64 -w 0)
-          cat > k8s/overlays/${{ steps.env.outputs.overlay }}/pull-secret.dockerconfigjson <<EOF
-          {"auths":{"ghcr.io":{"auth":"$AUTH"}}}
-          EOF
+          FILE="k8s/overlays/$OVERLAY/pull-secret.dockerconfigjson"
+          (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" > "$FILE")
+          chmod 400 "$FILE"
 
       # kustomize is preinstalled on ubuntu-latest GitHub-hosted runners.
       - name: Pin image tag to SHA
@@ -99,12 +135,18 @@ jobs:
             | kubectl apply --server-side --force-conflicts -f -
 
       - name: Wait for rollout
+        # We wait for the Deployment's Available condition rather than full
+        # `rollout status`. With maxUnavailable:0/maxSurge:100% the new pod is
+        # Ready before SIGTERM is sent to the old, so Available flips true as
+        # soon as the new ReplicaSet is serving. Full `rollout status` would
+        # additionally wait for the old pod to terminate — up to 8h for
+        # worker-deep-research — which exceeds GHA's 6h job limit. The old pod
+        # finishes draining asynchronously after this step returns.
         run: |
           set -eu
           NS=$([ "${{ steps.env.outputs.overlay }}" = "eks-prod" ] && echo bioagents-prod || echo bioagents-staging)
-          # Long timeout because deep-research drain can be up to 8h.
           for d in worker-deep-research worker-chat worker-heavy worker-scheduled; do
-            kubectl -n "$NS" rollout status deploy/"$d" --timeout=30000s
+            kubectl -n "$NS" wait --for=condition=Available --timeout=30m deploy/"$d"
           done
 
       - name: Summary

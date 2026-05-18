@@ -33,6 +33,11 @@ variable "cluster_arn" {
   type        = string
 }
 
+variable "target_namespace" {
+  description = "Kubernetes namespace this role is authorized to administer. The EKS access policy is scoped to this single namespace."
+  type        = string
+}
+
 variable "tags" {
   description = "Tags applied to the IAM role."
   type        = map(string)

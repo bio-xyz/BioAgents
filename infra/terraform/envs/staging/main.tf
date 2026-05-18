@@ -1,10 +1,11 @@
 locals {
-  cluster_name   = "bioagents-${var.env_name}"
-  deployer_role  = "bioagents-deployer-${var.env_name}"
-  loki_role      = "bioagents-loki-${var.env_name}"
-  loki_bucket    = "bioagents-loki-${var.env_name}"
-  repo_root      = "${path.root}/../../../.."
-  loki_addon_dir = "${local.repo_root}/k8s/cluster-addons/loki"
+  cluster_name     = "bioagents-${var.env_name}"
+  deployer_role    = "bioagents-deployer-${var.env_name}"
+  worker_namespace = "bioagents-${var.env_name}"
+  loki_role        = "bioagents-loki-${var.env_name}"
+  loki_bucket      = "bioagents-loki-${var.env_name}"
+  repo_root        = "${path.root}/../../../.."
+  loki_addon_dir   = "${local.repo_root}/k8s/cluster-addons/loki"
 
   tags = {
     Project = "bioagents"
@@ -70,6 +71,7 @@ module "deployer_role" {
   github_branch            = var.github_branch
   cluster_name             = module.eks.cluster_name
   cluster_arn              = "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${module.eks.cluster_name}"
+  target_namespace         = local.worker_namespace
   tags                     = local.tags
 }
 

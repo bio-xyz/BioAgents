@@ -65,11 +65,14 @@ resource "aws_eks_access_policy_association" "deployer" {
   cluster_name  = var.cluster_name
   principal_arn = aws_iam_role.deployer.arn
 
-  # AmazonEKSClusterAdminPolicy is the broadest. Tighten later by switching
-  # to AmazonEKSAdminPolicy + a namespace scope if cluster-admin is too much.
-  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  # Namespace-admin within the env's namespace only — sufficient for the deploy
+  # workflow (Deployments, Services, ConfigMaps/Secrets, KEDA ScaledObject
+  # instances are all namespace-scoped). Cluster-scoped installs (KEDA
+  # controller, Loki, etc.) are managed by Terraform, not by this role.
+  policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy"
 
   access_scope {
-    type = "cluster"
+    type       = "namespace"
+    namespaces = [var.target_namespace]
   }
 }
