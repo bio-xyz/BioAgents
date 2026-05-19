@@ -79,15 +79,21 @@ cd ../cluster
 cp terraform.tfvars.example terraform.tfvars   # edit overrides if needed
 terraform init
 
-# First apply: bring the cluster up before the Helm/k8s providers try to talk to it.
+# 4a. Apply the VPC explicitly. Without this, -target=module.eks only pulls in
+#     vpc_id + subnet_ids — the NAT gateway, IGW, and route tables aren't on
+#     EKS's dependency path, so they'd be skipped and the nodes would fail to
+#     join the cluster.
+terraform apply -target=module.vpc
+
+# 4b. Apply the EKS cluster + node group.
 terraform apply -target=module.eks
 
-# Second apply: namespaces, quotas, Loki/Alloy via Helm, IRSA wiring.
+# 4c. Full apply: namespaces, quotas, Loki/Alloy via Helm, IRSA wiring.
 terraform apply
 ```
 
-The two-stage first apply works around the helm-provider-needs-cluster
-chicken-and-egg. Subsequent runs don't need `-target`.
+The split apply works around the helm-provider-needs-cluster chicken-and-egg.
+Subsequent runs (re-apply, drift fixes, version bumps) don't need `-target`.
 
 ### 5. Install KEDA on the cluster
 
