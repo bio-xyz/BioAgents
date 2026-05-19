@@ -9,9 +9,3 @@ variable "state_bucket_name" {
   type        = string
   default     = "bioagents-tf-state"
 }
-
-variable "lock_table_name" {
-  description = "DynamoDB table name for Terraform state locking."
-  type        = string
-  default     = "bioagents-tf-state-lock"
-}

@@ -1,7 +1,7 @@
-# Bootstrap module: creates the S3 bucket + DynamoDB table that all other
-# Terraform configs use for remote state + locking. This module's own state is
-# kept LOCAL (no backend block) — it's applied once and effectively never
-# touched again.
+# Bootstrap module: creates the S3 bucket that all other Terraform configs use
+# for remote state. Locking uses S3 native lockfiles (`use_lockfile = true` in
+# each backend.tf) — no DynamoDB. This module's own state is kept LOCAL (no
+# backend block) — applied once, effectively never touched.
 
 resource "aws_s3_bucket" "state" {
   bucket = var.state_bucket_name
@@ -9,7 +9,7 @@ resource "aws_s3_bucket" "state" {
   # Prevent accidental destroy; remove this only when intentionally
   # decommissioning the whole TF deployment.
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
@@ -61,30 +61,4 @@ resource "aws_s3_bucket_policy" "state" {
       },
     ]
   })
-}
-
-resource "aws_dynamodb_table" "lock" {
-  # Orphaned: state locking moved to S3 native lockfiles (use_lockfile = true)
-  # in all backend.tf files. This resource is being decommissioned in two steps:
-  #   1. (this commit) prevent_destroy → false. Run `terraform apply` in
-  #      bootstrap/ to update the lifecycle. Table stays.
-  #   2. (follow-up commit) remove this whole resource block + the
-  #      `lock_table_name` variable + the `lock_table_name` output. Apply again
-  #      to destroy the table.
-  name         = var.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  lifecycle {
-    prevent_destroy = false
-  }
 }

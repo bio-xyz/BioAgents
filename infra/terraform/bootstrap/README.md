@@ -12,8 +12,9 @@ terraform init
 terraform apply
 ```
 
-Outputs are the bucket name, lock-table name, and region. Plug them into the
-`backend.tf` of every other config (already wired in `shared/` and `envs/*/`).
+Outputs are the bucket name and region. Plug them into the `backend.tf` of
+every other config (already wired in `shared/` and `cluster/`). State
+locking uses S3 native lockfiles (`use_lockfile = true`) — no DynamoDB.
 
 ## Hands off after first apply
 

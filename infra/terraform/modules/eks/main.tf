@@ -6,28 +6,24 @@
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.31"
+  version = "~> 21.0"
 
-  cluster_name    = var.cluster_name
-  cluster_version = var.kubernetes_version
+  name               = var.cluster_name
+  kubernetes_version = var.kubernetes_version
 
   vpc_id     = var.vpc_id
   subnet_ids = var.subnet_ids
 
   # API endpoint exposure.
-  cluster_endpoint_public_access       = var.endpoint_public_access
-  cluster_endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
-  cluster_endpoint_private_access      = true
+  endpoint_public_access       = var.endpoint_public_access
+  endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
+  endpoint_private_access      = true
 
   # Authentication: EKS access entries (replaces aws-auth ConfigMap).
   authentication_mode = "API"
 
-  # IRSA — required for Loki SA → S3, future worker SA → S3.
-  enable_irsa = true
-
   # KMS-encrypt cluster secrets.
-  create_kms_key = true
-  cluster_encryption_config = {
+  encryption_config = {
     resources = ["secrets"]
   }
 
@@ -36,7 +32,7 @@ module "eks" {
   # call EC2 API, and wiring IRSA from inside this module would create a
   # circular dependency with the OIDC provider it itself creates. The cluster
   # composition installs the addon separately.
-  cluster_addons = {
+  addons = {
     coredns = {
       most_recent = true
     }
