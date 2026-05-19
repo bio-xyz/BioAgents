@@ -47,7 +47,11 @@ module "eks" {
     }
   }
 
-  # The single managed node group all workers tolerate via the workload taint.
+  # Single managed node group. No taint — this cluster runs workers AND the
+  # AWS-managed addons (CoreDNS, EBS CSI, kube-proxy, vpc-cni) AND in-cluster
+  # observability. A `workload=worker:NoSchedule` taint would block CoreDNS /
+  # EBS CSI from scheduling (they don't carry the matching toleration). The
+  # label stays so future node-pool segmentation has an affinity hook.
   eks_managed_node_groups = {
     workers-ondemand = {
       instance_types = var.node_instance_types
@@ -59,15 +63,6 @@ module "eks" {
 
       labels = {
         workload = "worker"
-      }
-
-      taints = {
-        # Matches tolerations in k8s/base/worker-*/deployment.yaml.
-        workload = {
-          key    = "workload"
-          value  = "worker"
-          effect = "NO_SCHEDULE"
-        }
       }
     }
   }
