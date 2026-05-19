@@ -155,6 +155,22 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
+# EKS ships a legacy `gp2` StorageClass via the in-tree provisioner but doesn't
+# mark it default. Without a default, PVCs created with no storageClassName
+# (which is what Loki's StatefulSets do) fail to bind. We could create a fresh
+# gp3 SC via the EBS CSI driver, but the simplest stable answer is to flip the
+# existing gp2 to default — TF-managed so it survives cluster rebuilds.
+resource "kubernetes_annotations" "gp2_default" {
+  api_version = "storage.k8s.io/v1"
+  kind        = "StorageClass"
+  metadata { name = "gp2" }
+  annotations = {
+    "storageclass.kubernetes.io/is-default-class" = "true"
+  }
+
+  depends_on = [module.eks]
+}
+
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name             = module.eks.cluster_name
   addon_name               = "aws-ebs-csi-driver"

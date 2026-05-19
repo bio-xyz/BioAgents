@@ -43,11 +43,21 @@ write:
 minio:
   enabled: false
 
-# Sidecars / chunks cache fine at defaults.
+# Sidecars / caches. Default chunks-cache allocates ~9Gi which doesn't fit on
+# m6i.large (8Gi). Sized down to match the cluster floor; bump when traffic
+# justifies bigger nodes.
 chunksCache:
   enabled: true
+  allocatedMemory: 1024
+  resources:
+    requests: { cpu: "100m", memory: "1Gi" }
+    limits:   { cpu: "500m", memory: "1.5Gi" }
 resultsCache:
   enabled: true
+  allocatedMemory: 512
+  resources:
+    requests: { cpu: "100m", memory: "512Mi" }
+    limits:   { cpu: "500m", memory: "768Mi" }
 
 gateway:
   enabled: true

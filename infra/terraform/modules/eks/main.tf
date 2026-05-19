@@ -22,6 +22,11 @@ module "eks" {
   # Authentication: EKS access entries (replaces aws-auth ConfigMap).
   authentication_mode = "API"
 
+  # v21 default is false. Grant the Terraform-running principal admin so the
+  # operator can `kubectl` against the cluster after bring-up and so the
+  # module itself can manage cluster-scoped resources (addons, etc.).
+  enable_cluster_creator_admin_permissions = true
+
   # KMS-encrypt cluster secrets.
   encryption_config = {
     resources = ["secrets"]
@@ -33,13 +38,19 @@ module "eks" {
   # circular dependency with the OIDC provider it itself creates. The cluster
   # composition installs the addon separately.
   addons = {
-    coredns = {
-      most_recent = true
+    # vpc-cni + kube-proxy MUST be installed before the node group is checked
+    # for health — without them, kubelet stays NotReady, the managed node
+    # group reports "Unhealthy nodes" and create fails. CoreDNS needs nodes
+    # to schedule on, so it goes after compute.
+    vpc-cni = {
+      most_recent    = true
+      before_compute = true
     }
     kube-proxy = {
-      most_recent = true
+      most_recent    = true
+      before_compute = true
     }
-    vpc-cni = {
+    coredns = {
       most_recent = true
     }
   }
