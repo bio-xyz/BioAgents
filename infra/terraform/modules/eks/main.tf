@@ -32,6 +32,10 @@ module "eks" {
   }
 
   # AWS-managed addons. Keep at module defaults; bumping is a TF apply.
+  # aws-ebs-csi-driver lives outside this block — it needs an IRSA role to
+  # call EC2 API, and wiring IRSA from inside this module would create a
+  # circular dependency with the OIDC provider it itself creates. The cluster
+  # composition installs the addon separately.
   cluster_addons = {
     coredns = {
       most_recent = true
@@ -40,9 +44,6 @@ module "eks" {
       most_recent = true
     }
     vpc-cni = {
-      most_recent = true
-    }
-    aws-ebs-csi-driver = {
       most_recent = true
     }
   }
