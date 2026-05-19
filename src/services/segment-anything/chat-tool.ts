@@ -12,6 +12,9 @@ import { getFileStatus } from "../files/status";
 
 const SEGMENT_ANYTHING_TOOL_ID: ChatToolId = "segment-anything";
 const IMAGE_EXTENSIONS = new Set(["bmp", "gif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]);
+const MAX_SEGMENT_ANYTHING_PROMPT_LENGTH = 500;
+const MAX_SEGMENT_ANYTHING_IMAGE_BYTES = 50 * 1024 * 1024;
+const SEGMENT_ANYTHING_RETRY_STATUS_CODES = [429, 500, 502, 504];
 
 type UploadedDataset = NonNullable<ConversationState["values"]["uploadedDatasets"]>[number];
 
@@ -116,6 +119,22 @@ function isImageUpload(filename: string, contentType?: string): boolean {
   return IMAGE_EXTENSIONS.has(extension(filename));
 }
 
+function imageExtensionForMimeType(mimeType: string): string {
+  switch (mimeType.toLowerCase()) {
+    case "image/jpeg":
+    case "image/jpg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "png";
+  }
+}
+
 function findDataset(
   datasets: UploadedDataset[],
   input: SegmentAnythingToolInput
@@ -152,6 +171,7 @@ async function callBioLiteratureSegmentAnything(
     {
       onRetry: (attempt, error) =>
         logger.warn({ attempt, error: error.message }, "segment_anything_retry"),
+      retryStatusCodes: SEGMENT_ANYTHING_RETRY_STATUS_CODES,
     }
   );
 
@@ -187,6 +207,13 @@ export async function runSegmentAnythingChatTool(
 ): Promise<{ artifacts: DataArtifact[]; text: string }> {
   const { conversationState, message, messageId, userId } = params;
   const input = normalizeToolInput(params.toolInput);
+  if (message.length > MAX_SEGMENT_ANYTHING_PROMPT_LENGTH) {
+    throw new SegmentAnythingToolError(
+      "Segment Anything prompt must be 500 characters or fewer.",
+      400
+    );
+  }
+
   const datasets = conversationState.values.uploadedDatasets || [];
   const dataset = findDataset(datasets, input);
 
@@ -200,6 +227,10 @@ export async function runSegmentAnythingChatTool(
   const contentType = fileStatus?.contentType;
   if (!isImageUpload(dataset.filename, contentType)) {
     throw new SegmentAnythingToolError("Segment Anything requires an image upload.");
+  }
+  const imageSize = fileStatus?.size ?? dataset.size;
+  if (typeof imageSize === "number" && imageSize > MAX_SEGMENT_ANYTHING_IMAGE_BYTES) {
+    throw new SegmentAnythingToolError("Segment Anything image must be 50 MB or smaller.", 400);
   }
 
   const storageProvider = deps.storageProvider ?? getStorageProvider();
@@ -230,7 +261,8 @@ export async function runSegmentAnythingChatTool(
   });
 
   const artifactMimeType = segmentResponse.annotated_image.mime_type || "image/png";
-  const artifactPath = `artifacts/${messageId}/segment-anything-annotated.png`;
+  const artifactExtension = imageExtensionForMimeType(artifactMimeType);
+  const artifactPath = `artifacts/${messageId}/segment-anything-annotated.${artifactExtension}`;
   const fullArtifactPath = `${getConversationBasePath(userId, conversationState.id)}/${artifactPath}`;
   await storageProvider.upload(
     fullArtifactPath,

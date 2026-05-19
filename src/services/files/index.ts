@@ -21,6 +21,7 @@ import logger from "../../utils/logger";
 import { generateUUID } from "../../utils/uuid";
 import { isJobQueueEnabled } from "../queue/connection";
 import { generateFileDescription, parseFilePreview } from "./description";
+import { type PersistedMessageFileMetadata, resolveDownloadableFileMetadata } from "./download-url";
 import {
   createFileStatus,
   deleteFileStatus,
@@ -28,6 +29,12 @@ import {
   getFileStatus,
   updateFileStatus,
 } from "./status";
+
+export type {
+  DownloadableFileMetadata,
+  PersistedMessageFileMetadata,
+} from "./download-url";
+export { resolveDownloadableFileMetadata } from "./download-url";
 
 // Preview size for description generation (4KB)
 const PREVIEW_SIZE = 4 * 1024;
@@ -517,12 +524,53 @@ export async function getFileStatusForUser(
   return status;
 }
 
+async function findPersistedMessageFileForUser(
+  fileId: string,
+  userId: string
+): Promise<PersistedMessageFileMetadata | null> {
+  const { getServiceClient } = await import("../../db/client");
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .select("files")
+    .eq("user_id", userId)
+    .contains("files", [{ fileId }])
+    .limit(10);
+
+  if (error) {
+    logger.warn({ error, fileId, userId }, "file_download_persisted_metadata_lookup_failed");
+    return null;
+  }
+
+  for (const row of data || []) {
+    const files = (row as { files?: unknown }).files;
+    if (!Array.isArray(files)) continue;
+
+    const match = files.find((file): file is PersistedMessageFileMetadata => {
+      if (typeof file !== "object" || file === null) return false;
+      const raw = file as Record<string, unknown>;
+      return (
+        raw.fileId === fileId &&
+        typeof raw.fileKey === "string" &&
+        typeof raw.name === "string" &&
+        typeof raw.size === "number" &&
+        typeof raw.type === "string"
+      );
+    });
+    if (match) return match;
+  }
+
+  return null;
+}
+
 export async function getFileDownloadUrlForUser(
   fileId: string,
   userId: string
 ): Promise<FileDownloadUrlResult | null> {
   const status = await getFileStatusForUser(fileId, userId);
-  if (!status) return null;
+  const persistedFile = status ? null : await findPersistedMessageFileForUser(fileId, userId);
+  const metadata = resolveDownloadableFileMetadata({ persistedFile, status });
+  if (!metadata) return null;
 
   const storageProvider = getStorageProvider();
   if (!storageProvider) {
@@ -531,17 +579,17 @@ export async function getFileDownloadUrlForUser(
 
   const expiresInSeconds = 3600;
   const url = await storageProvider.getPresignedUrl(
-    status.s3Key,
+    metadata.fileKey,
     expiresInSeconds,
-    status.filename
+    metadata.filename
   );
 
   return {
-    contentType: status.contentType,
+    contentType: metadata.contentType,
     expiresAt: Date.now() + expiresInSeconds * 1000,
-    fileId: status.fileId,
-    filename: status.filename,
-    size: status.size,
+    fileId: metadata.fileId,
+    filename: metadata.filename,
+    size: metadata.size,
     url,
   };
 }

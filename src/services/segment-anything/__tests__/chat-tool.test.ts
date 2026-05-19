@@ -140,4 +140,139 @@ describe("runSegmentAnythingChatTool", () => {
 
     expect(called).toBe(false);
   });
+
+  test("rejects prompts over 500 characters before downloading the object", async () => {
+    let downloaded = false;
+    let called = false;
+
+    await expect(
+      runSegmentAnythingChatTool(
+        {
+          conversationState: conversationState(),
+          message: "x".repeat(501),
+          messageId: "message-1",
+          toolInput: { imageFileId: "file-1" },
+          userId: "user-1",
+        },
+        {
+          getFileStatus: async () =>
+            ({
+              contentType: "image/png",
+              s3Key: "user/user-1/conversation/state-1/uploads/cells.png",
+              size: 128,
+              userId: "user-1",
+            }) as never,
+          segmentClient: async () => {
+            called = true;
+            throw new Error("should not call BioLiterature");
+          },
+          storageProvider: {
+            download: async () => {
+              downloaded = true;
+              return Buffer.from("raw-image");
+            },
+            upload: async () => "unused",
+          },
+        }
+      )
+    ).rejects.toMatchObject({
+      message: "Segment Anything prompt must be 500 characters or fewer.",
+      statusCode: 400,
+    } satisfies Partial<SegmentAnythingToolError>);
+
+    expect(downloaded).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  test("rejects images over 50 MB before downloading the object", async () => {
+    let downloaded = false;
+    let called = false;
+
+    await expect(
+      runSegmentAnythingChatTool(
+        {
+          conversationState: conversationState(),
+          message: "segment the cells",
+          messageId: "message-1",
+          toolInput: { imageFileId: "file-1" },
+          userId: "user-1",
+        },
+        {
+          getFileStatus: async () =>
+            ({
+              contentType: "image/png",
+              s3Key: "user/user-1/conversation/state-1/uploads/cells.png",
+              size: 50 * 1024 * 1024 + 1,
+              userId: "user-1",
+            }) as never,
+          segmentClient: async () => {
+            called = true;
+            throw new Error("should not call BioLiterature");
+          },
+          storageProvider: {
+            download: async () => {
+              downloaded = true;
+              return Buffer.from("raw-image");
+            },
+            upload: async () => "unused",
+          },
+        }
+      )
+    ).rejects.toMatchObject({
+      message: "Segment Anything image must be 50 MB or smaller.",
+      statusCode: 400,
+    } satisfies Partial<SegmentAnythingToolError>);
+
+    expect(downloaded).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  test("uses the annotated image MIME type when choosing the artifact extension", async () => {
+    const uploads: Array<{ path: string; mimeType: string }> = [];
+
+    const result = await runSegmentAnythingChatTool(
+      {
+        conversationState: conversationState(),
+        message: "segment the cells",
+        messageId: "message-1",
+        toolInput: { imageFileId: "file-1" },
+        userId: "user-1",
+      },
+      {
+        getFileStatus: async () =>
+          ({
+            contentType: "image/png",
+            s3Key: "user/user-1/conversation/state-1/uploads/cells.png",
+            size: 128,
+            userId: "user-1",
+          }) as never,
+        segmentClient: async () => ({
+          annotated_image: {
+            content: Buffer.from("annotated-image").toString("base64"),
+            mime_type: "image/webp",
+          },
+          confidence: 0.5,
+          count: 1,
+          dimensions: { height: 10, width: 20 },
+          objects: [],
+          prompt: "segment the cells",
+          summary: "Segmented 1 object.",
+        }),
+        storageProvider: {
+          download: async () => Buffer.from("raw-image"),
+          upload: async (path: string, _buffer: Buffer, mimeType: string) => {
+            uploads.push({ mimeType, path });
+            return path;
+          },
+        },
+      }
+    );
+
+    expect(uploads[0]).toEqual({
+      mimeType: "image/webp",
+      path: "user/user-1/conversation/state-1/artifacts/message-1/segment-anything-annotated.webp",
+    });
+    expect(result.artifacts[0]?.mimeType).toBe("image/webp");
+    expect(result.artifacts[0]?.path).toBe("artifacts/message-1/segment-anything-annotated.webp");
+  });
 });
