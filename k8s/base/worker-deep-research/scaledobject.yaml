@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-deep-research
+spec:
+  scaleTargetRef:
+    name: worker-deep-research
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: redis
+      metadata:
+        listName: bull:deep-research:wait
+        listLength: "2"
+      authenticationRef:
+        name: keda-redis

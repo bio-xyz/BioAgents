@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-chat
+spec:
+  scaleTargetRef:
+    name: worker-chat
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  pollingInterval: 15
+  cooldownPeriod: 120
+  triggers:
+    - type: redis
+      metadata:
+        listName: bull:chat:wait
+        listLength: "3"
+      authenticationRef:
+        name: keda-redis

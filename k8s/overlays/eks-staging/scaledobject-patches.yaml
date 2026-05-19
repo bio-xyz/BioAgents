@@ -1,0 +1,24 @@
+# Staging KEDA caps — smaller than prod.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-deep-research
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 2
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-chat
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 3
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-heavy
+spec:
+  minReplicaCount: 1
+  maxReplicaCount: 2

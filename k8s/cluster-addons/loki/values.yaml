@@ -1,0 +1,54 @@
+# Base values for grafana/loki chart, simple-scalable mode.
+# Env overrides set storage backend (S3 vs filesystem).
+# Chart docs: https://grafana.com/docs/loki/latest/setup/install/helm/
+
+deploymentMode: SimpleScalable
+
+loki:
+  auth_enabled: false
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  limits_config:
+    # Loki-side chunk deletion is disabled (compactor below); S3 lifecycle owns
+    # expiry. retention_period stays nominally long so any code path that reads
+    # it doesn't trip on a near-now value.
+    retention_period: 87600h         # 10y
+    max_query_lookback: 2160h        # 90d — Grafana queries blocked beyond this
+    ingestion_rate_mb: 32
+    ingestion_burst_size_mb: 64
+
+  # Compactor: keep tsdb-index compaction running (needed for query performance)
+  # but disable retention-based deletion. S3 lifecycle transitions chunks to
+  # GLACIER_IR at 90d and expires them at the retention horizon configured in
+  # the loki-bucket module.
+  compactor:
+    retention_enabled: false
+
+# Replicas — env overrides may bring these down for kind.
+backend:
+  replicas: 2
+read:
+  replicas: 2
+write:
+  replicas: 3
+
+# Disable bundled MinIO; env overrides supply S3 or filesystem.
+minio:
+  enabled: false
+
+# Sidecars / chunks cache fine at defaults.
+chunksCache:
+  enabled: true
+resultsCache:
+  enabled: true
+
+gateway:
+  enabled: true
+  replicas: 2

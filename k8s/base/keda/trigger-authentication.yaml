@@ -1,0 +1,16 @@
+# Shared KEDA auth pointing at the same per-env worker-secrets Secret.
+# The Secret must expose REDIS_KEDA_ADDRESS (host:port) and REDIS_KEDA_PASSWORD.
+# We keep these as separate keys (not REDIS_URL) because the Redis list scaler
+# wants address + password discretely; reusing REDIS_URL would force parsing.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-redis
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: worker-secrets
+      key: REDIS_KEDA_ADDRESS
+    - parameter: password
+      name: worker-secrets
+      key: REDIS_KEDA_PASSWORD
