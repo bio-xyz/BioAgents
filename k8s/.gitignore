@@ -1,0 +1,5 @@
+# CI-generated env files and pull-secret JSON; never commit.
+overlays/*/config.env
+overlays/*/secret.env
+overlays/*/pull-secret.env
+overlays/*/pull-secret.dockerconfigjson

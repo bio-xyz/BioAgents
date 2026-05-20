@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-deep-research
+spec:
+  # Deep-research jobs run up to 8h. Block voluntary disruption entirely;
+  # node drains must wait for explicit operator action.
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-deep-research

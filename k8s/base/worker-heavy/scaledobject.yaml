@@ -1,0 +1,25 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-heavy
+spec:
+  scaleTargetRef:
+    name: worker-heavy
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  pollingInterval: 30
+  cooldownPeriod: 300
+  # Two triggers — KEDA scales to the max needed across them.
+  triggers:
+    - type: redis
+      metadata:
+        listName: bull:paper-generation:wait
+        listLength: "1"
+      authenticationRef:
+        name: keda-redis
+    - type: redis
+      metadata:
+        listName: bull:file-process:wait
+        listLength: "2"
+      authenticationRef:
+        name: keda-redis

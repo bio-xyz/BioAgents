@@ -1,0 +1,153 @@
+name: Deploy Workers (EKS)
+
+# Renders per-env env/secret files, pins the image tag to the SHA built by
+# build-image.yml, and applies the Kustomize overlay to the right namespace.
+# `dev` → bioagents-staging, `main` → bioagents-prod.
+
+on:
+  workflow_run:
+    workflows: ['Build Image (GHCR)']
+    types: [completed]
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Image SHA to deploy (defaults to current HEAD)'
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Prevent overlapping deploys per env.
+  group: deploy-workers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Skip if upstream build failed.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    # Bounded well under GHA's 6h hard limit so the step never gets cancelled
+    # mid-rollout with a confusing "job cancelled" failure.
+    timeout-minutes: 120
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_EKS_CLUSTER_NAME: ${{ vars.AWS_EKS_CLUSTER_NAME }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/bioagents
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve env + image tag
+        id: env
+        run: |
+          set -eu
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          SHA_INPUT="${{ inputs.sha }}"
+          RAW_SHA="${SHA_INPUT:-${{ github.event.workflow_run.head_sha || github.sha }}}"
+          SHORT_SHA=$(echo "$RAW_SHA" | cut -c1-7)
+          case "$BRANCH" in
+            dev)  echo "overlay=eks-staging" >> "$GITHUB_OUTPUT" ;;
+            main) echo "overlay=eks-prod"    >> "$GITHUB_OUTPUT" ;;
+            *)    echo "Refusing to deploy from branch $BRANCH" >&2; exit 1 ;;
+          esac
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Verify required secrets for overlay
+        # AWS_ROLE_* still splits by env (each role is OIDC-scoped to its own
+        # branch — wrong role would be silent privilege escalation). AWS_CONFIG_ENV
+        # and AWS_SECRET_ENV are shared across both envs by design; the data plane
+        # split (Redis/Supabase per env) lives inside those file contents.
+        env:
+          OVERLAY: ${{ steps.env.outputs.overlay }}
+          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
+          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
+          AWS_CONFIG_ENV: ${{ secrets.AWS_CONFIG_ENV }}
+          AWS_SECRET_ENV: ${{ secrets.AWS_SECRET_ENV }}
+          GHCR_PULL_PAT: ${{ secrets.GHCR_PULL_PAT }}
+        run: |
+          set -eu
+          missing=""
+          if [ "$OVERLAY" = "eks-prod" ]; then
+            [ -z "$AWS_ROLE_PROD" ] && missing="$missing AWS_ROLE_PROD"
+          else
+            [ -z "$AWS_ROLE_STAGING" ] && missing="$missing AWS_ROLE_STAGING"
+          fi
+          [ -z "$AWS_CONFIG_ENV" ]    && missing="$missing AWS_CONFIG_ENV"
+          [ -z "$AWS_SECRET_ENV" ]    && missing="$missing AWS_SECRET_ENV"
+          [ -z "$GHCR_PULL_PAT" ] && missing="$missing GHCR_PULL_PAT"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required secrets for overlay $OVERLAY:$missing"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Per-env role; trust policy must scope the prod role to refs/heads/main.
+          role-to-assume: ${{ steps.env.outputs.overlay == 'eks-prod' && secrets.AWS_ROLE_PROD || secrets.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "$AWS_EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Render config.env
+        env:
+          AWS_CONFIG_ENV: ${{ secrets.AWS_CONFIG_ENV }}
+        run: printf "%s" "$AWS_CONFIG_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/config.env
+
+      - name: Render secret.env
+        env:
+          AWS_SECRET_ENV: ${{ secrets.AWS_SECRET_ENV }}
+        run: printf "%s" "$AWS_SECRET_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/secret.env
+
+      - name: Render pull-secret
+        env:
+          GHCR_USER: ${{ github.repository_owner }}
+          GHCR_PAT: ${{ secrets.GHCR_PULL_PAT }}
+          OVERLAY: ${{ steps.env.outputs.overlay }}
+        run: |
+          set -eu
+          AUTH=$(printf "%s:%s" "$GHCR_USER" "$GHCR_PAT" | base64 -w 0)
+          FILE="k8s/overlays/$OVERLAY/pull-secret.dockerconfigjson"
+          (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" > "$FILE")
+          chmod 400 "$FILE"
+
+      # kustomize is preinstalled on ubuntu-latest GitHub-hosted runners.
+      - name: Pin image tag to SHA
+        working-directory: k8s/overlays/${{ steps.env.outputs.overlay }}
+        run: |
+          set -eu
+          # Replace branch-mutable tag with immutable sha-<short> for deploy.
+          kustomize edit set image "$IMAGE=$IMAGE:sha-${{ steps.env.outputs.short_sha }}"
+          kustomize build . > /dev/null # sanity build
+
+      - name: Apply
+        run: |
+          set -eu
+          kustomize build k8s/overlays/${{ steps.env.outputs.overlay }} \
+            | kubectl apply --server-side --force-conflicts -f -
+
+      - name: Wait for rollout
+        # We wait for the Deployment's Available condition rather than full
+        # `rollout status`. With maxUnavailable:0/maxSurge:100% the new pod is
+        # Ready before SIGTERM is sent to the old, so Available flips true as
+        # soon as the new ReplicaSet is serving. Full `rollout status` would
+        # additionally wait for the old pod to terminate — up to 8h for
+        # worker-deep-research — which exceeds GHA's 6h job limit. The old pod
+        # finishes draining asynchronously after this step returns.
+        run: |
+          set -eu
+          NS=$([ "${{ steps.env.outputs.overlay }}" = "eks-prod" ] && echo bioagents-prod || echo bioagents-staging)
+          for d in worker-deep-research worker-chat worker-heavy worker-scheduled; do
+            kubectl -n "$NS" wait --for=condition=Available --timeout=30m deploy/"$d"
+          done
+
+      - name: Summary
+        run: |
+          echo "## Deploy summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Env**: ${{ steps.env.outputs.overlay }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch**: ${{ steps.env.outputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image**: $IMAGE:sha-${{ steps.env.outputs.short_sha }}" >> "$GITHUB_STEP_SUMMARY"

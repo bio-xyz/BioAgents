@@ -45,3 +45,12 @@ docs/*
 # Supabase CLI temp/state
 supabase/.temp/
 supabase/temp/
+
+# Terraform — never commit local state, provider downloads, or filled tfvars
+infra/terraform/**/.terraform/
+infra/terraform/**/.terraform.lock.hcl
+infra/terraform/**/*.tfstate
+infra/terraform/**/*.tfstate.*
+infra/terraform/**/*.tfvars
+!infra/terraform/**/*.tfvars.example
+infra/terraform/**/crash.log

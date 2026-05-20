@@ -1,0 +1,16 @@
+region              = "us-west-2"
+github_repo         = "BioAgents"
+staging_branch      = "dev"
+prod_branch         = "main"
+vpc_cidr            = "10.10.0.0/16"
+kubernetes_version  = "1.31"
+node_instance_types = ["m6i.large"]
+node_min_size       = 2
+node_desired_size   = 3
+node_max_size       = 12
+loki_retention_days = 730
+
+# ResourceQuotas — bump if KEDA peaks hit the ceiling. `kubectl describe rq -n
+# bioagents-<env>` shows usage vs hard caps.
+# staging_quota = { cpu_requests = "6",  cpu_limits = "12", memory = "12Gi", pods = "30" }
+# prod_quota    = { cpu_requests = "14", cpu_limits = "28", memory = "24Gi", pods = "60" }

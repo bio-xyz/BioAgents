@@ -1,0 +1,76 @@
+# Grafana Alloy as a DaemonSet shipping container stdout to in-cluster Loki.
+# Chart: https://github.com/grafana/alloy/tree/main/operations/helm/charts/alloy
+
+controller:
+  type: daemonset
+  hostPID: true   # needed to discover container PIDs for log file paths
+
+alloy:
+  # Mount the host's container log directory.
+  mounts:
+    varlog: true
+    dockercontainers: true
+  configMap:
+    create: true
+    # Alloy River config: scrape kubernetes pod logs, push to Loki.
+    # We assume Loki is reachable as http://loki-gateway.logging.svc:80 in
+    # SimpleScalable mode, or http://loki.logging.svc:3100 in SingleBinary (kind).
+    # Override `loki.endpoint` per env via values.<env>.yaml.
+    content: |
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_part_of"]
+          target_label  = "part_of"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = sys.env("LOKI_URL")
+        }
+      }
+
+  # Default for SimpleScalable / EKS. Override per env if needed.
+  extraEnv:
+    - name: LOKI_URL
+      value: http://loki-gateway.logging.svc/loki/api/v1/push
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    # Intentionally no memory limit — see worker deployments for rationale.
