@@ -114,11 +114,11 @@ gh variable set AWS_EKS_CLUSTER_NAME --body "$(terraform output -raw cluster_nam
 gh variable set AWS_REGION       --body "$(terraform output -raw aws_region)"
 
 # Per-env config and secret env files for the workers:
-# Single CONFIG_ENV / SECRET_ENV pair — same content rendered into both
+# Single AWS_CONFIG_ENV / AWS_SECRET_ENV pair — same content rendered into both
 # overlays at deploy time. The data plane split (Redis/Supabase per env)
 # lives inside the file contents, not in the variable name.
-gh secret set CONFIG_ENV < /path/to/config.env
-gh secret set SECRET_ENV < /path/to/secret.env
+gh secret set AWS_CONFIG_ENV < /path/to/config.env
+gh secret set AWS_SECRET_ENV < /path/to/secret.env
 
 # GHCR pull token (classic PAT with read:packages):
 gh secret set GHCR_PULL_PAT      --body "<token>"

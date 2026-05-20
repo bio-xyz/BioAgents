@@ -57,15 +57,15 @@ jobs:
 
       - name: Verify required secrets for overlay
         # AWS_ROLE_* still splits by env (each role is OIDC-scoped to its own
-        # branch — wrong role would be silent privilege escalation). CONFIG_ENV
-        # and SECRET_ENV are shared across both envs by design; the data plane
+        # branch — wrong role would be silent privilege escalation). AWS_CONFIG_ENV
+        # and AWS_SECRET_ENV are shared across both envs by design; the data plane
         # split (Redis/Supabase per env) lives inside those file contents.
         env:
           OVERLAY: ${{ steps.env.outputs.overlay }}
           AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
           AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
-          CONFIG_ENV: ${{ secrets.CONFIG_ENV }}
-          SECRET_ENV: ${{ secrets.SECRET_ENV }}
+          AWS_CONFIG_ENV: ${{ secrets.AWS_CONFIG_ENV }}
+          AWS_SECRET_ENV: ${{ secrets.AWS_SECRET_ENV }}
           GHCR_PULL_PAT: ${{ secrets.GHCR_PULL_PAT }}
         run: |
           set -eu
@@ -75,8 +75,8 @@ jobs:
           else
             [ -z "$AWS_ROLE_STAGING" ] && missing="$missing AWS_ROLE_STAGING"
           fi
-          [ -z "$CONFIG_ENV" ]    && missing="$missing CONFIG_ENV"
-          [ -z "$SECRET_ENV" ]    && missing="$missing SECRET_ENV"
+          [ -z "$AWS_CONFIG_ENV" ]    && missing="$missing AWS_CONFIG_ENV"
+          [ -z "$AWS_SECRET_ENV" ]    && missing="$missing AWS_SECRET_ENV"
           [ -z "$GHCR_PULL_PAT" ] && missing="$missing GHCR_PULL_PAT"
           if [ -n "$missing" ]; then
             echo "::error::Missing required secrets for overlay $OVERLAY:$missing"
@@ -95,13 +95,13 @@ jobs:
 
       - name: Render config.env
         env:
-          CONFIG_ENV: ${{ secrets.CONFIG_ENV }}
-        run: printf "%s" "$CONFIG_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/config.env
+          AWS_CONFIG_ENV: ${{ secrets.AWS_CONFIG_ENV }}
+        run: printf "%s" "$AWS_CONFIG_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/config.env
 
       - name: Render secret.env
         env:
-          SECRET_ENV: ${{ secrets.SECRET_ENV }}
-        run: printf "%s" "$SECRET_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/secret.env
+          AWS_SECRET_ENV: ${{ secrets.AWS_SECRET_ENV }}
+        run: printf "%s" "$AWS_SECRET_ENV" > k8s/overlays/${{ steps.env.outputs.overlay }}/secret.env
 
       - name: Render pull-secret
         env:
