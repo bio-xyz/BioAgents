@@ -110,14 +110,15 @@ kubectl apply --server-side \
 ```bash
 gh secret set AWS_ROLE_STAGING   --body "$(terraform output -raw deployer_role_staging_arn)"
 gh secret set AWS_ROLE_PROD      --body "$(terraform output -raw deployer_role_prod_arn)"
-gh variable set EKS_CLUSTER_NAME --body "$(terraform output -raw cluster_name)"
+gh variable set AWS_EKS_CLUSTER_NAME --body "$(terraform output -raw cluster_name)"
 gh variable set AWS_REGION       --body "$(terraform output -raw aws_region)"
 
 # Per-env config and secret env files for the workers:
-gh secret set CONFIG_ENV_STAGING < /path/to/staging/config.env
-gh secret set SECRET_ENV_STAGING < /path/to/staging/secret.env
-gh secret set CONFIG_ENV_PROD    < /path/to/prod/config.env
-gh secret set SECRET_ENV_PROD    < /path/to/prod/secret.env
+# Single CONFIG_ENV / SECRET_ENV pair — same content rendered into both
+# overlays at deploy time. The data plane split (Redis/Supabase per env)
+# lives inside the file contents, not in the variable name.
+gh secret set CONFIG_ENV < /path/to/config.env
+gh secret set SECRET_ENV < /path/to/secret.env
 
 # GHCR pull token (classic PAT with read:packages):
 gh secret set GHCR_PULL_PAT      --body "<token>"
