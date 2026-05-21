@@ -111,7 +111,7 @@ export async function runNextStepsPhase(
         nextObjective: result.currentObjective,
         nextPlanningSteps: result.plan.map(
           (t) =>
-            `${t.type} task: ${t.objective} datasets: ${t.datasets
+            `${t.type} task: ${t.objective} datasets: ${(t.datasets ?? [])
               .map((d) => `${d.filename} (${d.description})`)
               .join(", ")}`
         ),

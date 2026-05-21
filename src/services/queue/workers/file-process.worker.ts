@@ -63,13 +63,17 @@ async function processFileJob(
       } catch (updateError) {
         logger.error({ fileId, updateError }, "failed_to_update_file_status_on_error");
       }
-      await publishNotification({
-        conversationId,
-        error: errorMessage,
-        fileId,
-        jobId: job.id || fileId,
-        type: "file:error",
-      });
+      try {
+        await publishNotification({
+          conversationId,
+          error: errorMessage,
+          fileId,
+          jobId: job.id || fileId,
+          type: "file:error",
+        });
+      } catch (notifyErr) {
+        logger.error({ fileId, notifyErr }, "failed_to_publish_file_error_notification");
+      }
     },
     onSuccess: async ({ description }) => {
       await publishNotification({

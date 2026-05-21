@@ -25,11 +25,20 @@ async function processPaperGenerationJob(
 
   logger.info({ conversationId, jobId: job.id, paperId }, "paper_generation_job_started");
 
-  // Worker-only: link the BullMQ job id back to the paper row so the
-  // status endpoint can correlate the row to the queue job.
+  // Worker-only: link the BullMQ job id back to the paper row AND flip
+  // status to "processing" atomically so the paper:started notification
+  // fires after the row is already in the expected state (clients use the
+  // notify+fetch pattern).
   const { getServiceClient } = await import("../../../db/client");
   const supabase = getServiceClient();
-  await supabase.from("paper").update({ job_id: job.id }).eq("id", paperId);
+  const { error: startErr } = await supabase
+    .from("paper")
+    .update({ job_id: job.id, status: "processing" })
+    .eq("id", paperId);
+  if (startErr) {
+    logger.error({ error: startErr, jobId: job.id, paperId }, "paper_worker_start_update_failed");
+    throw startErr;
+  }
 
   await notifyPaperStarted(job.id!, conversationId, paperId);
 

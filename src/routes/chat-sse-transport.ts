@@ -327,13 +327,24 @@ export function buildChatSseStream(
           error: "Something went wrong while generating the response. Please try again.",
           reason: "agent_error",
         });
+        // Close the stream first so the heartbeat timer is cleared even if
+        // markMessageFailed rejects — otherwise the timer keeps firing
+        // against a closed controller (ReadableStream doesn't call cancel()
+        // on producer-side errors).
+        safeClose();
         // Only mark FAILED if the reply hasn't already been durably saved.
         // A post-save throw (e.g. logger / safeClose / response-time write)
         // must not downgrade a successful reply to FAILED.
         if (!replyPersisted) {
-          await markMessageFailed(createdMessage.id);
+          try {
+            await markMessageFailed(createdMessage.id);
+          } catch (failErr) {
+            logger.error(
+              { error: failErr, messageId: createdMessage.id },
+              "chat_sse_mark_failed_error"
+            );
+          }
         }
-        safeClose();
       }
     },
   });

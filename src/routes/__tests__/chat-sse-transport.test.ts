@@ -274,4 +274,28 @@ describe("buildChatSseStream", () => {
     expect(events.map((e) => e.event)).toContain("error");
     expect(failedCalls).toBe(1);
   });
+
+  test("catch path: stream closes even when markMessageFailed rejects (no heartbeat leak)", async () => {
+    // Regression for PR #179 review (discussion_r3247661092): if the agent
+    // throws and markMessageFailed ALSO rejects, the heartbeat interval must
+    // still be cleared and the stream must terminate. Prior to the fix the
+    // exception escaped start(), safeClose() never ran, and the timer kept
+    // firing against a closed controller.
+    const stream = buildChatSseStream(
+      baseParams(),
+      happyDeps({
+        markMessageFailed: async () => {
+          throw new Error("DB unavailable");
+        },
+        runChatAgent: async () => {
+          throw new Error("agent crashed");
+        },
+      })
+    );
+
+    // collectEvents reads to completion — if the stream never closes, this
+    // hangs. The bun:test timeout would surface the regression.
+    const events = await collectEvents(stream);
+    expect(events.map((e) => e.event)).toContain("error");
+  });
 });
