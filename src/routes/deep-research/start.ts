@@ -23,7 +23,7 @@ import {
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../../services/chat/setup";
-import { createMessageRecord } from "../../services/chat/tools";
+import { createMessageRecord, markMessageFailed } from "../../services/chat/tools";
 import {
   DeepResearchCancelledError,
   isDeepResearchCancellationRequested,
@@ -207,7 +207,6 @@ async function handleDeepResearchStartFailure(
   });
 
   try {
-    const { markMessageFailed } = await import("../../services/chat/tools");
     await markMessageFailed(rootMessageId);
   } catch (msgErr) {
     deps.logger.warn({ msgErr, rootMessageId }, "deep_research_mark_message_failed_on_failure");
@@ -787,7 +786,6 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
         );
       }
       try {
-        const { markMessageFailed } = await import("../../services/chat/tools");
         await markMessageFailed(createdMessage.id);
       } catch (msgErr) {
         logger.warn(
@@ -863,7 +861,6 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
       );
     }
     try {
-      const { markMessageFailed } = await import("../../services/chat/tools");
       await markMessageFailed(createdMessage.id);
     } catch (msgErr) {
       logger.warn(
