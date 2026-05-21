@@ -15,7 +15,6 @@ import { Job, Worker } from "bullmq";
 import type {
   ConversationState,
   ConversationStateValues,
-  OnPollUpdate,
   PlanTask,
   State,
 } from "../../../types/core";
@@ -23,11 +22,7 @@ import {
   clearDeepResearchActivity,
   setDeepResearchActivity,
 } from "../../../utils/deep-research/activity";
-import {
-  calculateSessionStartLevel,
-  createContinuationMessage,
-  getSessionCompletedTasks,
-} from "../../../utils/deep-research/continuation-utils";
+import { calculateSessionStartLevel } from "../../../utils/deep-research/continuation-utils";
 import {
   completeObjectiveTrace,
   ensureObjectiveTrace,
@@ -37,8 +32,6 @@ import {
 } from "../../../utils/deep-research/objective-trace";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
-import { mergeProteinStructures } from "../../../utils/proteinStructures";
-import { applySourceSelectionToPromotedTasks } from "../../../utils/sourceSelectionRouting";
 import {
   DeepResearchCancelledError,
   isDeepResearchCancellationRequested,
@@ -111,10 +104,19 @@ async function processDeepResearchJob(
   };
 
   const assertNotCancelled = async () => {
-    const values =
-      getConversationStateRef && conversationStateId
-        ? (await getConversationStateRef(conversationStateId))?.values
-        : conversationState?.values;
+    let values: Partial<ConversationStateValues> | undefined;
+    if (getConversationStateRef && conversationStateId) {
+      const fresh = await getConversationStateRef(conversationStateId);
+      if (!fresh) {
+        logger.warn(
+          { conversationStateId, rootMessageId },
+          "cancellation_check_state_read_returned_null"
+        );
+      }
+      values = fresh?.values ?? conversationState?.values;
+    } else {
+      values = conversationState?.values;
+    }
     throwIfDeepResearchCancelled(values, { rootMessageId, stateId });
   };
 
@@ -363,221 +365,26 @@ async function processDeepResearchJob(
       );
     }
 
-    // Get current level - if continuation, use existing; otherwise run planning agent
-    let newLevel: number;
-    let currentObjective: string;
-
-    if (!isInitialIteration) {
-      // CONTINUATION: Tasks already promoted, just get current level
-      const currentPlan = conversationState.values.plan || [];
-      newLevel = currentPlan.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : 0;
-      currentObjective = conversationState.values.currentObjective || "";
-
-      logger.info(
-        { currentObjective, jobId: job.id, newLevel },
-        "continuation_using_promoted_tasks"
-      );
-    } else if (
-      isInitialIteration &&
-      conversationState.values.clarificationContext?.initialTasks?.length
-    ) {
-      // CLARIFICATION TASKS: Use pre-approved tasks from clarification flow (skip LLM planning)
-      const clarCtx = conversationState.values.clarificationContext;
-      const initialTasks = clarCtx.initialTasks!;
-      const uploadedDatasets = conversationState.values.uploadedDatasets || [];
-
-      // Log what filenames are expected vs what's available
-      const allRequestedFilenames = initialTasks
-        .filter((t) => t.type === "ANALYSIS")
-        .flatMap((t) => t.datasetFilenames || []);
-
-      logger.info(
-        {
-          availableFilenames: uploadedDatasets.map((d) => d.filename),
-          jobId: job.id,
-          requestedFilenames: allRequestedFilenames,
-          taskCount: initialTasks.length,
-          uploadedDatasetCount: uploadedDatasets.length,
-        },
-        "using_clarification_initial_tasks"
-      );
-
-      // Get current plan or initialize empty
-      const currentPlan = conversationState.values.plan || [];
-
-      // Find max level in current plan
-      const maxLevel =
-        currentPlan?.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-
-      // Add tasks from clarification with appropriate level and IDs
-      // Resolve datasetFilenames to actual dataset objects from uploadedDatasets
-      newLevel = maxLevel + 1;
-      const newTasks = initialTasks.map((task) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-
-        // Resolve datasetFilenames to full dataset objects
-        const resolvedDatasets = (task.datasetFilenames || [])
-          .map((filename) => {
-            const dataset = uploadedDatasets.find((d) => d.filename === filename);
-            if (!dataset) {
-              logger.warn(
-                {
-                  availableDatasets: uploadedDatasets.map((d) => d.filename),
-                  filename,
-                  jobId: job.id,
-                },
-                "clarification_dataset_not_found"
-              );
-              return null;
-            }
-            return {
-              description: dataset.description,
-              filename: dataset.filename,
-              id: dataset.id,
-              path: dataset.path,
-            };
-          })
-          .filter((d): d is NonNullable<typeof d> => d !== null);
-
-        return {
-          datasets: resolvedDatasets,
-          end: undefined,
-          id: taskId,
-          level: newLevel,
-          objective: task.objective,
-          output: undefined,
-          sources: task.sources,
-          start: undefined,
-          type: task.type,
-        } as PlanTask;
-      });
-      const tasksWithSourceSelection = applySourceSelectionToPromotedTasks({
-        sourceSelectionId: conversationState.values.sourceSelectionId,
-        tasks: newTasks,
-        userMessage: message,
-      });
-
-      // Use refined objective from clarification
-      currentObjective = clarCtx.refinedObjective;
-
-      // Append to plan and update state
-      conversationState.values.plan = [...currentPlan, ...tasksWithSourceSelection];
-      conversationState.values.currentObjective = currentObjective;
-      conversationState.values.currentLevel = newLevel;
-
-      // Initialize main objective from clarification (only if not already set)
-      if (!conversationState.values.objective) {
-        conversationState.values.objective = clarCtx.refinedObjective;
-      }
-
-      // Initialize evolving objective (only if not already set)
-      if (!conversationState.values.evolvingObjective) {
-        conversationState.values.evolvingObjective = clarCtx.refinedObjective;
-      }
-
-      // Clear initialTasks after use (one-time use)
-      conversationState.values.clarificationContext = {
-        ...clarCtx,
-        initialTasks: undefined,
-      };
-
-      // Update state in DB
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            currentObjective
-          ),
-        });
-        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
-      }
-
-      logger.info(
-        {
-          currentObjective,
-          jobId: job.id,
-          newLevel,
-          taskCount: tasksWithSourceSelection.length,
-        },
-        "clarification_tasks_promoted_to_plan"
-      );
-    } else {
-      // INITIAL: Execute planning agent
-      await assertNotCancelled();
-      logger.info({ jobId: job.id }, "deep_research_job_planning");
-
-      const { planningAgent } = await import("../../../agents/planning");
-
-      const planningResult = await planningAgent({
+    // Worker notifies after planning because, unlike the route, it doesn't
+    // call persistConversationActivity before this phase.
+    const { runPlanningPhase } = await import("../../deep-research/phases/planning");
+    const planning = await runPlanningPhase(
+      {
         conversationState,
-        message: messageRecord,
-        mode: "initial",
+        currentMessage: messageRecord,
+        isInitialIteration,
+        iterationCount: iterationNumber,
         researchMode,
+        rootMessage: messageRecord,
+        skipPlanning: !isInitialIteration,
         state,
-        usageType: "deep-research",
-      });
-
-      const plan = planningResult.plan;
-      currentObjective = planningResult.currentObjective;
-
-      if (!plan || !currentObjective) {
-        throw new Error("Plan or current objective not found");
-      }
-
-      // Clear previous suggestions
-      conversationState.values.suggestedNextSteps = [];
-
-      // Get current plan or initialize empty
-      const currentPlan = conversationState.values.plan || [];
-
-      // Find max level in current plan
-      const maxLevel =
-        currentPlan?.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-
-      // Add new tasks with appropriate level and assign IDs
-      newLevel = maxLevel + 1;
-      const newTasks = plan.map((task: PlanTask) => {
-        const taskId = task.type === "ANALYSIS" ? `ana-${newLevel}` : `lit-${newLevel}`;
-        return {
-          ...task,
-          end: undefined,
-          id: taskId,
-          level: newLevel,
-          output: undefined,
-          start: undefined,
-        };
-      });
-
-      // Append to existing plan and update objective
-      conversationState.values.plan = [...currentPlan, ...newTasks];
-      conversationState.values.currentObjective = currentObjective;
-      conversationState.values.currentLevel = newLevel;
-
-      // Initialize main objective from first message (only if not already set)
-      if (!conversationState.values.objective && messageRecord.question) {
-        conversationState.values.objective = messageRecord.question;
-      }
-
-      // Initialize evolving objective (only if not already set)
-      if (!conversationState.values.evolvingObjective && messageRecord.question) {
-        conversationState.values.evolvingObjective = messageRecord.question;
-      }
-
-      // Update state in DB
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            currentObjective
-          ),
-        });
-        await notifyStateUpdated(job.id!, conversationId, conversationState.id);
-      }
-
-      logger.info(
-        { jobId: job.id, newLevel, taskCount: newTasks.length },
-        "deep_research_job_planning_completed"
-      );
+      },
+      { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
+    );
+    const newLevel: number = planning.newLevel;
+    const currentObjective: string = planning.currentObjective;
+    if (conversationState.id) {
+      await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
     // Update progress: Literature/Analysis
@@ -587,10 +394,6 @@ async function processDeepResearchJob(
       stage: "literature",
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "literature", 20);
-
-    // Step 2: Execute tasks
-    const { literatureAgent } = await import("../../../agents/literature");
-    const { analysisAgent } = await import("../../../agents/analysis");
 
     tasksToExecute = (conversationState.values.plan || []).filter(
       (t) => t.level === newLevel && !t.end // Skip already-completed tasks (for retry safety)
@@ -630,198 +433,31 @@ async function processDeepResearchJob(
       return p;
     };
 
-    // Execute all tasks concurrently
-    const taskPromises = tasksToExecute.map(async (task) => {
-      // Callback to persist reasoning traces to conversation state on each poll
-      const onPollUpdate: OnPollUpdate = async ({ reasoning }) => {
-        if (reasoning && reasoning.length !== (task.reasoning?.length ?? 0)) {
-          task.reasoning = reasoning;
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-            await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-          }
-        }
-      };
-
-      if (task.type === "LITERATURE") {
-        await assertNotCancelled();
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (activeConversationState.id) {
-          setDeepResearchActivity(activeConversationState.values, {
-            level: task.level ?? newLevel,
-            objective: task.objective,
-            phase: "literature",
-            taskType: task.type,
-          });
-          await writeStateSerialized!();
+    const { runExecutionPhase } = await import("../../deep-research/phases/execution");
+    await runExecutionPhase(
+      {
+        conversationState: activeConversationState,
+        newLevel,
+        tasksToExecute,
+        userId: messageRecord.user_id,
+      },
+      {
+        assertNotCancelled,
+        notifyStateUpdated: async () => {
+          if (!activeConversationState.id) return;
           await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-
-        logger.info(
-          { jobId: job.id, taskObjective: task.objective },
-          "deep_research_job_executing_literature_task"
-        );
-
-        const primaryLiteratureType =
-          process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO" ? "BIOLITDEEP" : "EDISON";
-
-        // Build list of literature promises based on configured sources
-        const literaturePromises: Promise<void>[] = [];
-
-        // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
-        if (process.env.OPENSCHOLAR_API_URL) {
-          const openScholarPromise = literatureAgent({
-            objective: task.objective,
-            type: "OPENSCHOLAR",
-          }).then(async (result) => {
-            task.output += `${result.output}\n\n`;
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-            }
-          });
-          literaturePromises.push(openScholarPromise);
-        }
-
-        // Primary literature (Edison or BioLit) - always enabled
-        const primaryLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          onJobCreated: async (jobId) => {
-            task.bioLiteratureJobId = jobId;
-            task.downstreamJobIds = {
-              ...(task.downstreamJobIds || {}),
-              bioLiterature: [...new Set([...(task.downstreamJobIds?.bioLiterature || []), jobId])],
-            };
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-              await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-            }
-          },
-          onPollUpdate,
-          sources: task.sources,
-          type: primaryLiteratureType,
-        }).then(async (result) => {
-          task.output += `${result.output}\n\n`;
-          // Capture jobId from primary literature (Edison)
-          if (result.jobId) {
-            task.jobId = result.jobId;
-            if (primaryLiteratureType === "BIOLITDEEP") {
-              task.bioLiteratureJobId = result.jobId;
-            }
-          }
-          task.proteinStructures = mergeProteinStructures(
-            task.proteinStructures,
-            result.proteinStructures
-          );
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-          }
-        });
-        literaturePromises.push(primaryLiteraturePromise);
-
-        // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
-        if (process.env.KNOWLEDGE_DOCS_PATH) {
-          const knowledgePromise = literatureAgent({
-            objective: task.objective,
-            type: "KNOWLEDGE",
-          }).then(async (result) => {
-            task.output += `${result.output}\n\n`;
-            if (activeConversationState.id) {
-              await writeStateSerialized!();
-            }
-          });
-          literaturePromises.push(knowledgePromise);
-        }
-
-        await Promise.all(literaturePromises);
-
-        task.end = new Date().toISOString();
-        if (activeConversationState.id) {
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-      } else if (task.type === "ANALYSIS") {
-        await assertNotCancelled();
-        // Update progress for analysis
-        await job.updateProgress({
-          percent: 50,
-          stage: "analysis",
-        } as JobProgress);
-        await notifyJobProgress(job.id!, conversationId, "analysis", 50);
-
-        task.start = new Date().toISOString();
-        task.output = "";
-
-        if (activeConversationState.id) {
-          setDeepResearchActivity(activeConversationState.values, {
-            level: task.level ?? newLevel,
-            objective: task.objective,
-            phase: "analysis",
-            taskType: task.type,
-          });
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
-
-        logger.info(
-          {
-            datasets: task.datasets,
-            jobId: job.id,
-            taskObjective: task.objective,
-          },
-          "deep_research_job_executing_analysis_task"
-        );
-
-        try {
-          const type =
-            process.env.PRIMARY_ANALYSIS_AGENT?.toUpperCase() === "BIO" ? "BIO" : "EDISON";
-
-          const analysisResult = await analysisAgent({
-            conversationStateId: activeConversationState.id!,
-            datasets: task.datasets,
-            objective: task.objective,
-            onPollUpdate,
-            type,
-            userId: messageRecord.user_id,
-          });
-
-          task.output = `${analysisResult.output}\n\n`;
-          task.artifacts = analysisResult.artifacts || [];
-          task.jobId = analysisResult.jobId;
-
-          if (activeConversationState.id) {
-            await writeStateSerialized!();
-          }
-        } catch (error) {
-          const errorMsg =
-            error instanceof Error
-              ? error.message
-              : typeof error === "object" && error !== null
-                ? JSON.stringify(error)
-                : String(error);
-          task.output = `Analysis failed: ${errorMsg}`;
-          logger.error(
-            { error, jobId: job.id, taskObjective: task.objective },
-            "deep_research_job_analysis_failed"
-          );
-        }
-
-        task.end = new Date().toISOString();
-        if (activeConversationState.id) {
-          await writeStateSerialized!();
-          await notifyStateUpdated(job.id!, conversationId, activeConversationState.id);
-        }
+        },
+        onAnalysisStarted: async () => {
+          await job.updateProgress({ percent: 50, stage: "analysis" } as JobProgress);
+          await notifyJobProgress(job.id!, conversationId, "analysis", 50);
+        },
+        writeStateSerialized: () => writeStateSerialized!(),
       }
-    });
-
-    // Wait for all tasks to complete
-    await Promise.all(taskPromises);
-    await assertNotCancelled();
+    );
 
     logger.info(
       { completedTasksCount: tasksToExecute.length, jobId: job.id },
-      "deep_research_job_tasks_completed"
+      "deep_research_job_tasks_completed_via_shared_phase"
     );
 
     // Update progress: Hypothesis
@@ -837,23 +473,16 @@ async function processDeepResearchJob(
       phase: "reflection",
     });
 
-    // Step 3: Generate hypothesis
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_generating_hypothesis");
-
-    const { hypothesisAgent } = await import("../../../agents/hypothesis");
-
-    hypothesisResult = await hypothesisAgent({
-      completedTasks: tasksToExecute,
-      conversationState,
-      message: messageRecord,
-      objective: currentObjective,
-    });
-
-    conversationState.values.currentHypothesis = hypothesisResult.hypothesis;
-    if (conversationState.id) {
-      await persistConversationState();
-    }
+    const { runHypothesisPhase } = await import("../../deep-research/phases/hypothesis");
+    hypothesisResult = await runHypothesisPhase(
+      {
+        completedTasks: tasksToExecute,
+        conversationState,
+        message: messageRecord,
+        objective: currentObjective,
+      },
+      { assertNotCancelled, persistConversationState }
+    );
 
     // Update progress: Reflection
     await job.updateProgress({
@@ -862,344 +491,114 @@ async function processDeepResearchJob(
     } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reflection", 85);
 
-    // Step 4: Run reflection and discovery agents in parallel
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_reflection_and_discovery");
-
-    const { reflectionAgent } = await import("../../../agents/reflection");
-    const { discoveryAgent } = await import("../../../agents/discovery");
-    const { getMessagesByConversation } = await import("../../../db/operations");
-    const { getDiscoveryRunConfig } = await import("../../../utils/discovery");
-
-    // Determine if we should run discovery and which tasks to consider
-    let shouldRunDiscovery = false;
-    let tasksToConsider: PlanTask[] = [];
-
-    if (messageRecord.conversation_id) {
-      const allMessages = await getMessagesByConversation(messageRecord.conversation_id, 100);
-      const messageCount = allMessages?.length || 1;
-
-      const discoveryConfig = getDiscoveryRunConfig(
-        messageCount,
-        conversationState.values.plan || [],
-        tasksToExecute
-      );
-
-      shouldRunDiscovery = discoveryConfig.shouldRunDiscovery;
-      tasksToConsider = discoveryConfig.tasksToConsider;
-    }
-
-    // Run reflection and discovery in parallel
-    const [reflectionResult, discoveryResult] = await Promise.all([
-      reflectionAgent({
-        completedMaxTasks: tasksToExecute,
+    const { runReflectionDiscoveryPhase } = await import(
+      "../../deep-research/phases/reflection-discovery"
+    );
+    await runReflectionDiscoveryPhase(
+      {
+        completedTasks: tasksToExecute,
         conversationState,
         hypothesis: hypothesisResult.hypothesis,
         message: messageRecord,
-      }),
-      shouldRunDiscovery
-        ? discoveryAgent({
-            conversationState,
-            hypothesis: hypothesisResult.hypothesis,
-            message: messageRecord,
-            tasksToConsider,
-          })
-        : Promise.resolve(null),
-    ]);
-
-    // Update conversation state with reflection results
-    conversationState.values.conversationTitle = reflectionResult.conversationTitle;
-    if (reflectionResult.evolvingObjective) {
-      conversationState.values.evolvingObjective = reflectionResult.evolvingObjective;
-    }
-    conversationState.values.currentObjective = reflectionResult.currentObjective;
-    conversationState.values.keyInsights = reflectionResult.keyInsights;
-    conversationState.values.methodology = reflectionResult.methodology;
-
-    // Update conversation state with discovery results if discovery ran
-    if (discoveryResult) {
-      conversationState.values.discoveries = discoveryResult.discoveries;
-      logger.info(
-        { discoveryCount: discoveryResult.discoveries.length, jobId: job.id },
-        "discoveries_updated"
-      );
-    }
+      },
+      { assertNotCancelled, getObjectiveTraceObjective, persistConversationState }
+    );
 
     if (conversationState.id) {
-      await persistConversationState({
-        ensureTraceObjective: getObjectiveTraceObjective(
-          conversationState.values,
-          reflectionResult.currentObjective
-        ),
-      });
       await notifyStateUpdated(job.id!, conversationId, conversationState.id);
     }
 
-    // Step 5: Plan next iteration
-    await assertNotCancelled();
-    logger.info({ jobId: job.id }, "deep_research_job_planning_next");
-
-    await persistConversationActivity({
-      level: newLevel,
-      objective: conversationState.values.currentObjective || currentObjective,
-      phase: "next_steps",
-    });
-
-    const { planningAgent } = await import("../../../agents/planning");
-    const nextPlanningResult = await planningAgent({
-      conversationState,
-      message: messageRecord,
-      mode: "next",
-      researchMode,
-      state,
-      usageType: "deep-research",
-    });
-
-    // Track whether research should continue
-    let shouldContinue = false;
-
-    if (nextPlanningResult.plan.length > 0) {
-      conversationState.values.suggestedNextSteps = nextPlanningResult.plan;
-      if (nextPlanningResult.currentObjective) {
-        conversationState.values.currentObjective = nextPlanningResult.currentObjective;
+    const { runNextStepsPhase } = await import("../../deep-research/phases/next-steps");
+    const nextStepsResult = await runNextStepsPhase(
+      {
+        conversationState,
+        currentObjective,
+        message: messageRecord,
+        newLevel,
+        researchMode,
+        state,
+      },
+      {
+        assertNotCancelled,
+        getObjectiveTraceObjective,
+        persistConversationActivity,
+        persistConversationState,
       }
-      if (conversationState.id) {
-        await persistConversationState({
-          ensureTraceObjective: getObjectiveTraceObjective(
-            conversationState.values,
-            nextPlanningResult.currentObjective || currentObjective
-          ),
-        });
-      }
-      shouldContinue = true;
-    }
+    );
 
-    // =========================================================================
-    // CONTINUE RESEARCH DECISION (before reply so we know if it's final)
-    // Decide whether to continue autonomously or ask user for feedback
-    // =========================================================================
-    let isFinal = true;
-    let willContinue = false;
+    const shouldContinue = nextStepsResult.hasSuggestions;
 
-    if (
-      shouldContinue &&
-      conversationState.values.suggestedNextSteps?.length &&
-      iterationNumber < maxAutoIterations
-    ) {
-      const { continueResearchAgent } = await import("../../../agents/continueResearch");
-
-      await assertNotCancelled();
-      const continueResult = await continueResearchAgent({
+    const { runContinueDecisionPhase } = await import(
+      "../../deep-research/phases/continue-decision"
+    );
+    const continueDecision = await runContinueDecisionPhase(
+      {
         completedTasks: tasksToExecute,
         conversationState,
         hypothesis: hypothesisResult.hypothesis,
         iterationCount: iterationNumber,
+        loopAlive: shouldContinue,
+        maxAutoIterations,
         message: currentMessage,
         researchMode,
-        suggestedNextSteps: conversationState.values.suggestedNextSteps,
-      });
+      },
+      { assertNotCancelled }
+    );
+    const { isFinal, willContinue } = continueDecision;
 
-      logger.info(
-        {
-          confidence: continueResult.confidence,
-          iterationNumber,
-          jobId: job.id,
-          reasoning: continueResult.reasoning,
-          shouldContinue: continueResult.shouldContinue,
-          triggerReason: continueResult.triggerReason,
-        },
-        "continue_research_decision"
-      );
-
-      if (continueResult.shouldContinue) {
-        isFinal = false;
-        willContinue = true;
-      } else {
-        logger.info(
-          {
-            iterationNumber,
-            jobId: job.id,
-            triggerReason: continueResult.triggerReason,
-          },
-          "stopping_for_user_feedback"
-        );
-      }
-    }
-
-    // =========================================================================
-    // GENERATE REPLY FOR THIS ITERATION
-    // =========================================================================
     await job.updateProgress({ percent: 95, stage: "reply" } as JobProgress);
     await notifyJobProgress(job.id!, conversationId, "reply", 95);
 
-    await assertNotCancelled();
-    await persistConversationActivity({
-      level: newLevel,
-      objective: conversationState.values.currentObjective || currentObjective,
-      phase: "reply",
-    });
-
-    logger.info(
-      { isFinal, iterationNumber, jobId: job.id, messageId: currentMessage.id },
-      "generating_reply_for_iteration"
-    );
-
-    const { replyAgent } = await import("../../../agents/reply");
-
-    // Get completed tasks from this session, limited to last 3 levels max
-    // This ensures reply covers work across continuations without overwhelming context
-    const sessionCompletedTasks = getSessionCompletedTasks(
-      conversationState.values.plan || [],
-      sessionStartLevel,
-      newLevel
-    );
-
-    logger.info(
-      {
-        jobId: job.id,
-        newLevel,
-        sessionCompletedTasksCount: sessionCompletedTasks.length,
-        sessionStartLevel,
-        totalPlanTasks: (conversationState.values.plan || []).length,
-      },
-      "reply_tasks_filtered"
-    );
-
-    const replyResult = await replyAgent({
-      completedMaxTasks: sessionCompletedTasks,
-      conversationState,
-      hypothesis: hypothesisResult.hypothesis,
-      isFinal,
-      message: currentMessage,
-      nextPlan: conversationState.values.suggestedNextSteps || [],
-    });
-    await assertNotCancelled();
-
-    // Warn if reply is empty
-    if (!replyResult.reply || replyResult.reply.trim().length === 0) {
-      logger.warn(
-        {
-          iterationNumber,
-          jobId: job.id,
-          messageId: currentMessage.id,
-          replyResult,
-        },
-        "reply_agent_returned_empty_response"
-      );
-    }
-
-    // Update the current message with the reply. Sweeper exempts
-    // deep-research rows via the isDeepResearch flag so this is normally
-    // unguarded ground; the precondition (see markMessageComplete) is
-    // defensive against manual SQL flips or future callers.
-    const iterationResponseTime = Date.now() - startTime;
     const { markMessageComplete } = await import("../../chat/tools");
-    const { updated } = await markMessageComplete(currentMessage.id, {
-      content: replyResult.reply,
-      response_time: iterationResponseTime,
-      summary: replyResult.summary,
-    });
-    if (!updated) {
-      logger.warn(
-        { iterationNumber, jobId: job.id, messageId: currentMessage.id },
-        "deep_research_iteration_complete_skipped_row_not_pending"
-      );
-    }
-
-    logger.info(
+    const { runReplyPhase } = await import("../../deep-research/phases/reply");
+    await runReplyPhase(
       {
-        contentLength: replyResult.reply?.length || 0,
-        iterationNumber,
-        jobId: job.id,
-        messageId: currentMessage.id,
+        conversationState,
+        currentMessage,
+        currentObjective,
+        hypothesis: hypothesisResult.hypothesis,
+        isFinal,
+        iterationCount: iterationNumber,
+        iterationStartTime: startTime,
+        newLevel,
+        sessionStartLevel,
+        state,
       },
-      "iteration_reply_saved"
+      {
+        assertNotCancelled,
+        markMessageComplete,
+        notifyMessageUpdated: async () => {
+          await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
+        },
+        persistConversationActivity,
+        persistConversationState,
+      }
     );
 
-    if (isFinal) {
-      conversationState.values.finalResponse = replyResult.reply;
-      await persistConversationState();
-    }
-
-    // Notify message updated
-    await notifyMessageUpdated(job.id!, conversationId, currentMessage.id);
-
-    // =========================================================================
-    // ENQUEUE NEXT ITERATION (if continuing)
-    // This is the key change: instead of looping, we enqueue a new job
-    // =========================================================================
+    // Enqueue next iteration (if continuing). Continuation-prep is shared
+    // with the route; this branch only diverges in how the new message is
+    // scheduled — the worker enqueues a fresh BullMQ job instead of looping.
     if (willContinue) {
-      await assertNotCancelled();
       logger.info({ iterationNumber, jobId: job.id }, "preparing_next_iteration_job");
 
-      // Promote suggestedNextSteps to plan for next iteration
-      const currentPlan = conversationState.values.plan || [];
-      const currentMaxLevel =
-        currentPlan.length > 0 ? Math.max(...currentPlan.map((t) => t.level || 0)) : -1;
-      const nextLevel = currentMaxLevel + 1;
-
-      // Promote suggested steps to plan with new level and IDs
-      const promotedTasks = applySourceSelectionToPromotedTasks({
-        sourceSelectionId: conversationState.values.sourceSelectionId,
-        tasks: (conversationState.values.suggestedNextSteps || []).map((task: PlanTask) => {
-          const taskId = task.type === "ANALYSIS" ? `ana-${nextLevel}` : `lit-${nextLevel}`;
-          return {
-            ...task,
-            end: undefined,
-            id: taskId,
-            level: nextLevel,
-            output: undefined,
-            start: undefined,
-          };
-        }),
-        userMessage: message,
-      });
-
-      // Add to plan and clear suggestions
-      conversationState.values.plan = [...currentPlan, ...promotedTasks];
-      conversationState.values.suggestedNextSteps = [];
-      conversationState.values.currentLevel = nextLevel;
-
-      if (conversationState.id) {
-        await persistConversationActivity(
-          {
-            level: nextLevel,
-            objective:
-              promotedTasks[0]?.objective ||
-              conversationState.values.currentObjective ||
-              currentObjective,
-            phase: "planning",
-          },
-          {
-            ensureTraceObjective: getObjectiveTraceObjective(
-              conversationState.values,
-              conversationState.values.currentObjective || currentObjective
-            ),
-            notify: true,
-          }
-        );
-        logger.info(
-          {
-            jobId: job.id,
-            nextLevel,
-            promotedTaskCount: promotedTasks.length,
-          },
-          "suggested_steps_promoted_to_plan"
-        );
-      }
-
-      // CREATE NEW AGENT-ONLY MESSAGE for the next iteration
-      const agentMessage = await createContinuationMessage(currentMessage, stateId);
-
-      logger.info(
-        {
-          jobId: job.id,
-          newMessageId: agentMessage.id,
-          nextIterationNumber: iterationNumber + 1,
-          previousMessageId: currentMessage.id,
-        },
-        "created_agent_continuation_message"
+      const { runContinuationPrepPhase } = await import(
+        "../../deep-research/phases/continuation-prep"
       );
+      const continuation = await runContinuationPrepPhase(
+        {
+          conversationState,
+          currentMessage,
+          currentObjective,
+          stateId,
+          userMessage: message,
+        },
+        {
+          assertNotCancelled,
+          getObjectiveTraceObjective,
+          persistConversationActivity,
+        }
+      );
+      const agentMessage = continuation.newMessage;
 
       // ENQUEUE NEXT ITERATION JOB
       const queue = getDeepResearchQueue();

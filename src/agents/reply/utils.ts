@@ -3,7 +3,7 @@ import { LLM } from "../../llm/provider";
 import type { LLMRequest } from "../../llm/types";
 import type { Discovery, LLMProvider, PlanTask } from "../../types/core";
 import logger from "../../utils/logger";
-import { answerModePrompt, chatReplyPrompt, reportModePrompt } from "./prompts";
+import { answerModePrompt, reportModePrompt } from "./prompts";
 
 export type UploadedDataset = {
   id: string;
@@ -196,111 +196,6 @@ ${evidenceText}${discovery.novelty ? `\n   Novelty: ${discovery.novelty}` : ""}`
     return response.content;
   } catch (error) {
     logger.error({ error }, "reply_generation_failed");
-    throw error;
-  }
-}
-
-/**
- * Generate concise chat reply without next steps
- * For regular chat (not deep research)
- */
-export async function generateChatReply(
-  question: string,
-  context: ReplyContext,
-  options: ReplyOptions = {}
-): Promise<string> {
-  const model = process.env.REPLY_LLM_MODEL || "gemini-2.5-pro";
-
-  // Format completed tasks with full output (not truncated for chat)
-  const completedTasksText = context.completedTasks
-    .map((task, i) => {
-      const output = task.output || "No output available";
-      return `${i + 1}. ${task.type} Task: ${task.objective}\n   Output: ${output}`;
-    })
-    .join("\n\n");
-
-  // Format key insights
-  const keyInsightsText =
-    context.keyInsights.length > 0
-      ? context.keyInsights.map((insight, i) => `${i + 1}. ${insight}`).join("\n")
-      : "No key insights available.";
-
-  // Format uploaded datasets with content if available (for chat mode)
-  // Files are ordered newest-first, so first file is most recently uploaded
-  const uploadedDatasetsText =
-    context.uploadedDatasets && context.uploadedDatasets.length > 0
-      ? context.uploadedDatasets
-          .map((dataset, i) => {
-            const recentTag = i === 0 ? " [MOST RECENTLY UPLOADED - Focus on this file]" : "";
-            let text = `${i + 1}. File: ${dataset.filename}${recentTag}\n   Description: ${dataset.description}`;
-            if (dataset.content) {
-              // Include content for chat mode (up to 30KB per file)
-              const contentPreview = dataset.content.slice(0, 30000);
-              text += `\n\n--- File Content ---\n${contentPreview}`;
-              if (dataset.content.length > 30000) {
-                text += "\n[Content truncated...]";
-              }
-              text += "\n--- End File Content ---";
-            }
-            return text;
-          })
-          .join("\n\n")
-      : "No datasets uploaded.";
-
-  // Build the prompt
-  const replyInstruction = chatReplyPrompt
-    .replace("{{question}}", question)
-    .replace("{{completedTasks}}", completedTasksText)
-    .replace("{{keyInsights}}", keyInsightsText)
-    .replace("{{hypothesis}}", context.hypothesis || "No hypothesis generated")
-    .replace("{{uploadedDatasets}}", uploadedDatasetsText);
-
-  const REPLY_LLM_PROVIDER: LLMProvider =
-    (process.env.REPLY_LLM_PROVIDER as LLMProvider) || "google";
-  const llmApiKey = process.env[`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!llmApiKey) {
-    throw new Error(`${REPLY_LLM_PROVIDER.toUpperCase()}_API_KEY is not configured.`);
-  }
-
-  const llmProvider = new LLM({
-    apiKey: llmApiKey,
-    name: REPLY_LLM_PROVIDER,
-  });
-
-  const llmRequest: LLMRequest = {
-    maxTokens: options.maxTokens ?? 1000, // Shorter for chat
-    messageId: options.messageId,
-    messages: [
-      {
-        content: replyInstruction,
-        role: "user" as const,
-      },
-    ],
-    model,
-    systemInstruction: character.system,
-    thinkingBudget: options.thinking
-      ? (options.thinkingBudget ?? 1024) // Minimum required by Anthropic
-      : undefined,
-    usageType: options.usageType,
-  };
-
-  try {
-    const response = await llmProvider.createChatCompletion(llmRequest);
-
-    logger.info(
-      {
-        completedTaskCount: context.completedTasks.length,
-        hasHypothesis: !!context.hypothesis,
-        replyLength: response.content.length,
-        uploadedDatasetsCount: context.uploadedDatasets?.length || 0,
-      },
-      "chat_reply_generated"
-    );
-
-    return response.content;
-  } catch (error) {
-    logger.error({ error }, "chat_reply_generation_failed");
     throw error;
   }
 }

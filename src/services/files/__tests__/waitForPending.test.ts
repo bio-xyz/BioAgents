@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
-import logger from "../../../../utils/logger";
-import { waitForPendingFiles } from "../fileWait";
+import logger from "../../../utils/logger";
+import { waitForPendingFiles } from "../waitForPending";
 
 afterEach(() => {
   jest.restoreAllMocks();
