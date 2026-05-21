@@ -1380,6 +1380,13 @@ async function processDeepResearchJob(
           status: "failed",
         });
 
+        try {
+          const { markMessageFailed } = await import("../../../services/chat/tools");
+          await markMessageFailed(messageId);
+        } catch (msgErr) {
+          logger.warn({ messageId, msgErr }, "deep_research_worker_mark_message_failed_on_failure");
+        }
+
         await clearConversationActivity({ staleTrace: true });
 
         // Notify: Job failed

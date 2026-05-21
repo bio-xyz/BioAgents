@@ -207,6 +207,13 @@ async function handleDeepResearchStartFailure(
   });
 
   try {
+    const { markMessageFailed } = await import("../../services/chat/tools");
+    await markMessageFailed(rootMessageId);
+  } catch (msgErr) {
+    deps.logger.warn({ msgErr, rootMessageId }, "deep_research_mark_message_failed_on_failure");
+  }
+
+  try {
     await deps.markRunFinished({
       conversationStateId,
       error: errorMessage,
@@ -779,6 +786,15 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           "deep_research_state_mark_failed_on_queue_error"
         );
       }
+      try {
+        const { markMessageFailed } = await import("../../services/chat/tools");
+        await markMessageFailed(createdMessage.id);
+      } catch (msgErr) {
+        logger.warn(
+          { messageId: createdMessage.id, msgErr },
+          "deep_research_mark_message_failed_on_queue_error"
+        );
+      }
       if (runMarkedStarted) {
         try {
           await markRunFinished({
@@ -844,6 +860,15 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
       logger.warn(
         { error: stateErr, stateId: stateRecord.id },
         "deep_research_state_mark_failed_on_in_process_start_error"
+      );
+    }
+    try {
+      const { markMessageFailed } = await import("../../services/chat/tools");
+      await markMessageFailed(createdMessage.id);
+    } catch (msgErr) {
+      logger.warn(
+        { messageId: createdMessage.id, msgErr },
+        "deep_research_mark_message_failed_on_in_process_start_error"
       );
     }
     if (runMarkedStarted) {
