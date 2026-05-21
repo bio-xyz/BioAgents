@@ -1379,40 +1379,44 @@ async function processDeepResearchJob(
           error: error instanceof Error ? error.message : "Unknown error",
           status: "failed",
         });
+      } catch (updateErr) {
+        logger.error({ updateErr }, "failed_to_update_state_on_error");
+      }
 
-        try {
-          const { markMessageFailed } = await import("../../../services/chat/tools");
-          await markMessageFailed(messageId);
-        } catch (msgErr) {
-          logger.warn({ messageId, msgErr }, "deep_research_worker_mark_message_failed_on_failure");
-        }
+      try {
+        const { markMessageFailed } = await import("../../../services/chat/tools");
+        await markMessageFailed(messageId);
+      } catch (msgErr) {
+        logger.warn({ messageId, msgErr }, "deep_research_worker_mark_message_failed_on_failure");
+      }
 
-        await clearConversationActivity({ staleTrace: true });
+      await clearConversationActivity({ staleTrace: true });
 
-        // Notify: Job failed
-        await notifyJobFailed(job.id!, conversationId, messageId, stateId);
+      // Notify: Job failed
+      await notifyJobFailed(job.id!, conversationId, messageId, stateId);
 
-        try {
-          await markRunFinished({
+      try {
+        await markRunFinished({
+          conversationStateId,
+          error: error instanceof Error ? error.message : "Unknown error",
+          result: "failed",
+          rootMessageId,
+          stateId,
+        });
+      } catch (finishError) {
+        logger.warn(
+          {
             conversationStateId,
-            error: error instanceof Error ? error.message : "Unknown error",
-            result: "failed",
+            finishError,
             rootMessageId,
             stateId,
-          });
-        } catch (finishError) {
-          logger.warn(
-            {
-              conversationStateId,
-              finishError,
-              rootMessageId,
-              stateId,
-            },
-            "deep_research_worker_finish_mark_failed_on_failure"
-          );
-        }
+          },
+          "deep_research_worker_finish_mark_failed_on_failure"
+        );
+      }
 
-        // Refund credits on final failure
+      // Refund credits on final failure
+      try {
         const { getServiceClient } = await import("../../../db/client");
         const supabase = getServiceClient();
 
@@ -1438,8 +1442,8 @@ async function processDeepResearchJob(
             logger.info({ privyId, refunded: data?.refunded }, "credits_refunded_on_failure");
           }
         }
-      } catch (updateErr) {
-        logger.error({ updateErr }, "failed_to_update_state_on_error");
+      } catch (creditErr) {
+        logger.error({ creditErr }, "failed_to_refund_credits_on_error");
       }
     }
 

@@ -200,11 +200,15 @@ async function handleDeepResearchStartFailure(
     }
   }
 
-  await deps.updateState(stateRecord.id, {
-    ...stateRecord.values,
-    error: errorMessage,
-    status: "failed",
-  });
+  try {
+    await deps.updateState(stateRecord.id, {
+      ...stateRecord.values,
+      error: errorMessage,
+      status: "failed",
+    });
+  } catch (updateErr) {
+    deps.logger.error({ updateErr }, "deep_research_update_state_on_failure_failed");
+  }
 
   try {
     await markMessageFailed(rootMessageId);
