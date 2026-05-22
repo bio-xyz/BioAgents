@@ -129,49 +129,42 @@ type EvidenceLedger = {
 
 ## Why This Is Better
 
-### Fewer sequential LLM calls
+### Estimated LLM Call Reduction
 
-The current loop splits hypothesis, reflection, next-step planning, continue
-decision, and reply into separate phases. Those phases all inspect the same
-task outputs and world state. Combining most of that into a single synthesis
-controller removes repeated context loading and reduces latency.
+These are planning estimates based on the current phase sequence, not measured
+latency benchmarks. Tool calls inside literature or analysis tasks may add their
+own model calls depending on the downstream service.
 
-### Less unnecessary user-facing writing
+| Step | Current loop per iteration | Proposed loop per iteration | Reduction |
+| --- | ---: | ---: | ---: |
+| Orient request | 0-1 | 1 only at session start | Same or +1 upfront |
+| Initial planning / agenda | 1 | 1 | Same |
+| Hypothesis update | 1 | Included in synthesis controller | -1 |
+| Reflection / world-state update | 1 | Included in synthesis controller | -1 |
+| Discovery extraction | 0-1 conditional | Included in synthesis controller or evidence extraction | 0 to -1 |
+| Next-step planning | 1 | Included in synthesis controller | -1 |
+| Continue decision | 0-1 conditional | Included in synthesis controller | 0 to -1 |
+| Reply generation | 1 every iteration | 1 only on final / checkpoint / steering | Usually -1 on intermediate iterations |
+| **Typical intermediate iteration total** | **5-7 LLM calls** | **1-2 LLM calls** | **about 60-80% fewer orchestration calls** |
+| **Typical final iteration total** | **5-7 LLM calls** | **2-3 LLM calls** | **about 50-65% fewer orchestration calls** |
 
-The current loop generates a reply every iteration, even when it will continue
-automatically. A better loop emits progress and updates structured state during
-intermediate iterations, then writes a user-facing response only when stopping,
-asking for steering, or explicitly producing a checkpoint.
+Example for a 3-iteration semi-autonomous run:
 
-### Better research quality
+| Model | Iteration 1 | Iteration 2 | Final iteration | Approx total |
+| --- | ---: | ---: | ---: | ---: |
+| Current fixed pipeline | 6 | 6 | 6 | 18 LLM calls |
+| Proposed adaptive loop | 2 | 1-2 | 2-3 | 5-7 LLM calls |
+| Approx savings | 4 | 4-5 | 3-4 | 11-13 fewer calls |
 
-The current system can accumulate useful text, but it does not make evidence the
-main control surface. An evidence ledger lets the controller decide based on
-claim support, contradictions, missing citations, and confidence rather than
-only whether `suggestedNextSteps` exists.
+### Improvement Summary
 
-### More adaptive task selection
-
-The current phase order is static. It always does planning, execution,
-hypothesis, reflection, next-step planning, continue decision, and reply. The
-adaptive loop still has stable invariants, but can skip work that is not useful:
-
-- no analysis task if there is no usable dataset or artifact;
-- no new literature search if the evidence gap is analytical;
-- no final prose generation until the loop stops;
-- no continuation when new tasks have low marginal value.
-
-### Cleaner stopping criteria
-
-The current loop stops mostly through empty next-step plans, mode rules, or
-iteration caps. The proposed loop can stop because specific evidence conditions
-are met:
-
-- enough high-confidence claims answer the question;
-- remaining gaps are low value;
-- sources contradict each other and user steering is needed;
-- external task failures prevent useful progress;
-- budget or time limits are reached.
+| Improvement | Current approach | Proposed approach | Why it helps |
+| --- | --- | --- | --- |
+| Fewer sequential LLM calls | Hypothesis, reflection, next-step planning, continue decision, and reply are separate phases that reread similar context. | A synthesis controller updates hypothesis, insights, discoveries, evidence gaps, next tasks, and stop/continue decision in one pass. | Less repeated context loading, lower latency, fewer chances for phase-to-phase drift. |
+| Less unnecessary user-facing writing | A reply is generated every iteration, even when the system will continue automatically. | Intermediate iterations update structured state and progress; user-facing prose is generated only for final answers, checkpoints, or steering. | Saves one expensive writing call per auto-continued iteration and avoids noisy partial answers. |
+| Better research quality | Useful text accumulates, but evidence is not the central control surface. | The evidence ledger tracks claims, support, contradictions, citations/artifacts, confidence, and verification needs. | The loop decides from evidence quality, not just whether `suggestedNextSteps` exists. |
+| More adaptive task selection | The phase order is static and runs the same synthesis-like stages every iteration. | The controller chooses the next task batch from evidence gaps and can skip irrelevant work. | Avoids unnecessary analysis without data, unnecessary literature search when the gap is analytical, and low-value continuation. |
+| Cleaner stopping criteria | Stopping is mostly empty next-step plans, mode rules, or iteration caps. | Stopping is based on evidence conditions: enough supported claims, low-value remaining gaps, contradictions needing user steering, failures, budget, or time. | Produces clearer finality and better user trust. |
 
 ## Migration Path
 
@@ -199,4 +192,3 @@ Recommended first implementation step:
    - stop / continue / ask-user decision.
 3. Keep the existing reply phase, but call it only when the controller says the
    iteration should produce a user-facing checkpoint.
-
