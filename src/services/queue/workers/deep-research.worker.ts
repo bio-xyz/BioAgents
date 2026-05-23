@@ -1399,7 +1399,7 @@ async function processDeepResearchJob(
       }
 
       try {
-        const { markMessageFailed } = await import("../../../services/chat/tools");
+        const { markMessageFailed } = await import("../../chat/tools");
         await markMessageFailed(messageId);
       } catch (msgErr) {
         logger.warn({ messageId, msgErr }, "deep_research_worker_mark_message_failed_on_failure");
