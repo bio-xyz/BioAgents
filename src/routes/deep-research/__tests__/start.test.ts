@@ -1,7 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { __deepResearchStartTestables } from "../start";
-
-const { handleDeepResearchStartFailure } = __deepResearchStartTestables;
+import { handleDeepResearchStartFailure } from "../failure-handler";
 
 const noop = async () => {};
 const noopSync = () => {};
