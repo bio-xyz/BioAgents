@@ -115,6 +115,7 @@ type DeepResearchStartFailureDeps = {
     values: ConversationState["values"],
     fallbackObjective?: string
   ) => string | undefined;
+  markMessageFailed: (messageId: string) => Promise<void>;
   markObjectiveTraceStale: (values: ConversationState["values"]) => unknown;
   updateConversationState: (id: string, values: ConversationState["values"]) => Promise<unknown>;
   notifyStateUpdated: (jobId: string, conversationId: string, stateId: string) => Promise<unknown>;
@@ -131,6 +132,7 @@ type DeepResearchStartFailureDeps = {
 
 type DeepResearchStartFailureParams = {
   activeConversationState: ConversationState | null;
+  activeMessageId?: string;
   conversationId: string;
   conversationStateId: string;
   err: unknown;
@@ -147,6 +149,7 @@ const deepResearchStartFailureDeps: DeepResearchStartFailureDeps = {
   ensureObjectiveTrace,
   getObjectiveTraceObjective,
   logger,
+  markMessageFailed,
   markObjectiveTraceStale,
   markRunFinished,
   notifyStateUpdated,
@@ -160,6 +163,7 @@ async function handleDeepResearchStartFailure(
 ): Promise<void> {
   const {
     activeConversationState,
+    activeMessageId,
     conversationId,
     conversationStateId,
     err,
@@ -211,9 +215,23 @@ async function handleDeepResearchStartFailure(
   }
 
   try {
-    await markMessageFailed(rootMessageId);
+    await deps.markMessageFailed(rootMessageId);
   } catch (msgErr) {
     deps.logger.warn({ msgErr, rootMessageId }, "deep_research_mark_message_failed_on_failure");
+  }
+
+  // If auto-continuation created a new message row before the failure, mark
+  // that row FAILED too. markMessageFailed guards .neq("status", "COMPLETE")
+  // so calling it on an already-completed root is safe.
+  if (activeMessageId && activeMessageId !== rootMessageId) {
+    try {
+      await deps.markMessageFailed(activeMessageId);
+    } catch (msgErr) {
+      deps.logger.warn(
+        { activeMessageId, msgErr },
+        "deep_research_mark_continuation_message_failed_on_failure"
+      );
+    }
   }
 
   try {
@@ -386,6 +404,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
   let createdMessage: CreatedMessage | null = null;
   let runMarkedStarted = false;
   let activeConversationState: ConversationState | null = null;
+  let queueJobEnqueued = false;
 
   // Log with state IDs now that we have them
   logger.info(
@@ -707,6 +726,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           jobId: createdMessage.id, // Use message ID as job ID for easy lookup
         }
       );
+      queueJobEnqueued = true;
 
       activeConversationState = {
         id: conversationStateRecord.id,
@@ -722,9 +742,19 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           message,
         phase: "planning",
       });
-      // Keep queue mode fast: the worker generates the initial objective trace.
-      await updateConversationState(activeConversationState.id!, activeConversationState.values);
-      await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+      // Post-enqueue UI writes are best-effort. The BullMQ job is already live so
+      // any failure here must not reach the outer catch: that catch still calls
+      // updateState({status:"failed"}) and markRunFinished, which would poison the
+      // status endpoint and flip isRunning=false while the worker is still running.
+      try {
+        await updateConversationState(activeConversationState.id!, activeConversationState.values);
+        await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+      } catch (postEnqueueErr) {
+        logger.warn(
+          { conversationId, jobId: job.id, postEnqueueErr },
+          "deep_research_post_enqueue_state_update_failed"
+        );
+      }
 
       try {
         await updateRunJobId({
@@ -789,13 +819,21 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           "deep_research_state_mark_failed_on_queue_error"
         );
       }
-      try {
-        await markMessageFailed(createdMessage.id);
-      } catch (msgErr) {
-        logger.warn(
-          { messageId: createdMessage.id, msgErr },
-          "deep_research_mark_message_failed_on_queue_error"
-        );
+      // Only mark message FAILED if the BullMQ job was never created.
+      // Once queue.add succeeds the job is live; the worker owns the
+      // message row from that point and will call markMessageComplete or
+      // markMessageFailed itself. Marking FAILED here would race with the
+      // worker's markMessageComplete(.eq("status", "PENDING")) and
+      // permanently orphan the reply.
+      if (!queueJobEnqueued) {
+        try {
+          await markMessageFailed(createdMessage.id);
+        } catch (msgErr) {
+          logger.warn(
+            { messageId: createdMessage.id, msgErr },
+            "deep_research_mark_message_failed_on_queue_error"
+          );
+        }
       }
       if (runMarkedStarted) {
         try {
@@ -925,6 +963,7 @@ async function runDeepResearch(params: {
     conversationStateId,
   } = params;
   let activeConversationState: ConversationState | null = null;
+  let currentMessage: CreatedMessage = createdMessage;
   let readCancellationRequested: () => Promise<boolean> = async () => false;
 
   try {
@@ -1004,7 +1043,9 @@ async function runDeepResearch(params: {
     };
 
     // Track the current message being updated (changes when auto-continuing)
-    let currentMessage = createdMessage;
+    // Note: currentMessage is declared in the outer scope so the catch block
+    // can pass activeMessageId to handleDeepResearchStartFailure.
+    currentMessage = createdMessage;
     type ConversationStateWriteOptions = {
       ensureTraceObjective?: string;
       completeTrace?: boolean;
@@ -2100,6 +2141,7 @@ These molecular changes align with established longevity pathways (Converging nu
 
     await handleDeepResearchStartFailure({
       activeConversationState,
+      activeMessageId: currentMessage.id,
       conversationId: createdMessage.conversation_id,
       conversationStateId,
       err,
