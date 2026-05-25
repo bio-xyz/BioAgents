@@ -303,8 +303,13 @@ export async function confirmUpload(params: ConfirmUploadParams): Promise<Confir
       status: "processing",
     };
   } else {
-    // In-process mode: Process synchronously
-    const result = await processFile(status);
+    // In-process mode: Process synchronously via shared lifecycle.
+    const { runFileProcessingLifecycle, buildInProcessFileErrorHandler } = await import(
+      "./lifecycle"
+    );
+    const result = await runFileProcessingLifecycle(status, {
+      onError: buildInProcessFileErrorHandler(fileId, updateFileStatus),
+    });
 
     return {
       description: result.description,

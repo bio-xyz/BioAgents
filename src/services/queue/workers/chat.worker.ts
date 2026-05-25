@@ -1,27 +1,20 @@
 /**
- * Chat Worker for BullMQ
+ * Chat worker for BullMQ.
  *
- * Processes chat jobs from the queue.
- * This is the same logic as chatHandler in routes/chat.ts,
- * but extracted to run in a separate worker process.
+ * Thin adapter around runChatAgent: load message + conversation state, wait
+ * for any pending file uploads, dispatch to the shared chat-agent runner,
+ * persist the reply, emit progress/completion notifications.
+ *
+ * The route handler (routes/chat.ts) drives the in-process and SSE paths
+ * through the same runChatAgent — this worker is only the queue transport.
  */
 
 import { Job, Worker } from "bullmq";
-import type {
-  ConversationState,
-  DataArtifact,
-  PlanTask,
-  ProteinStructure,
-  State,
-} from "../../../types/core";
+import type { ConversationState, DataArtifact, State } from "../../../types/core";
 import type { SourceSelectionId } from "../../../types/sourceSelection";
 import { withNormalChatArtifacts } from "../../../utils/artifacts";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
-import {
-  mergeProteinStructures,
-  withNormalChatProteinStructures,
-} from "../../../utils/proteinStructures";
 import { runSegmentAnythingChatTool } from "../../segment-anything/chat-tool";
 import { getBullMQConnection } from "../connection";
 import {
@@ -75,15 +68,10 @@ async function persistNormalChatArtifacts(params: {
   }
 }
 
-/**
- * Process a chat job
- * This is the core chat processing logic extracted from chatHandler
- */
 async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<ChatJobResult> {
   const startTime = Date.now();
-  const { userId, conversationId, messageId, message } = job.data;
+  const { conversationId, messageId, message } = job.data;
 
-  // Log retry attempt if this is a retry
   if (job.attemptsMade > 0) {
     logger.warn(
       {
@@ -97,34 +85,26 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
   }
 
   logger.info({ conversationId, jobId: job.id, messageId }, "chat_job_started");
-
-  // Notify: Job started
   await notifyJobStarted(job.id!, conversationId, messageId);
 
   try {
-    // Import required modules
-    const { getMessage, getState, getConversationState, updateConversationState } = await import(
+    const { getMessage, getState, getConversationState, getConversation } = await import(
       "../../../db/operations"
     );
 
-    // Get message record (already created by route handler)
     const messageRecord = await getMessage(messageId);
     if (!messageRecord) {
       throw new Error(`Message not found: ${messageId}`);
     }
 
-    // Get state record
     const stateRecord = await getState(messageRecord.state_id);
     if (!stateRecord) {
       throw new Error(`State not found for message: ${messageId}`);
     }
 
-    // Get conversation state
-    const { getConversation } = await import("../../../db/operations");
     const conversation = await getConversation(conversationId);
     const conversationStateRecord = await getConversationState(conversation.conversation_state_id);
 
-    // Initialize state objects
     const state: State = {
       id: stateRecord.id,
       values: buildMessageStateValues({
@@ -139,8 +119,8 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       values: conversationStateRecord.values,
     };
 
-    // Wait for any pending file processing jobs BEFORE planning
-    // This ensures files uploaded with the chat message are available
+    // Wait for any pending file processing jobs BEFORE running the agent
+    // so uploaded datasets are available in conversation state.
     const { getPendingFileIds, getFileStatus } = await import("../../files/status");
     const { getFileProcessQueue } = await import("../queues");
 
@@ -154,7 +134,7 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
           "chat_job_waiting_for_file_processing"
         );
 
-        const { waitForPendingFiles } = await import("./fileWait");
+        const { waitForPendingFiles } = await import("../../files/waitForPending");
         await waitForPendingFiles({
           conversationStateId,
           fileProcessQueue: getFileProcessQueue(),
@@ -163,7 +143,6 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
           pendingFileIds,
         });
 
-        // Refresh conversation state to get updated uploadedDatasets
         const freshConversationState = await getConversationState(conversationStateId);
         if (freshConversationState) {
           conversationState.values = freshConversationState.values;
@@ -179,336 +158,25 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
     }
 
     if (job.data.toolId === "segment-anything") {
-      const segmentResult = await runSegmentAnythingChatTool({
-        conversationState,
-        message,
-        messageId,
-        toolInput: job.data.toolInput,
-        userId,
-      });
-
-      const responseTime = Date.now() - startTime;
-      const { markMessageComplete } = await import("../../chat/tools");
-      const { updated } = await markMessageComplete(messageId, {
-        content: segmentResult.text,
-        response_time: responseTime,
-      });
-      await failJobIfRowNoLongerPending(
-        updated,
-        job.id,
-        messageId,
-        "chat_worker_segment_anything_complete_skipped_row_not_pending"
-      );
-
-      await persistNormalChatArtifacts({
-        artifacts: segmentResult.artifacts,
-        conversationState,
-        jobId: job.id,
-        logKey: "chat_worker_segment_anything_artifacts_state_persist_failed",
-        messageId,
-      });
-
-      try {
-        await notifyMessageUpdated(job.id!, conversationId, messageId);
-        await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
-          artifacts: segmentResult.artifacts,
-        });
-      } catch (notifyErr) {
-        logger.warn(
-          { error: notifyErr, jobId: job.id, messageId },
-          "chat_worker_segment_anything_post_reply_notify_failed"
-        );
-      }
-
-      return {
-        artifacts: segmentResult.artifacts,
-        responseTime,
-        text: segmentResult.text,
-        userId,
-      };
-    }
-
-    // Feature flag: use new agent loop or legacy pipeline
-    const useAgentLoop = process.env.CHAT_AGENT_QUEUE_ENABLED === "true";
-
-    if (useAgentLoop) {
-      return await processWithAgentLoop(
+      return await runSegmentAnythingForJob(
         job,
         conversationId,
         messageId,
         message,
         conversationState,
-        startTime,
-        job.data.sourceSelectionId ?? state.values.sourceSelectionId
+        startTime
       );
     }
 
-    // === LEGACY PATH: planning → literature → hypothesis → reflection → reply ===
-
-    // Update progress: Planning
-    await job.updateProgress({ percent: 10, stage: "planning" } as JobProgress);
-    await notifyJobProgress(job.id!, conversationId, "planning", 10);
-
-    // Step 1: Execute planning agent
-    logger.info({ jobId: job.id }, "chat_job_planning");
-
-    const { planningAgent } = await import("../../../agents/planning");
-
-    const planningResult = await planningAgent({
-      conversationState,
-      message: messageRecord,
-      mode: "initial",
-      state,
-      usageType: "chat",
-    });
-
-    const plan = planningResult.plan;
-
-    // Filter to only LITERATURE tasks (no ANALYSIS for regular chat)
-    const literatureTasks = plan.filter((task) => task.type === "LITERATURE");
-
-    logger.info(
-      {
-        jobId: job.id,
-        literatureTasks: literatureTasks.length,
-        totalTasks: plan.length,
-      },
-      "chat_job_planning_completed"
-    );
-
-    // Update progress: Literature
-    await job.updateProgress({
-      percent: 30,
-      stage: "literature",
-    } as JobProgress);
-    await notifyJobProgress(job.id!, conversationId, "literature", 30);
-
-    // Step 2: Execute literature tasks
-    const { literatureAgent } = await import("../../../agents/literature");
-    const completedTasks: PlanTask[] = [];
-    let proteinStructures: ProteinStructure[] = [];
-
-    for (const task of literatureTasks) {
-      task.start = new Date().toISOString();
-      task.output = "";
-
-      const useBioLiterature = process.env.PRIMARY_LITERATURE_AGENT?.toUpperCase() === "BIO";
-
-      // Build list of literature promises based on configured sources
-      const literaturePromises: Promise<void>[] = [];
-
-      // OpenScholar (enabled if OPENSCHOLAR_API_URL is configured)
-      if (process.env.OPENSCHOLAR_API_URL) {
-        const openScholarPromise = literatureAgent({
-          objective: task.objective,
-          type: "OPENSCHOLAR",
-        }).then((result) => {
-          task.output += `${result.output}\n\n`;
-        });
-        literaturePromises.push(openScholarPromise);
-      }
-
-      // BioLit (enabled if PRIMARY_LITERATURE_AGENT=BIO)
-      if (useBioLiterature) {
-        const bioLiteraturePromise = literatureAgent({
-          objective: task.objective,
-          sources: task.sources,
-          type: "BIOLIT",
-        }).then((result) => {
-          task.output += `${result.output}\n\n`;
-          task.proteinStructures = mergeProteinStructures(
-            task.proteinStructures,
-            result.proteinStructures
-          );
-          proteinStructures = mergeProteinStructures(proteinStructures, result.proteinStructures);
-        });
-        literaturePromises.push(bioLiteraturePromise);
-      }
-
-      // Knowledge base (enabled if KNOWLEDGE_DOCS_PATH is configured)
-      if (process.env.KNOWLEDGE_DOCS_PATH) {
-        const knowledgePromise = literatureAgent({
-          objective: task.objective,
-          type: "KNOWLEDGE",
-        }).then((result) => {
-          task.output += `${result.output}\n\n`;
-        });
-        literaturePromises.push(knowledgePromise);
-      }
-
-      await Promise.all(literaturePromises);
-
-      task.end = new Date().toISOString();
-      completedTasks.push(task);
-    }
-
-    logger.info(
-      { completedTasksCount: completedTasks.length, jobId: job.id },
-      "chat_job_literature_completed"
-    );
-
-    // Update progress: Hypothesis
-    await job.updateProgress({
-      percent: 60,
-      stage: "hypothesis",
-    } as JobProgress);
-    await notifyJobProgress(job.id!, conversationId, "hypothesis", 60);
-
-    // Step 3: Check if hypothesis is needed
-    const allLiteratureOutput = completedTasks.map((t) => t.output).join("\n\n");
-    const needsHypothesis = await checkRequiresHypothesis(message, allLiteratureOutput, messageId);
-
-    let hypothesisText: string | undefined;
-
-    // Step 4: Generate hypothesis if needed
-    if (needsHypothesis && completedTasks.length > 0) {
-      logger.info({ jobId: job.id }, "chat_job_generating_hypothesis");
-
-      const { hypothesisAgent } = await import("../../../agents/hypothesis");
-
-      const hypothesisResult = await hypothesisAgent({
-        completedTasks,
-        conversationState,
-        message: messageRecord,
-        objective: planningResult.currentObjective,
-      });
-
-      hypothesisText = hypothesisResult.hypothesis;
-      conversationState.values.currentHypothesis = hypothesisText;
-
-      if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
-      }
-
-      // Step 5: Run reflection agent
-      logger.info({ jobId: job.id }, "chat_job_reflection");
-
-      const { reflectionAgent } = await import("../../../agents/reflection");
-
-      const reflectionResult = await reflectionAgent({
-        completedMaxTasks: completedTasks,
-        conversationState,
-        hypothesis: hypothesisText,
-        message: messageRecord,
-      });
-
-      // Update conversation state with reflection results
-      conversationState.values.currentObjective = reflectionResult.currentObjective;
-      conversationState.values.keyInsights = reflectionResult.keyInsights;
-      conversationState.values.methodology = reflectionResult.methodology;
-
-      if (conversationState.id) {
-        await updateConversationState(conversationState.id, conversationState.values);
-      }
-    }
-
-    // Update progress: Reply
-    await job.updateProgress({ percent: 90, stage: "reply" } as JobProgress);
-    await notifyJobProgress(job.id!, conversationId, "reply", 90);
-
-    // Step 6: Generate reply
-    logger.info({ jobId: job.id }, "chat_job_generating_reply");
-
-    const { generateChatReply } = await import("../../../agents/reply/utils");
-
-    // Log uploaded datasets info for debugging
-    const uploadedDatasets = conversationState.values.uploadedDatasets || [];
-    logger.info(
-      {
-        datasetsInfo: uploadedDatasets.map((d) => ({
-          contentLength: d.content?.length || 0,
-          contentPreview: d.content?.slice(0, 100) || "no content",
-          filename: d.filename,
-          hasContent: !!d.content,
-        })),
-        jobId: job.id,
-        uploadedDatasetsCount: uploadedDatasets.length,
-      },
-      "chat_job_uploaded_datasets"
-    );
-
-    const replyText = await generateChatReply(
-      message,
-      {
-        completedTasks,
-        currentObjective: conversationState.values.currentObjective,
-        discoveries: conversationState.values.discoveries || [],
-        hypothesis: hypothesisText,
-        keyInsights: conversationState.values.keyInsights || [],
-        methodology: conversationState.values.methodology,
-        nextPlan: [],
-        uploadedDatasets,
-      },
-      {
-        maxTokens: 1024,
-        messageId,
-        usageType: "chat",
-      }
-    );
-
-    // Save reply to message. Guarded by markMessageComplete's PENDING
-    // precondition; see its JSDoc for the FAILED-is-terminal contract.
-    const responseTime = Date.now() - startTime;
-    const { markMessageComplete } = await import("../../chat/tools");
-    const { updated } = await markMessageComplete(messageId, {
-      content: replyText,
-      response_time: responseTime,
-    });
-    await failJobIfRowNoLongerPending(
-      updated,
-      job.id,
+    return await runChatAgentForJob(
+      job,
+      conversationId,
       messageId,
-      "chat_worker_legacy_complete_skipped_row_not_pending"
+      message,
+      conversationState,
+      startTime,
+      job.data.sourceSelectionId ?? state.values.sourceSelectionId
     );
-
-    if (proteinStructures.length > 0 && conversationState.id) {
-      try {
-        const { updateConversationState } = await import("../../../db/operations");
-        const nextValues = withNormalChatProteinStructures(
-          conversationState.values,
-          messageId,
-          proteinStructures
-        );
-        await updateConversationState(conversationState.id, nextValues);
-        conversationState.values = nextValues;
-      } catch (err) {
-        logger.warn(
-          { error: err, jobId: job.id, messageId },
-          "chat_worker_legacy_protein_structures_state_persist_failed"
-        );
-      }
-    }
-
-    // Best-effort: pub/sub notifications. Reply is already durably saved with
-    // status=COMPLETE, so failures here must not bubble to the outer catch
-    // and downgrade the row to FAILED.
-    try {
-      await notifyMessageUpdated(job.id!, conversationId, messageId);
-      logger.info(
-        {
-          jobId: job.id,
-          messageId,
-          responseTime,
-          responseTimeSec: (responseTime / 1000).toFixed(2),
-        },
-        "chat_job_completed"
-      );
-      await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
-        proteinStructures,
-      });
-    } catch (notifyErr) {
-      logger.warn(
-        { error: notifyErr, jobId: job.id, messageId },
-        "chat_job_post_reply_notify_failed"
-      );
-    }
-
-    return {
-      proteinStructures,
-      responseTime,
-      text: replyText,
-      userId,
-    };
   } catch (error) {
     logger.error(
       {
@@ -520,7 +188,6 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       "chat_job_failed"
     );
 
-    // Notify: Job failed (on final attempt, or immediately for unrecoverable errors)
     const { UnrecoverableError } = await import("bullmq");
     if (job.attemptsMade + 1 >= (job.opts.attempts || 3) || error instanceof UnrecoverableError) {
       const { markMessageFailed } = await import("../../chat/tools");
@@ -530,16 +197,75 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       ]);
     }
 
-    // Re-throw to trigger retry (if attempts remaining)
     throw error;
   }
 }
 
+async function runSegmentAnythingForJob(
+  job: Job<ChatJobData, ChatJobResult>,
+  conversationId: string,
+  messageId: string,
+  message: string,
+  conversationState: ConversationState,
+  startTime: number
+): Promise<ChatJobResult> {
+  const { userId } = job.data;
+
+  const segmentResult = await runSegmentAnythingChatTool({
+    conversationState,
+    message,
+    messageId,
+    toolInput: job.data.toolInput,
+    userId,
+  });
+
+  const responseTime = Date.now() - startTime;
+  const { markMessageComplete } = await import("../../chat/tools");
+  const { updated } = await markMessageComplete(messageId, {
+    content: segmentResult.text,
+    response_time: responseTime,
+  });
+  await failJobIfRowNoLongerPending(
+    updated,
+    job.id,
+    messageId,
+    "chat_worker_segment_anything_complete_skipped_row_not_pending"
+  );
+
+  await persistNormalChatArtifacts({
+    artifacts: segmentResult.artifacts,
+    conversationState,
+    jobId: job.id,
+    logKey: "chat_worker_segment_anything_artifacts_state_persist_failed",
+    messageId,
+  });
+
+  try {
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      artifacts: segmentResult.artifacts,
+    });
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_segment_anything_post_reply_notify_failed"
+    );
+  }
+
+  return {
+    artifacts: segmentResult.artifacts,
+    responseTime,
+    text: segmentResult.text,
+    userId,
+  };
+}
+
 /**
- * Process a chat job using the new agent loop (behind CHAT_AGENT_QUEUE_ENABLED flag).
- * Same outer contract as the legacy path: saves reply, updates response time, sends notifications.
+ * Run the shared chat-agent runner inside the queue worker context: wire
+ * tool-result callbacks to DB state + frontend progress notifications,
+ * persist the reply, then emit completion notifications.
  */
-async function processWithAgentLoop(
+async function runChatAgentForJob(
   job: Job<ChatJobData, ChatJobResult>,
   conversationId: string,
   messageId: string,
@@ -566,10 +292,9 @@ async function processWithAgentLoop(
 
   const result = await runChatAgent({
     conversationId,
-    loadHistory: true, // Queue path always stores messages
+    loadHistory: true,
     message,
     onToolResult: async (info) => {
-      // 1. Update conversation state in DB + notify frontend
       if (conversationState.id) {
         try {
           const { updateConversationState } = await import("../../../db/operations");
@@ -588,13 +313,9 @@ async function processWithAgentLoop(
         }
       }
 
-      // 2. Emit backward-compatible progress stages
       if (info.toolName === "literature_search" && !literatureEmitted) {
         literatureEmitted = true;
-        await job.updateProgress({
-          percent: 40,
-          stage: "literature",
-        } as JobProgress);
+        await job.updateProgress({ percent: 40, stage: "literature" } as JobProgress);
         await notifyJobProgress(job.id!, conversationId, "literature", 40);
       }
     },
@@ -602,45 +323,33 @@ async function processWithAgentLoop(
     uploadedDatasets: conversationState.values.uploadedDatasets,
   });
 
-  // Handle truncation — use UnrecoverableError to skip BullMQ retries
-  // (same prompt will hit same token limit, retrying wastes 3 attempts)
-  if (!result.replyText || result.hitMaxTokens) {
+  const { finalizeChatReply } = await import("../../chat/finalizeReply");
+  const outcome = await finalizeChatReply({
+    agentResult: result,
+    conversationState,
+    messageId,
+    startTime,
+  });
+
+  // Truncated/empty use UnrecoverableError so BullMQ skips retries — the
+  // same prompt would just hit the same token limit again.
+  if (outcome.kind === "truncated" || outcome.kind === "empty") {
     const { UnrecoverableError } = await import("bullmq");
     throw new UnrecoverableError("Agent loop response truncated (max_tokens)");
   }
 
-  // Persist the reply with markMessageComplete's PENDING precondition;
-  // see its JSDoc for the FAILED-is-terminal contract.
-  const responseTime = Date.now() - startTime;
-  const { markMessageComplete } = await import("../../chat/tools");
-  const { updated } = await markMessageComplete(messageId, {
-    content: result.replyText,
-    response_time: responseTime,
-  });
-  await failJobIfRowNoLongerPending(
-    updated,
-    job.id,
-    messageId,
-    "chat_worker_agent_loop_complete_skipped_row_not_pending"
-  );
-
-  if (result.proteinStructures?.length && conversationState.id) {
-    try {
-      const { updateConversationState } = await import("../../../db/operations");
-      const nextValues = withNormalChatProteinStructures(
-        conversationState.values,
-        messageId,
-        result.proteinStructures
-      );
-      await updateConversationState(conversationState.id, nextValues);
-      conversationState.values = nextValues;
-    } catch (err) {
-      logger.warn(
-        { error: err, jobId: job.id, messageId },
-        "chat_worker_agent_loop_protein_structures_state_persist_failed"
-      );
-    }
+  if (outcome.kind === "save_skipped") {
+    await failJobIfRowNoLongerPending(
+      false,
+      job.id,
+      messageId,
+      "chat_worker_agent_loop_complete_skipped_row_not_pending"
+    );
+    // failJobIfRowNoLongerPending always throws when updated=false.
+    throw new Error("unreachable");
   }
+
+  const responseTime = outcome.responseTime;
 
   // Best-effort: progress updates and notifications. Reply is already saved,
   // so failures here should not trigger a retry or mark the job as failed.
@@ -677,69 +386,6 @@ async function processWithAgentLoop(
   };
 }
 
-/**
- * Check if the question requires a hypothesis using LLM
- * Extracted from routes/chat.ts requiresHypothesis function
- */
-async function checkRequiresHypothesis(
-  question: string,
-  literatureResults: string,
-  messageId?: string // For token usage tracking
-): Promise<boolean> {
-  const { LLM } = await import("../../../llm/provider");
-  const { parseLLMProviderName } = await import("../../../llm/types");
-
-  const PLANNING_LLM_PROVIDER = process.env.PLANNING_LLM_PROVIDER || "google";
-  const apiKey = process.env[`${PLANNING_LLM_PROVIDER.toUpperCase()}_API_KEY`];
-
-  if (!apiKey) {
-    logger.warn("LLM API key not configured, defaulting to no hypothesis");
-    return false;
-  }
-
-  const llmProvider = new LLM({
-    apiKey,
-    name: parseLLMProviderName(PLANNING_LLM_PROVIDER),
-  });
-
-  const prompt = `Analyze this user question and literature results to determine if a research hypothesis is needed.
-
-User Question: ${question}
-
-Literature Results Preview: ${literatureResults.slice(0, 1000)}
-
-A hypothesis IS needed if:
-- The question asks about mechanisms, predictions, or causal relationships
-- The question requires synthesizing multiple sources into a novel insight
-- The question is exploratory and needs a testable proposition
-
-A hypothesis IS NOT needed if:
-- The question asks for factual information or definitions
-- The question can be answered directly from literature
-- The question is a simple lookup or clarification
-
-Respond with ONLY "YES" if a hypothesis is needed, or "NO" if it's not needed.`;
-
-  try {
-    const response = await llmProvider.createChatCompletion({
-      maxTokens: 10,
-      messageId,
-      messages: [{ content: prompt, role: "user" as const }],
-      model: process.env.PLANNING_LLM_MODEL || "gemini-2.5-flash",
-      usageType: "chat",
-    });
-
-    const answer = response.content.trim().toUpperCase();
-    return answer === "YES";
-  } catch (err) {
-    logger.error({ err }, "hypothesis_check_failed");
-    return false;
-  }
-}
-
-/**
- * Start the chat worker
- */
 export function startChatWorker(): Worker {
   const concurrency = parseInt(process.env.CHAT_QUEUE_CONCURRENCY || "5");
 
@@ -749,8 +395,8 @@ export function startChatWorker(): Worker {
     // Chat jobs typically complete in 1-3 minutes
     // lockRenewTime must be significantly less than lockDuration (1/5 ratio)
     lockDuration: 300000, // 5 minutes
-    lockRenewTime: 60000, // 1 minute - renew well before lock expires
-    stalledInterval: 120000, // 2 minutes
+    lockRenewTime: 60000,
+    stalledInterval: 120000,
   });
 
   worker.on("completed", (job, result) => {

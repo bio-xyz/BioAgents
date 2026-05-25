@@ -1,7 +1,7 @@
 import type { Queue } from "bullmq";
-import logger from "../../../utils/logger";
-import type { FileStatusRecord } from "../../files/status";
-import type { FileProcessJobData, FileProcessJobResult } from "../types";
+import logger from "../../utils/logger";
+import type { FileProcessJobData, FileProcessJobResult } from "../queue/types";
+import type { FileStatusRecord } from "./status";
 
 export interface WaitForPendingFilesArgs {
   jobId: string | undefined;
