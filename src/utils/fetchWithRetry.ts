@@ -5,6 +5,7 @@ export interface FetchRetryOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   onRetry?: (attempt: number, error: Error) => void;
+  retryStatusCodes?: number[];
 }
 
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
@@ -33,6 +34,7 @@ export async function fetchWithRetry(
   const maxRetries = options?.maxRetries ?? 10;
   const initialDelayMs = options?.initialDelayMs ?? 4000;
   const maxDelayMs = options?.maxDelayMs ?? 40000;
+  const retryStatusCodes = new Set(options?.retryStatusCodes ?? RETRYABLE_STATUS_CODES);
 
   let lastError: Error | undefined;
 
@@ -46,7 +48,7 @@ export async function fetchWithRetry(
     try {
       const response = await fetch(input, init);
 
-      if (!RETRYABLE_STATUS_CODES.has(response.status)) {
+      if (!retryStatusCodes.has(response.status)) {
         return { attempts: attempt + 1, response };
       }
 

@@ -1,9 +1,20 @@
 import { Elysia } from "elysia";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
+import { persistNormalChatArtifacts } from "../services/chat/artifactPersistence";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
-import { createMessageRecord, markMessageFailed } from "../services/chat/tools";
-import type { ConversationState, ProteinStructure, State } from "../types/core";
+import {
+  createMessageRecord,
+  markMessageComplete,
+  markMessageFailed,
+  parseUploadedFileReferences,
+} from "../services/chat/tools";
+import {
+  parseChatToolId,
+  runSegmentAnythingChatTool,
+  SegmentAnythingToolError,
+} from "../services/segment-anything/chat-tool";
+import type { ConversationState, DataArtifact, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
@@ -23,6 +34,7 @@ const STREAM_HEADERS = {
  * Response type for synchronous chat (in-process mode)
  */
 type ChatV2Response = {
+  artifacts?: DataArtifact[];
   conversationId?: string;
   messageId: string;
   proteinStructures?: ProteinStructure[];
@@ -41,6 +53,18 @@ type ChatQueuedResponse = {
   status: "queued";
   pollUrl: string;
 };
+
+function parseToolInput(value: unknown): Record<string, unknown> | undefined {
+  if (isBodyRecord(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isBodyRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Chat Route - Agent-based architecture
@@ -342,6 +366,15 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         ok: false,
       };
     }
+    const toolId = parseChatToolId(asString(parsedBody.toolId));
+    if (parsedBody.toolId !== undefined && !toolId) {
+      set.status = 400;
+      return {
+        error: "Invalid toolId",
+        ok: false,
+      };
+    }
+    const toolInput = parseToolInput(parsedBody.toolInput);
 
     logger.info(
       {
@@ -362,17 +395,27 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     // Extract files from parsed body
     const files: File[] = extractFiles(parsedBody.files);
+    const fileReferences = parseUploadedFileReferences(parsedBody.fileReferences);
+    if (fileReferences === null) {
+      set.status = 400;
+      return {
+        error: "Invalid fileReferences",
+        ok: false,
+      };
+    }
 
     // Log request details
     logger.info(
       {
         conversationId,
         fileCount: files.length,
+        fileReferenceCount: fileReferences.length,
         message,
         messageLength: message.length,
         routeType: "chat-v2",
         source,
         sourceSelectionId,
+        toolId,
         userId,
       },
       "chat_request_received"
@@ -420,6 +463,7 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Create message record
     const messageResult = await createMessageRecord({
       conversationId,
+      fileReferences,
       files,
       isExternal: false,
       message,
@@ -476,6 +520,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         },
         message,
         sourceSelectionId,
+        toolId,
+        toolInput,
         userId,
       });
 
@@ -526,6 +572,8 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           messageId: createdMessage.id,
           requestedAt: new Date().toISOString(),
           sourceSelectionId,
+          toolId,
+          toolInput,
           userId,
         },
         {
@@ -611,6 +659,66 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         },
         "file_upload_agent_completed"
       );
+    }
+
+    if (toolId === "segment-anything") {
+      const segmentResult = await runSegmentAnythingChatTool({
+        conversationState,
+        message,
+        messageId: createdMessage.id,
+        toolInput,
+        userId,
+      });
+
+      const responseTime = Date.now() - startTime;
+      await persistNormalChatArtifacts({
+        artifacts: segmentResult.artifacts,
+        conversationState,
+        messageId: createdMessage.id,
+      });
+
+      const { updated } = await markMessageComplete(createdMessage.id, {
+        content: segmentResult.text,
+        response_time: responseTime,
+      });
+      if (!updated) {
+        logger.warn(
+          { messageId: createdMessage.id },
+          "chat_in_process_segment_anything_complete_skipped_row_not_pending"
+        );
+        set.status = 500;
+        return {
+          error: "Response failed to save. Please retry.",
+          ok: false,
+        };
+      }
+      replyPersisted = true;
+
+      const response: ChatV2Response = {
+        artifacts: segmentResult.artifacts,
+        conversationId,
+        messageId: createdMessage.id,
+        text: segmentResult.text,
+        userId,
+      };
+
+      logger.info(
+        {
+          artifactCount: segmentResult.artifacts.length,
+          conversationId,
+          messageId: createdMessage.id,
+          responseTime,
+        },
+        "chat_in_process_segment_anything_completed"
+      );
+
+      return new Response(JSON.stringify(response), {
+        headers: {
+          "Content-Encoding": "identity",
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        status: 200,
+      });
     }
 
     // =======================================================================
@@ -753,9 +861,15 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     }
 
     const { set } = ctx;
-    set.status = 500;
+    set.status = error instanceof SegmentAnythingToolError ? error.statusCode : 500;
+    const errorMessage =
+      error instanceof SegmentAnythingToolError
+        ? error.statusCode < 500
+          ? err.message
+          : "Segment Anything failed"
+        : err.message || "Internal server error";
     return {
-      error: err.message || "Internal server error",
+      error: errorMessage,
       ok: false,
     };
   }

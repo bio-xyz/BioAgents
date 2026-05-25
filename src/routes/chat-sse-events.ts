@@ -1,5 +1,9 @@
-import type { ChatStreamEnvelope } from "../chat-agent/streaming";
-import type { ProteinStructure } from "../types/core";
+import type {
+  ChatStreamEnvelope,
+  ChatToolCallStreamData,
+  ChatToolResultStreamData,
+} from "../chat-agent/streaming";
+import type { DataArtifact, ProteinStructure } from "../types/core";
 
 type SendChatSseEvent = (
   event: ChatStreamEnvelope["event"],
@@ -20,6 +24,28 @@ export function createChatSseEventHandlers(params: {
     emitStreamEvent(envelope: ChatStreamEnvelope) {
       send(envelope.event, envelope.data);
     },
+    emitToolCall(
+      data: Omit<ChatToolCallStreamData, "scope" | "status"> & {
+        scope?: ChatToolCallStreamData["scope"];
+        status?: ChatToolCallStreamData["status"];
+      }
+    ) {
+      send("tool_call", {
+        ...data,
+        scope: data.scope ?? "orchestrator",
+        status: data.status ?? "started",
+      });
+    },
+    emitToolResult(
+      data: Omit<ChatToolResultStreamData, "scope"> & {
+        scope?: ChatToolResultStreamData["scope"];
+      }
+    ) {
+      send("tool_result", {
+        ...data,
+        scope: data.scope ?? "orchestrator",
+      });
+    },
     onStreamPause() {
       if (!streamStarted) return;
       send("stream_end", {
@@ -36,7 +62,11 @@ export function createChatSseEventHandlers(params: {
       }
       send("delta", { text: delta, turnIndex });
     },
-    sendFinal(result: { proteinStructures?: ProteinStructure[]; text: string }) {
+    sendFinal(result: {
+      artifacts?: DataArtifact[];
+      proteinStructures?: ProteinStructure[];
+      text: string;
+    }) {
       if (streamStarted) {
         send("stream_end", {
           reason: "complete",
@@ -44,9 +74,12 @@ export function createChatSseEventHandlers(params: {
         });
       }
       send("final", {
+        ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
         conversationId,
         messageId,
-        proteinStructures: result.proteinStructures,
+        ...(result.proteinStructures?.length
+          ? { proteinStructures: result.proteinStructures }
+          : {}),
         text: result.text,
         userId,
       });

@@ -20,10 +20,18 @@
  */
 
 import type { Queue } from "bullmq";
+import { persistNormalChatArtifacts } from "../services/chat/artifactPersistence";
 import type { FileStatusRecord } from "../services/files/status";
 import type { WaitForPendingFilesArgs } from "../services/files/waitForPending";
 import type { FileProcessJobData, FileProcessJobResult } from "../services/queue/types";
-import type { ConversationState, ConversationStateValues, ProteinStructure } from "../types/core";
+import type {
+  ChatToolId,
+  ChatToolInput,
+  ConversationState,
+  ConversationStateValues,
+  DataArtifact,
+  ProteinStructure,
+} from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
 import logger from "../utils/logger";
 import { createChatSseEventHandlers } from "./chat-sse-events";
@@ -33,6 +41,8 @@ export interface ChatSseStreamParams {
   userId: string;
   message: string;
   sourceSelectionId?: SourceSelectionId;
+  toolId?: ChatToolId;
+  toolInput?: ChatToolInput;
   createdMessage: { id: string };
   conversationStateRecord: ConversationState;
   files: File[];
@@ -49,6 +59,7 @@ export interface ChatSseStreamDeps {
   ) => Promise<{ updated: boolean }>;
   markMessageFailed?: (id: string) => Promise<void>;
   notifyChatReplyCompleted?: (params: {
+    artifacts?: DataArtifact[];
     conversationId: string;
     messageId: string;
     proteinStructures?: ProteinStructure[];
@@ -62,6 +73,13 @@ export interface ChatSseStreamDeps {
     totalOutputTokens?: number;
   }>;
   fileUploadAgent?: (input: unknown) => Promise<unknown>;
+  runSegmentAnythingChatTool?: (input: {
+    conversationState: ConversationState;
+    message: string;
+    messageId: string;
+    toolInput?: unknown;
+    userId: string;
+  }) => Promise<{ artifacts: DataArtifact[]; text: string }>;
   getPendingFileIds?: (conversationStateId: string) => Promise<string[]>;
   getFileStatus?: (fileId: string) => Promise<FileStatusRecord | null>;
   getFileProcessQueue?: () => Queue<FileProcessJobData, FileProcessJobResult> | null;
@@ -79,6 +97,8 @@ export function buildChatSseStream(
     userId,
     message,
     sourceSelectionId,
+    toolId,
+    toolInput,
     createdMessage,
     conversationStateRecord,
     files,
@@ -170,6 +190,13 @@ export function buildChatSseStream(
       const notifyChatReplyCompleted =
         deps.notifyChatReplyCompleted ??
         (await import("./chat-notifications")).notifyChatReplyCompleted;
+      const segmentAnythingModule =
+        toolId === "segment-anything"
+          ? await import("../services/segment-anything/chat-tool")
+          : null;
+      const runSegmentAnythingChatTool =
+        deps.runSegmentAnythingChatTool ?? segmentAnythingModule?.runSegmentAnythingChatTool;
+      const SegmentAnythingToolError = segmentAnythingModule?.SegmentAnythingToolError;
 
       let replyPersisted = false;
 
@@ -217,6 +244,100 @@ export function buildChatSseStream(
               conversationStateRecord.values = fresh.values;
             }
           }
+        }
+
+        if (toolId === "segment-anything") {
+          if (!runSegmentAnythingChatTool) {
+            throw new Error("Segment Anything tool is unavailable");
+          }
+
+          const segmentToolCallId = `segment-anything:${createdMessage.id}`;
+          streamEvents.emitToolCall({
+            inputPreview: message,
+            toolCallId: segmentToolCallId,
+            toolName: "segment-anything",
+          });
+
+          let segmentResult: Awaited<ReturnType<typeof runSegmentAnythingChatTool>>;
+          try {
+            segmentResult = await runSegmentAnythingChatTool({
+              conversationState: conversationStateRecord,
+              message,
+              messageId: createdMessage.id,
+              toolInput,
+              userId,
+            });
+          } catch (err) {
+            streamEvents.emitToolResult({
+              outputPreview:
+                SegmentAnythingToolError && err instanceof SegmentAnythingToolError
+                  ? err.message
+                  : "Segment Anything failed.",
+              status: "failed",
+              toolCallId: segmentToolCallId,
+              toolName: "segment-anything",
+            });
+            throw err;
+          }
+
+          const responseTime = Date.now() - sseStartTime;
+          await persistNormalChatArtifacts({
+            artifacts: segmentResult.artifacts,
+            conversationState: conversationStateRecord,
+            getConversationState,
+            messageId: createdMessage.id,
+            updateConversationState,
+          });
+
+          const { updated } = await markMessageComplete(createdMessage.id, {
+            content: segmentResult.text,
+            response_time: responseTime,
+          });
+          if (!updated) {
+            send("error", {
+              error: "Response failed to save. Please retry.",
+              reason: "agent_error",
+            });
+            safeClose();
+            logger.warn(
+              { messageId: createdMessage.id },
+              "chat_sse_segment_anything_complete_skipped_row_not_pending"
+            );
+            return;
+          }
+
+          replyPersisted = true;
+          markReplyPersisted();
+
+          await notifyChatReplyCompleted({
+            artifacts: segmentResult.artifacts,
+            conversationId,
+            messageId: createdMessage.id,
+          });
+
+          streamEvents.emitToolResult({
+            outputPreview: segmentResult.text,
+            status: "completed",
+            toolCallId: segmentToolCallId,
+            toolName: "segment-anything",
+          });
+          streamEvents.sendFinal({
+            artifacts: segmentResult.artifacts,
+            text: segmentResult.text,
+          });
+          safeClose();
+
+          logger.info(
+            {
+              artifactCount: segmentResult.artifacts.length,
+              conversationId,
+              messageId: createdMessage.id,
+              responseTime,
+              streaming: true,
+            },
+            "chat_sse_segment_anything_completed"
+          );
+          return;
         }
 
         const result = await runChatAgent({

@@ -23,7 +23,6 @@ describe("notifyChatReplyCompleted", () => {
       proteinStructures: [{ bcifUrl: "https://example.test/a.bcif", entryId: "AF-P04637-F1" }],
     });
 
-    expect(notifyMessageUpdated).toHaveBeenCalledWith("message-1", "conversation-1", "message-1");
     expect(notifyJobCompleted).toHaveBeenCalledWith(
       "message-1",
       "conversation-1",
@@ -33,9 +32,10 @@ describe("notifyChatReplyCompleted", () => {
         proteinStructures: [{ bcifUrl: "https://example.test/a.bcif", entryId: "AF-P04637-F1" }],
       }
     );
+    expect(notifyMessageUpdated).toHaveBeenCalledWith("message-1", "conversation-1", "message-1");
   });
 
-  test("does not throw when notification publishing fails", async () => {
+  test("still publishes completion when the message-updated notification fails", async () => {
     const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
     notifyMessageUpdated.mockRejectedValueOnce(new Error("redis unavailable"));
 
@@ -49,8 +49,9 @@ describe("notifyChatReplyCompleted", () => {
 
       expect(warnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ messageId: "message-1" }),
-        "chat_sse_post_reply_notify_failed"
+        "chat_sse_message_updated_notify_failed"
       );
+      expect(notifyJobCompleted).toHaveBeenCalledTimes(1);
     } finally {
       warnSpy.mockRestore();
     }

@@ -10,10 +10,12 @@
  */
 
 import { Job, Worker } from "bullmq";
-import type { ConversationState, State } from "../../../types/core";
+import type { ConversationState, DataArtifact, State } from "../../../types/core";
 import type { SourceSelectionId } from "../../../types/sourceSelection";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
+import { persistNormalChatArtifacts } from "../../chat/artifactPersistence";
+import { runSegmentAnythingChatTool } from "../../segment-anything/chat-tool";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -132,6 +134,17 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       }
     }
 
+    if (job.data.toolId === "segment-anything") {
+      return await runSegmentAnythingForJob(
+        job,
+        conversationId,
+        messageId,
+        message,
+        conversationState,
+        startTime
+      );
+    }
+
     return await runChatAgentForJob(
       job,
       conversationId,
@@ -163,6 +176,71 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
 
     throw error;
   }
+}
+
+async function runSegmentAnythingForJob(
+  job: Job<ChatJobData, ChatJobResult>,
+  conversationId: string,
+  messageId: string,
+  message: string,
+  conversationState: ConversationState,
+  startTime: number
+): Promise<ChatJobResult> {
+  const { userId } = job.data;
+
+  const segmentResult = await runSegmentAnythingChatTool({
+    conversationState,
+    message,
+    messageId,
+    toolInput: job.data.toolInput,
+    userId,
+  });
+
+  const responseTime = Date.now() - startTime;
+  await persistNormalChatArtifacts({
+    artifacts: segmentResult.artifacts,
+    conversationState,
+    messageId,
+  });
+
+  const { markMessageComplete } = await import("../../chat/tools");
+  const { updated } = await markMessageComplete(messageId, {
+    content: segmentResult.text,
+    response_time: responseTime,
+  });
+  await failJobIfRowNoLongerPending(
+    updated,
+    job.id,
+    messageId,
+    "chat_worker_segment_anything_complete_skipped_row_not_pending"
+  );
+
+  try {
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      artifacts: segmentResult.artifacts,
+    });
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_segment_anything_job_completed_notify_failed"
+    );
+  }
+
+  try {
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_segment_anything_message_updated_notify_failed"
+    );
+  }
+
+  return {
+    artifacts: segmentResult.artifacts,
+    responseTime,
+    text: segmentResult.text,
+    userId,
+  };
 }
 
 /**

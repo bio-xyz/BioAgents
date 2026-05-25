@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ConversationState, ProteinStructure } from "../../types/core";
+import type { ConversationState, DataArtifact, ProteinStructure } from "../../types/core";
 import { buildChatSseStream, type ChatSseStreamDeps } from "../chat-sse-transport";
 
 async function collectEvents(
@@ -254,6 +254,68 @@ describe("buildChatSseStream", () => {
     await collectEvents(stream);
     expect(uploadCalledBeforeChat).toBe(true);
     expect(chatCalled).toBe(true);
+  });
+
+  test("segment-anything path emits artifacts only after artifact state persists", async () => {
+    const artifact: DataArtifact = {
+      id: "artifact-1",
+      name: "Annotated image",
+      path: "artifacts/msg-1/annotated.png",
+      type: "image",
+    };
+    let updateCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "segment-anything" }),
+      happyDeps({
+        runSegmentAnythingChatTool: async () => ({
+          artifacts: [artifact],
+          text: "segmented",
+        }),
+        updateConversationState: async () => {
+          updateCalls++;
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const finalEvent = events.find((event) => event.event === "final");
+
+    expect(updateCalls).toBe(1);
+    expect(finalEvent).toBeDefined();
+    expect((finalEvent!.data as { artifacts?: DataArtifact[] }).artifacts).toEqual([artifact]);
+  });
+
+  test("segment-anything artifact persistence failure sends an error instead of final artifacts", async () => {
+    let failedCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "segment-anything" }),
+      happyDeps({
+        markMessageFailed: async () => {
+          failedCalls++;
+        },
+        runSegmentAnythingChatTool: async () => ({
+          artifacts: [
+            {
+              id: "artifact-1",
+              name: "Annotated image",
+              path: "artifacts/msg-1/annotated.png",
+              type: "image",
+            },
+          ],
+          text: "segmented",
+        }),
+        updateConversationState: async () => {
+          throw new Error("db unavailable");
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const order = events.map((event) => event.event);
+
+    expect(order).toContain("error");
+    expect(order).not.toContain("final");
+    expect(failedCalls).toBe(1);
   });
 
   test("agent throws BEFORE persistence: markMessageFailed is called", async () => {

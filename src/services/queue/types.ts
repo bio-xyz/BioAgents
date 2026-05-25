@@ -6,7 +6,7 @@
  */
 
 import type { AuthMethod } from "../../types/auth";
-import type { ProteinStructure } from "../../types/core";
+import type { ChatToolId, ChatToolInput, DataArtifact, ProteinStructure } from "../../types/core";
 import type { SourceSelectionId } from "../../types/sourceSelection";
 
 /**
@@ -26,6 +26,8 @@ export interface ChatJobData {
   // File references (files uploaded before enqueue, stored in conversationState)
   fileIds?: string[];
   sourceSelectionId?: SourceSelectionId;
+  toolId?: ChatToolId;
+  toolInput?: ChatToolInput;
 
   // Metadata
   requestedAt: string;
@@ -83,6 +85,7 @@ export interface JobProgress {
  * Result returned by chat worker on completion
  */
 export interface ChatJobResult {
+  artifacts?: DataArtifact[];
   text: string;
   userId: string;
   responseTime: number;

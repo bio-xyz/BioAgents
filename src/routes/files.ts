@@ -14,6 +14,7 @@ import { resolveAuth } from "../middleware/authResolver";
 import {
   confirmUpload,
   deleteFile,
+  getFileDownloadUrlForUser,
   getFileStatusForUser,
   requestUploadUrl,
 } from "../services/files";
@@ -175,6 +176,50 @@ export const filesRoute = new Elysia({ prefix: "/api/files" })
         return new Response(
           JSON.stringify({
             error: error instanceof Error ? error.message : "Failed to get file status",
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+    },
+    {
+      params: t.Object({
+        fileId: t.String({ minLength: 1 }),
+      }),
+    }
+  )
+
+  /**
+   * GET /api/files/:fileId/download-url
+   * Generate a short-lived download URL for an uploaded file.
+   */
+  .get(
+    "/:fileId/download-url",
+    async ({ params, request }) => {
+      const authResult = await resolveAuth(request);
+      if (!authResult.authenticated || !authResult.userId) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
+      }
+
+      const { fileId } = params;
+
+      try {
+        const result = await getFileDownloadUrlForUser(fileId, authResult.userId);
+        if (!result) {
+          return new Response(JSON.stringify({ error: "File not found" }), {
+            headers: { "Content-Type": "application/json" },
+            status: 404,
+          });
+        }
+
+        return result;
+      } catch (error) {
+        logger.error({ error, fileId }, "file_download_url_failed");
+        return new Response(
+          JSON.stringify({
+            error: error instanceof Error ? error.message : "Failed to get file download URL",
           }),
           { headers: { "Content-Type": "application/json" }, status: 500 }
         );
