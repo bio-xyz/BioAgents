@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeMessageFileMetadata } from "../fileMetadata";
+import { normalizeMessageFileMetadata, parseUploadedFileReferences } from "../fileMetadata";
 
 describe("normalizeMessageFileMetadata", () => {
   test("keeps file ids from presigned upload references", () => {
@@ -26,5 +26,17 @@ describe("normalizeMessageFileMetadata", () => {
         type: "image/png",
       },
     ]);
+  });
+});
+
+describe("parseUploadedFileReferences", () => {
+  test("returns null for malformed JSON instead of silently dropping file context", () => {
+    expect(parseUploadedFileReferences("{bad json")).toBeNull();
+  });
+
+  test("returns null for invalid uploaded file reference entries", () => {
+    expect(
+      parseUploadedFileReferences(JSON.stringify([{ fileId: "file-1", filename: "cells.png" }]))
+    ).toBeNull();
   });
 });

@@ -20,6 +20,7 @@
  */
 
 import type { Queue } from "bullmq";
+import { persistNormalChatArtifacts } from "../services/chat/artifactPersistence";
 import type { FileStatusRecord } from "../services/files/status";
 import type { WaitForPendingFilesArgs } from "../services/files/waitForPending";
 import type { FileProcessJobData, FileProcessJobResult } from "../services/queue/types";
@@ -32,7 +33,6 @@ import type {
   ProteinStructure,
 } from "../types/core";
 import type { SourceSelectionId } from "../types/sourceSelection";
-import { withNormalChatArtifacts } from "../utils/artifacts";
 import logger from "../utils/logger";
 import { createChatSseEventHandlers } from "./chat-sse-events";
 
@@ -86,28 +86,6 @@ export interface ChatSseStreamDeps {
   waitForPendingFiles?: (args: WaitForPendingFilesArgs) => Promise<void>;
   getConversationState?: (id: string) => Promise<{ values: ConversationStateValues } | null>;
   updateConversationState?: (id: string, values: ConversationStateValues) => Promise<unknown>;
-}
-
-async function persistNormalChatArtifacts(params: {
-  artifacts?: DataArtifact[];
-  conversationState: ConversationState;
-  logKey: string;
-  messageId: string;
-  updateConversationState: (id: string, values: ConversationStateValues) => Promise<unknown>;
-}): Promise<void> {
-  if (!params.artifacts?.length || !params.conversationState.id) return;
-
-  try {
-    const nextValues = withNormalChatArtifacts(
-      params.conversationState.values,
-      params.messageId,
-      params.artifacts
-    );
-    await params.updateConversationState(params.conversationState.id, nextValues);
-    params.conversationState.values = nextValues;
-  } catch (err) {
-    logger.warn({ error: err, messageId: params.messageId }, params.logKey);
-  }
 }
 
 export function buildChatSseStream(
@@ -303,6 +281,14 @@ export function buildChatSseStream(
           }
 
           const responseTime = Date.now() - sseStartTime;
+          await persistNormalChatArtifacts({
+            artifacts: segmentResult.artifacts,
+            conversationState: conversationStateRecord,
+            getConversationState,
+            messageId: createdMessage.id,
+            updateConversationState,
+          });
+
           const { updated } = await markMessageComplete(createdMessage.id, {
             content: segmentResult.text,
             response_time: responseTime,
@@ -322,14 +308,6 @@ export function buildChatSseStream(
 
           replyPersisted = true;
           markReplyPersisted();
-
-          await persistNormalChatArtifacts({
-            artifacts: segmentResult.artifacts,
-            conversationState: conversationStateRecord,
-            logKey: "chat_sse_segment_anything_artifacts_state_persist_failed",
-            messageId: createdMessage.id,
-            updateConversationState,
-          });
 
           await notifyChatReplyCompleted({
             artifacts: segmentResult.artifacts,

@@ -11,10 +11,13 @@ import logger from "../../utils/logger";
 import { getFileStatus } from "../files/status";
 
 const SEGMENT_ANYTHING_TOOL_ID: ChatToolId = "segment-anything";
-const IMAGE_EXTENSIONS = new Set(["bmp", "gif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]);
+const IMAGE_EXTENSIONS = new Set(["jpeg", "jpg", "png", "webp"]);
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const MAX_SEGMENT_ANYTHING_PROMPT_LENGTH = 500;
 const MAX_SEGMENT_ANYTHING_IMAGE_BYTES = 50 * 1024 * 1024;
-const SEGMENT_ANYTHING_RETRY_STATUS_CODES = [429, 500, 502, 504];
+const SEGMENT_ANYTHING_RETRY_STATUS_CODES = [429, 500, 502, 503, 504];
+const SEGMENT_ANYTHING_FETCH_TIMEOUT_MS = 60_000;
+const SEGMENT_ANYTHING_MAX_RETRIES = 2;
 
 type UploadedDataset = NonNullable<ConversationState["values"]["uploadedDatasets"]>[number];
 
@@ -114,13 +117,22 @@ function extension(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() || "";
 }
 
+function normalizeMimeType(contentType: string): string {
+  return contentType.split(";")[0]?.trim().toLowerCase() || "";
+}
+
 function isImageUpload(filename: string, contentType?: string): boolean {
-  if (contentType) return contentType.startsWith("image/");
+  if (contentType) {
+    const mimeType = normalizeMimeType(contentType);
+    if (mimeType && mimeType !== "application/octet-stream") {
+      return IMAGE_MIME_TYPES.has(mimeType);
+    }
+  }
   return IMAGE_EXTENSIONS.has(extension(filename));
 }
 
 function imageExtensionForMimeType(mimeType: string): string {
-  switch (mimeType.toLowerCase()) {
+  switch (normalizeMimeType(mimeType)) {
     case "image/jpeg":
     case "image/jpg":
       return "jpg";
@@ -128,10 +140,11 @@ function imageExtensionForMimeType(mimeType: string): string {
       return "png";
     case "image/webp":
       return "webp";
-    case "image/gif":
-      return "gif";
     default:
-      return "png";
+      throw new SegmentAnythingToolError(
+        "Segment Anything returned an unsupported image type",
+        502
+      );
   }
 }
 
@@ -145,10 +158,14 @@ function findDataset(
   if (input.imageFilename) {
     return datasets.find((dataset) => dataset.filename === input.imageFilename);
   }
-  return datasets.find((dataset) => isImageUpload(dataset.filename));
+  const imageDatasets = datasets.filter((dataset) => isImageUpload(dataset.filename));
+  if (imageDatasets.length > 1) {
+    throw new SegmentAnythingToolError("Specify which image to segment.", 400);
+  }
+  return imageDatasets[0];
 }
 
-async function callBioLiteratureSegmentAnything(
+export async function callBioLiteratureSegmentAnything(
   request: SegmentAnythingRequest
 ): Promise<SegmentAnythingResponse> {
   const baseUrl = process.env.BIO_LIT_AGENT_API_URL?.replace(/\/$/, "");
@@ -158,27 +175,43 @@ async function callBioLiteratureSegmentAnything(
     throw new SegmentAnythingToolError("BioLiterature API URL or API key not configured", 503);
   }
 
-  const { response } = await fetchWithRetry(
-    `${baseUrl}/tools/segment-anything`,
-    {
-      body: JSON.stringify(request),
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), SEGMENT_ANYTHING_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    ({ response } = await fetchWithRetry(
+      `${baseUrl}/tools/segment-anything`,
+      {
+        body: JSON.stringify(request),
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        method: "POST",
+        signal: abortController.signal,
       },
-      method: "POST",
-    },
-    {
-      onRetry: (attempt, error) =>
-        logger.warn({ attempt, error: error.message }, "segment_anything_retry"),
-      retryStatusCodes: SEGMENT_ANYTHING_RETRY_STATUS_CODES,
-    }
-  );
+      {
+        initialDelayMs: 1000,
+        maxDelayMs: 5000,
+        maxRetries: SEGMENT_ANYTHING_MAX_RETRIES,
+        onRetry: (attempt, error) =>
+          logger.warn({ attempt, error: error.message }, "segment_anything_retry"),
+        retryStatusCodes: SEGMENT_ANYTHING_RETRY_STATUS_CODES,
+      }
+    ));
+  } catch (err) {
+    logger.warn({ err }, "segment_anything_request_failed");
+    throw new SegmentAnythingToolError("BioLiterature Segment Anything request failed", 502);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
+    logger.warn({ errorText, status: response.status }, "segment_anything_upstream_error");
     throw new SegmentAnythingToolError(
-      `BioLiterature Segment Anything error: ${response.status} - ${errorText}`,
+      `BioLiterature Segment Anything error: ${response.status}`,
       response.status >= 500 ? 502 : response.status
     );
   }
@@ -243,13 +276,18 @@ export async function runSegmentAnythingChatTool(
 
   const rawImage = fileStatus?.s3Key
     ? await storageProvider.download(fileStatus.s3Key)
-    : await storageProvider.fetchFileByRelativePath?.(
-        userId,
-        conversationState.id,
-        dataset.path || `uploads/${dataset.filename}`
-      );
+    : storageProvider.fetchFileByRelativePath
+      ? await storageProvider.fetchFileByRelativePath(
+          userId,
+          conversationState.id,
+          dataset.path || `uploads/${dataset.filename}`
+        )
+      : undefined;
   if (!rawImage) {
     throw new SegmentAnythingToolError("Unable to read the uploaded image", 500);
+  }
+  if (rawImage.length > MAX_SEGMENT_ANYTHING_IMAGE_BYTES) {
+    throw new SegmentAnythingToolError("Segment Anything image must be 50 MB or smaller.", 400);
   }
 
   const segmentClient = deps.segmentClient || callBioLiteratureSegmentAnything;

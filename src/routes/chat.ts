@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { authResolver } from "../middleware/authResolver";
 import { rateLimitMiddleware } from "../middleware/rateLimiter";
+import { persistNormalChatArtifacts } from "../services/chat/artifactPersistence";
 import { ensureUserAndConversation, setupConversationData } from "../services/chat/setup";
 import {
   createMessageRecord,
@@ -16,7 +17,6 @@ import {
 import type { ConversationState, DataArtifact, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
-import { withNormalChatArtifacts } from "../utils/artifacts";
 import { asString, extractFiles, isBodyRecord } from "../utils/bodyParsing";
 import logger from "../utils/logger";
 import { buildMessageStateValues } from "../utils/messageState";
@@ -53,28 +53,6 @@ type ChatQueuedResponse = {
   status: "queued";
   pollUrl: string;
 };
-
-async function persistNormalChatArtifacts(params: {
-  artifacts?: DataArtifact[];
-  conversationState: ConversationState;
-  logKey: string;
-  messageId: string;
-}): Promise<void> {
-  if (!params.artifacts?.length || !params.conversationState.id) return;
-
-  try {
-    const { updateConversationState } = await import("../db/operations");
-    const nextValues = withNormalChatArtifacts(
-      params.conversationState.values,
-      params.messageId,
-      params.artifacts
-    );
-    await updateConversationState(params.conversationState.id, nextValues);
-    params.conversationState.values = nextValues;
-  } catch (err) {
-    logger.warn({ error: err, messageId: params.messageId }, params.logKey);
-  }
-}
 
 function parseToolInput(value: unknown): Record<string, unknown> | undefined {
   if (isBodyRecord(value)) return value;
@@ -418,6 +396,13 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     // Extract files from parsed body
     const files: File[] = extractFiles(parsedBody.files);
     const fileReferences = parseUploadedFileReferences(parsedBody.fileReferences);
+    if (fileReferences === null) {
+      set.status = 400;
+      return {
+        error: "Invalid fileReferences",
+        ok: false,
+      };
+    }
 
     // Log request details
     logger.info(
@@ -686,6 +671,12 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       });
 
       const responseTime = Date.now() - startTime;
+      await persistNormalChatArtifacts({
+        artifacts: segmentResult.artifacts,
+        conversationState,
+        messageId: createdMessage.id,
+      });
+
       const { updated } = await markMessageComplete(createdMessage.id, {
         content: segmentResult.text,
         response_time: responseTime,
@@ -702,13 +693,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         };
       }
       replyPersisted = true;
-
-      await persistNormalChatArtifacts({
-        artifacts: segmentResult.artifacts,
-        conversationState,
-        logKey: "chat_in_process_segment_anything_artifacts_state_persist_failed",
-        messageId: createdMessage.id,
-      });
 
       const response: ChatV2Response = {
         artifacts: segmentResult.artifacts,
@@ -878,8 +862,14 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
 
     const { set } = ctx;
     set.status = error instanceof SegmentAnythingToolError ? error.statusCode : 500;
+    const errorMessage =
+      error instanceof SegmentAnythingToolError
+        ? error.statusCode < 500
+          ? err.message
+          : "Segment Anything failed"
+        : err.message || "Internal server error";
     return {
-      error: err.message || "Internal server error",
+      error: errorMessage,
       ok: false,
     };
   }

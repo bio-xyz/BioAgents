@@ -1,3 +1,5 @@
+import logger from "../../utils/logger";
+
 export interface UploadedFileReference {
   fileId: string;
   fileKey: string;
@@ -28,13 +30,26 @@ export function isUploadedFileReference(value: unknown): value is UploadedFileRe
   );
 }
 
-export function parseUploadedFileReferences(value: unknown): UploadedFileReference[] {
+export function parseUploadedFileReferences(value: unknown): UploadedFileReference[] | null {
   if (typeof value !== "string" || !value.trim()) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isUploadedFileReference) : [];
-  } catch {
-    return [];
+    if (!Array.isArray(parsed)) {
+      logger.warn({ valueType: typeof parsed }, "parse_uploaded_file_references_invalid_shape");
+      return null;
+    }
+    const references = parsed.filter(isUploadedFileReference);
+    if (references.length !== parsed.length) {
+      logger.warn(
+        { invalidCount: parsed.length - references.length },
+        "parse_uploaded_file_references_invalid_entry"
+      );
+      return null;
+    }
+    return references;
+  } catch (err) {
+    logger.warn({ err }, "parse_uploaded_file_references_invalid_json");
+    return null;
   }
 }
 

@@ -12,9 +12,9 @@
 import { Job, Worker } from "bullmq";
 import type { ConversationState, DataArtifact, State } from "../../../types/core";
 import type { SourceSelectionId } from "../../../types/sourceSelection";
-import { withNormalChatArtifacts } from "../../../utils/artifacts";
 import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
+import { persistNormalChatArtifacts } from "../../chat/artifactPersistence";
 import { runSegmentAnythingChatTool } from "../../segment-anything/chat-tool";
 import { getBullMQConnection } from "../connection";
 import {
@@ -43,29 +43,6 @@ async function failJobIfRowNoLongerPending(
   const { UnrecoverableError } = await import("bullmq");
   logger.warn({ jobId, messageId }, logKey);
   throw new UnrecoverableError("Message row is no longer in PENDING state; cannot persist reply");
-}
-
-async function persistNormalChatArtifacts(params: {
-  artifacts?: DataArtifact[];
-  conversationState: ConversationState;
-  jobId?: string;
-  logKey: string;
-  messageId: string;
-}): Promise<void> {
-  if (!params.artifacts?.length || !params.conversationState.id) return;
-
-  try {
-    const { updateConversationState } = await import("../../../db/operations");
-    const nextValues = withNormalChatArtifacts(
-      params.conversationState.values,
-      params.messageId,
-      params.artifacts
-    );
-    await updateConversationState(params.conversationState.id, nextValues);
-    params.conversationState.values = nextValues;
-  } catch (err) {
-    logger.warn({ error: err, jobId: params.jobId, messageId: params.messageId }, params.logKey);
-  }
 }
 
 async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<ChatJobResult> {
@@ -220,6 +197,12 @@ async function runSegmentAnythingForJob(
   });
 
   const responseTime = Date.now() - startTime;
+  await persistNormalChatArtifacts({
+    artifacts: segmentResult.artifacts,
+    conversationState,
+    messageId,
+  });
+
   const { markMessageComplete } = await import("../../chat/tools");
   const { updated } = await markMessageComplete(messageId, {
     content: segmentResult.text,
@@ -232,23 +215,23 @@ async function runSegmentAnythingForJob(
     "chat_worker_segment_anything_complete_skipped_row_not_pending"
   );
 
-  await persistNormalChatArtifacts({
-    artifacts: segmentResult.artifacts,
-    conversationState,
-    jobId: job.id,
-    logKey: "chat_worker_segment_anything_artifacts_state_persist_failed",
-    messageId,
-  });
-
   try {
-    await notifyMessageUpdated(job.id!, conversationId, messageId);
     await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
       artifacts: segmentResult.artifacts,
     });
   } catch (notifyErr) {
     logger.warn(
       { error: notifyErr, jobId: job.id, messageId },
-      "chat_worker_segment_anything_post_reply_notify_failed"
+      "chat_worker_segment_anything_job_completed_notify_failed"
+    );
+  }
+
+  try {
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_segment_anything_message_updated_notify_failed"
     );
   }
 

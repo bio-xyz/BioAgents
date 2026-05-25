@@ -9,15 +9,20 @@ export async function notifyChatReplyCompleted(params: {
   proteinStructures?: ProteinStructure[];
 }): Promise<void> {
   const jobId = params.messageId;
+  const result = {
+    ...(params.artifacts?.length ? { artifacts: params.artifacts } : {}),
+    ...(params.proteinStructures?.length ? { proteinStructures: params.proteinStructures } : {}),
+  };
+
+  try {
+    await notifyJobCompleted(jobId, params.conversationId, params.messageId, undefined, result);
+  } catch (error) {
+    logger.warn({ error, messageId: params.messageId }, "chat_sse_job_completed_notify_failed");
+  }
 
   try {
     await notifyMessageUpdated(jobId, params.conversationId, params.messageId);
-    const result = {
-      ...(params.artifacts?.length ? { artifacts: params.artifacts } : {}),
-      ...(params.proteinStructures?.length ? { proteinStructures: params.proteinStructures } : {}),
-    };
-    await notifyJobCompleted(jobId, params.conversationId, params.messageId, undefined, result);
   } catch (error) {
-    logger.warn({ error, messageId: params.messageId }, "chat_sse_post_reply_notify_failed");
+    logger.warn({ error, messageId: params.messageId }, "chat_sse_message_updated_notify_failed");
   }
 }
