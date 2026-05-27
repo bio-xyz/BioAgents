@@ -16,6 +16,10 @@ import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { filesRoute } from "./routes/files";
 import { literatureAgentStreamRoute } from "./routes/literature-agent-stream";
+import { alphafoldProxyRoute } from "./routes/tools/alphafoldProxy";
+import { contactsRoute } from "./routes/tools/contacts";
+import { pdbProxyRoute } from "./routes/tools/pdbProxy";
+import { targetRoute } from "./routes/tools/target";
 // BullMQ Queue imports (conditional)
 import { closeConnections, isJobQueueEnabled } from "./services/queue/connection";
 import { cleanupDeadConnections, websocketHandler } from "./services/websocket/handler";
@@ -250,7 +254,11 @@ const app = new Elysia()
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
   .use(literatureAgentStreamRoute) // POST /api/literature/agent/stream for Literature SSE bridge
-  .use(filesRoute); // POST /api/files/* for direct S3 file uploads
+  .use(filesRoute) // POST /api/files/* for direct S3 file uploads
+  .use(targetRoute) // POST /api/tools/target — binder pipeline stages 1-3
+  .use(contactsRoute) // GET /api/tools/target/contacts — standalone contact extraction
+  .use(pdbProxyRoute) // GET /api/tools/pdb-proxy — RCSB PDB file proxy
+  .use(alphafoldProxyRoute); // GET /api/tools/alphafold/proxy — AlphaFold asset proxy
 
 // Mount Bull Board dashboard (only when job queue is enabled)
 const queueDashboard = createQueueDashboard();
