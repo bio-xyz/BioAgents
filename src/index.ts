@@ -18,6 +18,7 @@ import { filesRoute } from "./routes/files";
 import { literatureAgentStreamRoute } from "./routes/literature-agent-stream";
 import { alphafoldProxyRoute } from "./routes/tools/alphafoldProxy";
 import { contactsRoute } from "./routes/tools/contacts";
+import { p2rankRoute } from "./routes/tools/p2rank";
 import { pdbProxyRoute } from "./routes/tools/pdbProxy";
 import { targetRoute } from "./routes/tools/target";
 // BullMQ Queue imports (conditional)
@@ -257,6 +258,7 @@ const app = new Elysia()
   .use(filesRoute) // POST /api/files/* for direct S3 file uploads
   .use(targetRoute) // POST /api/tools/target — binder pipeline stages 1-3
   .use(contactsRoute) // GET /api/tools/target/contacts — standalone contact extraction
+  .use(p2rankRoute) // POST /api/tools/target/p2rank — P2Rank pocket prediction
   .use(pdbProxyRoute) // GET /api/tools/pdb-proxy — RCSB PDB file proxy
   .use(alphafoldProxyRoute); // GET /api/tools/alphafold/proxy — AlphaFold asset proxy
 
