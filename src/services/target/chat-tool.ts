@@ -85,7 +85,8 @@ export async function runTargetChatTool(params: {
     type: "target-result",
   };
 
-  const uniprotId = typeof targetData.uniprotId === "string" ? targetData.uniprotId : input.query;
+  const targetInfo = targetData.target as Record<string, unknown> | undefined;
+  const uniprotId = typeof targetInfo?.uniprotId === "string" ? targetInfo.uniprotId : input.query;
   const text = `Target analysis complete for ${uniprotId}. Use the result panel to explore binding site residues.`;
 
   return { artifacts: [artifact], text };
