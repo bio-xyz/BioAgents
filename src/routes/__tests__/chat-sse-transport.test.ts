@@ -318,6 +318,70 @@ describe("buildChatSseStream", () => {
     expect(failedCalls).toBe(1);
   });
 
+  test("target path emits artifacts only after artifact state persists", async () => {
+    const artifact: DataArtifact = {
+      description: "Target analysis for GLP1R",
+      id: "target-msg-1",
+      metadata: { _query: "GLP1R", _version: 1 },
+      name: "Target: GLP1R",
+      type: "target-result",
+    };
+    let updateCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "GLP1R" } }),
+      happyDeps({
+        runTargetChatTool: async () => ({
+          artifacts: [artifact],
+          text: "Target analysis complete for P43220.",
+        }),
+        updateConversationState: async () => {
+          updateCalls++;
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const finalEvent = events.find((event) => event.event === "final");
+
+    expect(updateCalls).toBe(1);
+    expect(finalEvent).toBeDefined();
+    expect((finalEvent!.data as { artifacts?: DataArtifact[] }).artifacts).toEqual([artifact]);
+  });
+
+  test("target persistence failure sends an error instead of final artifacts", async () => {
+    let failedCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "GLP1R" } }),
+      happyDeps({
+        markMessageFailed: async () => {
+          failedCalls++;
+        },
+        runTargetChatTool: async () => ({
+          artifacts: [
+            {
+              description: "Target analysis for GLP1R",
+              id: "target-msg-1",
+              metadata: { _query: "GLP1R", _version: 1 },
+              name: "Target: GLP1R",
+              type: "target-result" as const,
+            },
+          ],
+          text: "done",
+        }),
+        updateConversationState: async () => {
+          throw new Error("db unavailable");
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const order = events.map((event) => event.event);
+
+    expect(order).toContain("error");
+    expect(order).not.toContain("final");
+    expect(failedCalls).toBe(1);
+  });
+
   test("agent throws BEFORE persistence: markMessageFailed is called", async () => {
     let failedCalls = 0;
     const stream = buildChatSseStream(
