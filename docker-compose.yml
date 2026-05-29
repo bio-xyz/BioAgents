@@ -63,6 +63,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - COHERE_API_KEY=${COHERE_API_KEY:-}
 
+      # External service integrations
+      - BIO_LIT_AGENT_API_URL=${BIO_LIT_AGENT_API_URL:-}
+      - BIO_LIT_AGENT_API_KEY=${BIO_LIT_AGENT_API_KEY:-}
+
       # Agent LLM Configuration
       - OPENSCHOLAR_API_URL=${OPENSCHOLAR_API_URL:-}
       - REPLY_LLM_PROVIDER=${REPLY_LLM_PROVIDER:-openai}
