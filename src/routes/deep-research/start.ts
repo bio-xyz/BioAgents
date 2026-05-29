@@ -13,7 +13,7 @@ import {
 import { authResolver } from "../../middleware/authResolver";
 import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import { ensureUserAndConversation, setupConversationData } from "../../services/chat/setup";
-import { createMessageRecord } from "../../services/chat/tools";
+import { createMessageRecord, markMessageFailed } from "../../services/chat/tools";
 import {
   DeepResearchCancelledError,
   isDeepResearchCancellationRequested,
@@ -90,133 +90,23 @@ type DeepResearchQueuedResponse = {
   deduplicated?: true;
 };
 
-type DeepResearchStartFailureLogger = {
-  error: (payload: Record<string, unknown>, message: string) => void;
-  warn: (payload: Record<string, unknown>, message: string) => void;
-};
-
-type DeepResearchStartFailureDeps = {
-  clearDeepResearchActivity: (values: ConversationState["values"]) => void;
-  ensureObjectiveTrace: (
-    values: ConversationState["values"],
-    objective?: string,
-    options?: { runRootMessageId?: string }
-  ) => Promise<unknown>;
-  getObjectiveTraceObjective: (
-    values: ConversationState["values"],
-    fallbackObjective?: string
-  ) => string | undefined;
-  markObjectiveTraceStale: (values: ConversationState["values"]) => unknown;
-  updateConversationState: (id: string, values: ConversationState["values"]) => Promise<unknown>;
-  notifyStateUpdated: (jobId: string, conversationId: string, stateId: string) => Promise<unknown>;
-  updateState: (id: string, values: Record<string, unknown>) => Promise<unknown>;
-  markRunFinished: (params: {
-    conversationStateId: string;
-    result: "failed";
-    error?: string;
-    rootMessageId?: string;
-    stateId?: string;
-  }) => Promise<unknown>;
-  logger: DeepResearchStartFailureLogger;
-};
-
-type DeepResearchStartFailureParams = {
-  activeConversationState: ConversationState | null;
-  conversationId: string;
-  conversationStateId: string;
-  err: unknown;
-  notificationJobId: string;
-  rootMessageId: string;
-  stateRecord: {
-    id: string;
-    values: State["values"];
-  };
-};
+import {
+  type DeepResearchStartFailureDeps,
+  handleDeepResearchStartFailure,
+} from "./failure-handler";
 
 const deepResearchStartFailureDeps: DeepResearchStartFailureDeps = {
   clearDeepResearchActivity,
   ensureObjectiveTrace,
   getObjectiveTraceObjective,
   logger,
+  markMessageFailed,
   markObjectiveTraceStale,
   markRunFinished,
   notifyStateUpdated,
   updateConversationState,
   updateState,
 };
-
-async function handleDeepResearchStartFailure(
-  params: DeepResearchStartFailureParams,
-  deps: DeepResearchStartFailureDeps = deepResearchStartFailureDeps
-): Promise<void> {
-  const {
-    activeConversationState,
-    conversationId,
-    conversationStateId,
-    err,
-    notificationJobId,
-    rootMessageId,
-    stateRecord,
-  } = params;
-
-  const errorMessage = err instanceof Error ? err.message : "Unknown error";
-
-  if (activeConversationState?.id) {
-    try {
-      deps.clearDeepResearchActivity(activeConversationState.values);
-      await deps.ensureObjectiveTrace(
-        activeConversationState.values,
-        deps.getObjectiveTraceObjective(activeConversationState.values),
-        {
-          runRootMessageId: rootMessageId,
-        }
-      );
-      deps.markObjectiveTraceStale(activeConversationState.values);
-      await deps.updateConversationState(
-        activeConversationState.id,
-        activeConversationState.values
-      );
-      await deps.notifyStateUpdated(notificationJobId, conversationId, activeConversationState.id);
-    } catch (cleanupErr) {
-      deps.logger.error(
-        {
-          cleanupErr,
-          conversationStateId,
-          messageId: notificationJobId,
-          originalErr: err,
-          rootMessageId,
-        },
-        "deep_research_error_cleanup_failed"
-      );
-    }
-  }
-
-  await deps.updateState(stateRecord.id, {
-    ...stateRecord.values,
-    error: errorMessage,
-    status: "failed",
-  });
-
-  try {
-    await deps.markRunFinished({
-      conversationStateId,
-      error: errorMessage,
-      result: "failed",
-      rootMessageId,
-      stateId: stateRecord.id,
-    });
-  } catch (finishError) {
-    deps.logger.warn(
-      {
-        conversationStateId,
-        finishError,
-        rootMessageId,
-        stateId: stateRecord.id,
-      },
-      "deep_research_run_finish_mark_failed_on_failure"
-    );
-  }
-}
 
 export const __deepResearchStartTestables = {
   handleDeepResearchStartFailure,
@@ -367,6 +257,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
   let createdMessage: CreatedMessage | null = null;
   let runMarkedStarted = false;
   let activeConversationState: ConversationState | null = null;
+  let queueJobEnqueued = false;
 
   // Log with state IDs now that we have them
   logger.info(
@@ -688,6 +579,7 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           jobId: createdMessage.id, // Use message ID as job ID for easy lookup
         }
       );
+      queueJobEnqueued = true;
 
       activeConversationState = {
         id: conversationStateRecord.id,
@@ -703,9 +595,19 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           message,
         phase: "planning",
       });
-      // Keep queue mode fast: the worker generates the initial objective trace.
-      await updateConversationState(activeConversationState.id!, activeConversationState.values);
-      await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+      // Post-enqueue UI writes are best-effort. The BullMQ job is already live so
+      // any failure here must not reach the outer catch: that catch still calls
+      // updateState({status:"failed"}) and markRunFinished, which would poison the
+      // status endpoint and flip isRunning=false while the worker is still running.
+      try {
+        await updateConversationState(activeConversationState.id!, activeConversationState.values);
+        await notifyStateUpdated(job.id!, conversationId, activeConversationState.id!);
+      } catch (postEnqueueErr) {
+        logger.warn(
+          { conversationId, jobId: job.id, postEnqueueErr },
+          "deep_research_post_enqueue_state_update_failed"
+        );
+      }
 
       try {
         await updateRunJobId({
@@ -769,6 +671,22 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
           { error: stateErr, stateId: stateRecord.id },
           "deep_research_state_mark_failed_on_queue_error"
         );
+      }
+      // Only mark message FAILED if the BullMQ job was never created.
+      // Once queue.add succeeds the job is live; the worker owns the
+      // message row from that point and will call markMessageComplete or
+      // markMessageFailed itself. Marking FAILED here would race with the
+      // worker's markMessageComplete(.eq("status", "PENDING")) and
+      // permanently orphan the reply.
+      if (!queueJobEnqueued) {
+        try {
+          await markMessageFailed(createdMessage.id);
+        } catch (msgErr) {
+          logger.warn(
+            { messageId: createdMessage.id, msgErr },
+            "deep_research_mark_message_failed_on_queue_error"
+          );
+        }
       }
       if (runMarkedStarted) {
         try {
@@ -837,6 +755,14 @@ export async function deepResearchStartHandler(ctx: ElysiaRouteContext) {
         "deep_research_state_mark_failed_on_in_process_start_error"
       );
     }
+    try {
+      await markMessageFailed(createdMessage.id);
+    } catch (msgErr) {
+      logger.warn(
+        { messageId: createdMessage.id, msgErr },
+        "deep_research_mark_message_failed_on_in_process_start_error"
+      );
+    }
     if (runMarkedStarted) {
       try {
         await markRunFinished({
@@ -890,6 +816,7 @@ async function runDeepResearch(params: {
     conversationStateId,
   } = params;
   let activeConversationState: ConversationState | null = null;
+  let currentMessage: CreatedMessage = createdMessage;
   let readCancellationRequested: () => Promise<boolean> = async () => false;
 
   try {
@@ -975,7 +902,9 @@ async function runDeepResearch(params: {
     };
 
     // Track the current message being updated (changes when auto-continuing)
-    let currentMessage = createdMessage;
+    // Note: currentMessage is declared in the outer scope so the catch block
+    // can pass activeMessageId to handleDeepResearchStartFailure.
+    currentMessage = createdMessage;
     type ConversationStateWriteOptions = {
       ensureTraceObjective?: string;
       completeTrace?: boolean;
@@ -1358,14 +1287,18 @@ async function runDeepResearch(params: {
 
     logger.error({ err, messageId: createdMessage.id }, "deep_research_execution_failed");
 
-    await handleDeepResearchStartFailure({
-      activeConversationState,
-      conversationId: createdMessage.conversation_id,
-      conversationStateId,
-      err,
-      notificationJobId: `in-process-${createdMessage.id || stateRecord.id}`,
-      rootMessageId,
-      stateRecord,
-    });
+    await handleDeepResearchStartFailure(
+      {
+        activeConversationState,
+        activeMessageId: currentMessage.id,
+        conversationId: createdMessage.conversation_id,
+        conversationStateId,
+        err,
+        notificationJobId: `in-process-${createdMessage.id || stateRecord.id}`,
+        rootMessageId,
+        stateRecord,
+      },
+      deepResearchStartFailureDeps
+    );
   }
 }

@@ -605,27 +605,42 @@ async function processDeepResearchJob(
       const nextMessageId = agentMessage.id!; // createMessage always returns an ID
       const nextJobName = `iteration-${iterationNumber + 1}-${nextMessageId}`;
 
-      await queue.add(
-        nextJobName,
-        {
-          authMethod: job.data.authMethod,
-          conversationId,
-          conversationStateId,
-          isInitialIteration: false, // Use promoted tasks, skip planning
-          iterationNumber: iterationNumber + 1,
-          message, // Original message for context
-          messageId: nextMessageId, // Next iteration writes to new message
-          requestedAt: new Date().toISOString(),
-          researchMode,
-          rootJobId: rootJobId || job.id!, // Track the chain back to original
-          rootMessageId,
-          stateId,
-          userId,
-        },
-        {
-          jobId: nextMessageId, // Use message ID as job ID for easy lookup
+      try {
+        await queue.add(
+          nextJobName,
+          {
+            authMethod: job.data.authMethod,
+            conversationId,
+            conversationStateId,
+            isInitialIteration: false, // Use promoted tasks, skip planning
+            iterationNumber: iterationNumber + 1,
+            message, // Original message for context
+            messageId: nextMessageId, // Next iteration writes to new message
+            requestedAt: new Date().toISOString(),
+            researchMode,
+            rootJobId: rootJobId || job.id!, // Track the chain back to original
+            rootMessageId,
+            stateId,
+            userId,
+          },
+          {
+            jobId: nextMessageId, // Use message ID as job ID for easy lookup
+          }
+        );
+      } catch (enqueueErr) {
+        // The continuation message row exists in DB but no BullMQ job owns it.
+        // Mark it FAILED immediately so the status endpoint and UI won't spin forever.
+        try {
+          const { markMessageFailed } = await import("../../chat/tools");
+          await markMessageFailed(nextMessageId);
+        } catch (msgErr) {
+          logger.warn(
+            { msgErr, nextMessageId },
+            "deep_research_worker_mark_continuation_message_failed_on_enqueue_error"
+          );
         }
-      );
+        throw enqueueErr;
+      }
 
       logger.info(
         {
@@ -778,33 +793,51 @@ async function processDeepResearchJob(
           error: error instanceof Error ? error.message : "Unknown error",
           status: "failed",
         });
+      } catch (updateErr) {
+        logger.error({ updateErr }, "failed_to_update_state_on_error");
+      }
 
+      try {
+        const { markMessageFailed } = await import("../../chat/tools");
+        await markMessageFailed(messageId);
+      } catch (msgErr) {
+        logger.warn({ messageId, msgErr }, "deep_research_worker_mark_message_failed_on_failure");
+      }
+
+      try {
         await clearConversationActivity({ staleTrace: true });
+      } catch (activityErr) {
+        logger.warn({ activityErr }, "deep_research_worker_clear_activity_failed_on_error");
+      }
 
-        // Notify: Job failed
+      try {
         await notifyJobFailed(job.id!, conversationId, messageId, stateId);
+      } catch (notifyErr) {
+        logger.warn({ notifyErr }, "deep_research_worker_notify_job_failed_error");
+      }
 
-        try {
-          await markRunFinished({
+      try {
+        await markRunFinished({
+          conversationStateId,
+          error: error instanceof Error ? error.message : "Unknown error",
+          result: "failed",
+          rootMessageId,
+          stateId,
+        });
+      } catch (finishError) {
+        logger.warn(
+          {
             conversationStateId,
-            error: error instanceof Error ? error.message : "Unknown error",
-            result: "failed",
+            finishError,
             rootMessageId,
             stateId,
-          });
-        } catch (finishError) {
-          logger.warn(
-            {
-              conversationStateId,
-              finishError,
-              rootMessageId,
-              stateId,
-            },
-            "deep_research_worker_finish_mark_failed_on_failure"
-          );
-        }
+          },
+          "deep_research_worker_finish_mark_failed_on_failure"
+        );
+      }
 
-        // Refund credits on final failure
+      // Refund credits on final failure
+      try {
         const { getServiceClient } = await import("../../../db/client");
         const supabase = getServiceClient();
 
@@ -830,8 +863,8 @@ async function processDeepResearchJob(
             logger.info({ privyId, refunded: data?.refunded }, "credits_refunded_on_failure");
           }
         }
-      } catch (updateErr) {
-        logger.error({ updateErr }, "failed_to_update_state_on_error");
+      } catch (creditErr) {
+        logger.error({ creditErr }, "failed_to_refund_credits_on_error");
       }
     }
 
