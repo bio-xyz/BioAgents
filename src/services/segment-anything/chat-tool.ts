@@ -68,7 +68,9 @@ export class SegmentAnythingToolError extends Error {
 }
 
 export function parseChatToolId(value: unknown): ChatToolId | undefined {
-  return value === SEGMENT_ANYTHING_TOOL_ID ? SEGMENT_ANYTHING_TOOL_ID : undefined;
+  if (value === SEGMENT_ANYTHING_TOOL_ID) return SEGMENT_ANYTHING_TOOL_ID;
+  if (value === "target") return "target";
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

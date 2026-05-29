@@ -88,7 +88,7 @@ export type ProteinStructure = {
 export type DataArtifact = {
   id: string;
   name: string;
-  type: "table" | "chart" | "notebook" | "code" | "file" | "image" | "pdf";
+  type: "table" | "chart" | "notebook" | "code" | "file" | "image" | "pdf" | "target-result";
   description?: string;
   url?: string;
   path?: string;
@@ -109,8 +109,12 @@ export type SegmentAnythingToolInput = {
   point?: SegmentAnythingPoint;
 };
 
-export type ChatToolId = "segment-anything";
-export type ChatToolInput = SegmentAnythingToolInput;
+export type TargetToolInput = {
+  query: string;
+};
+
+export type ChatToolId = "segment-anything" | "target";
+export type ChatToolInput = SegmentAnythingToolInput | TargetToolInput;
 
 export type DeepResearchActivityPhase =
   | "planning"

@@ -14,6 +14,7 @@ import {
   runSegmentAnythingChatTool,
   SegmentAnythingToolError,
 } from "../services/segment-anything/chat-tool";
+import { runTargetChatTool, TargetChatToolError } from "../services/target/chat-tool";
 import type { ConversationState, DataArtifact, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
@@ -710,6 +711,74 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
           responseTime,
         },
         "chat_in_process_segment_anything_completed"
+      );
+
+      return new Response(JSON.stringify(response), {
+        headers: {
+          "Content-Encoding": "identity",
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        status: 200,
+      });
+    }
+
+    // =======================================================================
+    // Target pipeline: /target <gene> slash command
+    // =======================================================================
+    if (toolId === "target") {
+      let targetResult: Awaited<ReturnType<typeof runTargetChatTool>>;
+      try {
+        targetResult = await runTargetChatTool({
+          message,
+          messageId: createdMessage.id,
+          toolInput,
+        });
+      } catch (err) {
+        const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
+        const detail = err instanceof Error ? err.message : "Target pipeline failed";
+        logger.warn({ err, messageId: createdMessage.id }, "target_chat_tool_error");
+        await markMessageFailed(createdMessage.id);
+        set.status = statusCode;
+        return { error: detail, ok: false };
+      }
+
+      const responseTime = Date.now() - startTime;
+      await persistNormalChatArtifacts({
+        artifacts: targetResult.artifacts,
+        conversationState,
+        messageId: createdMessage.id,
+      });
+
+      const { updated } = await markMessageComplete(createdMessage.id, {
+        content: targetResult.text,
+        response_time: responseTime,
+      });
+      if (!updated) {
+        logger.warn(
+          { messageId: createdMessage.id },
+          "chat_in_process_target_complete_skipped_row_not_pending"
+        );
+        set.status = 500;
+        return { error: "Response failed to save. Please retry.", ok: false };
+      }
+      replyPersisted = true;
+
+      const response: ChatV2Response = {
+        artifacts: targetResult.artifacts,
+        conversationId,
+        messageId: createdMessage.id,
+        text: targetResult.text,
+        userId,
+      };
+
+      logger.info(
+        {
+          artifactCount: targetResult.artifacts.length,
+          conversationId,
+          messageId: createdMessage.id,
+          responseTime,
+        },
+        "chat_in_process_target_completed"
       );
 
       return new Response(JSON.stringify(response), {
