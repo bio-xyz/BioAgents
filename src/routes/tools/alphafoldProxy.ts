@@ -1,10 +1,11 @@
 import { Elysia } from "elysia";
 import { authResolver } from "../../middleware/authResolver";
+import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import logger from "../../utils/logger";
 
 // Proxies AlphaFold structure assets (CIF/PDB/PAE) so the frontend avoids CORS issues.
 export const alphafoldProxyRoute = new Elysia().guard(
-  { beforeHandle: [authResolver({ required: true })] },
+  { beforeHandle: [authResolver({ required: true }), rateLimitMiddleware("tools")] },
   (app) =>
     app.get("/api/tools/alphafold/proxy", async ({ query, set }) => {
       const { url } = query as { url?: string };
@@ -14,8 +15,15 @@ export const alphafoldProxyRoute = new Elysia().guard(
         return { error: "Missing url parameter" };
       }
 
-      // Only allow AlphaFold EBI URLs to prevent open proxy abuse
-      if (!url.startsWith("https://alphafold.ebi.ac.uk/")) {
+      // Validate via URL parsing to prevent @user:host bypass tricks
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        set.status = 400;
+        return { error: "Invalid URL" };
+      }
+      if (parsedUrl.host !== "alphafold.ebi.ac.uk" || parsedUrl.protocol !== "https:") {
         set.status = 400;
         return { error: "Only AlphaFold EBI URLs are allowed" };
       }

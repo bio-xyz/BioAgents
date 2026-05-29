@@ -1,10 +1,11 @@
 import { Elysia } from "elysia";
 import { authResolver } from "../../middleware/authResolver";
+import { rateLimitMiddleware } from "../../middleware/rateLimiter";
 import logger from "../../utils/logger";
 
 // Proxies PDB/CIF files from RCSB so the frontend avoids CORS issues.
 export const pdbProxyRoute = new Elysia().guard(
-  { beforeHandle: [authResolver({ required: true })] },
+  { beforeHandle: [authResolver({ required: true }), rateLimitMiddleware("tools")] },
   (app) =>
     app.get("/api/tools/pdb-proxy", async ({ query, set }) => {
       const { pdbId } = query as { pdbId?: string };

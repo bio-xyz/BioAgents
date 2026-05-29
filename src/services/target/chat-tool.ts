@@ -56,7 +56,7 @@ export async function runTargetChatTool(params: {
       signal: controller.signal,
     });
   } catch (err) {
-    logger.warn({ err }, "target_chat_tool_request_failed");
+    logger.error({ err }, "target_chat_tool_request_failed");
     throw new TargetChatToolError("Target pipeline request failed", 502);
   } finally {
     clearTimeout(timeout);
@@ -64,14 +64,19 @@ export async function runTargetChatTool(params: {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    logger.warn({ errorText, status: response.status }, "target_chat_tool_upstream_error");
+    logger.error({ errorText, status: response.status }, "target_chat_tool_upstream_error");
     throw new TargetChatToolError(
       `Target pipeline error: ${response.status}`,
       response.status >= 500 ? 502 : response.status
     );
   }
 
-  const targetData = (await response.json()) as Record<string, unknown>;
+  let targetData: Record<string, unknown>;
+  try {
+    targetData = (await response.json()) as Record<string, unknown>;
+  } catch {
+    throw new TargetChatToolError("Target pipeline returned non-JSON response", 502);
+  }
 
   const artifact: DataArtifact = {
     description: `Target analysis for ${input.query}`,

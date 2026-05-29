@@ -736,8 +736,10 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       } catch (err) {
         const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
         const detail = err instanceof Error ? err.message : "Target pipeline failed";
-        logger.warn({ err, messageId: createdMessage.id }, "target_chat_tool_error");
-        await markMessageFailed(createdMessage.id);
+        logger.error({ err, messageId: createdMessage.id }, "target_chat_tool_error");
+        await markMessageFailed(createdMessage.id).catch((dbErr) =>
+          logger.error({ dbErr, messageId: createdMessage.id }, "target_mark_failed_db_error")
+        );
         set.status = statusCode;
         return { error: detail, ok: false };
       }
