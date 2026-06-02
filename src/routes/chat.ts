@@ -735,7 +735,10 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
         });
       } catch (err) {
         const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
-        const detail = err instanceof Error ? err.message : "Target pipeline failed";
+        const detail =
+          err instanceof TargetChatToolError && statusCode < 500
+            ? err.message
+            : "Target pipeline failed. Please try again.";
         logger.error({ err, messageId: createdMessage.id }, "target_chat_tool_error");
         await markMessageFailed(createdMessage.id).catch((dbErr) =>
           logger.error({ dbErr, messageId: createdMessage.id }, "target_mark_failed_db_error")
@@ -932,13 +935,22 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     }
 
     const { set } = ctx;
-    set.status = error instanceof SegmentAnythingToolError ? error.statusCode : 500;
+    set.status =
+      error instanceof SegmentAnythingToolError
+        ? error.statusCode
+        : error instanceof TargetChatToolError
+          ? error.statusCode
+          : 500;
     const errorMessage =
       error instanceof SegmentAnythingToolError
         ? error.statusCode < 500
           ? err.message
           : "Segment Anything failed"
-        : err.message || "Internal server error";
+        : error instanceof TargetChatToolError
+          ? error.statusCode < 500
+            ? err.message
+            : "Target pipeline failed. Please try again."
+          : err.message || "Internal server error";
     return {
       error: errorMessage,
       ok: false,

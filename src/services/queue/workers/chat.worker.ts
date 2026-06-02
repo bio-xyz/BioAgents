@@ -275,6 +275,11 @@ async function runTargetForJob(
   } catch (err) {
     const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
     logger.warn({ err, jobId: job.id, messageId, statusCode }, "chat_worker_target_tool_error");
+    // 4xx errors and "service not configured" (503) will never succeed on retry.
+    if (err instanceof TargetChatToolError && (statusCode < 500 || statusCode === 503)) {
+      const { UnrecoverableError } = await import("bullmq");
+      throw new UnrecoverableError(err.message);
+    }
     throw err;
   }
 
