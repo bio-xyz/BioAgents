@@ -4,7 +4,7 @@ import logger from "../../utils/logger";
 const TARGET_FETCH_TIMEOUT_MS = 65_000;
 
 export class TargetChatToolError extends Error {
-  statusCode: number;
+  readonly statusCode: number;
 
   constructor(message: string, statusCode = 400) {
     super(message);
