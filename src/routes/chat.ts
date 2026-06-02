@@ -722,9 +722,6 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       });
     }
 
-    // =======================================================================
-    // Target pipeline: /target <gene> slash command
-    // =======================================================================
     if (toolId === "target") {
       let targetResult: Awaited<ReturnType<typeof runTargetChatTool>>;
       try {

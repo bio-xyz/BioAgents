@@ -256,11 +256,11 @@ const app = new Elysia()
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
   .use(literatureAgentStreamRoute) // POST /api/literature/agent/stream for Literature SSE bridge
   .use(filesRoute) // POST /api/files/* for direct S3 file uploads
-  .use(targetRoute) // POST /api/tools/target — binder pipeline stages 1-3
-  .use(contactsRoute) // GET /api/tools/target/contacts — standalone contact extraction
-  .use(p2rankRoute) // POST /api/tools/target/p2rank — P2Rank pocket prediction
-  .use(pdbProxyRoute) // GET /api/tools/pdb-proxy — RCSB PDB file proxy
-  .use(alphafoldProxyRoute); // GET /api/tools/alphafold/proxy — AlphaFold asset proxy
+  .use(targetRoute)
+  .use(contactsRoute)
+  .use(p2rankRoute)
+  .use(pdbProxyRoute)
+  .use(alphafoldProxyRoute);
 
 // Mount Bull Board dashboard (only when job queue is enabled)
 const queueDashboard = createQueueDashboard();
