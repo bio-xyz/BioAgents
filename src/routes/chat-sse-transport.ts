@@ -370,15 +370,31 @@ export function buildChatSseStream(
               toolInput,
             });
           } catch (err) {
+            const targetErr =
+              TargetChatToolError && err instanceof TargetChatToolError ? err : null;
             streamEvents.emitToolResult({
-              outputPreview:
-                TargetChatToolError && err instanceof TargetChatToolError
-                  ? err.message
-                  : "Target analysis failed.",
+              outputPreview: targetErr ? targetErr.message : "Target analysis failed.",
               status: "failed",
               toolCallId: targetToolCallId,
               toolName: "target",
             });
+            // 4xx is a user-correctable error (empty query, unknown protein). Send its
+            // message inline instead of rethrowing into the generic outer catch, which
+            // would mask it as "Something went wrong". 5xx/503 stay generic via the catch.
+            if (targetErr && targetErr.statusCode >= 400 && targetErr.statusCode < 500) {
+              send("error", { error: targetErr.message, reason: "agent_error" });
+              // Close first so the heartbeat timer is cleared even if the DB write
+              // rejects; a rejection here must not fall through to the generic outer
+              // catch and emit a second "Something went wrong" error.
+              safeClose();
+              await markMessageFailed(createdMessage.id).catch((failErr) =>
+                logger.error(
+                  { error: failErr, messageId: createdMessage.id },
+                  "chat_sse_target_mark_failed_error"
+                )
+              );
+              return;
+            }
             throw err;
           }
 

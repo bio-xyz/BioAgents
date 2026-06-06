@@ -140,6 +140,62 @@ describe("runTargetChatTool", () => {
     }
   });
 
+  test("surfaces upstream detail for 4xx (unknown protein)", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalBaseUrl = process.env.BIO_LIT_AGENT_API_URL;
+    const originalApiKey = process.env.BIO_LIT_AGENT_API_KEY;
+    process.env.BIO_LIT_AGENT_API_URL = "https://bio-lit.example.test";
+    process.env.BIO_LIT_AGENT_API_KEY = "test-key";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ detail: 'Could not resolve "FOOBAR" to a UniProt accession' }),
+        {
+          headers: { "Content-Type": "application/json" },
+          status: 404,
+        }
+      )) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        runTargetChatTool({ message: "FOOBAR", messageId: "msg-1", toolInput: { query: "FOOBAR" } })
+      ).rejects.toMatchObject({
+        message: 'Could not resolve "FOOBAR" to a UniProt accession',
+        statusCode: 404,
+      } satisfies Partial<TargetChatToolError>);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalBaseUrl === undefined) delete process.env.BIO_LIT_AGENT_API_URL;
+      else process.env.BIO_LIT_AGENT_API_URL = originalBaseUrl;
+      if (originalApiKey === undefined) delete process.env.BIO_LIT_AGENT_API_KEY;
+      else process.env.BIO_LIT_AGENT_API_KEY = originalApiKey;
+    }
+  });
+
+  test("falls back to generic message for 4xx with non-JSON body", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalBaseUrl = process.env.BIO_LIT_AGENT_API_URL;
+    const originalApiKey = process.env.BIO_LIT_AGENT_API_KEY;
+    process.env.BIO_LIT_AGENT_API_URL = "https://bio-lit.example.test";
+    process.env.BIO_LIT_AGENT_API_KEY = "test-key";
+    globalThis.fetch = (async () =>
+      new Response("<html>404 Not Found</html>", { status: 404 })) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        runTargetChatTool({ message: "FOOBAR", messageId: "msg-1", toolInput: { query: "FOOBAR" } })
+      ).rejects.toMatchObject({
+        message: "Target pipeline error: 404",
+        statusCode: 404,
+      } satisfies Partial<TargetChatToolError>);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalBaseUrl === undefined) delete process.env.BIO_LIT_AGENT_API_URL;
+      else process.env.BIO_LIT_AGENT_API_URL = originalBaseUrl;
+      if (originalApiKey === undefined) delete process.env.BIO_LIT_AGENT_API_KEY;
+      else process.env.BIO_LIT_AGENT_API_KEY = originalApiKey;
+    }
+  });
+
   test("throws TargetChatToolError with statusCode 400 for empty query", async () => {
     await expect(
       runTargetChatTool({ message: "", messageId: "msg-1", toolInput: { query: "" } })

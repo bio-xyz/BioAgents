@@ -13,6 +13,28 @@ export class TargetChatToolError extends Error {
   }
 }
 
+// bio-lit-api (FastAPI) returns errors as { "detail": "..." }. Pull that string out
+// for 4xx responses so the user sees "Could not resolve X" instead of a bare status
+// code. Returns null for non-JSON bodies or a missing/blank detail field.
+function extractUpstreamDetail(body: string): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "detail" in parsed &&
+      typeof (parsed as { detail: unknown }).detail === "string"
+    ) {
+      const detail = (parsed as { detail: string }).detail.trim();
+      return detail.length > 0 ? detail.slice(0, 300) : null;
+    }
+  } catch {
+    // Upstream body was not JSON — fall back to the generic message.
+  }
+  return null;
+}
+
 function normalizeToolInput(value: unknown): TargetToolInput {
   if (typeof value === "object" && value !== null) {
     const raw = value as Record<string, unknown>;
@@ -65,10 +87,14 @@ export async function runTargetChatTool(params: {
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     logger.error({ errorText, status: response.status }, "target_chat_tool_upstream_error");
-    throw new TargetChatToolError(
-      `Target pipeline error: ${response.status}`,
-      response.status >= 500 ? 502 : response.status
-    );
+    // 4xx is user-correctable (empty query, unknown protein): surface the upstream
+    // detail so the user knows what to fix. 5xx is a real upstream failure and stays
+    // generic so internal error shapes never reach the user.
+    const isClientError = response.status >= 400 && response.status < 500;
+    const detail =
+      (isClientError ? extractUpstreamDetail(errorText) : null) ??
+      `Target pipeline error: ${response.status}`;
+    throw new TargetChatToolError(detail, response.status >= 500 ? 502 : response.status);
   }
 
   let targetData: Record<string, unknown>;
