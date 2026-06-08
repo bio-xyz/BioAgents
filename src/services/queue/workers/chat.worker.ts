@@ -16,6 +16,7 @@ import logger from "../../../utils/logger";
 import { buildMessageStateValues } from "../../../utils/messageState";
 import { persistNormalChatArtifacts } from "../../chat/artifactPersistence";
 import { runSegmentAnythingChatTool } from "../../segment-anything/chat-tool";
+import { runTargetChatTool, TargetChatToolError } from "../../target/chat-tool";
 import { getBullMQConnection } from "../connection";
 import {
   notifyJobCompleted,
@@ -145,6 +146,17 @@ async function processChatJob(job: Job<ChatJobData, ChatJobResult>): Promise<Cha
       );
     }
 
+    if (job.data.toolId === "target") {
+      return await runTargetForJob(
+        job,
+        conversationId,
+        messageId,
+        message,
+        conversationState,
+        startTime
+      );
+    }
+
     return await runChatAgentForJob(
       job,
       conversationId,
@@ -239,6 +251,81 @@ async function runSegmentAnythingForJob(
     artifacts: segmentResult.artifacts,
     responseTime,
     text: segmentResult.text,
+    userId,
+  };
+}
+
+async function runTargetForJob(
+  job: Job<ChatJobData, ChatJobResult>,
+  conversationId: string,
+  messageId: string,
+  message: string,
+  conversationState: ConversationState,
+  startTime: number
+): Promise<ChatJobResult> {
+  const { userId } = job.data;
+
+  let targetResult: Awaited<ReturnType<typeof runTargetChatTool>>;
+  try {
+    targetResult = await runTargetChatTool({
+      message,
+      messageId,
+      toolInput: job.data.toolInput,
+    });
+  } catch (err) {
+    const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
+    logger.warn({ err, jobId: job.id, messageId, statusCode }, "chat_worker_target_tool_error");
+    // 4xx errors and "service not configured" (503) will never succeed on retry.
+    if (err instanceof TargetChatToolError && (statusCode < 500 || statusCode === 503)) {
+      const { UnrecoverableError } = await import("bullmq");
+      throw new UnrecoverableError(err.message);
+    }
+    throw err;
+  }
+
+  const responseTime = Date.now() - startTime;
+  await persistNormalChatArtifacts({
+    artifacts: targetResult.artifacts,
+    conversationState,
+    messageId,
+  });
+
+  const { markMessageComplete } = await import("../../chat/tools");
+  const { updated } = await markMessageComplete(messageId, {
+    content: targetResult.text,
+    response_time: responseTime,
+  });
+  await failJobIfRowNoLongerPending(
+    updated,
+    job.id,
+    messageId,
+    "chat_worker_target_complete_skipped_row_not_pending"
+  );
+
+  try {
+    await notifyJobCompleted(job.id!, conversationId, messageId, undefined, {
+      artifacts: targetResult.artifacts,
+    });
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_target_job_completed_notify_failed"
+    );
+  }
+
+  try {
+    await notifyMessageUpdated(job.id!, conversationId, messageId);
+  } catch (notifyErr) {
+    logger.warn(
+      { error: notifyErr, jobId: job.id, messageId },
+      "chat_worker_target_message_updated_notify_failed"
+    );
+  }
+
+  return {
+    artifacts: targetResult.artifacts,
+    responseTime,
+    text: targetResult.text,
     userId,
   };
 }

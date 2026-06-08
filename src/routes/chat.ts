@@ -14,6 +14,7 @@ import {
   runSegmentAnythingChatTool,
   SegmentAnythingToolError,
 } from "../services/segment-anything/chat-tool";
+import { runTargetChatTool, TargetChatToolError } from "../services/target/chat-tool";
 import type { ConversationState, DataArtifact, ProteinStructure, State } from "../types/core";
 import type { ElysiaRouteContext } from "../types/elysia";
 import { parseSourceSelectionId } from "../types/sourceSelection";
@@ -721,6 +722,76 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
       });
     }
 
+    if (toolId === "target") {
+      let targetResult: Awaited<ReturnType<typeof runTargetChatTool>>;
+      try {
+        targetResult = await runTargetChatTool({
+          message,
+          messageId: createdMessage.id,
+          toolInput,
+        });
+      } catch (err) {
+        const statusCode = err instanceof TargetChatToolError ? err.statusCode : 502;
+        const detail =
+          err instanceof TargetChatToolError && statusCode < 500
+            ? err.message
+            : "Target pipeline failed. Please try again.";
+        logger.error({ err, messageId: createdMessage.id }, "target_chat_tool_error");
+        await markMessageFailed(createdMessage.id).catch((dbErr) =>
+          logger.error({ dbErr, messageId: createdMessage.id }, "target_mark_failed_db_error")
+        );
+        set.status = statusCode;
+        return { error: detail, ok: false };
+      }
+
+      const responseTime = Date.now() - startTime;
+      await persistNormalChatArtifacts({
+        artifacts: targetResult.artifacts,
+        conversationState,
+        messageId: createdMessage.id,
+      });
+
+      const { updated } = await markMessageComplete(createdMessage.id, {
+        content: targetResult.text,
+        response_time: responseTime,
+      });
+      if (!updated) {
+        logger.warn(
+          { messageId: createdMessage.id },
+          "chat_in_process_target_complete_skipped_row_not_pending"
+        );
+        set.status = 500;
+        return { error: "Response failed to save. Please retry.", ok: false };
+      }
+      replyPersisted = true;
+
+      const response: ChatV2Response = {
+        artifacts: targetResult.artifacts,
+        conversationId,
+        messageId: createdMessage.id,
+        text: targetResult.text,
+        userId,
+      };
+
+      logger.info(
+        {
+          artifactCount: targetResult.artifacts.length,
+          conversationId,
+          messageId: createdMessage.id,
+          responseTime,
+        },
+        "chat_in_process_target_completed"
+      );
+
+      return new Response(JSON.stringify(response), {
+        headers: {
+          "Content-Encoding": "identity",
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        status: 200,
+      });
+    }
+
     // =======================================================================
     // Agent loop: LLM decides which tools to call
     // =======================================================================
@@ -861,13 +932,22 @@ export async function chatHandler(ctx: ElysiaRouteContext) {
     }
 
     const { set } = ctx;
-    set.status = error instanceof SegmentAnythingToolError ? error.statusCode : 500;
+    set.status =
+      error instanceof SegmentAnythingToolError
+        ? error.statusCode
+        : error instanceof TargetChatToolError
+          ? error.statusCode
+          : 500;
     const errorMessage =
       error instanceof SegmentAnythingToolError
         ? error.statusCode < 500
           ? err.message
           : "Segment Anything failed"
-        : err.message || "Internal server error";
+        : error instanceof TargetChatToolError
+          ? error.statusCode < 500
+            ? err.message
+            : "Target pipeline failed. Please try again."
+          : err.message || "Internal server error";
     return {
       error: errorMessage,
       ok: false,

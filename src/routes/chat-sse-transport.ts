@@ -80,6 +80,11 @@ export interface ChatSseStreamDeps {
     toolInput?: unknown;
     userId: string;
   }) => Promise<{ artifacts: DataArtifact[]; text: string }>;
+  runTargetChatTool?: (input: {
+    message: string;
+    messageId: string;
+    toolInput?: unknown;
+  }) => Promise<{ artifacts: DataArtifact[]; text: string }>;
   getPendingFileIds?: (conversationStateId: string) => Promise<string[]>;
   getFileStatus?: (fileId: string) => Promise<FileStatusRecord | null>;
   getFileProcessQueue?: () => Queue<FileProcessJobData, FileProcessJobResult> | null;
@@ -197,6 +202,11 @@ export function buildChatSseStream(
       const runSegmentAnythingChatTool =
         deps.runSegmentAnythingChatTool ?? segmentAnythingModule?.runSegmentAnythingChatTool;
       const SegmentAnythingToolError = segmentAnythingModule?.SegmentAnythingToolError;
+
+      const targetModule =
+        toolId === "target" ? await import("../services/target/chat-tool") : null;
+      const runTargetChatTool = deps.runTargetChatTool ?? targetModule?.runTargetChatTool;
+      const TargetChatToolError = targetModule?.TargetChatToolError;
 
       let replyPersisted = false;
 
@@ -336,6 +346,114 @@ export function buildChatSseStream(
               streaming: true,
             },
             "chat_sse_segment_anything_completed"
+          );
+          return;
+        }
+
+        if (toolId === "target") {
+          if (!runTargetChatTool) {
+            throw new Error("Target chat tool is unavailable");
+          }
+
+          const targetToolCallId = `target:${createdMessage.id}`;
+          streamEvents.emitToolCall({
+            inputPreview: message,
+            toolCallId: targetToolCallId,
+            toolName: "target",
+          });
+
+          let targetResult: Awaited<ReturnType<NonNullable<typeof runTargetChatTool>>>;
+          try {
+            targetResult = await runTargetChatTool({
+              message,
+              messageId: createdMessage.id,
+              toolInput,
+            });
+          } catch (err) {
+            const targetErr =
+              TargetChatToolError && err instanceof TargetChatToolError ? err : null;
+            streamEvents.emitToolResult({
+              outputPreview: targetErr ? targetErr.message : "Target analysis failed.",
+              status: "failed",
+              toolCallId: targetToolCallId,
+              toolName: "target",
+            });
+            // 4xx is a user-correctable error (empty query, unknown protein). Send its
+            // message inline instead of rethrowing into the generic outer catch, which
+            // would mask it as "Something went wrong". 5xx/503 stay generic via the catch.
+            if (targetErr && targetErr.statusCode >= 400 && targetErr.statusCode < 500) {
+              send("error", { error: targetErr.message, reason: "agent_error" });
+              // Close first so the heartbeat timer is cleared even if the DB write
+              // rejects; a rejection here must not fall through to the generic outer
+              // catch and emit a second "Something went wrong" error.
+              safeClose();
+              await markMessageFailed(createdMessage.id).catch((failErr) =>
+                logger.error(
+                  { error: failErr, messageId: createdMessage.id },
+                  "chat_sse_target_mark_failed_error"
+                )
+              );
+              return;
+            }
+            throw err;
+          }
+
+          const responseTime = Date.now() - sseStartTime;
+          await persistNormalChatArtifacts({
+            artifacts: targetResult.artifacts,
+            conversationState: conversationStateRecord,
+            getConversationState,
+            messageId: createdMessage.id,
+            updateConversationState,
+          });
+
+          const { updated } = await markMessageComplete(createdMessage.id, {
+            content: targetResult.text,
+            response_time: responseTime,
+          });
+          if (!updated) {
+            send("error", {
+              error: "Response failed to save. Please retry.",
+              reason: "agent_error",
+            });
+            safeClose();
+            logger.warn(
+              { messageId: createdMessage.id },
+              "chat_sse_target_complete_skipped_row_not_pending"
+            );
+            return;
+          }
+
+          replyPersisted = true;
+          markReplyPersisted();
+
+          await notifyChatReplyCompleted({
+            artifacts: targetResult.artifacts,
+            conversationId,
+            messageId: createdMessage.id,
+          });
+
+          streamEvents.emitToolResult({
+            outputPreview: targetResult.text,
+            status: "completed",
+            toolCallId: targetToolCallId,
+            toolName: "target",
+          });
+          streamEvents.sendFinal({
+            artifacts: targetResult.artifacts,
+            text: targetResult.text,
+          });
+          safeClose();
+
+          logger.info(
+            {
+              artifactCount: targetResult.artifacts.length,
+              conversationId,
+              messageId: createdMessage.id,
+              responseTime,
+              streaming: true,
+            },
+            "chat_sse_target_completed"
           );
           return;
         }

@@ -33,6 +33,10 @@ const RATE_LIMITS: Record<string, RateLimitConfig> = {
     max: parseInt(process.env.DEEP_RESEARCH_RATE_LIMIT_PER_5MIN || "3"),
     window: 300, // 5 minutes
   },
+  tools: {
+    max: parseInt(process.env.TOOLS_RATE_LIMIT_PER_MINUTE || "30"),
+    window: 60, // 1 minute
+  },
 };
 
 /**
@@ -56,7 +60,7 @@ export interface RateLimitResult {
  */
 export async function checkRateLimit(
   userId: string,
-  action: "chat" | "deep-research"
+  action: "chat" | "deep-research" | "tools"
 ): Promise<RateLimitResult> {
   // If job queue is not enabled, skip rate limiting
   if (!isJobQueueEnabled()) {
@@ -178,7 +182,7 @@ export async function checkRateLimit(
  * );
  * ```
  */
-export function rateLimitMiddleware(action: "chat" | "deep-research") {
+export function rateLimitMiddleware(action: "chat" | "deep-research" | "tools") {
   return async ({
     request,
     set,

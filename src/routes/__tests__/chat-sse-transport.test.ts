@@ -318,6 +318,118 @@ describe("buildChatSseStream", () => {
     expect(failedCalls).toBe(1);
   });
 
+  test("target path emits artifacts only after artifact state persists", async () => {
+    const artifact: DataArtifact = {
+      description: "Target analysis for GLP1R",
+      id: "target-msg-1",
+      metadata: { _query: "GLP1R", _version: 1 },
+      name: "Target: GLP1R",
+      type: "target-result",
+    };
+    let updateCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "GLP1R" } }),
+      happyDeps({
+        runTargetChatTool: async () => ({
+          artifacts: [artifact],
+          text: "Target analysis complete for P43220.",
+        }),
+        updateConversationState: async () => {
+          updateCalls++;
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const finalEvent = events.find((event) => event.event === "final");
+
+    expect(updateCalls).toBe(1);
+    expect(finalEvent).toBeDefined();
+    expect((finalEvent!.data as { artifacts?: DataArtifact[] }).artifacts).toEqual([artifact]);
+  });
+
+  test("target persistence failure sends an error instead of final artifacts", async () => {
+    let failedCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "GLP1R" } }),
+      happyDeps({
+        markMessageFailed: async () => {
+          failedCalls++;
+        },
+        runTargetChatTool: async () => ({
+          artifacts: [
+            {
+              description: "Target analysis for GLP1R",
+              id: "target-msg-1",
+              metadata: { _query: "GLP1R", _version: 1 },
+              name: "Target: GLP1R",
+              type: "target-result" as const,
+            },
+          ],
+          text: "done",
+        }),
+        updateConversationState: async () => {
+          throw new Error("db unavailable");
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const order = events.map((event) => event.event);
+
+    expect(order).toContain("error");
+    expect(order).not.toContain("final");
+    expect(failedCalls).toBe(1);
+  });
+
+  test("target 4xx error emits the friendly detail inline, not the generic fallback", async () => {
+    const { TargetChatToolError } = await import("../../services/target/chat-tool");
+    let failedCalls = 0;
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "FOOBAR" } }),
+      happyDeps({
+        markMessageFailed: async () => {
+          failedCalls++;
+        },
+        runTargetChatTool: async () => {
+          throw new TargetChatToolError('Could not resolve "FOOBAR" to a UniProt accession', 404);
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const errorEvents = events.filter((event) => event.event === "error");
+
+    // Exactly one error event, carrying the friendly upstream detail — proving it did
+    // not fall through to the generic outer catch (which would add a second error).
+    expect(errorEvents).toHaveLength(1);
+    expect((errorEvents[0]!.data as { error: string }).error).toBe(
+      'Could not resolve "FOOBAR" to a UniProt accession'
+    );
+    expect(events.map((event) => event.event)).not.toContain("final");
+    expect(failedCalls).toBe(1);
+  });
+
+  test("target 5xx error stays generic via the outer catch", async () => {
+    const { TargetChatToolError } = await import("../../services/target/chat-tool");
+    const stream = buildChatSseStream(
+      baseParams({ toolId: "target", toolInput: { query: "GLP1R" } }),
+      happyDeps({
+        runTargetChatTool: async () => {
+          throw new TargetChatToolError("Target pipeline error: 500", 502);
+        },
+      })
+    );
+
+    const events = await collectEvents(stream);
+    const errorEvents = events.filter((event) => event.event === "error");
+
+    expect(errorEvents).toHaveLength(1);
+    expect((errorEvents[0]!.data as { error: string }).error).toBe(
+      "Something went wrong while generating the response. Please try again."
+    );
+  });
+
   test("agent throws BEFORE persistence: markMessageFailed is called", async () => {
     let failedCalls = 0;
     const stream = buildChatSseStream(

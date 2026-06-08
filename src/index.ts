@@ -16,6 +16,11 @@ import { deepResearchStartRoute } from "./routes/deep-research/start";
 import { deepResearchStatusRoute } from "./routes/deep-research/status";
 import { filesRoute } from "./routes/files";
 import { literatureAgentStreamRoute } from "./routes/literature-agent-stream";
+import { alphafoldProxyRoute } from "./routes/tools/alphafoldProxy";
+import { contactsRoute } from "./routes/tools/contacts";
+import { p2rankRoute } from "./routes/tools/p2rank";
+import { pdbProxyRoute } from "./routes/tools/pdbProxy";
+import { targetRoute } from "./routes/tools/target";
 // BullMQ Queue imports (conditional)
 import { closeConnections, isJobQueueEnabled } from "./services/queue/connection";
 import { cleanupDeadConnections, websocketHandler } from "./services/websocket/handler";
@@ -250,7 +255,12 @@ const app = new Elysia()
   .use(deepResearchPaperRoute) // POST /api/deep-research/conversations/:conversationId/paper for paper generation
   .use(artifactsRoute) // GET /api/artifacts/download for artifact downloads
   .use(literatureAgentStreamRoute) // POST /api/literature/agent/stream for Literature SSE bridge
-  .use(filesRoute); // POST /api/files/* for direct S3 file uploads
+  .use(filesRoute) // POST /api/files/* for direct S3 file uploads
+  .use(targetRoute)
+  .use(contactsRoute)
+  .use(p2rankRoute)
+  .use(pdbProxyRoute)
+  .use(alphafoldProxyRoute);
 
 // Mount Bull Board dashboard (only when job queue is enabled)
 const queueDashboard = createQueueDashboard();
