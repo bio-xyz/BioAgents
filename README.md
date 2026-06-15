@@ -1,4 +1,12 @@
-# BioAgents AgentKit
+# BioAgents (Archived)
+
+> [!IMPORTANT]
+> This repository is archived and no longer maintained.
+>
+> The BIOS product however is very actively maintained. Use BIOS at [chat.bio.xyz](https://chat.bio.xyz) and visit the BIOS landing page at [ai.bio.xyz](https://ai.bio.xyz).
+>
+> This code remains available for historical reference only. Issues, pull requests, and feature requests are no longer actively monitored here.
+
 
 An advanced AI agent framework for biological and scientific research. BioAgents provides powerful conversational AI capabilities with specialized knowledge in biology, life sciences, and scientific research methodologies.
 
